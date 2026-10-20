@@ -33,7 +33,8 @@ def test_traversal_cannot_reach_outside_a_root():
     root = "/srv/game/Mods"
     for evil in ("../victim", "..", "a/../../b"):
         assert not is_safe_component(evil)
-    assert os.path.join(root, safe_component("DlcMerger")) == "/srv/game/Mods/DlcMerger"
+    joined = os.path.join(root, safe_component("DlcMerger"))
+    assert os.path.dirname(joined) == root           # one level down, whatever os.sep is
 
 
 # ----------------------------------------------------------- strict matching

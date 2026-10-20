@@ -137,7 +137,9 @@ def test_unrecognised_payload_is_refused(tmp_path):
 
 
 def test_missing_external_unpacker_is_an_explicit_error(tmp_path, monkeypatch):
-    monkeypatch.setattr("iemod_fetch.archives.shutil.which", lambda _: None)
+    # find_tool, not shutil.which: on Windows it also searches Program Files,
+    # and the CI runner has 7-Zip installed there.
+    monkeypatch.setattr("iemod_fetch.archives.find_tool", lambda _: None)
     p = tmp_path / "m.rar"
     p.write_bytes(b"Rar!\x1a\x07\x00" + b"\x00" * 600)
     with pytest.raises(ExtractionError, match="p7zip-full|unar|unrar"):

@@ -49,7 +49,11 @@ jobs:
       - name: Audit the developer toolchain
         run: |
           pip install -e ".[dev]"
-          pip-audit --strict --desc
+          # Audit the installed toolchain, not the project: iemod-fetch is not
+          # on PyPI, and --strict (rightly) fails on anything it cannot look
+          # up. The frozen list is exactly what was installed, fully pinned.
+          pip freeze --exclude-editable > toolchain.txt
+          pip-audit --strict --desc -r toolchain.txt --no-deps --disable-pip
 
   codeql:
     name: CodeQL
