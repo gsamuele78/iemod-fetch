@@ -33,6 +33,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Games/Entertainment",
   "Topic :: System :: Archiving :: Packaging",
   "Typing :: Typed",
@@ -51,8 +52,11 @@ iemod-fetch = "iemod_fetch.cli:main"
 [project.optional-dependencies]
 # Split so CI jobs install only what they need and a failure names its own gate.
 test = ["pytest>=7.4", "hypothesis>=6.100", "coverage[toml]>=7.4"]
-lint = ["ruff>=0.6"]
-typing = ["mypy>=1.11"]
+# Linters are pinned to a minor series: ruff and mypy add rules in minor
+# releases, and an unpinned linter turns a green main red overnight with no
+# change to the code (it did: ruff 0.17 added ISC004). Dependabot bumps these.
+lint = ["ruff~=0.17.1"]
+typing = ["mypy~=2.4"]
 security = ["bandit[toml]>=1.7", "pip-audit>=2.7"]
 arch = ["import-linter>=2.0"]
 mutation = ["mutmut>=3.0"]
@@ -194,7 +198,10 @@ quote-style = "preserve"
 
 # -------------------------------------------------------------------- mypy
 [tool.mypy]
-python_version = "3.9"
+# mypy 2.x no longer type-checks for a 3.9 target. 3.10 is the oldest it
+# accepts; 3.9 syntax compatibility is enforced by ruff's target-version and by
+# the py3.9 test job, which actually imports every module.
+python_version = "3.10"
 files = ["iemod_fetch"]
 # Not `strict = true`: `disallow_untyped_defs` across 26 modules at once is a
 # 130-signature change with no behavioural benefit, and a big mechanical diff
@@ -209,10 +216,8 @@ no_implicit_optional = true
 strict_equality = true
 check_untyped_defs = true
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "legacy.*"
-ignore_errors = true          # evidence, not code — see ADR-0001
+# `legacy/` is not in `files`, so it is never checked — evidence, not code
+# (ADR-0001). No override is needed, and mypy warns about an unused one.
 
 
 # ------------------------------------------------------------------ bandit

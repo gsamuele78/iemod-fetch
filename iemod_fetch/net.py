@@ -153,6 +153,10 @@ class HttpClient:
                 return action()
             except urllib.error.HTTPError as exc:
                 last = exc
+                # The error owns the response socket. Only its status and
+                # headers are used, so release the connection now rather than
+                # whenever the exception is garbage-collected.
+                exc.close()
                 if exc.code not in _RETRYABLE_STATUS:
                     raise HttpStatusError(url, exc.code, exc.reason or "") from exc
                 delay = self._retry_after(exc) or self._backoff(attempt)

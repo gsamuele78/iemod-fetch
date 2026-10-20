@@ -196,9 +196,9 @@ def _remedy(kind: str, scope: str, left: Side, right: Optional[Side],
         return (f"install {wanted}, or deselect {left.describe()}", False)
 
     if scope == "same-mod":
-        return (f"deselect one of the two groups of {left.mod} above - "
+        return ((f"deselect one of the two groups of {left.mod} above - "
                 f"{len(left.components)} vs "
-                f"{len(right.components) if right else '?'} component(s)", False)
+                f"{len(right.components) if right else '?'} component(s)"), False)
 
     if right is None:
         return (f"review {left.describe()}", False)
@@ -214,8 +214,8 @@ def _remedy(kind: str, scope: str, left: Side, right: Optional[Side],
     cheapest = options[0][1]
     other = options[1][1]
     if cheapest.whole_mod:
-        return (f"drop {cheapest.mod} or {other.mod} - the rules do not narrow "
-                f"it to components", False)
+        return ((f"drop {cheapest.mod} or {other.mod} - the rules do not narrow "
+                f"it to components"), False)
     short = cheapest.describe(limit=3)
     alternative = (f"drop {other.mod}" if other.whole_mod
                    else f"deselect {other.describe(limit=3)}")

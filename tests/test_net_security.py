@@ -172,6 +172,28 @@ def test_deterministic_404_is_not_retried(fake_opener):
     assert calls["n"] == 1
 
 
+class _TrackedBody(io.BytesIO):
+    """An HTTPError body that records whether anyone closed it."""
+
+
+@pytest.mark.parametrize("status", [503, 404])
+def test_an_http_error_response_is_closed_not_leaked(fake_opener, status):
+    """An HTTPError owns the response socket. Retried or raised, it is closed -
+    otherwise every 5xx retry leaks a connection until garbage collection, and
+    Python 3.14 reports it as a ResourceWarning."""
+    bodies = []
+
+    def failing(req):
+        body = _TrackedBody(b"error page")
+        bodies.append(body)
+        raise urllib.error.HTTPError(req.full_url, status, "x", {}, body)
+
+    fake_opener(default=failing)
+    with pytest.raises((HttpStatusError, NetworkError)):
+        HttpClient(retries=2, sleep=lambda *_: None).read_bytes("https://x.example/m")
+    assert bodies and all(b.closed for b in bodies)
+
+
 def test_retry_after_is_honoured(fake_opener):
     slept = []
     calls = {"n": 0}

@@ -162,8 +162,8 @@ class CatalogueEntry:
             return []
         if game in self.games:
             return []
-        return [f"{self.origin} does not list this mod as {game}-compatible "
-                f"(it lists: {', '.join(self.games)})"]
+        return [(f"{self.origin} does not list this mod as {game}-compatible "
+                f"(it lists: {', '.join(self.games)})")]
 
     @property
     def blocking(self) -> bool:

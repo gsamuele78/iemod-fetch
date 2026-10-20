@@ -650,8 +650,8 @@ def _applicable(ruleset: RuleSet, context: Context) -> List[Rule]:
 
 
 def _pair_detail(install, left, left_hit, right, right_hit, message):
-    parts = [f"installed: {install.name(left)} "
-             f"#{sorted(left_hit)[:6]} and {install.name(right)} #{sorted(right_hit)[:6]}"]
+    parts = [(f"installed: {install.name(left)} "
+             f"#{sorted(left_hit)[:6]} and {install.name(right)} #{sorted(right_hit)[:6]}")]
     if message:
         parts.append(message)
     return " - ".join(parts)
