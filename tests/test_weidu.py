@@ -30,6 +30,30 @@ def test_spaced_colon_is_a_version():
     assert log.mods["ub"].version == "v4.2"
 
 
+# Older mods install their tp2 into the game directory, and WeiDU logs it with
+# no folder. WeiDU's own naming rule makes setup-<mod>.tp2 the mod <mod>, so
+# the folder is derived by that rule - not guessed - and the line is kept
+# verbatim for round-tripping. These lines were dropped with a warning, so the
+# mod was never planned, fetched or checked.
+@pytest.mark.parametrize("line,folder,tp2", [
+    ("~SETUP-D0QUESTPACK.TP2~ #0 #5 // Shadow Thieves: v3.5", "D0QUESTPACK",
+     "SETUP-D0QUESTPACK.TP2"),
+    ("~setup-ascension.tp2~ #0 #0 // Ascension", "ascension", "setup-ascension.tp2"),
+    ("~TOBEX.TP2~ #0 #100 // Core", "TOBEX", "TOBEX.TP2"),
+])
+def test_a_root_level_tp2_names_its_mod_by_weidus_rule(line, folder, tp2):
+    log = parse_weidu_log(line + "\n")
+    assert log.warnings == []
+    mod = log.mods[folder.lower()]
+    assert (mod.folder, mod.tp2_file) == (folder, tp2)
+    assert mod.components[0].path == line.split("~")[1]
+
+
+def test_a_bare_setup_prefix_is_still_rejected():
+    log = parse_weidu_log("~setup-.tp2~ #0 #0\n")
+    assert log.mods == {} and len(log.warnings) == 1
+
+
 def test_unparseable_lines_are_reported_not_silently_dropped():
     log = parse_weidu_log("this is not a weidu line\n~x\\x.tp2~ #0 #0\n")
     assert len(log.warnings) == 1 and "unparseable" in log.warnings[0]

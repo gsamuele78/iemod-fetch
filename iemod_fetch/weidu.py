@@ -86,6 +86,14 @@ class ParsedLog:
         return None
 
 
+def _mod_from_root_tp2(tp2_file: str) -> str:
+    """The mod a root-level tp2 belongs to, by WeiDU's naming rule; '' if none."""
+    if not tp2_file.lower().endswith(".tp2"):
+        return ""
+    stem = tp2_file[:-4]
+    return stem[6:] if stem.lower().startswith("setup-") else stem
+
+
 def parse_weidu_log(text: str, source: str = "<weidu.log>") -> ParsedLog:
     """Parse WeiDU.log content. Unparseable lines are reported, never ignored."""
     out = ParsedLog()
@@ -99,7 +107,11 @@ def parse_weidu_log(text: str, source: str = "<weidu.log>") -> ParsedLog:
             continue
 
         parts = [p for p in m.group("path").replace("\\", "/").split("/") if p]
-        if len(parts) < 2:
+        if len(parts) == 1:
+            # An older mod whose tp2 sits in the game directory. WeiDU itself
+            # names the mod after the tp2: setup-<mod>.tp2 or <mod>.tp2.
+            parts = [_mod_from_root_tp2(parts[0]), parts[0]]
+        if len(parts) < 2 or not parts[0]:
             out.warnings.append(
                 f"{source}:{lineno}: tp2 not inside a mod folder: {m.group('path')!r}")
             continue
