@@ -203,6 +203,27 @@ def test_a_full_disk_is_not_retried(fake_opener, tmp_path, monkeypatch):
     assert not (tmp_path / "m.zip.part").exists()
 
 
+def test_an_exhausted_github_rate_limit_says_so_and_when_it_resets(fake_opener):
+    """A bare 'HTTP 403' reads as a permission problem. GitHub's own headers say
+    it is the hourly quota, and when it comes back - and that a token raises it."""
+    calls = {"n": 0}
+
+    def limited(req):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "rate limit exceeded",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}, None)
+
+    fake_opener(default=limited)
+    with pytest.raises(HttpStatusError) as caught:
+        HttpClient(retries=3, sleep=lambda *_: None).get_json("https://api.github.com/x")
+    message = str(caught.value)
+    assert caught.value.status == 403
+    assert "rate limit" in message and "2023-11-14T22:13:20Z" in message
+    assert "token" in message
+    assert calls["n"] == 1               # waiting up to an hour is the user's call
+
+
 def test_deterministic_404_is_not_retried(fake_opener):
     calls = {"n": 0}
 

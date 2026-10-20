@@ -164,7 +164,9 @@ class HttpClient:
                 # whenever the exception is garbage-collected.
                 exc.close()
                 if exc.code not in _RETRYABLE_STATUS:
-                    raise HttpStatusError(url, exc.code, exc.reason or "") from exc
+                    raise HttpStatusError(url, exc.code,
+                                          self._rate_limit_reason(exc)
+                                          or exc.reason or "") from exc
                 delay = self._retry_after(exc) or self._backoff(attempt)
             except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
                     http.client.HTTPException) as exc:
@@ -194,6 +196,18 @@ class HttpClient:
         if math.isnan(seconds):
             return None
         return min(max(seconds, 0.0), 300.0)
+
+    @staticmethod
+    def _rate_limit_reason(exc) -> Optional[str]:
+        """GitHub's quota, named as such: a bare 403 reads as a permission error."""
+        headers = getattr(exc, "headers", None)
+        if not headers or headers.get("X-RateLimit-Remaining") != "0":
+            return None
+        reset = headers.get("X-RateLimit-Reset") or ""
+        when = (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(reset)))
+                if reset.isdigit() else "unknown")
+        return (f"GitHub API rate limit exhausted (resets {when}); "
+                f"a token raises the limit from 60 to 5000 requests an hour")
 
     @staticmethod
     def _backoff(attempt: int) -> float:
