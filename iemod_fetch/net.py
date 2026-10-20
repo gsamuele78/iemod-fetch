@@ -212,8 +212,9 @@ class HttpClient:
         if not headers or headers.get("X-RateLimit-Remaining") != "0":
             return None
         reset = headers.get("X-RateLimit-Reset") or ""
-        when = (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(reset)))
-                if reset.isdigit() else "unknown")
+        when = "unknown"
+        if reset.isdigit() and len(reset) <= 11:     # epoch seconds; gmtime overflows
+            when = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(reset)))
         return (f"GitHub API rate limit exhausted (resets {when}); "
                 f"a token raises the limit from 60 to 5000 requests an hour")
 

@@ -160,7 +160,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 637 |
+| Tests | 638 |
 | Branch coverage | 89% (floor: 85%) |
 | Architecture contracts | 4, all kept |
 | mypy | clean, 27 modules |

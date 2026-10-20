@@ -224,6 +224,17 @@ def test_an_exhausted_github_rate_limit_says_so_and_when_it_resets(fake_opener):
     assert calls["n"] == 1               # waiting up to an hour is the user's call
 
 
+def test_an_absurd_rate_limit_reset_does_not_crash(fake_opener):
+    def limited(req):
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "rate limit exceeded",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "9" * 40}, None)
+
+    fake_opener(default=limited)
+    with pytest.raises(HttpStatusError, match="resets unknown"):
+        HttpClient(retries=1, sleep=lambda *_: None).get_json("https://api.github.com/x")
+
+
 def test_deterministic_404_is_not_retried(fake_opener):
     calls = {"n": 0}
 

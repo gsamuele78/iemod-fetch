@@ -21,7 +21,7 @@ the suite on Python 3.9 and 3.14 via `uv`:
 
 | | Before | After |
 |---|---|---|
-| Tests | 586, **1 failing** | 637, all passing |
+| Tests | 586, **1 failing** | 638, all passing |
 | Branch coverage | 88% | 89% |
 | ruff | **5 errors** (ISC004, new rule) | clean |
 | mypy | **config refused** by mypy 2.x (`python_version = 3.9`) | clean |

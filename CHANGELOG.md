@@ -12,7 +12,7 @@ Python API, which is internal.
 
 A correctness and hardening release. No flag or report field changed meaning;
 two behaviours changed on purpose and are listed under *Changed*. Measured on
-the same machine before and after: 586 tests with 1 failing → 637 passing;
+the same machine before and after: 586 tests with 1 failing → 638 passing;
 branch coverage 88% → 89%; gate failures on a clean checkout 4 → 0; 11
 defects fixed, each with a test written to fail first.
 

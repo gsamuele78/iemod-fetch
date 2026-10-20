@@ -257,7 +257,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           637 offline tests: characterization, example, property-based, loopback
+tests/           638 offline tests: characterization, example, property-based, loopback
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -268,7 +268,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 637 passed, no network, ~13s
+python3 -m pytest -q      # 638 passed, no network, ~13s
 ```
 
 ## Planning the install order
@@ -317,7 +317,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 637, offline, ~13 s |
+| Tests | 638, offline, ~13 s |
 | Branch coverage | 89% (floor 85%) |
 | mypy | clean, 27 modules |
 | ruff | clean |
