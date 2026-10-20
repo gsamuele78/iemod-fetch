@@ -9,6 +9,7 @@ Policy (ADR-0003):
     content sniffing and (when known) sha256 before anything is extracted;
   * retries honour Retry-After and never retry a deterministic 4xx.
 """
+import contextlib
 import errno
 import hashlib
 import http.client
@@ -109,6 +110,13 @@ class DownloadResult:
     final_url: str
 
 
+def _release(exc: urllib.error.HTTPError) -> None:
+    # Python 3.9: an HTTPError built with fp=None never initialised its file
+    # wrapper, so close() raises. There is nothing to release in that case.
+    with contextlib.suppress(KeyError, AttributeError):
+        exc.close()
+
+
 class HttpClient:
     def __init__(self, token: Optional[str] = None, allow_http: bool = False,
                  timeout: int = DEFAULT_TIMEOUT, max_bytes: int = DEFAULT_MAX_BYTES,
@@ -162,7 +170,7 @@ class HttpClient:
                 # The error owns the response socket. Only its status and
                 # headers are used, so release the connection now rather than
                 # whenever the exception is garbage-collected.
-                exc.close()
+                _release(exc)
                 if exc.code not in _RETRYABLE_STATUS:
                     raise HttpStatusError(url, exc.code,
                                           self._rate_limit_reason(exc)
@@ -290,6 +298,11 @@ class HttpClient:
                             head += chunk[:512 - len(head)]
                         digest.update(chunk)
                         out.write(chunk)
+                    # http.client's read(n) does not raise on a short body: it
+                    # returns what arrived, then b"". A cut connection would
+                    # pass as a complete download whose first bytes look right.
+                    if declared and declared.isdigit() and total != int(declared):
+                        raise http.client.IncompleteRead(b"", int(declared) - total)
                     out.flush()
                     os.fsync(out.fileno())
 
