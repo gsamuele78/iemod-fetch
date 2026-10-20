@@ -83,9 +83,9 @@ testpaths = ["tests"]
 addopts = "-q --strict-markers --strict-config -W error"
 filterwarnings = [
   "error",
-  # Hypothesis emits this on slow CI runners; it is a timing observation, not a
-  # defect in the code under test.
-  "ignore::hypothesis.errors.NonInteractiveExampleWarning",
+  # The Hypothesis-specific filter is added in tests/conftest.py, and only when
+  # Hypothesis is installed: a filter naming a missing module is itself a
+  # config error under --strict-config, which broke the stdlib-only CI job.
 ]
 markers = [
   "slow: excluded from the pull-request run, kept for the nightly job",

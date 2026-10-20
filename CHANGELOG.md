@@ -70,6 +70,12 @@ defects fixed, each with a test written to fail first.
 - ruff and mypy pinned to a minor series (`~=`), and the pre-commit ruff
   revision aligned with CI: an unpinned linter turned a green `main` red with
   no code change.
+- Every GitHub Action pinned to a commit SHA (zizmor: 37 high findings → 0),
+  and zizmor itself pinned. The release-notes step no longer expands the tag
+  name into script source (template injection).
+- The stdlib-only CI job failed at start-up: a warning filter naming
+  `hypothesis` is a config error when Hypothesis is absent. It is registered
+  from `conftest.py` only when Hypothesis is installed.
 
 ### Repository readiness (unreleased since 2026-09-10, shipped here)
 
