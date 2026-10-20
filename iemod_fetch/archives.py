@@ -6,12 +6,14 @@ release asset nobody checksums. It may contain `../` members, absolute paths,
 symlinks pointing at the game install, or be a decompression bomb.
 """
 import enum
+import gzip
 import os
 import posixpath
 import shutil
 import subprocess
 import tarfile
 import zipfile
+import zlib
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -45,6 +47,17 @@ _MAGIC = (
     (b"7z\xbc\xaf\x27\x1c", Kind.SEVENZIP),
     (b"MZ", Kind.MSDOS),
 )
+
+# What the stdlib readers raise on a truncated or corrupted stream - a partial
+# download, in practice. None of it is a ModFetchError, so each is translated
+# at the boundary instead of escaping the runner as an "internal error".
+try:
+    import lzma
+    _LZMA_ERRORS: tuple = (lzma.LZMAError,)
+except ImportError:                                  # pragma: no cover - minimal builds
+    _LZMA_ERRORS = ()
+_DAMAGED = (zipfile.BadZipFile, tarfile.TarError, zlib.error, EOFError,
+            gzip.BadGzipFile) + _LZMA_ERRORS
 
 TAR_LIKE = (Kind.TAR, Kind.GZIP, Kind.BZIP2, Kind.XZ)
 EXTERNAL_ONLY = (Kind.RAR, Kind.SEVENZIP, Kind.MSDOS)
@@ -174,8 +187,15 @@ def _extract_tar(path: str, dest: str) -> None:
                 for member in members:
                     tf.extract(member, dest)
                     _assert_within(dest, os.path.join(dest, member.name))
-    except tarfile.TarError as exc:
-        raise ExtractionError(f"cannot read tar archive {path}: {exc}") from exc
+    except _DAMAGED as exc:
+        raise _damaged(path, exc) from exc
+
+
+def _damaged(path: str, exc: BaseException) -> ExtractionError:
+    return ExtractionError(
+        f"{os.path.basename(path)} is damaged or incomplete "
+        f"({type(exc).__name__}: {exc}) - usually a partial download; "
+        f"delete it and fetch again")
 
 
 # Windows installers do not put these on PATH.
@@ -256,7 +276,10 @@ def safe_extract(path: str, dest: str, allow_exe: bool = False) -> Kind:
     os.makedirs(dest, exist_ok=True)
 
     if kind is Kind.ZIP:
-        _extract_zip(path, dest)
+        try:
+            _extract_zip(path, dest)
+        except _DAMAGED as exc:
+            raise _damaged(path, exc) from exc
     elif kind is Kind.TAR:
         _extract_tar(path, dest)
     elif kind is Kind.MSDOS:

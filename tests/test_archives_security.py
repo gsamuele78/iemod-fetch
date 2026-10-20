@@ -183,3 +183,43 @@ def test_the_missing_unpacker_message_names_the_windows_package(tmp_path, monkey
     p.write_bytes(b"Rar!\x1a\x07\x00" + b"\x00" * 600)
     with pytest.raises(ExtractionError, match="winget install 7zip"):
         safe_extract(str(p), str(tmp_path / "d"))
+
+
+# ------------------------------------------------------------ damaged input
+# A partial download from a forum host is the common case, not an attack. It
+# must surface as the package's own ExtractionError: a raw BadZipFile/EOFError
+# escapes every typed handler in the runner, is reported as an "internal
+# error", and skips the catalogue-alternate retry.
+def _deflated_zip_bytes():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mod/mod.tp2", "BACKUP ~mod/backup~\n" * 5000)
+    return buf.getvalue()
+
+
+def _corrupt_crc(data):
+    damaged = bytearray(data)
+    damaged[60] ^= 0xFF          # inside the first member's compressed body
+    return bytes(damaged)
+
+
+def _tgz_bytes():
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        payload = ("BACKUP ~mod/backup~\n" * 5000).encode()
+        info = tarfile.TarInfo("mod/mod.tp2")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("name,damage", [
+    ("truncated.zip", lambda: _deflated_zip_bytes()[:-40]),
+    ("bad-crc.zip", lambda: _corrupt_crc(_deflated_zip_bytes())),
+    ("truncated.tar.gz", lambda: _tgz_bytes()[: len(_tgz_bytes()) // 2]),
+])
+def test_a_damaged_archive_is_an_extraction_error(tmp_path, name, damage):
+    p = tmp_path / name
+    p.write_bytes(damage())
+    with pytest.raises(ExtractionError, match="damaged or incomplete"):
+        safe_extract(str(p), str(tmp_path / "d"))
