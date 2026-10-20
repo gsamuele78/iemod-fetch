@@ -10,6 +10,7 @@ Policy (ADR-0003):
   * retries honour Retry-After and never retry a deterministic 4xx.
 """
 import hashlib
+import math
 import os
 import random
 import shutil
@@ -174,9 +175,13 @@ class HttpClient:
         if not value:
             return None
         try:
-            return min(float(value), 300.0)
+            seconds = float(value)
         except (TypeError, ValueError):
+            return None          # an HTTP-date, or junk: fall back to backoff
+        # Server input: NaN or a negative value would make time.sleep raise.
+        if math.isnan(seconds):
             return None
+        return min(max(seconds, 0.0), 300.0)
 
     @staticmethod
     def _backoff(attempt: int) -> float:

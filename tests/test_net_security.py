@@ -194,6 +194,26 @@ def test_an_http_error_response_is_closed_not_leaked(fake_opener, status):
     assert bodies and all(b.closed for b in bodies)
 
 
+@pytest.mark.parametrize("header", ["-1", "nan", "-inf", "inf", "1e999", "soon"])
+def test_a_hostile_retry_after_becomes_a_sane_delay(fake_opener, header):
+    """Retry-After is server input. A negative or NaN value reached time.sleep,
+    which raises ValueError - escaping the retry loop as an internal error."""
+    slept = []
+    calls = {"n": 0}
+
+    def limited(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError(req.full_url, 503, "busy",
+                                         {"Retry-After": header}, None)
+        return FakeResponse(b'{"ok":true}')
+
+    fake_opener(default=limited)
+    client = HttpClient(retries=3, sleep=slept.append)
+    assert client.get_json("https://api.github.com/x") == {"ok": True}
+    assert len(slept) == 1 and 0.0 <= slept[0] <= 300.0
+
+
 def test_retry_after_is_honoured(fake_opener):
     slept = []
     calls = {"n": 0}
