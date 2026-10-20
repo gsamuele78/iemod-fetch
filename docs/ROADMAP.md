@@ -21,8 +21,8 @@ the suite on Python 3.9 and 3.14 via `uv`:
 
 | | Before | After |
 |---|---|---|
-| Tests | 586, **1 failing** | 638, all passing |
-| Branch coverage | 88% | 89% |
+| Tests | 586, **1 failing** | 670, all passing (1 Windows-only) |
+| Branch coverage | 88% | 90% |
 | ruff | **5 errors** (ISC004, new rule) | clean |
 | mypy | **config refused** by mypy 2.x (`python_version = 3.9`) | clean |
 | Python 3.14 (newest release, not in CI) | **4 failures** | passing, now in CI |
@@ -68,7 +68,14 @@ Compared against Born2BSalty's
 
 ### 2.1 Done in this revision
 
-See `CHANGELOG.md` § 2.1.0 — eleven defects, each with a test that failed first.
+See `CHANGELOG.md` § 2.1.0 — the defects, each with a test that failed first,
+and two features that close the path from logs to a running game:
+
+- **`--resolve-conflicts`** (was 2026-09-10 item E, `--fix-conflicts`): applied
+  to the plan, only where the rules decide, re-verified (ADR-0021).
+- **`--emit-installer`**: sh + cmd scripts handing the plan to mod_installer +
+  WeiDU, EET in one run (ADR-0022). Checked by executing the generated script
+  with the real mod_installer 16.0.0 binary and a recording stand-in WeiDU.
 
 ### 2.2 Next — fixes (defects known, not yet fixed)
 
@@ -78,6 +85,8 @@ See `CHANGELOG.md` § 2.1.0 — eleven defects, each with a test that failed fir
 | F2 | No download resume: a 1.5 GB mod cut at 95% restarts from zero (up to 3×). | `Range` resume with `If-Range` on the ETag, falling back to a full fetch on `200`; covered by a loopback test |
 | F3 | Two WeiDU folders served by one URL are downloaded twice, concurrently. | downloads are keyed by URL; one transfer, N installs |
 | F4 | `--force` moves the old folder to `.backup/` and the user's `stratagems.ini`/`cdtweaks.ini` stay behind. | an explicit per-mod `config_files` manifest list is carried over (never inferred) |
+| F5 | The installer path has never run real WeiDU against real game data in CI (no runner owns the games). | a self-hosted nightly job with legally owned BGEE/BG2EE installs a 5-mod EET plan and checks both `WeiDU.log` files against the plan |
+| F6 | mod_installer is a manual download. | `--emit-installer` names the pinned release and its sha256, and the script verifies the binary it is given |
 
 ### 2.3 Next — enhancements, highest value first
 

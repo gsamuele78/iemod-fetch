@@ -46,6 +46,8 @@ budget, and each item is there because a real failure argued for it.
                 archives  ·  auth
 ─────────────────────────────────────────────────────────
                   plan  ·  report                          ← functional
+                       installer
+                      resolution
                        conflicts
                         ordering
                          rules
@@ -82,6 +84,8 @@ Four contracts are enforced, and CI fails on a violation:
 | `rules.py` | order / incompatibility / dependency rules and the checker | one rule vocabulary, three upstream formats |
 | `ordering.py` | the install-order solver and the log writer | a topological sort is a function of its inputs |
 | `conflicts.py` | component-level findings with provenance and remedy | takes an `Install`, returns findings |
+| `resolution.py` | applies the remedies the rules decide to a plan (ADR-0021) | takes a plan and a report, returns what it removed and why |
+| `installer.py` | writes the sh/cmd scripts that hand a plan to mod_installer (ADR-0022) | text generation; never executes anything |
 | `plan.py` | which manifest entry serves which WeiDU folder | matching, not fetching |
 | `report.py` | the run report and its renderers | formatting is not I/O |
 | `config.py` | the INI file and the precedence rules | |

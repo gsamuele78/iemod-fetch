@@ -126,6 +126,13 @@ misconfigured helper hangs the helper and not the run.
 stages files; it does not sandbox, review, or vouch for mod content. Everything
 above protects the *fetching*. If you install a malicious mod, none of it helps.
 
+**The installer scripts.** `--emit-installer` writes `install-eet.sh` /
+`.cmd`; iemod-fetch never runs them, nor WeiDU, nor mod_installer. They are
+short and meant to be read before running. Running one executes every `.tp2`
+in the plan through WeiDU, with your user's rights, on the game folders you
+name — the same trust you extend to any mod you install by hand. mod_installer
+is a third-party binary (GPL-3.0); obtain it from its own releases page.
+
 **Upstream rule data.** BWS-NG, krion64 and LCC JSON is read as data and every
 value is coerced to a string before use. But their *claims* are theirs. The
 conflict report prints the upstream's own evidence grade precisely so that a

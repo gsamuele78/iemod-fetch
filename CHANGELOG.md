@@ -12,8 +12,8 @@ Python API, which is internal.
 
 A correctness and hardening release. No flag or report field changed meaning;
 two behaviours changed on purpose and are listed under *Changed*. Measured on
-the same machine before and after: 586 tests with 1 failing → 638 passing;
-branch coverage 88% → 89%; gate failures on a clean checkout 4 → 0; 11
+the same machine before and after: 586 tests with 1 failing → 670 passing;
+branch coverage 88% → 90%; gate failures on a clean checkout 4 → 0; 11
 defects fixed, each with a test written to fail first.
 
 ### Fixed
@@ -56,12 +56,34 @@ defects fixed, each with a test written to fail first.
   mypy 2.x refuses.
 
 ### Changed
+- BWS-NG-format rules keep an `evidenceLevel` / `source` when an entry carries
+  one, so a speculative claim is never resolved automatically.
+- README no longer says `pip install iemod-fetch`: the package is not on PyPI.
+  It is `pip install git+https://github.com/gsamuele78/iemod-fetch`.
 - A GitHub `403` with an exhausted quota now says so, with the reset time,
   instead of a bare "HTTP 403".
 - Asset selection prefers a package for the running platform; a log line with
   no mod folder now produces a mod instead of a warning.
 
 ### Added
+- **From WeiDU logs to a running game.** `--emit-installer` writes
+  `install-eet.sh` + `install-eet.cmd` (or `install.sh`/`.cmd` for one game)
+  beside the plan. They hand the planned logs to dark0dave's mod_installer +
+  WeiDU: BGEE first, then the EET core with the BGEE path, the EET mods, EET_end
+  last. Before anything runs they refuse a folder without `chitin.key`, a game
+  that already has mods, a missing WeiDU/mod_installer, and on Linux mixed-case
+  mod folders (mod_installer hands WeiDU lower-cased paths). Verified by running
+  the generated script with the real mod_installer 16.0.0 binary. iemod-fetch
+  never executes the scripts (ADR-0022).
+- **Automatic conflict resolution, where the rules decide.**
+  `--resolve-conflicts` removes from the plan the components an error-graded,
+  non-speculative incompatibility rule pins (the remedy the conflict report
+  already named), re-verifies the plan, and writes `RESOLUTION.json`. Whole-mod
+  pairs, same-mod option groups, missing dependencies and warnings are listed
+  for the operator, never decided (ADR-0021). Your own logs are never edited.
+- `--game-language` (default `en_US`) for the installer scripts.
+- README banner, contents, feature table and an end-to-end quick start; guide
+  chapter 10 (Windows and Linux); ADR-0021 and ADR-0022.
 - `tests/test_net_loopback.py`: the real HTTP stack against a stdlib server on
   `127.0.0.1` (technique adopted from Born2BSalty's Infinity Orchestrator).
 - Python 3.14 in the CI matrix and classifiers.

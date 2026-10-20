@@ -346,8 +346,12 @@ The default ceiling is 2 GiB because real mods reach it — BGGO is 1.4 GB.
   executed.
 * **Delete your work.** A destination directory is never removed; conflicts are
   reported and `--force` moves the old copy aside.
-* **Install mods.** WeiDU ordering and component selection stay with Infinity
-  Mod Forge.
+* **Run WeiDU itself.** It plans the order and, with `--emit-installer`,
+  writes a script that hands the plan to mod_installer (chapter 10). You read
+  the script and run it; iemod-fetch never executes it.
+* **Pick a side it was not told to.** `--resolve-conflicts` removes only what
+  an error-graded rule pins to components; every other conflict is listed for
+  you to decide.
 
 ---
 
@@ -458,7 +462,8 @@ false alarms in a mod-level checker.
 The plan is an **install order for a fresh install**. WeiDU applies changes in
 file order, so a game already installed does not become correctly ordered by
 overwriting its log — that would only make the log lie about the game. Feed the
-plan to mod_installer or Project Infinity and reinstall.
+plan to mod_installer or Project Infinity and reinstall — chapter 10
+generates the script that does it.
 
 The plan is also mod-granular, like Project Infinity's own sorting order. A rule
 that constrains one component of a mod against another component of the same mod
@@ -466,8 +471,127 @@ is reported, not solved.
 
 ---
 
+## 10. From plan to a running game: EET, BGEE or BG2EE, on Windows or Linux
+
+This chapter is the whole path for a **fresh** install: mods fetched, order
+planned, the conflicts the rules decide resolved, and one script that installs
+both games of an EET setup.
+
+### 10.1 What you need
+
+| | Where | Why |
+|---|---|---|
+| BGEE and BG2EE, **clean copies** | your store's install folder, copied | EET merges BGEE into BG2EE; the BG2EE copy becomes the EET game. Keep the originals |
+| SoD (optional) | part of BGEE | DlcMerger in the BGEE plan merges it first |
+| WeiDU | <https://github.com/WeiDUorg/weidu/releases> | the installer every mod uses |
+| mod_installer | <https://github.com/dark0dave/mod_installer/releases> (GPL-3.0) | runs WeiDU in plan order, both EET phases, answers prompts |
+| the two rule databases | chapter 9.1 | order + conflicts |
+
+**Linux: lower-case the mods.** mod_installer hands WeiDU lower-cased paths
+(`eet/eet.tp2`), so on a case-sensitive file system a mod shipped as `EET.TP2`
+is "not found" partway through the install. The script refuses mixed-case mods
+before anything runs. Either lower-case them as the last step before installing:
+
+```bash
+find Mods -depth -mindepth 1 -name '*[[:upper:]]*' -exec sh -c \
+  'for p; do d=${p%/*}; b=${p##*/}; mv -- "$p" "$d/$(printf %s "$b" | tr "[:upper:]" "[:lower:]")"; done' sh {} +
+```
+
+or, on an ext4 file system created with case-folding, pass
+`MOD_INSTALLER_ARGS=--casefold` and mod_installer marks the folders it copies
+case-insensitive. The game folders themselves need the usual WeiDU-on-Linux
+preparation (lower-case file names). Windows and macOS (case-insensitive by
+default) need neither.
+
+### 10.2 Fetch, plan, resolve, emit
+
+```bash
+# 1. fetch every mod your logs name into ./Mods (chapters 2-4)
+python3 -m iemod_fetch -m mod_downloads.json \
+    -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods
+
+# 2. plan the order, apply the conflict remedies the rules decide, write scripts
+python3 -m iemod_fetch --check-only -m mod_downloads.json \
+    -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods \
+    --rules BigWorldSetup-Next-Generation/data/rules \
+    --rules krion64.github.io/data/mods \
+    --order-catalogue krion64.github.io \
+    --plan-order ./plan --resolve-conflicts --emit-installer
+```
+
+`./plan/` now holds:
+
+| File | What it is |
+|---|---|
+| `WeiDU-BGEE.log` | what installs on BGEE before the merge, in order |
+| `WeiDU.log` | EET core first, then every EET mod, EET_end last |
+| `RESOLUTION.json` | every component `--resolve-conflicts` removed and why, and what it left for you |
+| `install-eet.sh` / `install-eet.cmd` | the installer for Linux/macOS and for Windows |
+
+Read the `CONFLICT RESOLUTION` block in the output. "Left for you to decide"
+means the rules say two things must not coexist but not which one goes: delete
+one of them from the plan's log, then re-run step 2 without `--resolve-conflicts`
+to re-check the edited plan.
+
+For a single game (BGEE-only or BG2EE-only) pass one log; you get `install.sh`
+and `install.cmd`, which take `GAME_DIR`.
+
+### 10.3 Run it
+
+Linux / macOS:
+
+```bash
+BGEE_DIR="$HOME/games/BGEE-clean" BG2EE_DIR="$HOME/games/EET" \
+WEIDU="$HOME/bin/weidu" MOD_INSTALLER="$HOME/bin/mod_installer" \
+DRY_RUN=1 sh ./plan/install-eet.sh       # prints the command; drop DRY_RUN to install
+```
+
+Windows (`cmd`):
+
+```bat
+set "BGEE_DIR=D:\Games\BGEE-clean"
+set "BG2EE_DIR=D:\Games\EET"
+set "WEIDU=D:\Tools\weidu.exe"
+set "MOD_INSTALLER=D:\Tools\mod_installer.exe"
+plan\install-eet.cmd
+```
+
+Before anything runs, the script refuses: a folder without `chitin.key`; a game
+that already has mods (`ALLOW_EXISTING=1` if you mean it); a missing WeiDU or
+mod_installer. Then mod_installer installs the BGEE log onto BGEE and the EET
+log onto BG2EE, handing EET's core the BGEE path, and stops at the first error.
+
+| Variable | Default | |
+|---|---|---|
+| `BGEE_DIR`, `BG2EE_DIR` / `GAME_DIR` | none | required |
+| `WEIDU` | `weidu` on PATH | |
+| `MOD_INSTALLER` | `mod_installer` on PATH | |
+| `MODS_DIR` | the `-t` directory, relative to the plan | |
+| `LANGUAGE` | `--game-language` (en_US) | |
+| `DRY_RUN=1` | off | print, do not run |
+| `ALLOW_EXISTING=1` | off | install over a modded game |
+| `ALLOW_MIXED_CASE=1` | off | skip the Linux lower-case check |
+| `MOD_INSTALLER_ARGS` | none | passed through, e.g. `--casefold` |
+
+### 10.4 What is and is not guaranteed
+
+* The plan satisfies every order rule it was checked against, or says
+  `NOT COMPLIANT`; the script then carries an `UNRESOLVED` warning at its top.
+* The script's arguments match mod_installer v16's command line, checked
+  against its source **and by running the generated script with the real
+  mod_installer 16.0.0 binary**, a stand-in WeiDU recording every call: the BGEE
+  log installed in the BGEE folder first, then the EET core, the EET mods and
+  EET_end in BG2EE. The shell script is executed by the test suite; the `.cmd`
+  script on the Windows CI runners.
+* **Not verified here:** an actual WeiDU install against real game data. No CI
+  runner owns the games. mod_installer itself labels its EET mode BETA.
+* A conflict no rule database knows about is not found. The databases are
+  community work; report what you find upstream.
+
+---
+
 * `README.md` — feature overview
 * `docs/AUDIT.md` — what was wrong with the original script, with evidence
-* `docs/ADR.md` — ADR-0001…0018, the design decisions and why
+* `docs/ADR.md` — ADR-0001…0022, the design decisions and why
 * `docs/PLAN.md` — three-phase audit / implementation / validation plan
 * `python3 -m iemod_fetch --help` — full flag reference

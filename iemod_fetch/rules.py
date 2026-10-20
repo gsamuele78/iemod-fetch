@@ -139,7 +139,11 @@ def parse_rule(entry: dict, kind: str, origin: str) -> Optional[Rule]:
         message = next(iter(translations.values()), "")
     return Rule(kind=kind, left=left, right=right,
                 severity=entry.get("severity") or "warning",
-                direction=entry.get("direction"), message=message, origin=origin)
+                direction=entry.get("direction"), message=message, origin=origin,
+                # BWS-NG rarely grades its claims, but an entry that does must
+                # keep the grade: automatic resolution refuses a speculative one.
+                evidence=str(entry.get("evidenceLevel") or ""),
+                source=str(entry.get("source") or ""))
 
 
 @dataclass(frozen=True)

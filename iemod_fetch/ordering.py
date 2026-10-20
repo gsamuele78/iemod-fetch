@@ -10,8 +10,9 @@ Three things this deliberately does NOT do, because each would be a guess:
 * It never invents, drops or edits a component. The plan contains exactly the
   components the input logs contain, spelled exactly as they were spelled.
 * It never resolves a hard incompatibility. Reordering cannot fix "these two
-  mods must not coexist"; only removing one can, and which one to lose is the
-  operator's decision, not the tool's.
+  mods must not coexist"; only removing one can. Where the rule itself pins the
+  side to remove, `resolution.resolve_conflicts` can do it on request
+  (ADR-0021); otherwise which one to lose is the operator's decision.
 * It never moves a mod between the pre-EET and the EET log on its own. That
   changes which game the mod is installed onto - a different install, not a
   reordering. It is reported, and only acted on with `reassign_phase=True`.
@@ -285,6 +286,16 @@ class OrderPlan:
             lines.extend(unit.render())
         return "\n".join(lines) + "\n"
 
+    def installs(self) -> List[Install]:
+        """The planned order, as the checker and the conflict report see a log."""
+        return [_as_install(units, role) for role, units in self.logs.items()]
+
+    def reverify(self, ruleset: RuleSet, context=None) -> None:
+        """Re-check the plan after it was edited (e.g. by conflict resolution)."""
+        findings = _verify(self, ruleset, context)
+        self.blockers = [v for v in findings if v.kind != "order"]
+        self.residual = [v for v in findings if v.kind == "order"]
+
     def write(self, directory: str) -> List[str]:
         os.makedirs(directory, exist_ok=True)
         written = []
@@ -496,9 +507,7 @@ def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
                                             [u.key for u in ordered]):
             plan.moved.append(Move(key, names[key], str(old), str(new), role))
 
-    findings = _verify(plan, ruleset, context)
-    plan.blockers = [v for v in findings if v.kind != "order"]
-    plan.residual = [v for v in findings if v.kind == "order"]
+    plan.reverify(ruleset, context)
     return plan
 
 
@@ -507,12 +516,15 @@ def _as_install(units: List[Unit], label: str) -> Install:
     install = Install(label=label)
     line = 0
     for unit in units:
-        for path, _lang, component, _comment in unit.lines:
+        for path, _lang, component, comment in unit.lines:
             folder = normalize_key(path.replace("\\", "/").split("/")[0])
+            label = comment.rsplit(" : ", 1)[0].strip() if comment else ""
             for key in dict.fromkeys((folder, unit.key)):
                 install.display.setdefault(key, unit.display)
                 install.components.setdefault(key, set()).add(component)
                 install.positions.setdefault(key, {}).setdefault(component, line)
+                if label:
+                    install.labels.setdefault(key, {}).setdefault(component, label)
             line += 1
     return install
 

@@ -851,3 +851,109 @@ both, and `import-linter` makes it a gate rather than an intention.
   core, because testing it well needs a network. That is the trade — the
   interesting logic is where the tests are strongest, and the untested part is
   the part with the least logic in it.
+
+---
+
+## ADR-0021 — Conflict resolution: only what the rules decide, only in the plan
+
+**Status**: accepted (amends ADR-0017's "an incompatibility is not resolved")
+**Date**: 2026-10-20
+
+### Context
+
+ADR-0018 made every finding name its narrowest remedy — "deselect stratagems
+#4115 (alternative: drop infinity_ui)". Operators then did by hand, for every
+finding, exactly what the report told them. Where the rule itself decides which
+side goes, that manual step adds nothing but typos. Where it does not, an
+automatic choice would be a guess with a delete key.
+
+The Infinity Orchestrator draws the same line: kinds such as `included`,
+`mismatch` and `not_compatible` disable a component automatically; `conflict` is
+only flagged. BWS-NG's own UI does the same.
+
+### Decision
+
+`--resolve-conflicts` (opt-in, requires `--plan-order`) removes components from
+the **plan** — never from the operator's logs — for a finding that is:
+
+1. an incompatibility,
+2. graded `error` by its rule set,
+3. not graded `speculative`,
+4. between two different mods,
+5. pinned to components on at least one side.
+
+The side removed is the one the report already names as cheaper (a pinned side
+is always cheaper than a wholesale one; between two pinned sides, the fewer
+components). Exactly the components the rule named and the plan contains are
+removed; a mod left with none leaves the plan.
+
+Everything else — whole mod vs whole mod, same-mod option groups, missing
+dependencies, warnings, speculative claims — is listed under "left for you to
+decide" with the reason, and the plan is re-verified afterwards. The decision
+record is written beside the plan as `RESOLUTION.json`.
+
+### Consequences
+
+- The input check still reports the conflict and still exits non-zero: the
+  operator's install has not changed. The plan has.
+- A mod key that names two tp2s in one folder (`eet`: EET and EET_end) is
+  refused rather than resolved, because which one the rule meant is ambiguous.
+- Tested both ways: each class of refusal has a test that it removes nothing.
+
+---
+
+## ADR-0022 — Installing the plan: generate scripts for mod_installer, never run them
+
+**Status**: accepted
+**Date**: 2026-10-20
+
+### Context
+
+The tool stopped at a planned `WeiDU.log` pair. Turning that into an installed
+EET game means running WeiDU against two game directories in order, batching
+consecutive components, answering prompts, and handing EET's core the BGEE
+path — then doing the same on Windows and Linux.
+
+That is solved. dark0dave's
+[mod_installer](https://github.com/dark0dave/mod_installer) (GPL-3.0) takes
+exactly such a log pair: `mod_installer eet -1 <BGEE> -y <bgee log> -2 <BG2EE>
+-z <eet log>`. Born2BSalty's Infinity Orchestrator builds no WeiDU command line
+of its own; it writes the logs and runs mod_installer. Reading mod_installer's
+source showed one hard requirement: it recognises the EET core by the log
+comment `EET core (resource importation)`, and only then passes the BGEE path.
+
+### Decision
+
+`--emit-installer` writes `install-eet.sh` + `install-eet.cmd` (or `install.sh`
++ `install.cmd` for a single game) next to the plan. Each script:
+
+- refuses a directory without `chitin.key`, and a game that already has mods
+  (`ALLOW_EXISTING=1` overrides) — a plan is for a fresh install (ADR-0017);
+- resolves mod_installer and WeiDU, or says which one is missing;
+- makes one mod_installer call, with `DRY_RUN=1` to print it instead.
+
+At generation time the plan is checked for what would otherwise fail forty
+minutes in: the EET core's comment, EET_end last, and every mod folder present
+in the staging directory.
+
+**iemod-fetch never executes the scripts, WeiDU or mod_installer.** ADR-0006
+("nothing downloaded is executed") stays literally true; the operator reads and
+runs a 40-line script. mod_installer is invoked, never vendored, so its GPL
+does not reach this MIT repository.
+
+### Consequences
+
+- The full path is: fetch → `--plan-order --resolve-conflicts --emit-installer`
+  → run one script → play. Same artefacts on Windows and Linux.
+- The shell script is executed in the test suite against a stand-in
+  mod_installer; the `.cmd` script is executed on the Windows CI runners.
+- Verified against the real thing: the generated `install-eet.sh` was run with
+  the mod_installer 16.0.0 binary built from source and a stand-in WeiDU that
+  records its calls. mod_installer installed the BGEE log in the BGEE folder,
+  then the EET core, the EET mods and EET_end in BG2EE — and passed WeiDU
+  lower-cased paths (`eet/eet.tp2`). That last fact is why the Linux script
+  refuses mixed-case mods before anything runs, unless `--casefold` is passed.
+- **What is not verified here:** a real WeiDU install against real game data.
+  That needs the games, which no CI runner has.
+- mod_installer marks its EET mode BETA. That is its maturity, inherited
+  honestly, and the guide says so.

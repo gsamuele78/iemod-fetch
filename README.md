@@ -1,15 +1,85 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="iemod-fetch: Infinity Engine mods for EET, BGEE and BG2EE, fetched, verified, ordered, conflict-checked and installed, without guessing" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/gsamuele78/iemod-fetch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gsamuele78/iemod-fetch/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/gsamuele78/iemod-fetch/actions/workflows/security.yml"><img alt="Security" src="https://github.com/gsamuele78/iemod-fetch/actions/workflows/security.yml/badge.svg"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-blue"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="docs/ARCHITECTURE.md"><img alt="Runtime dependencies: 0" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-informational">
+  <img alt="Games" src="https://img.shields.io/badge/games-EET%20%7C%20BGEE%20%7C%20BG2EE-8a5a2b">
+</p>
+
+<p align="center">
+  <b><a href="#from-weidu-logs-to-a-running-eet-game">Quick start</a></b> ·
+  <a href="docs/GUIDE.md">User guide</a> ·
+  <a href="#what-it-guarantees">Guarantees</a> ·
+  <a href="docs/ADR.md">Design decisions</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a>
+</p>
+
 # iemod-fetch
 
-[![CI](https://github.com/gsamuele78/iemod-fetch/actions/workflows/ci.yml/badge.svg)](https://github.com/gsamuele78/iemod-fetch/actions/workflows/ci.yml)
-[![Security](https://github.com/gsamuele78/iemod-fetch/actions/workflows/security.yml/badge.svg)](https://github.com/gsamuele78/iemod-fetch/actions/workflows/security.yml)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](docs/ARCHITECTURE.md)
+Turns two `WeiDU.log` files (what you want installed) and a `mod_downloads.json`
+catalogue (where to get it) into a **running EET, BGEE or BG2EE install**. It
+downloads and verifies every mod, plans a rule-compliant install order, removes
+the components the community rule sets say must go, and writes one script that
+installs everything with WeiDU on Windows or Linux. It never guesses: whatever
+the evidence does not decide is reported to you, with the reason.
 
-Downloads and stages Infinity Engine mods for WeiDU / Project Infinity, driven by
-a `WeiDU.log` (what you want installed) and a `mod_downloads.json` catalogue
-(where to get it) — then plans a rule-compliant install order and reports which
-component fights which. Standard library only at runtime.
+Standard library only at runtime. One file, no dependencies.
+
+| Step | What happens | Flag |
+|---|---|---|
+| **Fetch** | resolves each mod from its catalogue entry, GitHub release or trusted owner; refuses an HTML page served as an archive | *(default)* |
+| **Verify** | magic bytes, size and ratio limits, path-traversal checks, the mod's own `.tp2`, pinned `sha256` | *(always)* |
+| **Order** | sorts every component against the BWS-NG and krion64 rule data, then re-checks the result | `--plan-order DIR` |
+| **Resolve** | removes the components an error-graded incompatibility rule pins; lists the rest for you | `--resolve-conflicts` |
+| **Install** | `install-eet.sh` / `.cmd`: hands both logs to [mod_installer](https://github.com/dark0dave/mod_installer) + WeiDU, BGEE first, then EET | `--emit-installer` |
+
+## Contents
+
+- [From WeiDU logs to a running EET game](#from-weidu-logs-to-a-running-eet-game)
+- [Install](#install)
+- [Checking the install](#checking-the-install)
+- [Making it reproducible](#making-it-reproducible)
+- [Supplementary catalogues](#supplementary-catalogues)
+- [Planning the install order](#planning-the-install-order)
+- [What it guarantees](#what-it-guarantees) · [What it deliberately does not do](#what-it-deliberately-does-not-do)
+- [Development](#development) · [Documentation](#documentation)
+
+## From WeiDU logs to a running EET game
+
+```bash
+# 0. the rule databases (once)
+git clone --depth 1 https://github.com/Selphira/BigWorldSetup-Next-Generation.git
+git clone --depth 1 https://github.com/krion64/krion64.github.io.git
+
+# 1. fetch and verify every mod the logs name
+python3 -m iemod_fetch -m mod_downloads.json \
+    -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods
+
+# 2. plan the order, resolve what the rules decide, write the installer
+python3 -m iemod_fetch --check-only -m mod_downloads.json \
+    -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods \
+    --rules BigWorldSetup-Next-Generation/data/rules \
+    --rules krion64.github.io/data/mods --order-catalogue krion64.github.io \
+    --plan-order ./plan --resolve-conflicts --emit-installer
+
+# 3. install onto CLEAN copies of both games (needs WeiDU + mod_installer)
+BGEE_DIR=~/games/BGEE BG2EE_DIR=~/games/EET sh ./plan/install-eet.sh
+#   Windows:  set BGEE_DIR=... & set BG2EE_DIR=... & plan\install-eet.cmd
+```
+
+Step 3 refuses a folder that is not a game, a game that already has mods, and
+(on Linux) mixed-case mod folders, before anything runs. `DRY_RUN=1` prints the
+command instead of running it. One game only? Pass one log and run
+`install.sh` / `install.cmd` with `GAME_DIR`. The full walk-through, including
+what to download and what is not guaranteed, is
+[chapter 10 of the guide](docs/GUIDE.md#10-from-plan-to-a-running-game-eet-bgee-or-bg2ee-on-windows-or-linux).
 
 It replaces `fetch_mod_extended_final_complete_ultimo4.py`. See `docs/AUDIT.md`
 for why, `docs/ADR.md` for the design decisions, `docs/GUIDE.md` to use it.
@@ -21,8 +91,8 @@ for why, `docs/ADR.md` for the design decisions, `docs/GUIDE.md` to use it.
 python3 build.py            # -> ./iemod-fetch.pyz
 ./iemod-fetch.pyz --help    # POSIX;  py iemod-fetch.pyz --help  on Windows
 
-# Or as a package.
-pip install iemod-fetch     # then: iemod-fetch --help
+# Or as a package, straight from the repository (it is not on PyPI yet).
+pip install git+https://github.com/gsamuele78/iemod-fetch   # then: iemod-fetch --help
 ```
 
 ### Verifying a release download
@@ -43,7 +113,7 @@ source tree and `tests/test_build_zipapp.py` runs against the built archive.
 **New here? Read `docs/GUIDE.md`** — a step-by-step runbook for the real
 workflow (prepare catalogue → dry run → fetch → pin → hand to IMF).
 
-## Quick start
+## Fetching only (for Infinity Mod Forge / Project Infinity)
 
 ```bash
 # 1. see what would happen - writes nothing
@@ -243,21 +313,24 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
   link-on-the-page. Unresolvable mods are reported with a reason and a suggestion.
 * **Run installers.** `.exe` files are unpacked only with `--allow-exe`, and are
   never executed.
-* **Install mods.** It produces verified mod folders, and — with `--plan-order` —
-  the order to install them in. Running WeiDU stays with Infinity Mod Forge or
-  mod_installer.
+* **Run WeiDU itself.** It produces verified mod folders, the order to install
+  them in and — with `--emit-installer` — a script that hands both to
+  mod_installer. You read the script and run it; iemod-fetch never executes
+  WeiDU, mod_installer or the script (ADR-0022).
 * **Fix an installed game.** `--plan-order` writes an install plan for a FRESH
   install. WeiDU installs in file order; changing the order after the fact means
   reinstalling.
-* **Resolve an incompatibility.** Reordering cannot make two mods that must not
-  coexist coexist. Those are reported; which one to drop is your call.
+* **Pick a side it was not told to.** `--resolve-conflicts` removes only the
+  components an error-graded, non-speculative rule pins. "Not both" with no
+  side named, same-mod option groups, missing dependencies: reported, your call
+  (ADR-0021). Your own logs are never edited — only the plan.
 
 ## Layout
 
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           638 offline tests: characterization, example, property-based, loopback
+tests/           670 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -268,7 +341,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 638 passed, no network, ~13s
+python3 -m pytest -q      # 669 passed + 1 Windows-only, no network, ~14s
 ```
 
 ## Planning the install order
@@ -288,7 +361,10 @@ python3 -m iemod_fetch --check-only \
 
 Writes `plan/WeiDU.log` and `plan/WeiDU-BGEE.log`: the same components you have,
 sorted so every order rule is satisfied, and then checked against those rules
-before the claim is made. `--reassign-phase` also moves a mod between the two
+before the claim is made. Add `--resolve-conflicts` to drop the components the
+rules decide must go, and `--emit-installer` for the install scripts (see
+[the quick start](#from-weidu-logs-to-a-running-eet-game)).
+`--reassign-phase` also moves a mod between the two
 logs when the catalogue says it belongs to the other install phase — off by
 default, because that changes which game the mod installs onto.
 
@@ -301,7 +377,8 @@ for the full machine-readable version, `--show-advisories` for the unverified
 observations withheld by default.
 
 See ADR-0016 for why both databases are used, ADR-0017 for what the plan does and
-does not promise, and ADR-0018 for how conflicts are narrowed to components.
+does not promise, ADR-0018 for how conflicts are narrowed to components,
+ADR-0021 for what is resolved automatically and ADR-0022 for the installer.
 
 ## Development
 
@@ -317,9 +394,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 638, offline, ~13 s |
-| Branch coverage | 89% (floor 85%) |
-| mypy | clean, 27 modules |
+| Tests | 670, offline, ~14 s |
+| Branch coverage | 90% (floor 85%) |
+| mypy | clean, 29 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 4, all kept |
