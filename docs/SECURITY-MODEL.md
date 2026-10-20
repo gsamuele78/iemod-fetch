@@ -84,9 +84,18 @@ Extracting one entry at a time and re-resolving keeps them the same fact, and
 costs nothing measurable.
 
 External tools (7-Zip, WinRAR) are used for `.rar` and `.7z`. They are invoked
-with an argument **list**, never a shell string, never with remote input in the
-argv, and their output is extracted into a scratch directory that is then walked
-by the same audit as everything else.
+with an argument **list**, never a shell string, and their output is extracted
+into a scratch directory that is then walked by the same audit as everything
+else. Since 2.1.0 the archive is first **listed** with `7z l -slt` and held to
+the zip/tar rules — member names, entry count, total size — before the
+unpacker writes anything. Without 7-Zip there is no listing, and the
+post-extraction audit is what remains.
+
+The archive's own file name is remote input too (a `Content-Disposition`
+header, or a URL path). It is reduced to one safe path component, splitting on
+both `/` and `\`, before it is joined onto the work directory; anything else
+becomes `<folder>.bin`, which is harmless because the type is identified by
+magic bytes.
 
 ## Boundary 4 — writing to disk
 

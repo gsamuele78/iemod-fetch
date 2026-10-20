@@ -13,7 +13,7 @@ actually hurt this project was a case nobody thought of:
 - `compare("master", "main")` returning 1 — and `compare("main", "master")`
   returning 1 as well.
 
-None of those would have been written as an example. Six techniques are used
+None of those would have been written as an example. Seven techniques are used
 here, each aimed at a class of defect the others cannot see.
 
 ## 1. Characterization tests — pinning the original's behaviour
@@ -107,6 +107,23 @@ matter", which is why it reports rather than blocks.
 This is also why the coverage floor is 85 and not 100. A number above what the
 code honestly reaches turns into tests written to touch lines.
 
+## 7. Loopback socket tests — the real HTTP stack
+
+`tests/test_net_loopback.py` runs a stdlib `http.server` on `127.0.0.1` and
+points the real client at it: real `urllib`, real `http.client`, real sockets.
+Still offline — nothing leaves the loopback interface.
+
+Every other network test uses a hand-written double, and a double encodes what
+its author *believes* the library does. The first loopback run disproved one
+such belief: `http.client`'s `read(n)` does **not** raise on a body cut short
+of its `Content-Length` — it returns what arrived, then `b""`. A connection
+dropped mid-transfer was being accepted as a complete download whose first
+bytes even carried the right magic number. No double would have shown it,
+because the double was written to raise `IncompleteRead`.
+
+Borrowed from the download tests of Born2BSalty's Infinity Orchestrator, which
+serve fixtures over a loopback TCP listener for the same reason.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
@@ -143,8 +160,8 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 586 |
-| Branch coverage | 88% (floor: 85%) |
+| Tests | 637 |
+| Branch coverage | 89% (floor: 85%) |
 | Architecture contracts | 4, all kept |
 | mypy | clean, 27 modules |
 | ruff | clean |

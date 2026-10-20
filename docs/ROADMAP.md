@@ -4,11 +4,123 @@ Three phases, in the order this project's own delivery discipline requires:
 **assess what is actually true, then build, then prove it.** Each item says what
 "done" means, because a roadmap entry without a completion test is a wish.
 
-Status as of the repository-readiness revision (2026-09-10).
+Status as of the 2.1.0 hardening revision (2026-10-20). The 2026-09-10
+repository-readiness revision follows it, unchanged, as the record of where
+this started.
 
 ---
 
-## Phase 1 — Audit and assessment
+# Revision 2026-10-20 — v2.1.0
+
+## Phase 1 — Audit
+
+### 1.1 Measured, before and after
+
+Same machine, same commands (`make check`, `make cover`, `make audit`), plus
+the suite on Python 3.9 and 3.14 via `uv`:
+
+| | Before | After |
+|---|---|---|
+| Tests | 586, **1 failing** | 637, all passing |
+| Branch coverage | 88% | 89% |
+| ruff | **5 errors** (ISC004, new rule) | clean |
+| mypy | **config refused** by mypy 2.x (`python_version = 3.9`) | clean |
+| Python 3.14 (newest release, not in CI) | **4 failures** | passing, now in CI |
+| Python 3.9 | passing | passing |
+| bandit / architecture contracts | clean / 4 kept | clean / 4 kept |
+| Defects open that this revision found | 11 | 0 |
+
+**The honest reading:** the September revision ticked "every gate passes from a
+clean clone". A clean clone a month later failed four gates without a line of
+code changing — an unpinned linter, a type checker dropping a Python version,
+and an interpreter (3.12+) whose new warning met `-W error`. "Green" is a
+statement about a toolchain on a date, not about the code.
+
+### 1.2 What the comparison found
+
+Compared against Born2BSalty's
+[Infinity Orchestrator](https://github.com/Born2BSalty/Born2BSaltys_Infinity_Orchestrator)
+(Rust, the closest tool in this domain) and the maintainer's own repositories.
+
+- **The Orchestrator is weaker where iemod-fetch is strongest.** It picks the
+  archive format from the extension, has no decompression-bomb limits and skips
+  bad member names silently. Nothing to port from its extraction code.
+- **It is stronger on packaging reality**, and four of its ideas were adopted
+  in this revision as fixes: folding a root-level `setup-<mod>.tp2` into its
+  folder; WeiDU's `win-`/`lin-`/`osx-` asset prefixes; naming GitHub rate-limit
+  exhaustion; and loopback socket tests — which immediately found the most
+  serious defect of the revision (a truncated download accepted as complete).
+- **The maintainer's other repositories** (`AiAgentInfrastructure`,
+  `linux-file-librarian`, `biological-data-validator`) have a weaker CI than
+  this one. The one practice worth taking is `AiAgentInfrastructure`'s scheduled
+  functional job against the real network — which is item 2.2-A below, already
+  planned.
+
+### 1.3 Assumptions
+
+- Python 3.9 stays supported although it is past end-of-life (October 2025):
+  the operator's game machine decides, not the developer's. Dropping it is a
+  major-version decision (see 2.3).
+- 7-Zip-dependent behaviour was verified against 7-Zip 23.01 on Linux; the
+  Windows `7z.exe` listing format is assumed identical (same codebase).
+
+## Phase 2 — Implementation
+
+### 2.1 Done in this revision
+
+See `CHANGELOG.md` § 2.1.0 — eleven defects, each with a test that failed first.
+
+### 2.2 Next — fixes (defects known, not yet fixed)
+
+| ID | Defect | Done when |
+|---|---|---|
+| F1 | WeiDU writes `// Name: v17.1` (unspaced colon); only the IMF spelling `Name : v17.1` yields a version. No consumer reads it today, so a heuristic parse would add risk for nothing. | a consumer exists **and** the tail is matched against a strict version grammar with negative fixtures from the real logs (`Margarita for BG: Enhanced Edition`, `Main Portraits: Vanilla`) |
+| F2 | No download resume: a 1.5 GB mod cut at 95% restarts from zero (up to 3×). | `Range` resume with `If-Range` on the ETag, falling back to a full fetch on `200`; covered by a loopback test |
+| F3 | Two WeiDU folders served by one URL are downloaded twice, concurrently. | downloads are keyed by URL; one transfer, N installs |
+| F4 | `--force` moves the old folder to `.backup/` and the user's `stratagems.ini`/`cdtweaks.ini` stay behind. | an explicit per-mod `config_files` manifest list is carried over (never inferred) |
+
+### 2.3 Next — enhancements, highest value first
+
+| ID | Enhancement | Source | Never-guess check |
+|---|---|---|---|
+| E1 | **Archive cache keyed by sha256.** Archives are deleted after install; a failed run or `--refresh` re-downloads everything. Keep them, reuse only on a recorded or pinned hash. | Orchestrator `archive_skip.rs` | reuse by name alone is forbidden |
+| E2 | **Staleness probe** for landing-page and direct links (HEAD, then `Range: bytes=0-0`; compare ETag → Last-Modified → size). | Orchestrator `probe_remote_file` | facts from the server, not inferred |
+| E3 | **Ordered `asset_prefer` list** in the manifest, for releases the platform prefix does not disambiguate. | Orchestrator `pkg_windows`/`pkg_linux` | explicit, per mod |
+| E4 | **Cache GitHub release lists** with a TTL, to stay under the 60/h anonymous quota on a 148-mod run. | Orchestrator `github_release_list.rs` | — |
+| E5 | **`AGENTS.md`** stating the never-guess rule, with a test that it exists and names `CONTRIBUTING.md`. AI-assisted contributions are now the norm. | `AiAgentInfrastructure/tests/agents-md` | — |
+| E6 | **Drop Python 3.9** (v3.0.0): unlocks `X \| Y` types and lets mypy check the real floor. | — | breaking; needs an operator survey first |
+
+The 2026-09-10 items below (A–F) remain open and keep their priority; A (live
+GitHub API contract tests) is still the largest untested surface.
+
+## Phase 3 — Validation
+
+### 3.1 How this revision was validated
+
+- Every fix: the test was written first and **observed failing** for the stated
+  reason before the code changed (the 7z preflight additionally against a real
+  7-Zip 23.01, because a header line in its listing would have rejected every
+  legitimate 7z).
+- Full suite on Python 3.9, 3.13 and 3.14; ruff, mypy, import-linter, bandit.
+- One regression introduced and caught inside the revision: the connection-leak
+  fix called `HTTPError.close()`, which raises on Python 3.9 for an error built
+  without a body. The 3.9 run caught it before commit.
+
+### 3.2 Acceptance for v2.1.0
+
+- [x] All gates green on 3.9, 3.13, 3.14
+- [x] Each `Fixed` entry in the changelog has a test that was seen failing first
+- [x] No runtime dependency added (ADR-0002)
+- [ ] CI green on the pull request across the 3-OS matrix (Windows is where the
+      `..\` file-name fix matters most)
+- [ ] Tag `v2.1.0` pushed after merge, release attestation verified
+
+---
+
+# Revision 2026-09-10 — repository readiness
+
+
+## Phase 1 — Audit and assessment (2026-09-10)
 
 ### 1.1 What was measured
 
