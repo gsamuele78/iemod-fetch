@@ -30,6 +30,7 @@ forty minutes into an install:
 * EET_end, when present, is the last thing installed on the EET game.
 """
 import os
+import re
 import stat
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -106,7 +107,8 @@ def build_installer(plan, mods_relpath: str, mods_dir: Optional[str] = None,
     Turn an ordering.OrderPlan into installer scripts.
 
     `mods_relpath` is where the staged mods are, relative to the directory the
-    scripts are written to; `mods_dir`, when given, is checked for every mod
+    scripts are written to - or absolute, when no relative path exists (a
+    different Windows drive); `mods_dir`, when given, is checked for every mod
     the plan installs.
     """
     problems: List[str] = []
@@ -165,10 +167,16 @@ def _sh_banner(unresolved: bool) -> str:
     return text
 
 
+def _is_absolute(path: str) -> bool:
+    """POSIX or Windows absolute, whatever OS generates the script."""
+    return path.startswith("/") or bool(re.match(r"^[A-Za-z]:[\\/]", path))
+
+
 def _sh_common(mods_relpath: str, language: str) -> str:
+    mods = mods_relpath if _is_absolute(mods_relpath) else f"$HERE/{mods_relpath}"
     return f"""set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-MODS_DIR="${{MODS_DIR:-$HERE/{mods_relpath}}}"
+MODS_DIR="${{MODS_DIR:-{mods}}}"
 MOD_INSTALLER="${{MOD_INSTALLER:-mod_installer}}"
 WEIDU="${{WEIDU:-$(command -v weidu || true)}}"
 LANGUAGE="${{LANGUAGE:-{language}}}"
@@ -261,8 +269,9 @@ def _cmd_banner(unresolved: bool) -> str:
 
 def _cmd_common(mods_relpath: str, language: str) -> str:
     rel = mods_relpath.replace("/", "\\")
+    mods = rel if _is_absolute(mods_relpath) else f"%HERE%{rel}"
     return f"""set "HERE=%~dp0"
-if not defined MODS_DIR set "MODS_DIR=%HERE%{rel}"
+if not defined MODS_DIR set "MODS_DIR={mods}"
 if not defined MOD_INSTALLER set "MOD_INSTALLER=mod_installer.exe"
 if not defined WEIDU for /f "delims=" %%W in ('where weidu.exe 2^>nul') do if not defined WEIDU set "WEIDU=%%W"
 if not defined LANGUAGE set "LANGUAGE={language}"

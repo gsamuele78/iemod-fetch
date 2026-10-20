@@ -356,9 +356,12 @@ def _emit_installer(args, plan, stream) -> None:
     """Write the scripts that hand the plan to mod_installer (ADR-0022)."""
     target = os.path.abspath(args.target)
     plan_dir = os.path.abspath(args.plan_order)
-    installer = build_installer(
-        plan, mods_relpath=os.path.relpath(target, plan_dir).replace(os.sep, "/"),
-        mods_dir=target, language=args.game_language)
+    try:
+        mods_ref = os.path.relpath(target, plan_dir)
+    except ValueError:            # Windows: the mods and the plan on different drives
+        mods_ref = target
+    installer = build_installer(plan, mods_relpath=mods_ref.replace(os.sep, "/"),
+                                mods_dir=target, language=args.game_language)
     written = installer.write(plan_dir)
     if args.quiet:
         return

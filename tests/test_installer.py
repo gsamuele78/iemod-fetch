@@ -294,3 +294,29 @@ def test_cli_game_language_reaches_the_script(tmp_path):
                         "--emit-installer", "--game-language", "it_IT"])
     assert code == 0
     assert 'LANGUAGE="${LANGUAGE:-it_IT}"' in (out / "install-eet.sh").read_text()
+
+
+# Mods on D:, plan on C: - os.path.relpath raises, and the plan must still be
+# installable. Found by the Windows CI runner, whose checkout is on D:.
+def test_an_absolute_mods_location_is_used_as_is(tmp_path, index):
+    installer = build_installer(eet_plan(tmp_path, index), mods_relpath="D:/Games/Mods")
+    assert 'MODS_DIR="${MODS_DIR:-D:/Games/Mods}"' in installer.scripts["install-eet.sh"]
+    assert 'set "MODS_DIR=D:\\Games\\Mods"' in installer.scripts["install-eet.cmd"]
+
+
+def test_cli_falls_back_to_an_absolute_path_across_drives(tmp_path, monkeypatch):
+    from iemod_fetch import cli
+
+    def other_drive(*_args):
+        raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+    monkeypatch.setattr(cli.os.path, "relpath", other_drive)
+    out = tmp_path / "plan"
+    code, _text = _cli(["--check-only", "-q",
+                        "-m", os.path.join(HERE, "data", "mod_downloads.json"),
+                        "-w", f"{REAL_EET}:EET", "-w", f"{REAL_BGEE}:BGEE",
+                        "--order-catalogue", KRION, "-t", str(tmp_path / "Mods"),
+                        "--plan-order", str(out), "--emit-installer"])
+    assert code == 0
+    mods = str(tmp_path / "Mods").replace(os.sep, "/")
+    assert f'MODS_DIR="${{MODS_DIR:-{mods}}}"' in (out / "install-eet.sh").read_text()
