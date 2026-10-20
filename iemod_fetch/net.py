@@ -9,7 +9,9 @@ Policy (ADR-0003):
     content sniffing and (when known) sha256 before anything is extracted;
   * retries honour Retry-After and never retry a deterministic 4xx.
 """
+import errno
 import hashlib
+import http.client
 import math
 import os
 import random
@@ -49,6 +51,9 @@ DEFAULT_MAX_BYTES = 2 * 1024 ** 3          # 2 GiB; real mods reach 1.5 GB
 DEFAULT_TIMEOUT = 45
 _CHUNK = 64 * 1024
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+# Errors from the local filesystem, which no amount of retrying will fix.
+_LOCAL_ERRNOS = {errno.ENOSPC, errno.EACCES, errno.EPERM, errno.EROFS,
+                 errno.ENAMETOOLONG, getattr(errno, "EDQUOT", errno.ENOSPC)}
 
 
 def host_of(url: str) -> str:
@@ -161,7 +166,14 @@ class HttpClient:
                 if exc.code not in _RETRYABLE_STATUS:
                     raise HttpStatusError(url, exc.code, exc.reason or "") from exc
                 delay = self._retry_after(exc) or self._backoff(attempt)
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
+                    http.client.HTTPException) as exc:
+                # IncompleteRead - a transfer cut short - is an HTTPException,
+                # not an OSError, and is the commonest failure on forum hosts.
+                # A local disk or permission error is not transient: retrying
+                # it only downloads the whole file again to fail the same way.
+                if isinstance(exc, OSError) and exc.errno in _LOCAL_ERRNOS:
+                    raise
                 last = exc
                 delay = self._backoff(attempt)
             if attempt == self.retries:

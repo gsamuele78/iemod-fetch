@@ -158,6 +158,51 @@ def test_transient_5xx_is_retried_then_succeeds(fake_opener, tmp_path):
     assert calls["n"] == 3
 
 
+class _TruncatedResponse(FakeResponse):
+    """The connection closes before Content-Length bytes arrived."""
+
+    def read(self, *_a):
+        import http.client
+        raise http.client.IncompleteRead(b"PK\x03\x04partial", 4096)
+
+
+def test_a_truncated_transfer_is_retried_not_an_internal_error(fake_opener, tmp_path):
+    """IncompleteRead is an HTTPException, not an OSError: it escaped the retry
+    loop and reached the runner as an 'internal error' on the first flaky host."""
+    calls = {"n": 0}
+
+    def flaky(req):
+        calls["n"] += 1
+        return _TruncatedResponse(b"") if calls["n"] == 1 else FakeResponse(_zip_bytes())
+
+    fake_opener(default=flaky)
+    client = HttpClient(retries=3, sleep=lambda *_: None)
+    assert client.download("https://x.example/m.zip", str(tmp_path / "m.zip")).size > 0
+    assert calls["n"] == 2
+
+
+def test_a_full_disk_is_not_retried(fake_opener, tmp_path, monkeypatch):
+    """Retrying a local ENOSPC re-downloads the whole file to fail the same way."""
+    import errno
+    calls = {"n": 0}
+
+    def ok(req):
+        calls["n"] += 1
+        return FakeResponse(_zip_bytes())
+
+    def full(_fd):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    fake_opener(default=ok)
+    monkeypatch.setattr("iemod_fetch.net.os.fsync", full)
+    with pytest.raises(OSError) as caught:
+        HttpClient(retries=3, sleep=lambda *_: None).download(
+            "https://x.example/m.zip", str(tmp_path / "m.zip"))
+    assert caught.value.errno == errno.ENOSPC
+    assert calls["n"] == 1
+    assert not (tmp_path / "m.zip.part").exists()
+
+
 def test_deterministic_404_is_not_retried(fake_opener):
     calls = {"n": 0}
 
