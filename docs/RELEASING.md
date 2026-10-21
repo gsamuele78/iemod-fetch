@@ -54,9 +54,31 @@ with that token starts no workflow, so creating the tag elsewhere would leave
 nothing to build it. A version that is already tagged is skipped, which makes
 re-runs and edits to old changelog sections harmless.
 
+**When nothing shipped has changed** since the version commit (only CI, docs,
+tests), the head of `main` is tagged instead: the artifacts are identical, and
+it is the one commit `GITHUB_TOKEN` is always allowed to tag.
+
 **An older version without a release** (v2.1.0 was merged before this
-existed): *Actions → Release → Run workflow*, with `version` = `2.1.0`. It is
-released on its own merge commit and not marked "latest".
+existed) sits on a commit whose workflow files differ from `main`'s, and
+`GITHUB_TOKEN` can never create such a tag (it cannot hold the `workflows`
+permission). The workflow stops at the planning step and says so. Two ways
+out, either is enough:
+
+```bash
+# A. push the tag yourself...
+git tag -a v2.1.0 -m "2.1.0" 0173b5d && git push origin v2.1.0
+```
+
+...then *Actions → Release → Run workflow* with `version` = `2.1.0`: an
+existing tag named explicitly is released on its own commit with today's
+workflow. (The tag push itself starts the workflow file of the tagged commit,
+which for 0173b5d is the old one that cannot run; that run fails and can be
+ignored.)
+
+B. Or add a repository secret `RELEASE_TOKEN` (a fine-grained token with
+*Contents* and *Workflows* write on this repository only), then *Actions →
+Release → Run workflow* with `version` = `2.1.0`. Either way it is not marked
+"latest".
 
 **A tag pushed by hand** still works: that exact commit is released.
 
