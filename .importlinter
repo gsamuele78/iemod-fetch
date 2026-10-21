@@ -144,9 +144,10 @@ layers =
     iemod_fetch.resolution | iemod_fetch.languages
     iemod_fetch.simulate | iemod_fetch.constraints | iemod_fetch.gamedir
     iemod_fetch.conflicts
+    iemod_fetch.limits
     iemod_fetch.ordering
     iemod_fetch.rules
-    iemod_fetch.available | iemod_fetch.bio | iemod_fetch.pi | iemod_fetch.limits
+    iemod_fetch.available | iemod_fetch.bio | iemod_fetch.pi
     iemod_fetch.manifest | iemod_fetch.catalogues | iemod_fetch.moddb | iemod_fetch.selection | iemod_fetch.freshness | iemod_fetch.decisions
     iemod_fetch.weidu | iemod_fetch.tp2 | iemod_fetch.modmeta | iemod_fetch.versions
     iemod_fetch.urls

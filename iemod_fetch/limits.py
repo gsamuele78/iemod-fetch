@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .naming import normalize_key
+from .ordering import tp2_key
 
 WARN_SHARE = 0.9          # warn when 90% of a table is used
 
@@ -126,21 +127,35 @@ class LimitsReport:
 
 
 def _index(records: Iterable[dict]) -> Dict[str, Dict[int, dict]]:
-    """krion64 records -> tp2 key -> component number -> component."""
+    """
+    krion64 records -> tp2 key -> component number -> component.
+
+    Each component is filed under the tp2 its `wp` names - one folder can hold
+    several tp2s (eet/EET.tp2 and eet/EET_end/EET_end.tp2), so neither the
+    folder (`wf`) nor the record as a whole is the key. `t` stands in only for
+    a component with no `wp`. Malformed records and components are skipped:
+    these counts are advice and never stop the report.
+    """
     out: Dict[str, Dict[int, dict]] = {}
     for record in records:
-        components = {}
-        for position, component in enumerate(record.get("co") or []):
+        if not isinstance(record, dict) or not isinstance(record.get("co"), list):
+            continue
+        title = record.get("t")
+        for position, component in enumerate(record["co"]):
+            if not isinstance(component, dict):
+                continue
             number = component.get("wc", component.get("cn"))
-            if isinstance(number, int):
-                entry = dict(component)
-                if position == 0 and record.get("ss") and not entry.get("ss"):
-                    entry["ss"] = record["ss"]     # Mod Forge's mod-level spell states
-                components[number] = entry
-        for name in {record.get("t"), *(c.get("wf") for c in record.get("co") or [])}:
-            if isinstance(name, str) and name:
-                components_for = out.setdefault(normalize_key(name), {})
-                components_for.update(components)
+            if not isinstance(number, int) or isinstance(number, bool):
+                continue
+            path = component.get("wp")
+            key = (tp2_key(path) if isinstance(path, str) and path else
+                   normalize_key(title) if isinstance(title, str) and title else "")
+            if not key:
+                continue
+            entry = dict(component)
+            if position == 0 and record.get("ss") and not entry.get("ss"):
+                entry["ss"] = record["ss"]     # Mod Forge's mod-level spell states
+            out.setdefault(key, {}).setdefault(number, entry)
     return out
 
 
@@ -151,6 +166,7 @@ def engine_limits(install: str, chosen: Sequence[Tuple[str, int]],
     in install order; `records` krion64's per-mod records.
     """
     index = _index(records)
+    chosen = list(dict.fromkeys(chosen))        # a log can list a component twice
     report = LimitsReport(install, components=len(chosen), eeex=eeex)
     kits = Tally(KITS.label, KITS.cap, KITS.base, source=KITS.source,
                  note=f"Infinity Mod Forge says {KITS.forge_cap}; WeiDU stops at {KITS.cap}")

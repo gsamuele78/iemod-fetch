@@ -353,7 +353,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 1,016 passed + 4 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 1,019 passed + 4 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current

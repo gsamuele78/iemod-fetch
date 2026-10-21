@@ -10,6 +10,7 @@ import os
 
 from iemod_fetch import api
 from iemod_fetch.limits import KITS, SPELL_STATES, engine_limits
+from iemod_fetch.ordering import tp2_key
 
 HERE = os.path.dirname(__file__)
 
@@ -76,10 +77,33 @@ def test_spells_without_levels_are_reported_not_guessed():
     assert "not counted against a level" in report.render()
 
 
-def test_components_are_matched_by_weidu_number_and_folder():
-    records = [record("SCS", [{"cn": 5, "wc": 4100, "wf": "stratagems", "k": 2}])]
+def test_components_are_matched_by_weidu_number_and_tp2():
+    records = [record("Sword Coast Stratagems", [
+        {"cn": 5, "wc": 4100, "wf": "stratagems", "wp": "stratagems\\setup-stratagems.tp2",
+         "k": 2}])]
     report = engine_limits("EET", [("stratagems", 4100)], records)
     assert kits_of(report).added == 2 and report.unknown_mods == []
+
+
+def test_two_tp2s_in_one_folder_keep_their_own_counts():
+    """krion64's EET_end shares EET's folder and component number 0."""
+    records = [record("EET_end", [{"cn": 0, "wf": "eet", "wp": "eet\\EET_end\\EET_end.tp2",
+                                   "k": 5}]),
+               record("EET", [{"cn": 0, "wf": "eet", "wp": "eet\\EET.tp2", "k": 0}])]
+    assert kits_of(engine_limits("EET", [("eet", 0)], records)).added == 0
+    assert kits_of(engine_limits("EET", [(tp2_key("eet/EET_end/EET_end.tp2"), 0)], records)).added == 5
+
+
+def test_malformed_records_are_skipped_never_stop_the_report():
+    records = [None, "x", {"co": "abc"}, {"co": {"a": 1}}, {"t": ["list"], "co": [{"cn": 0}]},
+               record("m", ["str", {"cn": True, "k": 4}, {"cn": 0, "k": 1}])]
+    report = engine_limits("EET", [("m", 0), ("m", 1)], records)
+    assert kits_of(report).added == 1
+
+
+def test_a_component_listed_twice_is_counted_once():
+    report = engine_limits("EET", [("m", 0), ("m", 0)], [record("m", [{"cn": 0, "k": 5}])])
+    assert kits_of(report).added == 5 and report.components == 1
 
 
 def test_a_mod_level_spell_state_count_belongs_to_its_first_component():
