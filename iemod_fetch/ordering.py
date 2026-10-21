@@ -309,6 +309,7 @@ class OrderPlan:
     warnings: List[str] = field(default_factory=list)
     edges: int = 0
     simulation: Optional[object] = None    # simulate.SimulationResult, if run
+    game_report: Optional[object] = None   # gamedir.GameReport, if folders given
 
     @property
     def compliant(self) -> bool:

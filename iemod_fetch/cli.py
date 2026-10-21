@@ -26,6 +26,7 @@ from .installer import build_installer
 from .languages import apply_language_preference, parse_preferences
 from .resolution import resolve_conflicts, resolve_refusals
 from .simulate import simulate_install, steps_of
+from .gamedir import verify_eet
 from .constraints import ModConstraints, load_constraints, tp2_rules
 from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, plan_order, tp2_key,
                        render_plan_summary)
@@ -110,6 +111,14 @@ def build_parser() -> argparse.ArgumentParser:
                           "it - BGEE, then BG2EE becoming EET - checking every "
                           "staged mod's own tp2 constraints and EET's merge check; "
                           "reports what WeiDU would refuse (ADR-0025)")
+    out.add_argument("--bgee-dir", metavar="DIR",
+                     help="with --plan-order, for EET: the BG:EE game the plan's "
+                          "WeiDU-BGEE.log installs onto. Verified with WeiDU's own "
+                          "GAME_IS markers and EET's requirements (SoD present or "
+                          "DlcMerger planned) - never written to (ADR-0026)")
+    out.add_argument("--bg2ee-dir", metavar="DIR",
+                     help="with --plan-order, for EET: the clean BG2:EE game that "
+                          "becomes EET; verified the same way")
     out.add_argument("--emit-installer", action="store_true",
                      help="with --plan-order: also write install scripts (sh and "
                           "Windows cmd) into the plan directory that hand the plan "
@@ -366,6 +375,7 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
             refusals = resolve_refusals(plan, constraints, games, ruleset, context)
             resolution.removed.extend(refusals.removed)
             resolution.left_for_operator.extend(refusals.left_for_operator)
+            resolution.moved.extend(refusals.moved)
     languages = None
     if args.language_preference:
         languages = apply_language_preference(plan, os.path.abspath(args.target),
@@ -393,6 +403,11 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
             constraints.by_mod, games=games, eet_rules=constraints.eet)
         if not args.quiet:
             print("\n" + plan.simulation.render(), file=stream)
+    if args.bgee_dir:
+        plan.game_report = verify_eet(
+            args.bgee_dir, args.bg2ee_dir,
+            plan_mods={unit.key for unit in plan.logs.get(PRE_EET_LOG, [])})
+        print("\n" + plan.game_report.render(), file=stream)
     if args.emit_installer:
         _emit_installer(args, plan, stream)
     return plan
@@ -544,11 +559,16 @@ def _require_plan(args) -> None:
     """Flags that act on an install plan are meaningless without one."""
     if args.language_preference:
         args.language_preference = parse_preferences(args.language_preference)
+    if bool(args.bgee_dir) != bool(args.bg2ee_dir):
+        raise ConfigError("--bgee-dir and --bg2ee-dir go together: an EET install "
+                          "needs both games")
     if args.plan_order:
         return
     for flag, given in (("--resolve-conflicts", args.resolve_conflicts),
                         ("--emit-installer", args.emit_installer),
                         ("--simulate", args.simulate),
+                        ("--bgee-dir", args.bgee_dir),
+                        ("--bg2ee-dir", args.bg2ee_dir),
                         ("--language-preference", args.language_preference)):
         if given:
             raise ConfigError(f"{flag} works on an install plan: add "
@@ -598,8 +618,9 @@ def _run(args, stream, config=None) -> int:
                           file=stream)
         if args.json_report:
             report.write_json(args.json_report)
-        refused = bool(order_plan is not None and order_plan.simulation
-                       and order_plan.simulation.refused)
+        refused = bool(order_plan is not None and (
+            (order_plan.simulation and order_plan.simulation.refused)
+            or (order_plan.game_report and order_plan.game_report.problems)))
         return 1 if report.blocking_findings or refused else 0
 
     credential = resolve_credential(token_file=args.token_file,

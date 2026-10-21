@@ -122,6 +122,41 @@ jobs:
           pip install pytest
           python -m pytest -q
 
+  real-weidu:
+    name: Mock EET install with the real WeiDU and mod_installer
+    runs-on: ubuntu-latest
+    env:
+      # Pinned toolchain (ADR-0026). WeiDU: the official v251.00 Linux release,
+      # sha256 recorded on first download. mod_installer: no release tag past
+      # v12.1.1, so the commit whose Cargo.toml says 16.0.0.
+      WEIDU_URL: https://github.com/WeiDUorg/weidu/releases/download/v251.00/WeiDU-Linux-251.zip
+      WEIDU_SHA256: 3e1a34ec5d6e934b1d4a34541a1312d0170b120c6efe903a732415acde3bd3c0
+      MOD_INSTALLER_REV: 3b6827a039db43e342be19f7610ecdd680fe0a62
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12" }
+      - name: WeiDU, verified against its pinned digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/weidu"
+          curl -fsSL -o "$RUNNER_TEMP/weidu.zip" "$WEIDU_URL"
+          echo "$WEIDU_SHA256  $RUNNER_TEMP/weidu.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/weidu.zip" -d "$RUNNER_TEMP/weidu"
+          chmod +x "$RUNNER_TEMP/weidu/WeiDU-Linux/weidu"
+      - name: mod_installer, built from its pinned commit
+        run: |
+          cargo install --locked --quiet --git https://github.com/dark0dave/mod_installer \
+            --rev "$MOD_INSTALLER_REV" --root "$RUNNER_TEMP/mi"
+      # Synthetic game folders (no game data): WeiDU identifies the game by
+      # marker files, which is all these flags need. See tests/test_real_weidu.py.
+      - name: Real WeiDU agrees with the simulator; the plan installs end to end
+        run: |
+          pip install pytest
+          IEMOD_WEIDU="$RUNNER_TEMP/weidu/WeiDU-Linux/weidu" \
+          IEMOD_MOD_INSTALLER="$RUNNER_TEMP/mi/bin/mod_installer" IEMOD_REQUIRE_REAL=1 \
+            python -m pytest -q -rs tests/test_real_weidu.py
+
   build:
     name: Build and verify the zipapp
     runs-on: ubuntu-latest

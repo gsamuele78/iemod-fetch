@@ -1104,3 +1104,77 @@ component first. Neither simulates the install.
   counted, not evaluated. Mods not staged are reported as unchecked.
 - EET's M flag (merge anyway) is not modelled as an option: the plan never
   depends on overriding the author's check.
+
+---
+
+## ADR-0026 — Verified game folders, reorder before removing, and the real WeiDU as the test oracle
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+ADR-0025's simulator was checked only against itself. Four questions remained:
+are the game folders the plan installs onto really BG:EE and a clean BG2:EE;
+when WeiDU would refuse a component, is removing it the right fix or is there
+an order that keeps it; can the result be tested against the real WeiDU without
+copyrighted game data; and which tool and mod versions does the plan assume.
+
+Primary sources: WeiDU's `src/tppe.ml` (PE_GameIs) identifies a game by marker
+resources — `oh1000.are` BG:EE, `oh6000.are` BG2:EE, `eet.flag` EET — looked up
+in override/ and chitin.key. EET's readme: the core needs "a clean BG2:EE
+installation with latest patch (currently v2.6.6.0) and (optionally) the
+Enhanced Edition Fixpack", and BG:EE with SoD (checked through
+`movies/sodcin05.wbm`); GOG/Steam ship SoD as a DLC archive DlcMerger must merge
+first. EET.tp2:2797 writes `override/EET.flag`. BWS-NG's `games/eet.json`
+orders `eefixpack:0-2` before `eet:0` in its bg2ee sequence, and lists the mods
+allowed on the BG:EE side.
+
+### Decision
+
+1. **Game folders** (`gamedir.py`, `--bgee-dir` / `--bg2ee-dir`): identify each
+   folder with WeiDU's own rule, reading chitin.key; refuse a swapped pair, the
+   same folder twice, an already-EET game, a modded BG2:EE, and a BG:EE without
+   SoD; require DlcMerger in the plan when SoD is still a `sod-dlc` archive.
+   Read only, never written. The patch level and the integrity of the game data
+   are reported as not checked.
+2. **Reorder before removing.** A refusal that a documented order fixes is fixed
+   by that order: EEFixPack refused on EET moves before the EET core, where the
+   game is still BG2:EE. The list of what may precede the core is EET's own
+   (EEFixPack), confirmed by BWS-NG; nothing is moved on inference. Everything
+   else WeiDU would refuse is still removed with its reason.
+3. **The real WeiDU is the oracle** (`tests/test_real_weidu.py`): two synthetic
+   game folders — an empty chitin.key, an empty dialog.tlk, the marker file —
+   are enough for WeiDU to evaluate GAME_IS, REQUIRE and FORBID. The mock mods
+   run from their verbatim excerpts (complete one-line flags only). Asserted:
+   real WeiDU refuses exactly what the simulator says on the raw logs; it
+   installs the resolved plan to the last component; and the generated
+   `install-eet.sh` runs through the real mod_installer into both games, the EET
+   core writing `EET.flag` between them. A CI job runs it on every push.
+4. **Pinned toolchain.** WeiDU v251.00 (official Linux release, sha256
+   recorded); mod_installer at commit `3b6827a` (Cargo 16.0.0 — its tags stop
+   at v12.1.1, so a commit, not a tag, is the pin). Mods: a release tag plus
+   sha256 through `--emit-pinned-manifest`; a mod without releases is pinned by
+   the archive's sha256. "Latest" or a branch head is never a pin. The games:
+   v2.6.6.0, as EET requires; not verifiable from the folder, so stated.
+
+### Considered and not adopted
+
+- **GemRB** (an open-source reimplementation of the Infinity Engine). Its
+  KEY/BIFF readers and its free demo data are the community's answer to "tests
+  without game data". But WeiDU, not the engine, decides what installs; booting
+  the result in GemRB would test GemRB's engine, not the install, and needs the
+  same game data. The synthetic-folder approach tests the real installer instead.
+- **BWS-NG's per-game order lists** as the source of truth: hand-maintained,
+  they lag behind the downloaded mods. Read as rules (ADR-0017), cross-checked
+  against each mod's own tp2 (ADR-0025).
+
+### Consequences
+
+- Two fixture bugs and one parser bug were found by real WeiDU on the first run:
+  a `BEGIN` inside an inlined file (`<<<<<<<< … >>>>>>>>`) counted as a
+  component, which hid EET_end's requirement on the EET core; and EET_end
+  staged where WeiDU 251 does not look for it.
+- Still not covered: real game data (patch level, the merge itself, mods whose
+  bodies fail on content). That needs a self-hosted runner with owned copies
+  (ROADMAP F5).

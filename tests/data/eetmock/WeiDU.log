@@ -1,7 +1,7 @@
 // Log of Currently Installed WeiDU Mods
 // The top of the file is the 'oldest' mod
 // Format: ~TP2_Path~ #lang #comp // Name : Version
-~eet\EET_end\EET_end.tp2~ #0 #0 // Standard installation
+~EET_end\EET_end.tp2~ #0 #0 // Standard installation
 ~eet\EET.tp2~ #0 #0 // EET core (resource importation)
 ~eefixpack\setup-eefixpack.tp2~ #0 #0 // Core Fixes
 ~stratagems\setup-stratagems.tp2~ #0 #5900 // Ascension battles

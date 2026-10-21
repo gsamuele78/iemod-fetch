@@ -25,7 +25,7 @@ decision, exactly as ADR-0017 said.
 Only the plan is edited. The operator's WeiDU logs are never touched, and the
 plan is re-checked against the same rules afterwards rather than trusted.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional, Set, Tuple
 
 from .conflicts import SUBCOMPONENT_ORIGIN, ConflictReport, Finding, Side
@@ -44,6 +44,14 @@ class Removal:
 
 
 @dataclass
+class Move:
+    log: str
+    mod: str
+    components: Tuple[int, ...]
+    because: str
+
+
+@dataclass
 class Unresolved:
     log: str
     finding: str
@@ -54,9 +62,14 @@ class Unresolved:
 class ResolutionResult:
     removed: List[Removal] = field(default_factory=list)
     left_for_operator: List[Unresolved] = field(default_factory=list)
+    moved: List[Move] = field(default_factory=list)
 
     def render(self) -> str:
         lines = ["CONFLICT RESOLUTION (--resolve-conflicts; the plan only, never your logs)"]
+        for move in self.moved:
+            shown = ", ".join(f"#{n}" for n in move.components)
+            lines.append(f"  moved before the EET core  [{move.log}] {move.mod}: {shown}")
+            lines.append(f"           because {move.because}")
         if not self.removed:
             lines.append("  nothing removed")
         for item in self.removed:
@@ -77,6 +90,7 @@ class ResolutionResult:
         return {
             "removed": [vars(r) for r in self.removed],
             "left_for_operator": [vars(u) for u in self.left_for_operator],
+            "moved": [vars(m) for m in self.moved],
         }
 
 
@@ -215,6 +229,34 @@ def _drop(plan, log: str, mod: str, numbers) -> Tuple[Tuple[int, ...], Tuple[str
     return tuple(n for n, _l in gone), tuple(label for _n, label in gone)
 
 
+# What may go on BG2:EE BEFORE the EET core, by EET's own readme ("Core EET
+# component requires 'clean' BG2:EE installation with latest patch ... and
+# (optionally) the Enhanced Edition Fixpack"), and BWS-NG's games/eet.json,
+# whose bg2ee sequence orders eefixpack:0-2 before eet:0. Nothing else: EET
+# warns that other mods before its core "may cause problems".
+BEFORE_EET_CORE = {"eefixpack": "EET's readme allows the Enhanced Edition "
+                                "Fixpack on BG2:EE before its core, and BWS-NG "
+                                "orders it there (games/eet.json)"}
+
+
+def _move_before_core(plan, log: str, mod: str, numbers) -> Tuple[int, ...]:
+    """Move `numbers` of `mod` to just before the EET core; what was moved."""
+    units = plan.logs.get(log, [])
+    core = next((i for i, unit in enumerate(units) if unit.key == _EET_CORE[0]
+                 and any(line[2] == _EET_CORE[1] for line in unit.lines)), None)
+    source = next((u for u in units if u.key == mod
+                   and any(line[2] in numbers for line in u.lines)), None)
+    if core is None or source is None or units.index(source) < core:
+        return ()
+    moved = [line for line in source.lines if line[2] in numbers]
+    source.lines = [line for line in source.lines if line[2] not in numbers]
+    part = max(u.part for u in units if u.key == mod) + 1
+    units.insert(core, replace(source, lines=moved, part=part, split=True,
+                               parts=part + 1))
+    plan.logs[log] = [u for u in units if u.lines]
+    return tuple(sorted(line[2] for line in moved))
+
+
 def resolve_refusals(plan, constraints, games=None, ruleset=None,
                      context=None) -> ResolutionResult:
     """
@@ -260,6 +302,16 @@ def resolve_refusals(plan, constraints, games=None, ruleset=None,
                     refusal.log, "eet #0",
                     f"the EET core would be refused: {refusal.reason}"))
                 continue
+            if (refusal.log == EET_LOG and refusal.mod in BEFORE_EET_CORE
+                    and ("refuses game EET" in refusal.reason
+                         or "the game is EET" in refusal.reason)):
+                moved = _move_before_core(plan, EET_LOG, refusal.mod,
+                                          {refusal.component})
+                if moved:
+                    changed = True
+                    result.moved.append(Move(EET_LOG, refusal.mod, moved,
+                                             BEFORE_EET_CORE[refusal.mod]))
+                    continue
             numbers, labels = _drop(plan, refusal.log, refusal.mod,
                                     {refusal.component})
             if numbers:

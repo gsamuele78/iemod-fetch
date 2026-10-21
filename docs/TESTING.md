@@ -124,6 +124,24 @@ because the double was written to raise `IncompleteRead`.
 Borrowed from the download tests of Born2BSalty's Infinity Orchestrator, which
 serve fixtures over a loopback TCP listener for the same reason.
 
+## 8. The real WeiDU as oracle — no game data needed
+
+`tests/test_real_weidu.py` runs the mock EET install through the real WeiDU
+(v251) and, when given, the real mod_installer. WeiDU identifies a game by
+marker files (`oh1000.are`, `oh6000.are`, `eet.flag`), so a folder with an empty
+`chitin.key`, an empty `dialog.tlk` and the marker is enough for it to enforce
+GAME_IS, REQUIRE_COMPONENT and FORBID_COMPONENT. Three claims:
+
+* on the raw logs, WeiDU refuses exactly the components `--simulate` refuses;
+* WeiDU installs the resolved plan to the last component;
+* the generated `install-eet.sh` drives mod_installer + WeiDU into both games.
+
+Its first run found two bugs no self-consistent test could: a parser bug and a
+fixture placed where WeiDU does not look. Opt in locally with
+`IEMOD_WEIDU=/path/to/weidu` (and `IEMOD_MOD_INSTALLER`); CI's `real-weidu` job
+downloads both pinned and sets `IEMOD_REQUIRE_REAL=1`, so a missing tool fails
+instead of skipping.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
@@ -160,10 +178,10 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 713 |
-| Branch coverage | 90% (floor: 85%) |
+| Tests | 784 (3 run the real WeiDU, opt-in) |
+| Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 4, all kept |
-| mypy | clean, 30 modules |
+| mypy | clean, 33 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Runtime dependencies | 0 |

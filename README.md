@@ -40,6 +40,7 @@ Standard library only at runtime. One file, no dependencies.
 | **Order** at component level | splits a mod across the install where krion64 or a component rule places its parts apart | *(with `--plan-order`)* |
 | **Resolve** | removes the components an error-graded incompatibility rule pins, and the earlier of two options of one WeiDU subcomponent group; lists the rest for you | `--resolve-conflicts` |
 | **Simulate** | walks the plan as WeiDU will: each mod's own tp2 REQUIRE/FORBID/GAME_IS, the game turning into EET, EET's merge allow-list; lists every refusal | `--simulate` |
+| **Game folders** | identifies BG:EE / BG2:EE / EET the way WeiDU does; refuses a modded BG2:EE, missing SoD, swapped folders | `--bgee-dir` `--bg2ee-dir` |
 | **Language** | each mod in the first of your languages it offers, read from its own tp2 | `--language-preference it_IT,en_US` |
 | **Install** | `install-eet.sh` / `.cmd`: hands both logs to [mod_installer](https://github.com/dark0dave/mod_installer) + WeiDU, BGEE first, then EET | `--emit-installer` |
 
@@ -70,7 +71,8 @@ python3 -m iemod_fetch --check-only -m mod_downloads.json \
     -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods \
     --rules BigWorldSetup-Next-Generation/data/rules \
     --rules krion64.github.io/data/mods --order-catalogue krion64.github.io \
-    --plan-order ./plan --resolve-conflicts --emit-installer \
+    --plan-order ./plan --resolve-conflicts --simulate --emit-installer \
+    --bgee-dir ~/games/BGEE --bg2ee-dir ~/games/EET \
     --language-preference it_IT,en_US          # optional: Italian, else English
 
 # 3. install onto CLEAN copies of both games (needs WeiDU + mod_installer)
@@ -383,7 +385,8 @@ observations withheld by default.
 See ADR-0016 for why both databases are used, ADR-0017 for what the plan does and
 does not promise, ADR-0018 for how conflicts are narrowed to components,
 ADR-0021 for what is resolved automatically, ADR-0022 for the installer,
-ADR-0023 for component-level order and ADR-0024 for languages.
+ADR-0023 for component-level order, ADR-0024 for languages, ADR-0025 for the
+install simulation and ADR-0026 for game folders and the real-WeiDU test.
 
 ## Development
 
@@ -399,9 +402,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 761, offline, ~14 s |
-| Branch coverage | 91% (floor 85%) |
-| mypy | clean, 32 modules |
+| Tests | 784, offline, ~14 s; the mock EET install also runs through the **real WeiDU and mod_installer** in CI |
+| Branch coverage | 92% (floor 85%) |
+| mypy | clean, 33 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 4, all kept |

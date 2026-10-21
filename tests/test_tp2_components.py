@@ -144,3 +144,17 @@ def test_game_includes_and_engine_is_name_the_games_they_hold_on():
 def test_an_abort_in_the_body_narrows_the_header_requirement():
     """DlcMerger allows five games in its header, then ABORTs unless BGEE."""
     assert real()[3].games == ["BGEE"]
+
+
+def test_a_begin_inside_an_inlined_file_is_not_a_component():
+    """EET_end.tp2 inlines a .d file whose text is `BEGIN ~%file%~`. WeiDU reads
+    `<<<<<<<< name ... >>>>>>>>` as file content, so the first real component -
+    the one requiring the EET core - is #0. Found by running the real WeiDU."""
+    text = ("<<<<<<<< .../blank.d\nBEGIN ~%file%~\n>>>>>>>>\n"
+            "LANGUAGE ~English~ ~english~ ~EET/lang/en_US/setup.tra~\n"
+            "BEGIN @910002 //Standard installation\nSUBCOMPONENT @910000\n"
+            "REQUIRE_COMPONENT ~EET/EET.tp2~ ~0~ @910001\n"
+            "BEGIN @910003\nSUBCOMPONENT @910000\n")
+    first, second = parse_components(text)
+    assert (first.number, first.requires) == (0, [("eet", 0)])
+    assert second.number == 1

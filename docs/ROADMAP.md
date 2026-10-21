@@ -4,9 +4,54 @@ Three phases, in the order this project's own delivery discipline requires:
 **assess what is actually true, then build, then prove it.** Each item says what
 "done" means, because a roadmap entry without a completion test is a wish.
 
-Status as of the 2.1.0 hardening revision (2026-10-20). The 2026-09-10
-repository-readiness revision follows it, unchanged, as the record of where
-this started.
+Status as of the 2.2.0 install-time revision (2026-10-21). The 2.1.0 and
+2026-09-10 revisions follow it, unchanged, as the record of how it got here.
+
+---
+
+# Revision 2026-10-21 — v2.2.0
+
+## Phase 1 — Audit: what an EET install actually needs
+
+Checked against primary sources, not memory:
+
+| Question | Source | Answer |
+|---|---|---|
+| How does WeiDU know the game? | WeiDU `src/tppe.ml` | marker resources: `oh1000.are` BG:EE, `oh6000.are` BG2:EE, `eet.flag` EET (override/ or chitin.key) |
+| Does everything end up on the BG2:EE engine? | EET readme, EET.tp2 | yes: the EET core imports BG:EE+SoD into the BG2:EE folder, writes `override/EET.flag`, and from then on WeiDU calls that game EET; everything after the core installs there |
+| What may come before the EET core? | EET readme; BWS-NG `games/eet.json` | a clean BG2:EE, optionally EEFixPack |
+| What does the BG:EE side need? | EET readme; DlcMerger README | BG:EE + SoD v2.6.6.0; on GOG/Steam DlcMerger first; only mods in EET's `compatibility.tbl` |
+| Is the plan's check right? | the real WeiDU v251 on synthetic folders | it was not, in two places: see *Fixed* in the 2.2.0 changelog |
+
+## Phase 2 — Development (done in 2.2.0)
+
+- Game folders verified (`--bgee-dir`, `--bg2ee-dir`) — ADR-0026
+- A refusal an order fixes is fixed by the order (EEFixPack before the core)
+- `tests/test_real_weidu.py` and a CI job with the pinned WeiDU and mod_installer
+
+### Still open, highest value first
+
+| ID | What remains | Done when |
+|---|---|---|
+| F5 | **Real game data.** The synthetic folders prove WeiDU's flags, not the merge itself, the patch level, or mod bodies that fail on content. | a self-hosted runner with owned BG:EE+SoD and BG2:EE v2.6.6.0 runs the mock plan nightly (DlcMerger, EEFixPack, EET, EET_end are the minimum) |
+| F7 | **Patch level** is not read from the folder (EET needs v2.6.6.0). | a version source the engine itself writes is identified and tested on real installs; until then it stays "not checked" |
+| F8 | **Compound tp2 predicates** (`A AND (B OR C)`) are counted, not evaluated. | an evaluator for the WeiDU predicate grammar, checked against real WeiDU on synthetic folders |
+| F9 | **Mod bodies** can still fail for reasons no flag states (a missing resource, a `FAIL` deep in a function). | only real game data finds these (F5) |
+| F10 | **The EET merge check** (`compatibility.tbl`) is simulated, not run by WeiDU in the test: it reads the BG:EE `WeiDU.log` through EET's interactive path. | the excerpt EET drives that path non-interactively in the real-WeiDU test |
+| F11 | **A plan moved to another machine** keeps working only through env vars; the verified folders are not recorded with it. | `RESOLUTION.json` records the verified folders and the installer warns when run against different ones |
+
+Unchanged from 2.1.0: F1–F4, F6 (now partly done: CI pins mod_installer by
+commit; the emitted script does not yet verify the binary), E1–E6.
+
+## Phase 3 — Validation for v2.2.0
+
+- [x] Each new behaviour has a test seen failing first; both bugs above were
+      found by the real-WeiDU test before any fix
+- [x] Real WeiDU v251 + mod_installer (Cargo 16.0.0, commit `3b6827a`) install
+      the resolved mock plan end to end
+- [x] Gates: ruff, mypy (33 modules), import-linter (4 contracts), bandit, zizmor
+- [x] CI green on the pull request, 3-OS matrix plus the real-WeiDU job
+- [ ] Tags `v2.1.0` and `v2.2.0` pushed; the draft releases published by a human
 
 ---
 
@@ -93,7 +138,9 @@ and two features that close the path from logs to a running game:
 | Conflict handling | blocks; the user unselects | advisory (hard/partial/soft) | flags | none | report always; opt-in auto-resolve only where a rule pins the side; ties/whole-mod to the user — **more automatic than any of them, by design narrower** |
 | Mutually exclusive options | `MUC` component type | — | — | — | detected from the log's `Group -> Option`, keep the last |
 | Mod metadata (tp2 REQUIRE/FORBID) | copied by hand into the rule files | — | parsed from the tp2; required component first | WeiDU enforces it at install time | **parsed from the staged tp2** (Orchestrator's reading) + FORBID as order, warned; mutual FORBID incompatible |
-| Install simulation / EET merge check | — | — | — | stops at the first refusal | **`--simulate`**: game switches BG2EE→EET at the core, EET's `compatibility.tbl` read; refusals removed by `--resolve-conflicts` |
+| Install simulation / EET merge check | — | — | — | stops at the first refusal | **`--simulate`**: game switches BG2EE→EET at the core, EET's `compatibility.tbl` read; refusals reordered when EET documents the order, else removed |
+| Game folder check | required files (`chitin.key`, `Baldur.exe`; SoD: its exe or a `sod-dlc` archive) + `engine_mode` in `engine.lua` | n/a (catalogue) | not checked here | none found in its source | **WeiDU's own GAME_IS markers** (what decides the install) + EET's needs: clean BG2:EE, SoD merged or DlcMerger planned, no EET.flag yet |
+| Testing against the real WeiDU | not found in its repository | n/a | not checked here | its own unit tests | **real WeiDU + mod_installer on synthetic folders, in CI** |
 | Language | ordered list, first match; tp2 LANGUAGE + alias map | one language, then English | one locale, then English; probes `--list-languages` | passes the log's `#lang` | **BWS-NG's model adopted**: ordered list, tp2 LANGUAGE, alias map (minus its dutch→German bug) |
 
 
