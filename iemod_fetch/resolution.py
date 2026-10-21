@@ -28,6 +28,7 @@ plan is re-checked against the same rules afterwards rather than trusted.
 from dataclasses import dataclass, field, replace
 from typing import List, Optional, Set, Tuple
 
+from .contract import SCHEMA_VERSION
 from .conflicts import SUBCOMPONENT_ORIGIN, ConflictReport, Finding, Side
 from .naming import normalize_key
 from .rules import INCOMPATIBLE, RuleSet
@@ -41,6 +42,7 @@ class Removal:
     labels: Tuple[str, ...]
     because: str            # the other side, as the report describes it
     reason: str = ""        # the rule's own explanation, if it gave one
+    finding_id: str = ""    # the conflict-report finding this settles, if any
 
 
 @dataclass
@@ -56,6 +58,7 @@ class Unresolved:
     log: str
     finding: str
     why: str
+    finding_id: str = ""    # the conflict-report finding, so a UI can answer it
 
 
 @dataclass
@@ -88,6 +91,7 @@ class ResolutionResult:
 
     def as_dict(self) -> dict:
         return {
+            "schema_version": SCHEMA_VERSION,
             "removed": [vars(r) for r in self.removed],
             "left_for_operator": [vars(u) for u in self.left_for_operator],
             "moved": [vars(m) for m in self.moved],
@@ -158,7 +162,8 @@ def resolve_conflicts(plan, report: ConflictReport,
         why = _why_not(finding)
         if why is not None or finding.right is None:
             result.left_for_operator.append(Unresolved(
-                finding.log, _describe(finding), why or "one-sided finding"))
+                finding.log, _describe(finding), why or "one-sided finding",
+                finding_id=finding.id))
             continue
         if finding.origin == SUBCOMPONENT_ORIGIN:
             # WeiDU's own semantics, not a cost: the last option installed wins.
@@ -170,7 +175,7 @@ def resolve_conflicts(plan, report: ConflictReport,
                     finding.log, _describe(finding),
                     f"both sides pin an equal number of components "
                     f"({len(finding.left.components)}): the rules do not say "
-                    f"which to keep"))
+                    f"which to keep", finding_id=finding.id))
                 continue
             loser, winner = choice
 
@@ -183,7 +188,8 @@ def resolve_conflicts(plan, report: ConflictReport,
         if not units:
             result.left_for_operator.append(Unresolved(
                 finding.log, _describe(finding),
-                f"cannot tell which tp2 '{loser.mod}' means in this log"))
+                f"cannot tell which tp2 '{loser.mod}' means in this log",
+                finding_id=finding.id))
             continue
 
         labels = dict(loser.components)
@@ -193,7 +199,8 @@ def resolve_conflicts(plan, report: ConflictReport,
         result.removed.append(Removal(
             log=finding.log, mod=loser.mod, components=numbers,
             labels=tuple(labels.get(n, "") for n in numbers),
-            because=winner.describe(limit=3), reason=finding.reason))
+            because=winner.describe(limit=3), reason=finding.reason,
+            finding_id=finding.id))
 
     for log, units in list(plan.logs.items()):
         plan.logs[log] = [u for u in units if u.lines]

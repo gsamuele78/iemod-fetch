@@ -26,6 +26,7 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
+from .contract import SCHEMA_VERSION, stable_id
 from .rules import (DEPENDS, INCOMPATIBLE, ORDER, Context, Install, RuleSet,
                     check_all)
 
@@ -92,12 +93,22 @@ class Finding:
         return SEVERITY_ORDER.get(self.severity, 3)
 
     @property
+    def id(self) -> str:
+        """The same conflict, the same id, run after run (ADR-0030)."""
+        right = (None if self.right is None
+                 else (self.right.key, self.right.numbers, self.right.whole_mod))
+        return stable_id("conflict", self.kind, self.log, self.scope, self.origin,
+                         (self.left.key, self.left.numbers, self.left.whole_mod),
+                         right, self.source)
+
+    @property
     def actionable(self) -> bool:
         """Neither withheld nor already dealt with by the ordering plan."""
         return not (self.suppressed or self.fixed_by_plan)
 
     def as_dict(self) -> dict:
         return {
+            "id": self.id,
             "kind": self.kind, "severity": self.severity,
             "raw_severity": self.raw_severity, "log": self.log,
             "scope": self.scope,
@@ -137,6 +148,7 @@ class ConflictReport:
 
     def as_dict(self) -> dict:
         return {
+            "schema_version": SCHEMA_VERSION,
             "rules_checked": self.rules_checked,
             "known_issues_checked": self.notes_checked,
             "mod_pairs_with_a_conflict_rule": self.pairs_with_both_mods,

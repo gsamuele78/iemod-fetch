@@ -400,3 +400,37 @@ def test_cli_emits_the_conflict_report(tmp_path):
     assert "COMPONENT CONFLICT REPORT" in text
     assert out.exists()
     assert code in (0, 1)
+
+
+# ------------------------------------------------- the JSON contract (ADR-0030)
+SCHEMAS = os.path.join(HERE, os.pardir, "schemas")
+
+
+def _scs_vs_tweaks(tmp_path, tweak=1150):
+    ruleset = rules_file(tmp_path, "incompatibilities.json",
+                         [{"rule": "stratagems(7000):cdtweaks(1150,1151)",
+                           "severity": "error"}])
+    log = write_log(tmp_path, "WeiDU.log", [
+        r"~stratagems\setup-stratagems.tp2~ #0 #7000 // Smarter mages",
+        rf"~cdtweaks\setup-cdtweaks.tp2~ #0 #{tweak} // A tweak",
+    ])
+    return build_conflict_report([install_of(log)], ruleset)
+
+
+def test_a_finding_has_an_id_that_survives_a_rerun(tmp_path):
+    """A UI answers a finding by its id, so the same conflict keeps the same id."""
+    first = _scs_vs_tweaks(tmp_path).of(INCOMPATIBLE)[0]
+    again = _scs_vs_tweaks(tmp_path).of(INCOMPATIBLE)[0]
+    other = _scs_vs_tweaks(tmp_path, tweak=1151).of(INCOMPATIBLE)[0]
+    assert first.id == again.id
+    assert first.id != other.id                  # different components, different finding
+    assert first.id.startswith("conflict-") and len(first.id) == len("conflict-") + 16
+
+
+def test_the_conflict_report_names_its_schema_version(tmp_path):
+    data = _scs_vs_tweaks(tmp_path).as_dict()
+    assert data["schema_version"] == 1
+    assert data["findings"][0]["id"].startswith("conflict-")
+    jsonschema = __import__("pytest").importorskip("jsonschema")
+    with open(os.path.join(SCHEMAS, "conflicts-v1.schema.json"), encoding="utf-8") as fh:
+        jsonschema.validate(data, json.load(fh))

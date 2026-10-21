@@ -29,6 +29,13 @@ Python API, which is internal.
   categories, rating, status, last update, version, advisories and each
   source's URLs and sha256. No WeiDU.log needed, nothing downloaded; a
   catalogue alone is enough. Schema in `schemas/mods-v1.schema.json` (M1).
+- **Versioned JSON reports with stable ids.** `--json-report`,
+  `--conflict-report` and `RESOLUTION.json` carry `schema_version: 1`. Every
+  rule finding (`rule-…`) and conflict finding (`conflict-…`) has an `id`
+  derived only from what it is about, so the same conflict keeps its id across
+  runs. What `--resolve-conflicts` removes or leaves to you names the
+  `finding_id` it settles. Schemas in `schemas/` (ADR-0030, M1). Fields were
+  only added; existing readers are unaffected.
 - **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
   WeiDU and mod_installer are compared with upstream, and an issue opens for
   each one behind, with how to bump it. Dependabot cannot see those two pins.

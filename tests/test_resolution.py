@@ -289,3 +289,17 @@ def test_the_eet_core_is_never_dropped(tmp_path, index):
     result = resolve_refusals(plan, constraints)
     assert ("eet", 0) in components(plan)
     assert any("EET core" in item.why for item in result.left_for_operator)
+
+
+def test_what_is_left_for_the_operator_points_at_its_finding(tmp_path, index):
+    """A UI shows the choice next to the conflict it belongs to (ADR-0030)."""
+    rules = ruleset(tmp_path, [{"rule": "stratagems(4115):cdtweaks(1150)",
+                                "severity": "warning"}])
+    plan, report = planned(tmp_path, index, rules, SCS_VS_TWEAKS)
+    result = resolve_conflicts(plan, report, rules)
+    ids = {f.id for f in report.findings}
+    assert result.left_for_operator
+    assert all(u.finding_id in ids for u in result.left_for_operator)
+    data = result.as_dict()
+    assert data["schema_version"] == 1
+    assert data["left_for_operator"][0]["finding_id"] in ids
