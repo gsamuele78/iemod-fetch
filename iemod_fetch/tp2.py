@@ -159,14 +159,18 @@ def read_mod_tp2(mod_dir: str, tp2_file: str) -> Optional[Tp2Info]:
 # is unambiguous. A MOD_IS_INSTALLED inside an ACTION_IF is code, not a
 # requirement, and is deliberately not read.
 _STR = r'(?:~([^~]*)~|"([^"]*)"|%([^%]*)%|([^\s~"%()]+))'
-# A component's BEGIN starts its own line, with its name on that line. Mid-line
-# BEGINs are code (`DEFINE_ASSOCIATIVE_ARRAY x BEGIN ~k~ => ~v~ END`, ACTION_IF
+# A component's BEGIN starts its own line, with its name on that line - or
+# alone on it, the name on the next (LCA's `BEGIN` / `@800`). Mid-line BEGINs
+# are code (`DEFINE_ASSOCIATIVE_ARRAY x BEGIN ~k~ => ~v~ END`, ACTION_IF
 # blocks); EET's tp2 has 97 of those and 2 components.
 _COMPONENT_START = re.compile(
-    r'^[ \t]*BEGIN[ \t]+(?:~[^~\n]*~|"[^"\n]*"|@-?\d+|\w+(?=[ \t]+DESIGNATED\b))',
+    r'^[ \t]*BEGIN(?:[ \t]+|[ \t]*\r?\n[ \t]*)'
+    r'(?:~[^~\n]*~|"[^"\n]*"|@-?\d+|\w+(?=[ \t]+DESIGNATED\b))',
     re.IGNORECASE | re.MULTILINE)
 _DESIGNATED = re.compile(r"\bDESIGNATED\s+(\d+)", re.IGNORECASE)
-_SUBCOMPONENT = re.compile(r'\bSUBCOMPONENT\s+(~[^~]*~|"[^"]*"|@-?\d+)', re.IGNORECASE)
+# FORCED_SUBCOMPONENT is a SUBCOMPONENT that cannot be skipped: same group.
+_SUBCOMPONENT = re.compile(r'(?:\b|(?<=FORCED_))SUBCOMPONENT\s+(~[^~]*~|"[^"]*"|@-?\d+)',
+                           re.IGNORECASE)
 _REQUIRE_COMPONENT = re.compile(rf"\bREQUIRE_COMPONENT\s+{_STR}\s+{_STR}", re.IGNORECASE)
 _FORBID_COMPONENT = re.compile(rf"\bFORBID_COMPONENT\s+{_STR}\s+{_STR}", re.IGNORECASE)
 _REQUIRE_PREDICATE = re.compile(r"\bREQUIRE_PREDICATE\b", re.IGNORECASE)
@@ -260,17 +264,27 @@ def _number(text: str) -> Optional[int]:
 _INLINED_FILE = re.compile(r"^[ \t]*<{8}.*?^[ \t]*>{8}", re.MULTILINE | re.DOTALL)
 
 
+def component_number(chunk: str, previous: int) -> int:
+    """
+    WeiDU's numbering: DESIGNATED if given, else the previous component's
+    number + 1 - not the position in the file. Measured: EEUITweaks' five
+    undesignated components after DESIGNATED 5041 are 5042-5046.
+    """
+    designated = _DESIGNATED.search(chunk)
+    return int(designated.group(1)) if designated else previous + 1
+
+
 def parse_components(content: str) -> List[Tp2Component]:
     """Every component of a tp2 with the constraints WeiDU enforces on it."""
     clean = _INLINED_FILE.sub("", strip_comments(content))
     starts = [m.start() for m in _COMPONENT_START.finditer(clean)]
     components: List[Tp2Component] = []
+    previous = -1
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(clean)
         chunk = clean[start:end]
-        designated = _DESIGNATED.search(chunk)
-        component = Tp2Component(number=int(designated.group(1)) if designated
-                                 else position)
+        previous = component_number(chunk, previous)
+        component = Tp2Component(number=previous)
         group = _SUBCOMPONENT.search(chunk)
         component.group = group.group(1) if group else ""
         for match in _REQUIRE_COMPONENT.finditer(chunk):

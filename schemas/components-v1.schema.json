@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gsamuele78/iemod-fetch/schemas/components-v1.schema.json",
+  "title": "iemod-fetch staged mod components, version 1",
+  "description": "Output of --describe-mods: every staged tp2's languages and components, named as WeiDU names them in --list-components and WeiDU.log. iemod_fetch/tra.py is the authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mods"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tp2", "version", "language", "languages", "components"],
+        "properties": {
+          "tp2": {"type": "string", "description": "relative to --target, as WeiDU is given it"},
+          "version": {"type": ["string", "null"]},
+          "language": {"type": ["integer", "null"], "minimum": 0,
+                       "description": "the WeiDU language index the names are in"},
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["index", "name", "directory"],
+              "properties": {
+                "index": {"type": "integer", "minimum": 0},
+                "name": {"type": "string"},
+                "directory": {"type": "string"}
+              }
+            }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["number", "name", "title", "group", "resolved"],
+              "properties": {
+                "number": {"type": "integer"},
+                "name": {"type": "string", "description": "Group -> Title: VERSION, as WeiDU prints it"},
+                "title": {"type": "string"},
+                "group": {"type": ["string", "null"]},
+                "resolved": {"type": "boolean", "description": "false where WeiDU too prints UNDEFINED STRING"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

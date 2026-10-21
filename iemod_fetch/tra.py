@@ -1,0 +1,314 @@
+"""
+Component names, the way WeiDU prints them (M2).
+
+A component tree is useless as a list of numbers. The names live in the mod's
+own files: the tp2 says `BEGIN @100`, a LANGUAGE block says which .tra files
+hold language N, and the .tra file says `@100 = ~Smarter mages~`. WeiDU
+resolves them and prints `Group -> Name: VERSION` for --list-components and in
+WeiDU.log. This module does the same resolution, deterministically and without
+running WeiDU, so a GUI can show names for a mod that is merely staged.
+
+It is measured against WeiDU 251's own --list-components on real mods
+(docs/TESTING.md, tools/tra_benchmark.py); what it cannot resolve - a name
+built at install time, a .tra file loaded by code - it reports as unresolved
+rather than guessing.
+
+Pure: the caller supplies `read(path) -> Optional[str]` for the .tra files, so
+the core never touches the filesystem.
+"""
+import re
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
+
+from .languages import choose_language
+from .tp2 import _COMPONENT_START, _INLINED_FILE, _SUBCOMPONENT, component_number
+
+Reader = Callable[[str], Optional[str]]
+
+
+# --------------------------------------------------------------- .tra files
+def _skip(text: str, i: int) -> int:
+    """Past whitespace and comments."""
+    n = len(text)
+    while i < n:
+        if text[i].isspace():
+            i += 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j + 1
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        else:
+            break
+    return i
+
+
+def _string(text: str, i: int) -> Tuple[Optional[str], int]:
+    """A WeiDU string at i: ~...~, ~~~~~...~~~~~, "...", %...%."""
+    if text.startswith("~~~~~", i):
+        j = text.find("~~~~~", i + 5)
+        return (None, i) if j < 0 else (text[i + 5:j], j + 5)
+    if i < len(text) and text[i] in "~\"%":
+        j = text.find(text[i], i + 1)
+        return (None, i) if j < 0 else (text[i + 1:j], j + 1)
+    return None, i
+
+
+_REF = re.compile(r"@(-?\d+)\s*=\s*")
+_BARE = re.compile(r"[^\s~\"%@\[\]/]+")
+
+
+def parse_tra(text: str) -> Dict[int, str]:
+    """`@N = ~text~ [~female text~] [[SOUND]]`, in order; later entries win."""
+    out: Dict[int, str] = {}
+    i, n = 0, len(text)
+    while i < n:
+        i = _skip(text, i)
+        match = _REF.match(text, i)
+        if not match:
+            # Not an entry: resynchronise on the next @, as WeiDU's lexer would
+            # fail here; better one lost entry than a whole file.
+            j = text.find("@", i + 1)
+            if j < 0:
+                break
+            i = j
+            continue
+        value, j = _string(text, match.end())
+        if value is None:
+            # WeiDU also takes a bare word: thepicturestandard's `@30=BG1NPC`.
+            bare = _BARE.match(text, match.end())
+            if not bare:
+                i = match.end()
+                continue
+            value, j = bare.group(0), bare.end()
+        out[int(match.group(1))] = value
+        j = _skip(text, j)
+        female, k = _string(text, j)           # an optional second (female) string
+        if female is not None:
+            j = k
+        j = _skip(text, j)
+        if j < n and text[j] == "[":            # an optional [SOUND]
+            close = text.find("]", j)
+            j = n if close < 0 else close + 1
+        i = j
+    return out
+
+
+# ---------------------------------------------------------- the tp2 itself
+@dataclass
+class Language:
+    name: str
+    directory: str
+    tra_files: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ComponentName:
+    number: int
+    name: str                    # what WeiDU prints: "Group -> Name: VERSION"
+    title: str = ""              # the component's own name
+    group: str = ""              # its SUBCOMPONENT, resolved
+    resolved: bool = True        # False when a reference had no text
+
+
+def _strip(content: str) -> str:
+    """Comments out, strings kept: a '//' inside ~http://...~ is text."""
+    out, i, n = [], 0, len(content)
+    while i < n:
+        c = content[i]
+        if content.startswith("//", i):
+            j = content.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if content.startswith("/*", i):
+            j = content.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            out.append(" ")
+            continue
+        if c in "~\"%":
+            value, j = _string(content, i)
+            if value is not None:
+                out.append(content[i:j])
+                i = j
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+_LANGUAGE = re.compile(r"^[ \t]*LANGUAGE\b", re.IGNORECASE | re.MULTILINE)
+_VERSION = re.compile(r"^[ \t]*VERSION\s+", re.IGNORECASE | re.MULTILINE)
+_BACKUP = re.compile(r"^[ \t]*BACKUP\s+", re.IGNORECASE | re.MULTILINE)
+
+
+def _strings_after(text: str, i: int, stop: int) -> List[str]:
+    values: List[str] = []
+    while True:
+        i = _skip(text, i)
+        if i >= stop:
+            return values
+        value, j = _string(text, i)
+        if value is None:
+            return values
+        values.append(value)
+        i = j
+
+
+def _token(text: str, i: int, stop: int) -> Tuple[Optional[str], int]:
+    """A string, or a bare word as WeiDU also accepts one."""
+    i = _skip(text, i)
+    if i >= stop:
+        return None, i
+    value, j = _string(text, i)
+    if value is not None:
+        return value, j
+    bare = re.match(r"[^\s~\"%/]+", text[i:stop])
+    return (bare.group(0), i + bare.end()) if bare else (None, i)
+
+
+def languages(tp2: str) -> List[Language]:
+    """
+    The LANGUAGE declarations, in order: index N is the Nth.
+
+    `LANGUAGE name directory tra...`: the name and the directory may be bare
+    words (`LANGUAGE English english ~x.tra~`, SCS's `ENGLISH`); the .tra
+    files are strings. Skipping a declaration would shift every index after it.
+    """
+    clean = _strip(tp2)
+    starts = [m.end() for m in _LANGUAGE.finditer(clean)]
+    found = []
+    for k, start in enumerate(starts):
+        stop = starts[k + 1] if k + 1 < len(starts) else len(clean)
+        name, i = _token(clean, start, stop)
+        directory, i = _token(clean, i, stop)
+        if name is None or directory is None:
+            continue
+        found.append(Language(name, directory, _strings_after(clean, i, stop)))
+    return found
+
+
+def _version(clean: str) -> str:
+    match = _VERSION.search(clean)
+    if not match:
+        return ""
+    value, _j = _string(clean, match.end())
+    return value if value is not None else ""
+
+
+def mod_folder(tp2: str) -> str:
+    """
+    What WeiDU calls %MOD_FOLDER%: the directory of the BACKUP directive, not
+    the directory the tp2 sits in. LCA keeps `EE/LCA.tp2` with `BACKUP
+    ~LCA/backup~`, so its `%MOD_FOLDER%/tra/...` points into LCA/ - checked
+    against WeiDU 251.
+    """
+    clean = _strip(tp2)
+    match = _BACKUP.search(clean)
+    if not match:
+        return ""
+    value, _j = _string(clean, match.end())
+    if not value:
+        return ""
+    return value.replace("\\", "/").rstrip("/").rpartition("/")[0]
+
+
+def _variables(path: str, folder: str, language: Language, weidu_os: str) -> str:
+    """The variables WeiDU defines before it reads a LANGUAGE's .tra files."""
+    for name, value in (("MOD_FOLDER", folder), ("LANGUAGE", language.directory),
+                        ("WEIDU_OS", weidu_os)):
+        path = re.sub(f"%{name}%", value.replace("\\", "/"), path, flags=re.IGNORECASE)
+    return path
+
+
+def _text(token: str, strings: Dict[int, str]) -> Tuple[str, bool]:
+    token = token.strip()
+    if token.startswith("@"):
+        try:
+            number = int(token[1:])
+        except ValueError:
+            return token, False
+        if number in strings:
+            return strings[number], True
+        return f"UNDEFINED STRING:   @{number}", False     # what WeiDU prints
+    value, _j = _string(token, 0)
+    return (value, True) if value is not None else (token, False)
+
+
+def _argument(chunk: str, at: int) -> str:
+    """The string or @reference that follows position `at`."""
+    i = _skip(chunk, at)
+    if chunk.startswith("@", i):
+        match = re.match(r"@-?\d+", chunk[i:])
+        return match.group(0) if match else ""
+    value, j = _string(chunk, i)
+    return chunk[i:j] if value is not None else ""
+
+
+def component_names(tp2: str, language_index: int, read: Reader,
+                    folder: Optional[str] = None, weidu_os: str = "win32") -> List[ComponentName]:
+    """
+    Every component's name in language `language_index`, as WeiDU prints it.
+
+    `read(path)` returns a .tra file's text (paths as the tp2 writes them,
+    after %MOD_FOLDER%, %LANGUAGE% and %WEIDU_OS%), or None when it does not
+    exist. `weidu_os` is what WeiDU calls the platform: win32, osx or unix;
+    a few mods keep per-platform .tra files. `folder` overrides %MOD_FOLDER%,
+    which otherwise comes from the tp2's BACKUP directive, as WeiDU does.
+    """
+    clean = _strip(tp2)
+    if folder is None:
+        folder = mod_folder(tp2)
+    langs = languages(tp2)
+    strings: Dict[int, str] = {}
+    if 0 <= language_index < len(langs):
+        language = langs[language_index]
+        for path in language.tra_files:
+            text = read(_variables(path, folder, language, weidu_os))
+            if text is not None:
+                strings.update(parse_tra(text))
+    version = _version(clean)
+    body = _INLINED_FILE.sub("", clean)
+    starts = list(_COMPONENT_START.finditer(body))
+    out = []
+    number = -1
+    for position, match in enumerate(starts):
+        end = starts[position + 1].start() if position + 1 < len(starts) else len(body)
+        chunk = body[match.start():end]
+        number = component_number(chunk, number)
+        title, ok = _text(_argument(chunk, chunk.upper().find("BEGIN") + 5), strings)
+        group, group_ok = "", True
+        sub = _SUBCOMPONENT.search(chunk)
+        if sub:
+            group, group_ok = _text(sub.group(1), strings)
+        name = f"{group} -> {title}" if sub else title
+        # WeiDU prints a component on one line: a line break in its text is a space.
+        name = name.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        if version:
+            name = f"{name}: {version}"
+        out.append(ComponentName(number, name, title, group, ok and group_ok))
+    return out
+
+
+def describe(tp2: str, read: Reader, preferences: Sequence[str] = (),
+             weidu_os: str = "win32") -> dict:
+    """
+    A mod's languages and its components' names, for a selection screen.
+
+    The language is the first of `preferences` (codes such as it_IT) the mod
+    offers, else its first, as WeiDU's own default. `components` keeps WeiDU's
+    order; `resolved` is False where WeiDU too would print UNDEFINED STRING.
+    """
+    langs = languages(tp2)
+    chosen = choose_language([(lang.name, lang.directory) for lang in langs], preferences)
+    index = chosen[0] if chosen else 0
+    names = component_names(tp2, index, read, weidu_os=weidu_os)
+    return {
+        "version": _version(_strip(tp2)) or None,
+        "language": index if langs else None,
+        "languages": [{"index": k, "name": lang.name, "directory": lang.directory}
+                      for k, lang in enumerate(langs)],
+        "components": [{"number": c.number, "name": c.name, "title": c.title,
+                        "group": c.group or None, "resolved": c.resolved}
+                       for c in names],
+    }

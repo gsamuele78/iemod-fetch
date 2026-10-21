@@ -10,7 +10,7 @@ WeiDU enforces these when it installs a component - they are not opinions:
       REQUIRE_PREDICATE MOD_IS_INSTALLED ~x.tp2~ ~3~ @203
       REQUIRE_PREDICATE NOT MOD_IS_INSTALLED ~y.tp2~ ~4~ @204
 
-The claims: component numbers follow WeiDU (position, unless DESIGNATED);
+The claims: component numbers follow WeiDU (DESIGNATED, else previous + 1);
 `ACTION_IF ... BEGIN` is not a component; NOT and GAME_IS are read in their
 simple, common forms and anything more complex is counted as unread rather
 than half-understood.
@@ -34,11 +34,11 @@ BEGIN ~Second~ DESIGNATED 1100                   /* component 1100 */
 FORBID_COMPONENT ~SETUP-BGT.TP2~ ~0~ ~no BGT~
 REQUIRE_PREDICATE GAME_IS ~bgee eet~ @11
 
-BEGIN @2                                         // component 2: position
+BEGIN @2                                         // component 1101: 1100 + 1
 SUBCOMPONENT @3
 REQUIRE_PREDICATE MOD_IS_INSTALLED ~cdtweaks/setup-cdtweaks.tp2~ ~2100~ @12
 
-BEGIN @4                                         // component 3
+BEGIN @4                                         // component 1102
 SUBCOMPONENT @3
 REQUIRE_PREDICATE NOT MOD_IS_INSTALLED ~stratagems/setup-stratagems.tp2~ ~4115~ @13
 
@@ -52,7 +52,10 @@ def by_number():
 
 
 def test_component_numbers_follow_weidu():
-    assert list(by_number()) == [0, 1100, 2, 3, 50]
+    """Checked against WeiDU 251: `--list-components` on this very tp2 prints
+    #0, #1100, #1101, #1102, #50 - an undesignated component is the previous
+    number + 1, not its position."""
+    assert list(by_number()) == [0, 1100, 1101, 1102, 50]
 
 
 def test_an_action_if_block_is_not_a_component():
@@ -73,12 +76,12 @@ def test_a_component_game_requirement_is_read():
 
 
 def test_mod_is_installed_predicates_become_requires_and_forbids():
-    assert by_number()[2].requires == [("cdtweaks", 2100)]
-    assert by_number()[3].forbids == [("stratagems", 4115)]
+    assert by_number()[1101].requires == [("cdtweaks", 2100)]
+    assert by_number()[1102].forbids == [("stratagems", 4115)]
 
 
 def test_subcomponent_groups_are_kept():
-    assert by_number()[2].group == by_number()[3].group != ""
+    assert by_number()[1101].group == by_number()[1102].group != ""
 
 
 def test_a_compound_predicate_is_counted_not_half_read():
@@ -158,3 +161,25 @@ def test_a_begin_inside_an_inlined_file_is_not_a_component():
     first, second = parse_components(text)
     assert (first.number, first.requires) == (0, [("eet", 0)])
     assert second.number == 1
+
+
+# Found by measuring against WeiDU 251's --list-components on 103 real mods.
+def test_an_undesignated_component_follows_the_previous_number_not_its_position():
+    """WeiDU numbers a component without DESIGNATED as the previous one + 1:
+    EEUITweaks' five `BEGIN ~dummy~` after DESIGNATED 5041 are 5042-5046."""
+    tp2 = ("BEGIN ~a~ DESIGNATED 10\n"
+           "BEGIN ~b~\n"
+           "BEGIN ~c~ DESIGNATED 40\n"
+           "BEGIN ~d~\n")
+    assert [c.number for c in parse_components(tp2)] == [10, 11, 40, 41]
+
+
+def test_forced_subcomponent_is_a_subcomponent_group():
+    tp2 = ("BEGIN ~Thief~\nFORCED_SUBCOMPONENT ~Choose a class~\n"
+           "BEGIN ~Mage~\nFORCED_SUBCOMPONENT ~Choose a class~\n")
+    assert [c.group for c in parse_components(tp2)] == ["~Choose a class~"] * 2
+
+
+def test_begin_alone_on_its_line_with_the_name_on_the_next():
+    """LCA's tp2: `BEGIN` then `@800` on the following line."""
+    assert [c.number for c in parse_components("BEGIN\n  @800\nCOPY ~a~ ~b~\n")] == [0]

@@ -142,6 +142,33 @@ fixture placed where WeiDU does not look. Opt in locally with
 downloads both pinned and sets `IEMOD_REQUIRE_REAL=1`, so a missing tool fails
 instead of skipping.
 
+### Component names, measured against WeiDU itself
+
+`iemod_fetch/tra.py` names components without running WeiDU. Its claim is
+"the same text WeiDU prints", and it is measured, not argued:
+`tools/tra_oracle.py` runs `weidu --nogame --list-components` for every tp2
+and every language of a set of real mod repositories, and
+`tools/tra_benchmark.py` compares, byte for byte.
+
+```bash
+python3 tools/tra_oracle.py /path/to/weidu MODS_DIR oracle.json
+python3 tools/tra_benchmark.py oracle.json --min 99.9
+```
+
+On 103 repositories (lcc-docs and BWS-NG mods, cloned 2026-10-21) and WeiDU
+251: 551 runs, 9,889 component lines. The parser went from 65.70% to 100.00%
+exact, each step a form WeiDU accepts and the parser did not - bare-word
+LANGUAGE names (SCS), `%WEIDU_OS%`, FORCED_SUBCOMPONENT, `BEGIN` alone on its
+line, undesignated numbering as previous + 1, a bare-word .tra value,
+`%MOD_FOLDER%` taken from BACKUP (LCA). Each became a unit test in
+`tests/test_tra.py` or `tests/test_tp2_components.py`.
+
+Read the 100% honestly: it is the set the parser was fixed against, so it is a
+training score. A new mod can still use a form not seen here; the next run of
+the oracle on a wider set is the real test. Names built by code at install
+time (an `OUTER_SPRINT` then `BEGIN %name%`) are out of reach by design and
+are reported unresolved, not guessed.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
