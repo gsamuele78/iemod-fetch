@@ -9,7 +9,7 @@ import json
 import zipfile
 
 
-from iemod_fetch import cli
+from iemod_fetch import api, cli
 from iemod_fetch.archives import Kind
 from iemod_fetch.errors import NetworkError
 from iemod_fetch.net import DownloadResult
@@ -56,8 +56,8 @@ class DiscoveryStub:
 def make(tmp_path, monkeypatch, stub, weidu, manifest):
     (tmp_path / "WeiDU.log").write_text(weidu)
     (tmp_path / "mod_downloads.json").write_text(json.dumps(manifest))
-    monkeypatch.setattr(cli, "HttpClient", lambda **kw: stub)
-    monkeypatch.setattr(cli, "resolve_credential",
+    monkeypatch.setattr(api, "HttpClient", lambda **kw: stub)
+    monkeypatch.setattr(api, "resolve_credential",
                         lambda **kw: type("C", (), {"token": None,
                                                     "describe": lambda self: "anon"})())
     monkeypatch.chdir(tmp_path)

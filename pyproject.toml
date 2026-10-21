@@ -168,6 +168,8 @@ ignore = [
 "iemod_fetch/ordering.py" = ["T20"]
 "iemod_fetch/conflicts.py" = ["T20"]
 "iemod_fetch/cli.py" = ["T20"]
+# `run` writes its report to the stream it is given; silent by default.
+"iemod_fetch/api.py" = ["T20"]
 # 0o755 on a zipapp is what makes it executable; that is the artifact's job.
 "build.py" = ["T20", "S603", "S607", "S103"]
 # S105 flags the OAuth device-flow ENDPOINT URL as a hardcoded password.
