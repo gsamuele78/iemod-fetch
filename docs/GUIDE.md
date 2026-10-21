@@ -409,15 +409,31 @@ The default ceiling is 2 GiB because real mods reach it — BGGO is 1.4 GB.
 
 ## 9. Planning a rule-compliant install order
 
-### 9.1 Get the two databases
+### 9.1 The databases: kept current for you
+
+Since 2.4 nothing needs cloning. Each run refreshes a cache of the three
+community databases before it starts, at most once a day (ADR-0032), and uses
+it for every source flag you did not give:
+
+| Cached source | Stands in for |
+|---|---|
+| lcc-docs `db/mods.json` | `--catalogue` |
+| BWS-NG `data/rules`, krion64 `data/mods` | `--rules` |
+| BWS-NG `data/mods` | `--mod-db` |
+| krion64 `data/` | `--order-catalogue` |
 
 ```bash
-git clone --depth 1 https://github.com/Selphira/BigWorldSetup-Next-Generation.git
-git clone --depth 1 https://github.com/krion64/krion64.github.io.git
+python3 iemod-fetch.pyz --update-data        # refresh now and stop; shows each commit
+python3 iemod-fetch.pyz ... --no-update-data # stay offline; use the cache as it is
+python3 iemod-fetch.pyz ... --no-default-data # only what the flags say
 ```
 
-Neither is vendored. They are data, passed by path, and refreshed with
-`git pull`. BWS-NG supplies the pairwise rules; krion64 supplies the 26-category
+Only the files the tool reads are fetched (about 25 MB the first time, then
+only what changed), each checked against the git hash GitHub lists for it.
+Offline, the last good copy is used and the header says how old it is. A
+GitHub token (see *GitHub credential*) is not required: a day's refresh is six
+API calls. An explicit path still wins, so a clone you maintain yourself works
+as before. BWS-NG supplies the pairwise rules; krion64 supplies the 26-category
 install-order skeleton plus a second, component-precise conflict database.
 
 ### 9.2 Check first, then plan

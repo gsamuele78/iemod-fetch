@@ -8,6 +8,30 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **The community data is kept current automatically** (ADR-0032). Each run
+  refreshes a cache of lcc-docs, BigWorldSetup-NG and krion64 before it starts,
+  at most once per `--data-max-age` hours (default 24), and uses it for
+  `--catalogue`, `--rules`, `--mod-db` and `--order-catalogue` whenever those
+  are not given. Only the `.json` files the tool reads are fetched, only the
+  changed ones, each checked against its git blob hash and swapped in whole;
+  offline, the last good copy is used. `--update-data` refreshes now and
+  stops, `--no-update-data` stays offline, `--no-default-data` uses only the
+  flags, `--data-dir` moves the cache. `api.update_data` and `api.data_status`
+  for the GUI; a `data_source` event per source.
+
+### Changed
+- **`--plan-order` no longer needs `--order-catalogue`**, and checks use the
+  community rules without setup, once the cache holds them. A run that gave no
+  rules may therefore now report findings; `--no-default-data` restores the
+  previous behaviour.
+
+### Build
+- The nightly "upstream rule data still parses" job became
+  `community-data.yml`: the real refresh against GitHub, twice (the second must
+  fetch nothing), then the parse floors. It also runs on pull requests that
+  change the refresh.
+
 ## [2.3.0] - 2026-10-21
 
 The backend release (milestone M1 of `docs/GUI-AUDIT.md`): everything the

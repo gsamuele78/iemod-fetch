@@ -28,6 +28,7 @@ from typing import Any, List, Optional, Sequence
 from .auth import resolve_credential
 from .available import AvailableMod, available_mods, mods_document
 from .catalogues import CatalogueSet
+from . import datasync
 from .conflicts import ConflictReport, build_conflict_report, render_conflict_report
 from .constraints import ModConstraints, load_constraints, tp2_rules
 from .errors import ConfigError
@@ -53,11 +54,12 @@ from .selection import (Selection, parse_selection, selection_from_logs,
                         selection_to_json)
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
+from .contract import SCHEMA_VERSION
 from .weidu import ParsedLog, parse_weidu_files, split_log_spec
 from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
-           "selection_of_logs"]
+           "selection_of_logs", "update_data", "data_status"]
 
 
 @dataclass
@@ -124,6 +126,12 @@ class Settings:
     no_gh_cli: bool = False
     no_git_credential: bool = False
     oauth_client_id: Optional[str] = None
+    # community data (ADR-0032)
+    update_data: bool = False
+    no_update_data: bool = False
+    data_dir: Optional[str] = None
+    data_max_age: int = datasync.DEFAULT_MAX_AGE_HOURS
+    no_default_data: bool = False
 
     @classmethod
     def from_namespace(cls, namespace) -> "Settings":
@@ -170,10 +178,102 @@ def run(settings: Settings, stream=None, config=None, on_event=None,
     stops the run. `settings` is not modified.
     """
     settings = replace(settings, weidu_log=list(settings.weidu_log or []))
+    stream = stream if stream is not None else _Silent()
+    if settings.update_data:
+        results = update_data(settings, force=True, stream=stream, on_event=on_event)
+        return Outcome(1 if all(r.status == "failed" for r in results) else 0)
+    _use_data(settings, stream, on_event)
     with tempfile.TemporaryDirectory(prefix="iemod-selection-") as workdir:
         _use_selection(settings, workdir)
-        return _run(settings, stream if stream is not None else _Silent(), config,
-                    on_event, cancel)
+        return _run(settings, stream, config, on_event, cancel)
+
+
+def update_data(settings: Optional[Settings] = None, force: bool = False,
+                stream=None, on_event=None) -> List[datasync.SyncResult]:
+    """
+    Refresh the cached community data (lcc-docs, BWS-NG, krion64).
+
+    Without `force`, a source checked within `settings.data_max_age` hours is
+    left alone. A source that cannot be refreshed keeps its last good copy and
+    is reported `failed`; this never raises for that.
+    """
+    settings = settings or Settings()
+    results = datasync.refresh(_LazyClient(settings), _data_dir(settings),
+                               datasync.SOURCES, max_age_hours=settings.data_max_age,
+                               force=force)
+    for result in results:
+        if on_event is not None:
+            on_event({"schema_version": SCHEMA_VERSION, "event": "data_source",
+                      "name": result.name, "status": result.status,
+                      "commit": result.commit, "date": result.date,
+                      "changed": result.changed, "detail": result.detail})
+    if stream is not None and not settings.quiet:
+        for line in datasync.describe(results):
+            if not line.endswith(", fresh"):
+                print(f"  data        : {line}", file=stream)
+    return results
+
+
+def data_status(data_dir: Optional[str] = None) -> dict:
+    """What the cache holds: per source, its repository, commit, date and check time."""
+    return datasync.load_manifest(data_dir or datasync.default_data_dir())
+
+
+def _data_dir(settings: Settings) -> str:
+    return settings.data_dir or datasync.default_data_dir()
+
+
+def _use_data(settings: Settings, stream, on_event) -> None:
+    """
+    Refresh the community data if it is older than `data_max_age`, then use it
+    for every source flag the run was not given (ADR-0032). An explicit flag
+    always wins; `--no-default-data` turns the defaults off.
+    """
+    if not (settings.no_update_data or os.environ.get("IEMOD_NO_UPDATE_DATA")):
+        update_data(settings, stream=stream, on_event=on_event)
+    if settings.no_default_data:
+        return
+    cached = datasync.data_paths(_data_dir(settings))
+    if not settings.catalogue and cached.catalogue:
+        settings.catalogue = [cached.catalogue]
+    if not settings.rules and cached.rules:
+        settings.rules = list(cached.rules)
+    if not settings.mod_db and cached.mod_db:
+        settings.mod_db = cached.mod_db
+    if not settings.order_catalogue and cached.order_catalogue:
+        settings.order_catalogue = cached.order_catalogue
+
+
+class _LazyClient:
+    """
+    The HTTP client, built on first use. Finding a credential runs `gh` and
+    git's credential helper; a cache checked within the hour needs neither.
+    """
+
+    def __init__(self, settings: Settings):
+        self._settings = settings
+        self._client: Optional[HttpClient] = None
+
+    def _get(self) -> HttpClient:
+        if self._client is None:
+            self._client = _http_client(self._settings)
+        return self._client
+
+    def get_json(self, url: str):
+        return self._get().get_json(url)
+
+    def read_bytes(self, url: str, limit: Optional[int] = None) -> bytes:
+        return self._get().read_bytes(url, limit=limit)
+
+
+def _http_client(settings: Settings) -> HttpClient:
+    credential = resolve_credential(token_file=settings.token_file,
+                                    use_gh=not settings.no_gh_cli,
+                                    use_git_credential=not settings.no_git_credential,
+                                    oauth_client_id=settings.oauth_client_id)
+    return HttpClient(token=credential.token, allow_http=settings.allow_http,
+                      timeout=settings.timeout, max_bytes=settings.max_bytes,
+                      retries=settings.retries)
 
 
 def list_mods(manifest: Optional[str] = None, catalogues: Sequence[str] = (),
