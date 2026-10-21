@@ -545,7 +545,7 @@ def _render_one(finding: Finding, stream) -> None:
         print(f"          may be stale: {finding.stale_risk}", file=stream)
     if finding.suppressed:
         print(f"          suppressed: {finding.suppressed}", file=stream)
-    if finding.actionable and finding.kind != ORDER:
+    if finding.actionable:
         # What decisions.json needs: the finding's id and one option's id.
         print(f"          id: {finding.id}; options:", file=stream)
         for option in finding.options:

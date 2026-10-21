@@ -81,6 +81,7 @@ BEGIN @99
 FILES = {
     "mymod/tra/english/setup.tra": "@1 = ~First~\n@2 = ~Fast~\n@3 = ~Speed~\n@4 = ~Two\nlines~",
     "mymod/tra/english/win32.tra": "@2 = ~Fast on Windows~",
+    "mymod/tra/english/unix.tra": "@2 = ~Fast on Unix~",
     "mymod/tra/italian/setup.tra": "@1 = ~Primo~",
 }
 
@@ -98,7 +99,9 @@ def test_names_are_printed_as_weidu_prints_them():
 
 def test_weidu_os_selects_the_platform_tra():
     names = component_names(TP2, 0, reader(FILES), weidu_os="unix")
-    assert names[1].title == "Fast"
+    assert names[1].title == "Fast on Unix"
+    names = component_names(TP2, 0, reader(FILES), weidu_os="osx")
+    assert names[1].title == "Fast"           # no osx.tra: the shared one stands
 
 
 def test_another_language_reads_its_own_tra():
@@ -118,8 +121,9 @@ def test_describe_picks_the_first_preferred_language_offered():
     assert described["languages"][1] == {"index": 1, "name": "Italiano",
                                          "directory": "italian"}
     assert described["components"][0] == {"number": 0, "name": "Primo: v3",
-                                          "title": "Primo", "group": None,
-                                          "resolved": True}
+                                          "title": "Primo", "subgroup": None,
+                                          "groups": [], "labels": [], "forced": False,
+                                          "deprecated": False, "resolved": True}
 
 
 def test_describe_defaults_to_the_first_language():
@@ -177,3 +181,127 @@ def test_the_document_matches_its_schema(tmp_path):
                                "components-v1.schema.json")
     with open(schema_path, encoding="utf-8") as fh:
         jsonschema.validate(json.loads(out.read_text(encoding="utf-8")), json.load(fh))
+
+
+# ---------------------------------------------- the rest of WeiDU's view
+# Measured against WeiDU 251's --list-components-json on the same 109 tp2s:
+# which components are listed, and each one's title, subgroup, groups, labels
+# and forced flag, 1,499 of 1,499 (docs/TESTING.md).
+FLAGS = r"""
+VERSION ~v2~
+LANGUAGE ~English~ ~english~ ~m/tra/english/setup.tra~
+
+BEGIN @1 DESIGNATED 1                      // DlcMerger's form
+LABEL ~A7-DLCMERGER-MERGE_SOD~
+SUBCOMPONENT @2
+GROUP @3
+REQUIRE_PREDICATE GAME_IS ~bgee~ @9
+COPY ~a~ ~b~
+  SAY 0 ~LABEL ~NOT-A-LABEL~ inside text~
+
+BEGIN @4 DESIGNATED 2
+FORCED_SUBCOMPONENT @2
+LABEL ~ONE~ LABEL ~TWO~
+GROUP @3 GROUP ~Tweaks~
+
+BEGIN @5 DESIGNATED 145                    // Might and Guile's form
+DEPRECATED @6
+"""
+FLAG_TRA = {"m/tra/english/setup.tra":
+            "@1=~Merge SoD~ @2=~Merge DLC\ninto game~ @3=~Core~ @4=~Custom~ @5=~Old~ @6=~gone~"}
+
+
+def flagged():
+    return {c.number: c for c in component_names(FLAGS, 0, reader(FLAG_TRA))}
+
+
+def test_labels_and_groups_are_read_from_the_flags_only():
+    one = flagged()[1]
+    assert one.labels == ["A7-DLCMERGER-MERGE_SOD"]     # not the text in SAY
+    assert one.groups == ["Core"]
+
+
+def test_a_component_can_have_several_labels_and_groups():
+    two = flagged()[2]
+    assert two.labels == ["ONE", "TWO"] and two.groups == ["Core", "Tweaks"]
+
+
+def test_forced_subcomponent_is_flagged():
+    assert (flagged()[1].forced, flagged()[2].forced) == (False, True)
+    assert flagged()[1].subgroup == flagged()[2].subgroup
+
+
+def test_a_deprecated_component_is_marked_as_weidu_hides_it():
+    assert flagged()[145].deprecated and not flagged()[1].deprecated
+
+
+def test_line_breaks_are_a_space_in_the_name_and_dropped_in_the_title():
+    """--list-components prints 'Merge DLC into game -> ...'; its JSON gives
+    'Merge DLCinto game' (Gavin, cdtweaks and bp-bgt-worldmap measured)."""
+    one = flagged()[1]
+    assert one.name == "Merge DLC into game -> Merge SoD: v2"
+    assert one.subgroup == "Merge DLCinto game"
+
+
+# ------------------------------------------------- from the review of PR #24
+def test_a_percent_delimited_name_is_a_plain_string_as_weidu_reads_it():
+    """WeiDU 251 lists `BEGIN %Literal Name%` as 'Literal Name' and `BEGIN %x%`
+    as 'x': % is a string delimiter there, not a variable. The component used to
+    vanish, shifting every number after it."""
+    tp2 = "VERSION ~v1~\nBEGIN %Literal Name%\nBEGIN ~Second~\nBEGIN %x%\n"
+    assert [(c.number, c.name) for c in component_names(tp2, 0, reader({}))] == [
+        (0, "Literal Name: v1"), (1, "Second: v1"), (2, "x: v1")]
+
+
+def test_windows_1252_punctuation_stays_punctuation(tmp_path):
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "m.tp2").write_text("LANGUAGE ~English~ ~english~ ~m/setup.tra~\nBEGIN @1\n")
+    (mod / "setup.tra").write_bytes(b"@1 = ~Imoen\x92s Romance~")
+    (described,) = api.describe_mods(str(tmp_path))
+    assert described["components"][0]["title"] == "Imoen\u2019s Romance"
+
+
+def test_a_symbolic_link_is_not_followed(tmp_path):
+    outside = tmp_path / "outside.tra"
+    outside.write_text("@1 = ~leaked~")
+    mods = tmp_path / "Mods"
+    (mods / "m").mkdir(parents=True)
+    (mods / "m" / "m.tp2").write_text("LANGUAGE ~English~ ~english~ ~m/setup.tra~\nBEGIN @1\n")
+    try:
+        os.symlink(outside, mods / "m" / "setup.tra")
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform cannot create a symbolic link here")
+    (described,) = api.describe_mods(str(mods))
+    assert described["components"][0]["resolved"] is False
+
+
+def test_an_unreadable_file_is_unresolved_not_an_abort(tmp_path):
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "m.tp2").write_text("LANGUAGE ~English~ ~english~ ~m/setup.tra~\nBEGIN @1\n")
+    (mod / "setup.tra").mkdir()          # where a file should be: reading it fails
+    (described,) = api.describe_mods(str(tmp_path))
+    assert described["components"][0]["resolved"] is False
+
+
+def test_flags_after_require_file_and_a_multiline_predicate_are_read():
+    tp2 = ("BEGIN ~A~\nREQUIRE_FILE ~x.2da~ ~need~\nLABEL ~A-L~\nCOPY ~a~ ~b~\n"
+           "BEGIN ~B~\nREQUIRE_PREDICATE GAME_IS ~bgee~\n  OR MOD_IS_INSTALLED ~x.tp2~ 0 ~n~\n"
+           "LABEL ~B-L~\nCOPY ~a~ ~b~\n  LABEL ~NOT-A-LABEL~\n")
+    found = {c.number: c.labels for c in component_names(tp2, 0, reader({}))}
+    assert found == {0: ["A-L"], 1: ["B-L"]}
+
+
+def test_text_outside_the_mod_folder_is_never_read(tmp_path):
+    (tmp_path / "secret.tra").write_text("@1=~x~")
+    root = tmp_path / "mod"
+    root.mkdir()
+    assert api._text_under(str(root), "../secret.tra") is None
+    assert api._text_under(str(root), "C:/secret.tra") is None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_is_not_opened(tmp_path):
+    os.mkfifo(tmp_path / "x.tra")
+    assert api._text_under(str(tmp_path), "x.tra") is None

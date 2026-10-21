@@ -35,6 +35,7 @@ Standard library only at runtime. One file, no dependencies.
 | Step | What happens | Flag |
 |---|---|---|
 | **Share** | reads and writes BIO share codes (`BIO-MODLIST-V1:`), keeping every field BIO put in them | `--bio-code` `--emit-bio-code` |
+| **Import** | reads a Project Infinity / Infinity Mod Forge list (`LABEL;description`), each LABEL resolved from the mods' own tp2s | `--pi-list list.txt:EET` |
 | **Choose** | every mod lcc-docs, BWS-NG and krion64 know, with games, status, quality and the newest version any of them names; with a WeiDU.log, which installed mods have an update | `--list-mods PATH` |
 | **Name** | each staged mod's components named exactly as WeiDU names them, in your language, from its tp2 and `.tra` files | `--describe-mods PATH` |
 | **Fetch** | resolves each mod from its catalogue entry, GitHub release or trusted owner; refuses an HTML page served as an archive | *(default)* |
@@ -57,6 +58,7 @@ Standard library only at runtime. One file, no dependencies.
 - [Supplementary catalogues](#supplementary-catalogues)
 - [Community data, kept current](#community-data-kept-current)
 - [Sharing a list with BIO](#sharing-a-list-with-bio)
+- [Lists from Project Infinity and Infinity Mod Forge](#lists-from-project-infinity-and-infinity-mod-forge)
 - [Choosing mods: names and updates](#choosing-mods-names-and-updates)
 - [Planning the install order](#planning-the-install-order)
 - [What it guarantees](#what-it-guarantees) · [What it deliberately does not do](#what-it-deliberately-does-not-do)
@@ -339,7 +341,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           ~975 offline tests: characterization, example, property-based, loopback, script execution
+tests/           ~1,000 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -350,7 +352,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 974 passed + 4 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 1006 passed + 4 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -400,6 +402,25 @@ same payload, byte for byte, and exporting an imported list keeps its name, auth
 overrides, pinned refs and mod configs. Tested against BIO's own encoder and
 decoder (docs/TESTING.md). Only the format is implemented; no BIO code is used.
 
+## Lists from Project Infinity and Infinity Mod Forge
+
+```bash
+python3 iemod-fetch.pyz --pi-list install-EET.txt:EET --emit-selection selection.json --check-only
+```
+
+A PI list names each component by its WeiDU LABEL. The LABEL is looked up in
+the staged mods' own tp2s, read the way WeiDU reads them; for a mod not
+fetched yet, in krion64's records, which agree with the tp2s for 708 of 732
+LABELs - so each entry resolved that way is listed, and the tp2 always wins
+once the mod is there - a staged tp2 without the LABEL is an error, not a
+fallback to krion64. An entry neither resolves is an error naming the line,
+never a guess from its description.
+
+A mod that ships its own `mod-forge.json` (Infinity Mod Forge's format for
+authors) has its conflicts, dependencies and known issues read into the
+check once it is staged. Component numbers may be written as `"#0 #1"`, a
+number or a list; a malformed entry is skipped, never a crash. None of the 103 mods measured ships one yet.
+
 ## Choosing mods: names and updates
 
 ```bash
@@ -422,7 +443,9 @@ Both are measured, not assumed (docs/TESTING.md):
 
 * **Component names** match WeiDU 251's own `--list-components` on 9,889 of
   9,889 lines from 103 real mods. A name WeiDU itself cannot resolve is shown
-  as WeiDU shows it (`UNDEFINED STRING:   @N`) and flagged.
+  as WeiDU shows it (`UNDEFINED STRING:   @N`) and flagged. Each component's
+  subgroup, groups, labels, forced and deprecated flags match WeiDU's
+  `--list-components-json` on 1,499 of 1,499 components.
 * **The newest version** is the newest of the mod's latest GitHub release
   (krion64's release cache), BWS-NG and krion64. Against the mods' own tp2
   VERSION that agrees for 79 of 90 mods; any one source alone, 42 to 67.

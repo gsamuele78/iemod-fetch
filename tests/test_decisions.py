@@ -103,11 +103,14 @@ def test_the_tie_the_rules_leave_open_is_settled_by_the_players_choice(tmp_path)
 def test_an_accepted_conflict_keeps_both_sides_and_is_no_longer_outstanding(tmp_path):
     _outcome, findings = report(tmp_path)
     tie = next(f for f in findings if f["kind"] == INCOMPATIBLE and f["severity"] == "error")
-    _outcome, after = report(tmp_path, resolve_conflicts=True, decisions=write(
+    outcome, after = report(tmp_path, resolve_conflicts=True, decisions=write(
         tmp_path, [{"finding": tie["id"], "accept": "tested together, works"}]))
     accepted = next(f for f in after if f["id"] == tie["id"])
     assert accepted["suppressed"] == "accepted in decisions.json: tested together, works"
     assert "#0 #4100 " in planned(tmp_path) and "#0 #2370 " in planned(tmp_path)
+    # and --resolve-conflicts no longer lists it as the player's to decide
+    assert not any(u.finding_id == tie["id"]
+                   for u in outcome.order_plan.resolution.left_for_operator)
 
 
 def test_a_stale_decision_is_reported_not_applied(tmp_path):
@@ -168,6 +171,18 @@ def test_a_warning_or_speculation_recommends_nothing():
         finding = Finding(kind=INCOMPATIBLE, severity=severity, log="WeiDU.log",
                           left=side("a", (1, 2)), right=side("b", (7,)), evidence=evidence)
         assert not any(o.recommended for o in finding.options)
+
+
+def test_an_outstanding_order_finding_shows_its_id_and_option_in_the_text():
+    import io
+    from iemod_fetch.conflicts import ConflictReport, render_conflict_report
+    finding = Finding(kind="order", severity="error", log="WeiDU.log",
+                      left=side("a"), right=side("b"), first="b",
+                      remedy="install b before a", fixed_by_plan=False)
+    out = io.StringIO()
+    render_conflict_report(ConflictReport(findings=[finding]), out)
+    assert finding.id in out.getvalue()
+    assert finding.options[0].id(finding.id) in out.getvalue()
 
 
 def test_an_order_finding_offers_the_reorder():

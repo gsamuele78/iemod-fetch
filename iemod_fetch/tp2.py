@@ -165,7 +165,7 @@ _STR = r'(?:~([^~]*)~|"([^"]*)"|%([^%]*)%|([^\s~"%()]+))'
 # blocks); EET's tp2 has 97 of those and 2 components.
 _COMPONENT_START = re.compile(
     r'^[ \t]*BEGIN(?:[ \t]+|[ \t]*\r?\n[ \t]*)'
-    r'(?:~[^~\n]*~|"[^"\n]*"|@-?\d+|\w+(?=[ \t]+DESIGNATED\b))',
+    r'(?:~[^~\n]*~|"[^"\n]*"|%[^%\n]*%|@-?\d+|\w+(?=[ \t]+DESIGNATED\b))',
     re.IGNORECASE | re.MULTILINE)
 _DESIGNATED = re.compile(r"\bDESIGNATED\s+(\d+)", re.IGNORECASE)
 # FORCED_SUBCOMPONENT is a SUBCOMPONENT that cannot be skipped: same group.

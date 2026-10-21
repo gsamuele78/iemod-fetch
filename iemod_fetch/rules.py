@@ -212,6 +212,10 @@ class RuleSet:
             raise ConfigError(f"{path} is not valid JSON: {exc}") from exc
 
         origin = os.path.basename(path)
+        forge = mod_forge_record(payload) if origin.lower() == "mod-forge.json" else None
+        if forge is not None:
+            rules, skipped, notes = _krion_rules(forge, f"{forge['t']}/mod-forge.json")
+            return cls(rules=rules, notes=notes, undirected=skipped)
         if looks_like_krion(payload):
             rules, skipped, notes = _krion_rules(payload, origin)
             return cls(rules=rules, notes=notes, undirected=skipped)
@@ -282,7 +286,8 @@ def _krion_spec(name, comps_text) -> Optional[ModSpec]:
     # a number, or a list. Anything that is not a usable name is not a rule.
     if not isinstance(name, str) or not name:
         return None
-    numbers = {int(n) for n in _COMPONENT_NUMBERS.findall(comps_text or "")}
+    text = comps_text if isinstance(comps_text, str) else ""
+    numbers = {int(n) for n in _COMPONENT_NUMBERS.findall(text)}
     return ModSpec(normalize_key(name), name, frozenset(numbers) if numbers else None)
 
 
@@ -389,6 +394,49 @@ def _krion_rules(record: dict, origin: str) -> Tuple[List[Rule], int, List[Compo
                 str(entry.get("type") or ""), "warning"),
             message=entry.get("reason") or "", origin=origin, optional=soft))
     return out, skipped, _krion_notes(record, origin)
+
+
+def mod_forge_record(payload) -> Optional[dict]:
+    """
+    An author's own `mod-forge.json` (Infinity Mod Forge's per-mod format, in
+    the mod's repository root), as the krion64 record it is a public form of:
+    `tp2`, `conflicts` (mod, severity, myComponents, theirComponents),
+    `dependencies` (mod, type) and `knownIssues`. None if it is not one.
+    """
+    if not (isinstance(payload, dict) and isinstance(payload.get("tp2"), str)
+            and isinstance(payload.get("components"), list)):
+        return None
+
+    def entries(key):
+        value = payload.get(key)
+        return [e for e in value if isinstance(e, dict)] if isinstance(value, list) else []
+    return {
+        "t": payload["tp2"],
+        "conflicts": [{"with": e.get("mod"), "severity": e.get("severity"),
+                       "reason": e.get("reason") or "", "myComps": _forge_components(e.get("myComponents")),
+                       "theirComps": _forge_components(e.get("theirComponents")),
+                       "source": "the mod's own mod-forge.json"}
+                      for e in entries("conflicts")],
+        "dependencies": [{"requires": e.get("mod"), "type": e.get("type"),
+                          "reason": e.get("reason") or "",
+                          "myComps": _forge_components(e.get("myComponents")),
+                          "requiresComps": _forge_components(e.get("theirComponents"))}
+                         for e in entries("dependencies")],
+        "ki": [{"description": e.get("description"), "severity": e.get("severity"),
+                "workaround": e.get("workaround"), "components": e.get("components"),
+                "forum": e.get("forum")} for e in entries("knownIssues")],
+    }
+
+
+def _forge_components(value) -> Optional[str]:
+    """krion64's "#0 #1" from what an author writes: that text, a number or a list."""
+    if isinstance(value, str):
+        return value
+    items = value if isinstance(value, list) else [value]
+    numbers = [f"#{v}" for v in items
+               if (isinstance(v, int) and not isinstance(v, bool) and v >= 0)
+               or (isinstance(v, str) and v.isdigit())]
+    return " ".join(numbers) or None
 
 
 def looks_like_krion(payload) -> bool:

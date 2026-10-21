@@ -105,11 +105,20 @@ class Language:
 
 @dataclass
 class ComponentName:
+    """
+    One component as WeiDU describes it. The field names follow WeiDU's own
+    `--list-components-json`: `subgroup` is the SUBCOMPONENT, `groups` the
+    GROUPs, `labels` the LABELs, `forced` a FORCED_SUBCOMPONENT.
+    """
     number: int
-    name: str                    # what WeiDU prints: "Group -> Name: VERSION"
+    name: str                    # what WeiDU prints: "Subgroup -> Name: VERSION"
     title: str = ""              # the component's own name
-    group: str = ""              # its SUBCOMPONENT, resolved
+    subgroup: str = ""           # its SUBCOMPONENT, resolved
     resolved: bool = True        # False when a reference had no text
+    groups: List[str] = field(default_factory=list)
+    labels: List[str] = field(default_factory=list)
+    forced: bool = False
+    deprecated: bool = False     # WeiDU hides it from every list
 
 
 def _strip(content: str) -> str:
@@ -277,17 +286,74 @@ def component_names(tp2: str, language_index: int, read: Reader,
         chunk = body[match.start():end]
         number = component_number(chunk, number)
         title, ok = _text(_argument(chunk, chunk.upper().find("BEGIN") + 5), strings)
-        group, group_ok = "", True
+        subgroup, sub_ok = "", True
         sub = _SUBCOMPONENT.search(chunk)
         if sub:
-            group, group_ok = _text(sub.group(1), strings)
-        name = f"{group} -> {title}" if sub else title
+            subgroup, sub_ok = _text(sub.group(1), strings)
+        name = f"{subgroup} -> {title}" if sub else title
         # WeiDU prints a component on one line: a line break in its text is a space.
-        name = name.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        name = _one_line(name)
         if version:
             name = f"{name}: {version}"
-        out.append(ComponentName(number, name, title, group, ok and group_ok))
+        flags = _flags(chunk)
+        groups = [_joined(_text(g, strings)[0]) for g in _GROUP.findall(flags)]
+        labels = [_text(label, strings)[0] for label in _LABEL.findall(flags)]
+        out.append(ComponentName(
+            number, name, _joined(title), _joined(subgroup), ok and sub_ok,
+            groups=groups, labels=labels,
+            forced=_FORCED.search(flags) is not None,
+            deprecated=_DEPRECATED.search(flags) is not None))
     return out
+
+
+def _one_line(text: str) -> str:
+    """As --list-components and WeiDU.log print it: a line break is a space."""
+    return text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _joined(text: str) -> str:
+    """As --list-components-json gives it: line breaks are dropped."""
+    return text.replace("\r", "").replace("\n", "")
+
+
+# Component flags: between BEGIN and the first action. LABEL, GROUP and
+# DEPRECATED are legal only there, so the flags end at the first line that
+# starts with something else (an action, a patch, ALWAYS-like code).
+_FLAG_WORDS = ("BEGIN", "DESIGNATED", "SUBCOMPONENT", "FORCED_SUBCOMPONENT", "GROUP",
+               "LABEL", "DEPRECATED", "REQUIRE_COMPONENT", "FORBID_COMPONENT",
+               "REQUIRE_PREDICATE", "REQUIRE_FILE", "INSTALL_BY_DEFAULT", "NO_LOG_RECORD",
+               "METADATA", "@", "~", '"')
+# A REQUIRE_PREDICATE value can run over lines without parentheses: a line that
+# starts like a predicate term continues it.
+_PREDICATE_WORDS = frozenset(("OR", "AND", "NOT", "GAME_IS", "GAME_INCLUDES", "ENGINE_IS",
+                              "MOD_IS_INSTALLED", "FILE_EXISTS", "FILE_EXISTS_IN_GAME",
+                              "VARIABLE_IS_SET", "IS_AN_INT", "BIT_IS_SET"))
+_GROUP = re.compile(r"\bGROUP\s+(~[^~]*~|\"[^\"]*\"|@-?\d+)")
+_LABEL = re.compile(r"\bLABEL\s+(~[^~]*~|\"[^\"]*\"|[^\s~\"]+)")
+_DEPRECATED = re.compile(r"\bDEPRECATED\b")
+_FORCED = re.compile(r"\bFORCED_SUBCOMPONENT\b")
+
+
+def _flags(chunk: str) -> str:
+    """The component's flag section: BEGIN up to its first action."""
+    lines: List[str] = []
+    for n, line in enumerate(chunk.split("\n")):
+        word = line.strip().split(None, 1)[0].upper() if line.strip() else ""
+        if n and word and not any(word.startswith(w) for w in _FLAG_WORDS) \
+                and not _predicate_term(word) and not _lines_continue(lines):
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _predicate_term(word: str) -> bool:
+    return word in _PREDICATE_WORDS or word[0] in "!(%" or word[0].isdigit()
+
+
+def _lines_continue(lines: List[str]) -> bool:
+    """True while a flag's argument is still open: an unclosed ~ string or (."""
+    text = "\n".join(lines)
+    return text.count("~") % 2 == 1 or text.count("(") > text.count(")")
 
 
 def describe(tp2: str, read: Reader, preferences: Sequence[str] = (),
@@ -309,6 +375,8 @@ def describe(tp2: str, read: Reader, preferences: Sequence[str] = (),
         "languages": [{"index": k, "name": lang.name, "directory": lang.directory}
                       for k, lang in enumerate(langs)],
         "components": [{"number": c.number, "name": c.name, "title": c.title,
-                        "group": c.group or None, "resolved": c.resolved}
+                        "subgroup": c.subgroup or None, "groups": c.groups,
+                        "labels": c.labels, "forced": c.forced,
+                        "deprecated": c.deprecated, "resolved": c.resolved}
                        for c in names],
     }
