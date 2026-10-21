@@ -39,6 +39,8 @@ source_modules =
     iemod_fetch.conflicts
     iemod_fetch.resolution
     iemod_fetch.languages
+    iemod_fetch.simulate
+    iemod_fetch.constraints
     iemod_fetch.installer
     iemod_fetch.plan
     iemod_fetch.report
@@ -99,6 +101,7 @@ layers =
     iemod_fetch.plan | iemod_fetch.report
     iemod_fetch.installer
     iemod_fetch.resolution | iemod_fetch.languages
+    iemod_fetch.simulate | iemod_fetch.constraints
     iemod_fetch.conflicts
     iemod_fetch.ordering
     iemod_fetch.rules

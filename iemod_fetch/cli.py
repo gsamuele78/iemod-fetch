@@ -24,8 +24,10 @@ from .tp2 import read_mod_tp2
 from .conflicts import build_conflict_report, render_conflict_report
 from .installer import build_installer
 from .languages import apply_language_preference, parse_preferences
-from .resolution import resolve_conflicts
-from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, plan_order,
+from .resolution import resolve_conflicts, resolve_refusals
+from .simulate import simulate_install, steps_of
+from .constraints import ModConstraints, load_constraints, tp2_rules
+from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, plan_order, tp2_key,
                        render_plan_summary)
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .report import RunReport, render_summary
@@ -103,6 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "pins - the remedy the conflict report names. Anything "
                           "the rules do not decide is listed for you. Your own "
                           "logs are never edited (ADR-0021)")
+    out.add_argument("--simulate", action="store_true",
+                     help="with --plan-order: walk the plan the way WeiDU will run "
+                          "it - BGEE, then BG2EE becoming EET - checking every "
+                          "staged mod's own tp2 constraints and EET's merge check; "
+                          "reports what WeiDU would refuse (ADR-0025)")
     out.add_argument("--emit-installer", action="store_true",
                      help="with --plan-order: also write install scripts (sh and "
                           "Windows cmd) into the plan directory that hand the plan "
@@ -234,6 +241,9 @@ class RuleAnalysis:
     context: Optional[Context] = None
     installs: Sequence[Install] = ()
     findings: List[dict] = field(default_factory=list)
+    # The staged mods' own tp2 constraints (ADR-0025): part of `ruleset` as
+    # rules, and kept whole for the install simulation.
+    constraints: Optional[ModConstraints] = None
 
     def __bool__(self) -> bool:
         return self.ruleset is not None
@@ -247,9 +257,19 @@ def _check_rules(args, installed, stream) -> RuleAnalysis:
     nor orders against a mod in the EET log, so the logs are never merged for
     this.
     """
-    if not args.rules or not args.weidu_log:
+    if not args.weidu_log:
         return RuleAnalysis()
-    ruleset = RuleSet.load(args.rules)
+    # A staged mod's own tp2 is a rule source in its own right - checked even
+    # when no community rule set is given.
+    constraints = _staged_constraints(
+        args, [(split_log_spec(spec)[0], None) for spec in args.weidu_log])
+    if not args.rules and not constraints.by_mod:
+        return RuleAnalysis(constraints=constraints)
+    ruleset = RuleSet.load(args.rules) if args.rules else RuleSet()
+    if constraints.by_mod:
+        ruleset.rules.extend(tp2_rules(constraints))
+        if not args.quiet:
+            print(f"  own tp2s    : {constraints.summary()}", file=stream)
     context = _rule_context(args, installed, ruleset, stream)
     installs = []
     for spec in args.weidu_log:
@@ -274,7 +294,7 @@ def _check_rules(args, installed, stream) -> RuleAnalysis:
     for warning in ruleset.warnings[:5]:
         print(f"[warning] {warning}", file=sys.stderr)
     return RuleAnalysis(ruleset=ruleset, context=context, installs=installs,
-                        findings=findings)
+                        findings=findings, constraints=constraints)
 
 
 def _log_roles(specs):
@@ -328,9 +348,13 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
     if ruleset is None:
         ruleset = RuleSet.load(args.rules) if args.rules else RuleSet()
     specs = _log_roles(args.weidu_log)
+    # What each staged mod's own tp2 enforces (ADR-0025) is already in the rule
+    # set the check built; the simulation needs the constraints themselves.
+    constraints = analysis.constraints or _staged_constraints(args, specs)
     plan = plan_order(specs, index, ruleset, context,
                       include_optional=args.include_optional,
                       reassign_phase=args.reassign_phase)
+    games = _phase_games(args, specs)
     resolution = None
     if args.resolve_conflicts:
         # Judged on the PLAN's own installs, so the report's log labels are the
@@ -338,6 +362,10 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
         report = build_conflict_report(plan.installs(), ruleset or RuleSet(),
                                        context, plan)
         resolution = resolve_conflicts(plan, report, ruleset, context)
+        if constraints.by_mod:
+            refusals = resolve_refusals(plan, constraints, games, ruleset, context)
+            resolution.removed.extend(refusals.removed)
+            resolution.left_for_operator.extend(refusals.left_for_operator)
     languages = None
     if args.language_preference:
         languages = apply_language_preference(plan, os.path.abspath(args.target),
@@ -359,9 +387,44 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
             print("\n" + resolution.render(), file=stream)
         if languages is not None:
             print("\n" + languages.render(), file=stream)
+    if args.simulate:
+        plan.simulation = simulate_install(
+            {role: steps_of(units) for role, units in plan.logs.items()},
+            constraints.by_mod, games=games, eet_rules=constraints.eet)
+        if not args.quiet:
+            print("\n" + plan.simulation.render(), file=stream)
     if args.emit_installer:
         _emit_installer(args, plan, stream)
     return plan
+
+
+def _staged_constraints(args, specs):
+    """The tp2 constraints of every planned mod that is already staged."""
+    mods = []
+    for path, _role in specs:
+        parsed = parse_weidu_files([(path, None)])
+        for mod in parsed.mods.values():
+            for component in mod.components:
+                mods.append((tp2_key(component.tp2_file), mod.folder,
+                             component.tp2_file))
+    target = os.path.abspath(args.target)
+    if not os.path.isdir(target):
+        return ModConstraints()
+    return load_constraints(target, mods)
+
+
+def _phase_games(args, specs):
+    """
+    Which game each planned log installs on. The pre-EET log is BGEE and the
+    EET log starts as BG2EE - unless a single non-EET log names its game
+    (`-w WeiDU.log:BG2EE`), which then decides.
+    """
+    games = {}
+    for spec, (_path, role) in zip(args.weidu_log, specs):
+        _p, game = split_log_spec(spec)
+        if role == PRE_EET_LOG and game and len(specs) == 1:
+            games[role] = game
+    return games
 
 
 def _emit_installer(args, plan, stream) -> None:
@@ -485,6 +548,7 @@ def _require_plan(args) -> None:
         return
     for flag, given in (("--resolve-conflicts", args.resolve_conflicts),
                         ("--emit-installer", args.emit_installer),
+                        ("--simulate", args.simulate),
                         ("--language-preference", args.language_preference)):
         if given:
             raise ConfigError(f"{flag} works on an install plan: add "
@@ -534,7 +598,9 @@ def _run(args, stream, config=None) -> int:
                           file=stream)
         if args.json_report:
             report.write_json(args.json_report)
-        return 1 if report.blocking_findings else 0
+        refused = bool(order_plan is not None and order_plan.simulation
+                       and order_plan.simulation.refused)
+        return 1 if report.blocking_findings or refused else 0
 
     credential = resolve_credential(token_file=args.token_file,
                                     use_gh=not args.no_gh_cli,

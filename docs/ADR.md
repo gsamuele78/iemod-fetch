@@ -1040,3 +1040,67 @@ preference.
   with what it does offer; a mod not staged yet is listed too. Nothing guessed.
 - It needs the mods fetched first (it reads their tp2), so it belongs to the
   planning step after the fetch, as the guide's chapter 10 orders it.
+
+---
+
+## ADR-0025 — The mods' own tp2 constraints, and an install simulation
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+A plan that passes every community rule can still stop mod_installer halfway:
+WeiDU itself refuses a component whose own tp2 says no. A mock EET install
+built from verbatim upstream tp2 excerpts (`tests/data/eetmock`) shows the
+traps: DlcMerger aborts on anything but BGEE; EEFixPack declares
+`!GAME_IS ~eet~`; a Tweaks component installed on BGEE makes EET refuse the
+merge (`tbl/compatibility.tbl` is an allow-list of 27 BG:EE mods, and EET.tp2
+also fails on two wrong options); Tweaks #4010 is BG2EE-only and stops holding
+the moment the EET core turns BG2EE into EET; Ascension FORBIDs SCS #5900.
+
+The community handles this metadata in two ways. BWS-NG copies it by hand into
+`order.json` / `incompatibilities.json` (SCS's `FORBID_COMPONENT` against
+Tweaks #2370 becomes `stratagems(4100):cdtweaks(2370,2372,4020)`), which lags
+behind the mod version actually downloaded. The Infinity Orchestrator parses
+`REQUIRE_COMPONENT`/`FORBID_COMPONENT` from the tp2 and puts a required
+component first. Neither simulates the install.
+
+### Decision
+
+1. **Read the staged tp2s** (`constraints.py`): per component, REQUIRE_COMPONENT,
+   FORBID_COMPONENT and the simple REQUIRE_PREDICATE forms (GAME_IS, ENGINE_IS,
+   GAME_INCLUDES, MOD_IS_INSTALLED, negated), plus a body-level
+   `ACTION_IF NOT GAME_IS … ABORT`. Compound predicates are counted as unread,
+   never guessed.
+2. **Turn them into rules**, origin `mod tp2`:
+   * REQUIRE → the required component first (the Orchestrator's reading), plus
+     a dependency; both error.
+   * one-sided FORBID → the declaring component first (WeiDU checks a FORBID
+     only against what is already installed), error; plus a *warning*
+     incompatibility, because the tp2 does not say whether the two coexist
+     (EET's means "install me first", SCS's against Tweaks means "never
+     together" per BWS-NG). A warning is never auto-resolved; a community rule
+     graded error decides.
+   * mutual FORBID → an incompatibility, error: no order installs both.
+3. **Read EET's merge check from the staged EET** (`compatibility.tbl` and the
+   `COUNT_REGEXP_INSTANCES … PATCH_FAIL` blocks).
+4. **Simulate** (`simulate.py`, `--simulate`): walk the plan in order; the BGEE
+   log on BGEE (+SoD), the EET log on BG2EE that becomes EET after `eet #0`.
+   BGEE-phase mods do not count for MOD_IS_INSTALLED on EET: EET.tp2 copies the
+   BG:EE log to `WeiDU-BGEE.log`, not into `WeiDU.log`.
+5. **`--resolve-conflicts` drops what WeiDU would refuse**, with WeiDU's reason,
+   re-simulating until nothing is refused (8 rounds at most). For a refused EET
+   merge it drops the BG:EE mods outside the table, or the wrong option. The EET
+   core is never dropped: any other refusal of it is left for the operator.
+
+### Consequences
+
+- The mock EET install goes from "EET refuses the merge" to "0 would be
+  refused", each removal explained; the generated installer is then run
+  against a stand-in mod_installer.
+- Only what WeiDU's flags express is checked. A mod that fails inside its own
+  body for a reason no flag states is not caught; compound predicates are
+  counted, not evaluated. Mods not staged are reported as unchecked.
+- EET's M flag (merge anyway) is not modelled as an option: the plan never
+  depends on overriding the author's check.

@@ -92,6 +92,8 @@ and two features that close the path from logs to a running game:
 | Split a mod across the order | hand-curated per-game list of `mod:comp` (stratagems in 4 runs) | per-component `co[].cat` | by hand (drag blocks) | installs the log as given | **automatic**, from krion `co[].cat` + component rules; adopted krion's data, re-verified |
 | Conflict handling | blocks; the user unselects | advisory (hard/partial/soft) | flags | none | report always; opt-in auto-resolve only where a rule pins the side; ties/whole-mod to the user — **more automatic than any of them, by design narrower** |
 | Mutually exclusive options | `MUC` component type | — | — | — | detected from the log's `Group -> Option`, keep the last |
+| Mod metadata (tp2 REQUIRE/FORBID) | copied by hand into the rule files | — | parsed from the tp2; required component first | WeiDU enforces it at install time | **parsed from the staged tp2** (Orchestrator's reading) + FORBID as order, warned; mutual FORBID incompatible |
+| Install simulation / EET merge check | — | — | — | stops at the first refusal | **`--simulate`**: game switches BG2EE→EET at the core, EET's `compatibility.tbl` read; refusals removed by `--resolve-conflicts` |
 | Language | ordered list, first match; tp2 LANGUAGE + alias map | one language, then English | one locale, then English; probes `--list-languages` | passes the log's `#lang` | **BWS-NG's model adopted**: ordered list, tp2 LANGUAGE, alias map (minus its dutch→German bug) |
 
 

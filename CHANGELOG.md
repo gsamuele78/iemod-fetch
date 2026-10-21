@@ -8,6 +8,30 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **`--simulate`: walk the plan the way WeiDU will run it.** Each component's
+  own tp2 constraints (REQUIRE/FORBID_COMPONENT, GAME_IS, ENGINE_IS,
+  GAME_INCLUDES, MOD_IS_INSTALLED, body-level `NOT GAME_IS … ABORT`) are checked
+  in plan order on the game it lands on: the BGEE log on BGEE, the EET log on
+  BG2EE turning into EET once the EET core is in. Every component WeiDU would
+  refuse is listed with the flag that refuses it. `--check-only` exits 1 if
+  anything would be refused (ADR-0025).
+- **The staged mods' own tp2s as rules** (origin `mod tp2`): a REQUIRE orders
+  the required component first and is a dependency; a one-sided FORBID orders
+  the declaring component first and warns that coexistence is not stated; a
+  mutual FORBID is an incompatibility. Loaded whenever mods are staged, with or
+  without `--rules`.
+- **EET's merge check**, read from the staged EET (`tbl/compatibility.tbl` and
+  its wrong-option `PATCH_FAIL`s): a BG:EE mod EET cannot import is found
+  before the install, not at the merge.
+- **`--resolve-conflicts` removes what WeiDU would refuse**, with WeiDU's
+  reason, including the BG:EE mods that would make EET refuse the merge. The
+  EET core is never removed.
+- **A mock EET install test** (`tests/data/eetmock`): verbatim tp2 excerpts of
+  DlcMerger, EEFixPack, BG1UB, EET, EET_end, Tweaks Anthology, SCS, Ascension
+  and UB at pinned commits, EET's real `compatibility.tbl`, and logs carrying
+  the usual mistakes.
+
 ## [2.1.0] - 2026-10-20
 
 A correctness and hardening release. No flag or report field changed meaning;

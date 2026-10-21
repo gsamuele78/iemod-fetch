@@ -39,6 +39,7 @@ Standard library only at runtime. One file, no dependencies.
 | **Order** | sorts every component against the BWS-NG and krion64 rule data, then re-checks the result | `--plan-order DIR` |
 | **Order** at component level | splits a mod across the install where krion64 or a component rule places its parts apart | *(with `--plan-order`)* |
 | **Resolve** | removes the components an error-graded incompatibility rule pins, and the earlier of two options of one WeiDU subcomponent group; lists the rest for you | `--resolve-conflicts` |
+| **Simulate** | walks the plan as WeiDU will: each mod's own tp2 REQUIRE/FORBID/GAME_IS, the game turning into EET, EET's merge allow-list; lists every refusal | `--simulate` |
 | **Language** | each mod in the first of your languages it offers, read from its own tp2 | `--language-preference it_IT,en_US` |
 | **Install** | `install-eet.sh` / `.cmd`: hands both logs to [mod_installer](https://github.com/dark0dave/mod_installer) + WeiDU, BGEE first, then EET | `--emit-installer` |
 
@@ -398,9 +399,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 713, offline, ~14 s |
-| Branch coverage | 90% (floor 85%) |
-| mypy | clean, 30 modules |
+| Tests | 761, offline, ~14 s |
+| Branch coverage | 91% (floor 85%) |
+| mypy | clean, 32 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 4, all kept |
