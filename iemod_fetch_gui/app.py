@@ -23,8 +23,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     from PySide6.QtWidgets import QApplication
 
+    from .pages.mods import wait_for_loaders
     from .window import MainWindow
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    app.aboutToQuit.connect(wait_for_loaders)
     window = MainWindow(os.path.abspath(args.project))
     window.show()
     return int(app.exec())

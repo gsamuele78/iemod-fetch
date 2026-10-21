@@ -77,7 +77,7 @@ def test_a_saved_project_is_what_the_cli_reads(tmp_path):
                       "language_preference": "it_IT,en_US"}
     assert api.load_project(str(tmp_path)) == {
         "path": path, "game": "EET", "bgee_dir": first, "bg2ee_dir": second,
-        "language_preference": ["it_IT", "en_US"], "problem": None}
+        "language_preference": ["it_IT", "en_US"], "target": None, "problem": None}
 
 
 def test_saving_keeps_the_rest_of_the_file_and_drops_an_unused_folder(tmp_path):

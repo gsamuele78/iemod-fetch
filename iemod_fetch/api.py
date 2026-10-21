@@ -25,7 +25,7 @@ import struct
 import sys
 import tempfile
 from dataclasses import dataclass, field, fields, replace
-from typing import Any, List, Optional, Sequence
+from typing import Any, List, Optional, Sequence, Tuple
 
 from .auth import resolve_credential
 from .available import AvailableMod, available_mods, mods_document
@@ -52,14 +52,15 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, limits, pi
+from . import bio, choices, limits, pi
 from .decisions import parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
                          resolve_conflicts, resolve_refusals)
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
-from .selection import (Selection, parse_selection, selection_from_logs,
-                        selection_to_json)
+from .selection import Install as SelectionInstall
+from .selection import (Choice, Selection, parse_selection,
+                        selection_from_logs, selection_to_json)
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
 from . import tra
@@ -70,7 +71,8 @@ from . import __version__
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "selection_of_logs", "update_data", "data_status", "describe_mods",
            "load_bio_code", "bio_code_of", "check_game_folders", "languages",
-           "load_project", "save_project", "PROJECT_FILE"]
+           "load_project", "save_project", "PROJECT_FILE", "mod_choices",
+           "save_selection", "SELECTION_FILE"]
 
 
 @dataclass
@@ -469,7 +471,7 @@ def load_project(folder: str) -> dict:
     """
     path = os.path.join(folder, PROJECT_FILE)
     project: dict = {"path": path, "game": None, "bgee_dir": None, "bg2ee_dir": None,
-                     "language_preference": [], "problem": None}
+                     "language_preference": [], "target": None, "problem": None}
     try:
         values = _config.load_config(explicit=path).values if os.path.isfile(path) else {}
         preference = values.get("language_preference")
@@ -480,7 +482,8 @@ def load_project(folder: str) -> dict:
         return project
     game = (_config.read_section(path, _GUI_SECTION).get("game") or "").upper()
     project.update(game=game if game in GAMES else None,
-                   bgee_dir=values.get("bgee_dir"), bg2ee_dir=values.get("bg2ee_dir"))
+                   bgee_dir=values.get("bgee_dir"), bg2ee_dir=values.get("bg2ee_dir"),
+                   target=values.get("target"))
     return project
 
 
@@ -503,6 +506,68 @@ def save_project(folder: str, game: str, bgee_dir: Optional[str] = None,
         "bg2ee_dir": bg2ee_dir if game in ("EET", "BG2EE") and bg2ee_dir else None,
         "language_preference": ",".join(preference) if preference else None,
     }, extra={_GUI_SECTION: {"game": game}})
+    return path
+
+
+SELECTION_FILE = "selection.json"
+
+
+def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
+                data_dir: Optional[str] = None, catalogues: Sequence[str] = (),
+                mod_db: Optional[str] = None, krion: Optional[str] = None,
+                releases: Optional[str] = None, manifest: Optional[str] = None,
+                weidu_logs: Sequence[str] = (), preferences: Sequence[str] = ()) -> List[dict]:
+    """
+    Every mod a player can choose for `game`, with its components (ADR-0035):
+    list_mods' entry plus "tp2s" - per tp2, its components and where they come
+    from: the staged mod's own tp2 under `target` (exact), else krion64's
+    records (`krion` is its data/ folder). Sources not given come from the
+    community-data cache (`data_dir`), as a run uses them. A mod with no known
+    games is kept: unknown is not "does not run".
+    """
+    cached = datasync.data_paths(data_dir or datasync.default_data_dir())
+    catalogues = list(catalogues) or ([cached.catalogue] if cached.catalogue else [])
+    mod_db = mod_db or cached.mod_db
+    krion = krion or cached.order_catalogue
+    releases = releases or cached.releases
+    mods = list_mods(manifest=manifest, catalogues=catalogues, mod_db=mod_db,
+                     releases=releases, weidu_logs=weidu_logs)
+    staged = (choices.from_described(describe_mods(target, preferences))
+              if target and os.path.isdir(target) else {})
+    records = os.path.join(krion, "mods") if krion else None
+    krion_tp2s = (choices.from_krion(_json_records(records))
+                  if records and os.path.isdir(records) else {})
+    tp2s = choices.merged(staged, krion_tp2s)
+    wanted = (game or "").lower()
+    out = []
+    for mod in mods:
+        if wanted and mod.games and wanted not in {g.lower() for g in mod.games}:
+            continue
+        entry = mod.as_dict()
+        entry["tp2s"] = [t.as_dict() for t in tp2s.get(choices.folder_key(mod.tp2), [])]
+        out.append(entry)
+    return out
+
+
+def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
+                   labels: Optional[dict] = None) -> str:
+    """
+    Write `folder`/selection.json: `chosen` is (tp2, component number) in
+    install order, for one install of `game`. The CLI reads it with
+    --selection; it goes through selection.json's own checks first.
+    """
+    labels = labels or {}
+    selection = Selection([SelectionInstall(game.upper(), [
+        Choice(tp2=tp2, component=number, label=labels.get((tp2, number), ""))
+        for tp2, number in chosen])])
+    text = selection_to_json(selection)
+    parse_selection(text, source="the wizard's selection")      # refuse before writing
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, SELECTION_FILE)
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(temp, path)
     return path
 
 

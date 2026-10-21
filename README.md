@@ -124,14 +124,24 @@ pip install "iemod-fetch[gui] @ git+https://github.com/gsamuele78/iemod-fetch"
 iemod-fetch-gui --project ~/eet-build      # the folder that keeps the project
 ```
 
-**Phase 1, game and folders, works today**: choose EET, BG:EE or BG2:EE, point
+**Phase 1, game and folders**: choose EET, BG:EE or BG2:EE, point
 at the game folders - checked as WeiDU's GAME_IS sees them while you type, so
 swapped folders, an EET-converted BG2:EE or a BG:EE without Siege of
 Dragonspear are named before you go on - and the languages to install in.
 Next saves `iemod-fetch.ini` in the project folder, the file the CLI reads:
 `iemod-fetch` run there uses the same folders and languages, so the command
-line can carry on where the wizard stops. Mod selection, order, download and
-extraction follow, one phase at a time.
+line can carry on where the wizard stops.
+
+**Phase 2, mod selection**: categories down the left, search and filters
+(chosen only, updates available) above a mod -> component tree, details on
+the right. The list loads in a background thread and works offline from the
+last good community data. Components come from the mod's own tp2 once it is
+downloaded, else from krion64's records - which have 1,471 of the 1,529
+components WeiDU lists for 105 real mods (ADR-0035) - and each mod says which.
+Choosing one of a SUBCOMPONENT's options clears the others, and a component
+brings the ones it needs. A mod whose components nobody describes cannot be
+chosen yet, and says so. Next writes `selection.json`, which the CLI reads
+with `--selection`. Install order, download and extraction follow.
 
 ### Verifying a release download
 
@@ -383,7 +393,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,054 passed + 9 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
+python3 -m pytest -q      # 1,062 passed + 10 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
 ```
 
 ## Community data, kept current

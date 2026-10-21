@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem
 from iemod_fetch import api
 
 from .pages.game import GamePage
+from .pages.mods import Loader, ModsPage, load_choices
 from .pages.pending import PendingPage
 
 # BWS-NG's order (ADR-0031). Pages arrive phase by phase during M3.
@@ -21,7 +22,7 @@ PHASES = ["Game and folders", "Mod selection", "Install order", "Download",
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, project_dir: str) -> None:
+    def __init__(self, project_dir: str, load: Loader = load_choices) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.setWindowTitle(f"iemod-fetch {api.__version__} - {project_dir}")
@@ -35,8 +36,9 @@ class MainWindow(QMainWindow):
         self.phases.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self.game = GamePage(project_dir)
-        self.pages: List[QWidget] = [self.game] + [
-            PendingPage(name, self.game) for name in PHASES[1:]]
+        self.mods = ModsPage(project_dir, load)
+        self.pages: List[QWidget] = [self.game, self.mods] + [
+            PendingPage(name, self.game) for name in PHASES[2:]]
         self.stack = QStackedWidget()
         for page in self.pages:
             self.stack.addWidget(page)
@@ -46,6 +48,7 @@ class MainWindow(QMainWindow):
         self.back.clicked.connect(self.go_back)
         self.next.clicked.connect(self.go_next)
         self.game.completeChanged.connect(lambda _complete: self._refresh())
+        self.mods.completeChanged.connect(lambda _complete: self._refresh())
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -77,6 +80,14 @@ class MainWindow(QMainWindow):
                 path = self.game.save()
             except Exception as exc:     # an unwritable folder, a bad value
                 QMessageBox.critical(self, "Cannot save the project", str(exc))
+                return
+            self.status.setText(f"saved {path}")
+            self.mods.start(self.game.game() or "EET")
+        elif self.current == 1:
+            try:
+                path = self.mods.save()
+            except Exception as exc:     # refused by selection.json's own checks
+                QMessageBox.critical(self, "Cannot save the selection", str(exc))
                 return
             self.status.setText(f"saved {path}")
         if self.current + 1 < len(self.pages):
