@@ -8,6 +8,18 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **The wizard's first phase** (M3, ADR-0031). `iemod_fetch_gui`, a PySide6
+  app installed with the `gui` extra and started with `iemod-fetch-gui
+  --project FOLDER`: choose EET, BG:EE or BG2:EE, the game folders - checked
+  as WeiDU's GAME_IS sees them as they are typed - and the languages; Next
+  saves the project's `iemod-fetch.ini`, which the CLI reads too. It reaches
+  the tool only through the api (an import-linter contract), and the CLI and
+  the `.pyz` stay standard library only. Tested with pytest-qt offscreen on
+  Linux and Windows in CI.
+- `api.check_game_folders`, `api.languages`, `api.load_project` and
+  `api.save_project`: the first phase as functions, for any front end.
+
 ## [2.4.0] - 2026-10-21
 
 The community-data release (milestone M2 of `docs/GUI-AUDIT.md`): what the

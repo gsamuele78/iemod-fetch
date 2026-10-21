@@ -48,6 +48,8 @@ Changelog = "https://github.com/gsamuele78/iemod-fetch/blob/main/CHANGELOG.md"
 
 [project.scripts]
 iemod-fetch = "iemod_fetch.cli:main"
+# The desktop wizard (ADR-0031). Needs the `gui` extra; the CLI does not.
+iemod-fetch-gui = "iemod_fetch_gui:main"
 
 [project.optional-dependencies]
 # Split so CI jobs install only what they need and a failure names its own gate.
@@ -60,6 +62,10 @@ typing = ["mypy~=2.4"]
 security = ["bandit[toml]>=1.7", "pip-audit>=2.7"]
 arch = ["import-linter>=2.0"]
 mutation = ["mutmut>=3.0"]
+# The desktop wizard, iemod_fetch_gui (ADR-0031). PySide6 is LGPL-3.0, used
+# unmodified and dynamically linked. Never needed by the CLI or the .pyz.
+gui = ["PySide6>=6.5"]
+guitest = ["iemod-fetch[gui,test]", "pytest-qt>=4.4"]
 dev = [
   "iemod-fetch[test,lint,typing,security,arch]",
   "pre-commit>=3.7",
@@ -67,10 +73,10 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["iemod_fetch"]
+packages = ["iemod_fetch", "iemod_fetch_gui"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/iemod_fetch", "/tests", "/docs", "/tools", "/legacy",
+include = ["/iemod_fetch", "/iemod_fetch_gui", "/tests", "/docs", "/tools", "/legacy",
            "/build.py", "/aliases.json", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
 
@@ -118,7 +124,7 @@ exclude_lines = [
 [tool.ruff]
 line-length = 92
 target-version = "py39"
-src = ["iemod_fetch", "tests", "tools"]
+src = ["iemod_fetch", "iemod_fetch_gui", "tests", "tools"]
 
 [tool.ruff.lint]
 # Chosen, not defaulted. Each family earns its place; the ones left out are
@@ -204,7 +210,7 @@ quote-style = "preserve"
 # accepts; 3.9 syntax compatibility is enforced by ruff's target-version and by
 # the py3.9 test job, which actually imports every module.
 python_version = "3.10"
-files = ["iemod_fetch"]
+files = ["iemod_fetch", "iemod_fetch_gui"]
 # Not `strict = true`: `disallow_untyped_defs` across 26 modules at once is a
 # 130-signature change with no behavioural benefit, and a big mechanical diff
 # hides the real ones. These flags are the subset that catches BUGS rather than

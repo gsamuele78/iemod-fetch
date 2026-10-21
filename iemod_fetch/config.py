@@ -13,6 +13,7 @@ definition of each default and no per-flag plumbing to drift.
 import configparser
 import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -152,3 +153,57 @@ def _read(path: str) -> FileConfig:
         except ValueError as exc:
             raise ConfigError(f"{path}: option {raw_key!r} = {raw_value!r}: {exc}") from exc
     return config
+
+
+def write_values(path: str, values: Dict[str, Any],
+                 extra: Optional[Dict[str, Dict[str, str]]] = None) -> None:
+    """
+    Set `values` in the [iemod-fetch] section of `path`, keeping every other
+    option and section; `extra` sets options of other sections (the GUI keeps
+    its own there). A value of None removes the option. Written whole and
+    swapped in, so a crash never leaves half a file. Comments are not kept:
+    configparser does not read them back.
+    """
+    unknown = sorted(set(values) - KNOWN_KEYS)
+    if unknown:
+        raise ConfigError(f"{path}: unknown option(s) {', '.join(unknown)}")
+    parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                parser.read_file(fh)
+        except (OSError, configparser.Error) as exc:
+            raise ConfigError(f"cannot update {path}: {exc}") from exc
+    for section, options in [(SECTION, values)] + sorted((extra or {}).items()):
+        if not parser.has_section(section):
+            parser.add_section(section)
+        for key, value in options.items():
+            if value is None:
+                parser.remove_option(section, key)
+            elif isinstance(value, (list, tuple)):
+                parser.set(section, key, ", ".join(str(v) for v in value))
+            elif isinstance(value, bool):
+                parser.set(section, key, "true" if value else "false")
+            else:
+                parser.set(section, key, str(value))
+    folder = os.path.dirname(os.path.abspath(path))
+    fd, temp = tempfile.mkstemp(prefix=".iemod-fetch-", suffix=".ini", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            parser.write(fh)
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
+def read_section(path: str, section: str) -> Dict[str, str]:
+    """The raw options of one section of `path` ({} when absent or unreadable)."""
+    parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            parser.read_file(fh)
+    except (OSError, configparser.Error):
+        return {}
+    return dict(parser.items(section)) if parser.has_section(section) else {}

@@ -39,7 +39,8 @@ from . import gamedir
 from .gamedir import verify_eet
 from .install import State, find_tp2_files
 from .installer import build_installer
-from .languages import apply_language_preference, parse_preferences
+from . import config as _config
+from .languages import LANGUAGES, apply_language_preference, parse_preferences
 from .manifest import Manifest, load_manifest
 from .moddb import ModDatabase
 from .modmeta import find_metadata
@@ -68,7 +69,8 @@ from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "selection_of_logs", "update_data", "data_status", "describe_mods",
-           "load_bio_code", "bio_code_of"]
+           "load_bio_code", "bio_code_of", "check_game_folders", "languages",
+           "load_project", "save_project", "PROJECT_FILE"]
 
 
 @dataclass
@@ -432,6 +434,68 @@ def _decode_text(data: bytes) -> str:
         return data.decode("cp1252")
     except UnicodeDecodeError:
         return data.decode("latin-1")
+
+
+# The wizard's project: one folder, one iemod-fetch.ini the CLI reads too
+# (ADR-0031: every phase saves a file the command line also understands).
+PROJECT_FILE = _config.FILENAME
+_GUI_SECTION = "iemod-fetch-gui"
+GAMES = ("EET", "BGEE", "BG2EE")
+
+
+def check_game_folders(game: str, bgee_dir: Optional[str] = None,
+                       bg2ee_dir: Optional[str] = None) -> dict:
+    """
+    Whether the folders are what `game` needs, as WeiDU's GAME_IS sees them:
+    {"ok", "games": {"bgee", "bg2ee"}, "sod", "problems", "notes"}.
+    """
+    report = gamedir.check_folders(game, bgee_dir, bg2ee_dir)
+    return {"game": game.upper(), "ok": not report.problems,
+            "games": {"bgee": report.games[0], "bg2ee": report.games[1]},
+            "sod": report.sod, "problems": list(report.problems),
+            "notes": list(report.notes)}
+
+
+def languages() -> List[dict]:
+    """Every language a preference can name, as {"code", "name"}."""
+    return [{"code": code, "name": name} for code, name in LANGUAGES]
+
+
+def load_project(folder: str) -> dict:
+    """
+    The project saved in `folder` (its iemod-fetch.ini): game, the two game
+    folders and the language preference. Missing values are None or [].
+    """
+    path = os.path.join(folder, PROJECT_FILE)
+    values = _config.load_config(explicit=path).values if os.path.isfile(path) else {}
+    gui = _config.read_section(path, _GUI_SECTION)
+    game = (gui.get("game") or "").upper()
+    preference = values.get("language_preference")
+    return {"path": path, "game": game if game in GAMES else None,
+            "bgee_dir": values.get("bgee_dir"), "bg2ee_dir": values.get("bg2ee_dir"),
+            "language_preference": parse_preferences(preference) if preference else []}
+
+
+def save_project(folder: str, game: str, bgee_dir: Optional[str] = None,
+                 bg2ee_dir: Optional[str] = None,
+                 language_preference: Sequence[str] = ()) -> str:
+    """
+    Write the project into `folder`/iemod-fetch.ini, keeping every other
+    option there: `iemod-fetch` run in that folder then uses the same game
+    folders and languages. A folder the game does not use is removed.
+    """
+    game = game.upper()
+    if game not in GAMES:
+        raise ConfigError(f"unknown game {game!r}: one of {', '.join(GAMES)}")
+    preference = parse_preferences(list(language_preference))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, PROJECT_FILE)
+    _config.write_values(path, {
+        "bgee_dir": bgee_dir if game in ("EET", "BGEE") and bgee_dir else None,
+        "bg2ee_dir": bg2ee_dir if game in ("EET", "BG2EE") and bg2ee_dir else None,
+        "language_preference": ",".join(preference) if preference else None,
+    }, extra={_GUI_SECTION: {"game": game}})
+    return path
 
 
 def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> List[dict]:
