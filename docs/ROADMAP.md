@@ -319,7 +319,11 @@ runner and asserts the tree.
 ### 2.3 Explicitly not planned
 
 - **A GUI.** Project Infinity is the GUI. This is the thing that feeds it.
-- **Running WeiDU.** ADR-0003. The tool stages and plans; installation is
+  *Withdrawn 2026-10-21:* a PySide6 wizard that ends by installing is now in
+  scope, after the CLI is complete. See [GUI-AUDIT.md](GUI-AUDIT.md) and
+  ADR-0029 to ADR-0031.
+- **Running WeiDU.** ADR-0003, superseded by ADR-0029 for the install phase
+  of the GUI (milestone M4). The tool stages and plans; installation is
   someone else's job and mixing the two makes both harder to reason about.
 - **Vendoring rule data.** A rule inside this repository is a rule nobody can
   update.
