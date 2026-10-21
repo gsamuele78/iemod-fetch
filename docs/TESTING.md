@@ -199,8 +199,11 @@ outside this repository that calls BIO's own `encode_share_payload_text` and
 
 * `tests/data/bio/eet-mock.bio` was **encoded by BIO** from the mock EET
   install (with a `// @wlb-inputs:` answer, BIO's extras, non-ASCII text).
-  `tests/test_bio.py` decodes it, re-encodes it to the identical code, and
-  round-trips it through a selection keeping every field.
+  `tests/test_bio.py` decodes it, re-encodes it to the same JSON payload byte
+  for byte, and round-trips it through a selection keeping every field. With
+  classic zlib the code itself comes out identical; Python 3.14 on Windows
+  ships zlib-ng, whose deflate stream differs while inflating to the same bytes
+  (the first CI run showed it), so the test compares the payload.
 * Codes **written by this tool** - a fresh export and an export over the
   imported code - were decoded and previewed by BIO, which read the same game,
   install mode, entry counts and name.

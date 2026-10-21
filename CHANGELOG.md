@@ -64,7 +64,8 @@ Python API, which is internal.
 - **BIO share codes in and out.** `--bio-code PATH` reads a
   `BIO-MODLIST-V1:` code (Born2BSalty's Infinity Orchestrator) as what is
   wanted, in place of `-w` or `--selection`; `--emit-bio-code PATH` writes any
-  input as one. Nothing is lost: a code BIO made re-encodes to the same code,
+  input as one. Nothing is lost: a code BIO made re-encodes to the same payload,
+  byte for byte,
   and exporting an imported list keeps every field BIO put in it. Checked
   both ways against BIO's own encoder and decoder. `api.load_bio_code`,
   `api.bio_code_of`. The format only; no BIO code is used.

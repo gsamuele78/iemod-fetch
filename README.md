@@ -396,7 +396,7 @@ python3 iemod-fetch.pyz -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE \
 ```
 
 Nothing is lost either way: a code BIO made decodes and re-encodes to the
-same code, and exporting an imported list keeps its name, author, download
+same payload, byte for byte, and exporting an imported list keeps its name, author, download
 overrides, pinned refs and mod configs. Tested against BIO's own encoder and
 decoder (docs/TESTING.md). Only the format is implemented; no BIO code is used.
 
