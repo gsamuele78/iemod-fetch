@@ -8,8 +8,27 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-21
+
+The install-time release: the plan is now checked the way WeiDU will run it,
+against the games it will run on, and that check is itself checked by the real
+WeiDU. Measured: 761 → 784 tests (3 of them run the real WeiDU 251 and
+mod_installer); branch coverage 91% → 92%; on the mock EET install, refusals
+WeiDU would hit 1 → 0, with EEFixPack kept instead of dropped.
+
 ### Added
-- **`--simulate`: walk the plan the way WeiDU will run it.** Each component's
+- **`--bgee-dir` / `--bg2ee-dir`: the game folders, verified.** Each folder is
+  identified exactly as WeiDU's GAME_IS does it (marker resources in override/
+  and chitin.key); a swapped pair, the same folder twice, an already-EET game, a
+  modded BG2:EE and a BG:EE without Siege of Dragonspear are refused; SoD still
+  in its `sod-dlc` archive (GOG/Steam) requires DlcMerger in the plan. Never
+  written to. Patch level is reported as not checked (ADR-0026).
+- **The real WeiDU as test oracle** (`tests/test_real_weidu.py`, and a CI job):
+  synthetic game folders - no game data - on which WeiDU v251 refuses exactly
+  what `--simulate` predicts, installs the resolved plan to the last component,
+  and the generated `install-eet.sh` runs through the real mod_installer into
+  both games. The toolchain is pinned: WeiDU by sha256, mod_installer by commit.
+: walk the plan the way WeiDU will run it.** Each component's
   own tp2 constraints (REQUIRE/FORBID_COMPONENT, GAME_IS, ENGINE_IS,
   GAME_INCLUDES, MOD_IS_INSTALLED, body-level `NOT GAME_IS … ABORT`) are checked
   in plan order on the game it lands on: the BGEE log on BGEE, the EET log on
@@ -31,6 +50,21 @@ Python API, which is internal.
   DlcMerger, EEFixPack, BG1UB, EET, EET_end, Tweaks Anthology, SCS, Ascension
   and UB at pinned commits, EET's real `compatibility.tbl`, and logs carrying
   the usual mistakes.
+
+### Changed
+- **A refusal an order can fix is fixed by the order.** EEFixPack in the EET
+  log is moved before the EET core, where the game is still BG2:EE, instead of
+  being removed - as EET's readme and BWS-NG's `games/eet.json` place it. The
+  report lists it under "moved before the EET core"; `RESOLUTION.json` gains a
+  `moved` list.
+
+### Fixed
+- **A `BEGIN` inside an inlined file was read as a component.** EET_end.tp2
+  inlines a `.d` file reading `BEGIN ~%file%~`; it was counted as component #0,
+  which renumbered the real ones and lost EET_end's REQUIRE on the EET core.
+  Found by the real-WeiDU test on its first run.
+- **The mock EET fixture staged EET_end where WeiDU 251 cannot run it**
+  (`eet/EET_end/`); it is now at `EET_end/`, as the EET repository ships it.
 
 ## [2.1.0] - 2026-10-20
 

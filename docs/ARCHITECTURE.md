@@ -86,6 +86,7 @@ Four contracts are enforced, and CI fails on a violation:
 | `conflicts.py` | component-level findings with provenance and remedy | takes an `Install`, returns findings |
 | `resolution.py` | applies the remedies the rules decide to a plan (ADR-0021) | takes a plan and a report, returns what it removed and why |
 | `constraints.py` | reads each staged mod's own tp2 constraints and EET's merge check, as rules (ADR-0025) | reads tp2s; returns rules |
+| `gamedir.py` | identifies a game folder with WeiDU's GAME_IS markers and checks EET's needs (ADR-0026) | reads chitin.key; never writes |
 | `simulate.py` | walks a plan the way WeiDU runs it and lists what it would refuse (ADR-0025) | pure; no I/O |
 | `languages.py` | maps a preferred-language list onto each mod's tp2 LANGUAGE index (ADR-0024) | reads a tp2, rewrites `#lang` in the plan |
 | `installer.py` | writes the sh/cmd scripts that hand a plan to mod_installer (ADR-0022) | text generation; never executes anything |

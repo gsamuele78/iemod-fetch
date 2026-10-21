@@ -613,7 +613,49 @@ log onto BG2EE, handing EET's core the BGEE path, and stops at the first error.
 | `ALLOW_MIXED_CASE=1` | off | skip the Linux lower-case check |
 | `MOD_INSTALLER_ARGS` | none | passed through, e.g. `--casefold` |
 
-### 10.4 What is and is not guaranteed
+### 10.4 Check the game folders before installing
+
+Pass the two folders to the planning step and they are checked before a script
+is written - read only, nothing is changed:
+
+```bash
+python3 -m iemod_fetch --check-only ... --plan-order ./plan --resolve-conflicts \
+    --simulate --bgee-dir "$HOME/games/BGEE" --bg2ee-dir "$HOME/games/BG2EE"
+```
+
+Each folder is identified the way WeiDU itself does it - by marker files in
+`override/` and `chitin.key` (`oh1000.are` BG:EE, `oh6000.are` BG2:EE, `eet.flag`
+EET) - and held to what EET's readme asks for:
+
+| Refused | Why |
+|---|---|
+| the two folders swapped, or the same folder twice | EET needs both games, separately |
+| BG2:EE already EET (`override/EET.flag`) or already modded | the EET core needs a clean BG2:EE |
+| BG:EE without Siege of Dragonspear | EET needs BG:EE + SoD (`movies/sodcin05.wbm`) |
+| SoD still a `sod-dlc` archive and no DlcMerger in the plan | GOG/Steam ship SoD as a DLC WeiDU cannot see until DlcMerger merges it |
+
+Not checked, and printed as such: the patch level (EET wants v2.6.6.0 of both
+games) and whether the game data is intact.
+
+**Does everything end up in BG2:EE?** Yes. The EET core imports BG:EE + SoD into
+the BG2:EE folder and marks it `override/EET.flag`; from then on WeiDU calls
+that game EET and every later mod installs there. The BG:EE folder is only read.
+Before the core, BG2:EE must stay clean - EEFixPack is the one mod EET allows
+there, and `--resolve-conflicts` moves it there if your log has it after the core.
+
+### 10.5 Which versions to use
+
+| Component | Use | Why |
+|---|---|---|
+| BG:EE + SoD, BG2:EE | v2.6.6.0 | what EET states it supports |
+| WeiDU | v251.00 or newer (EET: "newer than v248") | the version CI tests with, pinned by sha256 |
+| mod_installer | the version CI pins (commit `3b6827a`, Cargo 16.0.0) | no release tag past v12.1.1 |
+| each mod | a release tag + sha256 via `--emit-pinned-manifest` | "latest" changes under you; a pin refuses anything that changed |
+
+A mod with no releases: fetch it once, then pin the archive's sha256 the same
+way. Never install from a branch head you did not pin.
+
+### 10.6 What is and is not guaranteed
 
 * The plan satisfies every order rule it was checked against, or says
   `NOT COMPLIANT`; the script then carries an `UNRESOLVED` warning at its top.
@@ -623,8 +665,16 @@ log onto BG2EE, handing EET's core the BGEE path, and stops at the first error.
   log installed in the BGEE folder first, then the EET core, the EET mods and
   EET_end in BG2EE. The shell script is executed by the test suite; the `.cmd`
   script on the Windows CI runners.
-* **Not verified here:** an actual WeiDU install against real game data. No CI
-  runner owns the games. mod_installer itself labels its EET mode BETA.
+* **Verified with the real WeiDU, without game data:** on two synthetic game
+  folders (an empty `chitin.key`, an empty `dialog.tlk`, WeiDU's marker file)
+  the real WeiDU v251 refuses exactly what `--simulate` predicts, installs the
+  resolved mock EET plan to the last component, and the generated
+  `install-eet.sh` runs through the real mod_installer into both folders. CI
+  does this on every push (`tests/test_real_weidu.py`).
+* **Not verified here:** an install against real game data - the merge itself,
+  mods whose bodies fail on content, the patch level. No CI runner owns the
+  games. The minimum for that test is BG:EE + SoD and BG2:EE v2.6.6.0 with
+  DlcMerger, EEFixPack, EET and EET_end. mod_installer labels its EET mode BETA.
 * A conflict no rule database knows about is not found. The databases are
   community work; report what you find upstream.
 
@@ -632,6 +682,6 @@ log onto BG2EE, handing EET's core the BGEE path, and stops at the first error.
 
 * `README.md` — feature overview
 * `docs/AUDIT.md` — what was wrong with the original script, with evidence
-* `docs/ADR.md` — ADR-0001…0024, the design decisions and why
+* `docs/ADR.md` — ADR-0001…0026, the design decisions and why
 * `docs/PLAN.md` — three-phase audit / implementation / validation plan
 * `python3 -m iemod_fetch --help` — full flag reference

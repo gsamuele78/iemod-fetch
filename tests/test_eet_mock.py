@@ -78,17 +78,24 @@ def test_the_tweak_eet_cannot_import_leaves_the_bgee_phase(resolved):
     assert any("bg1ub" in line for line in bgee)
 
 
-def test_eet_core_first_and_eet_end_last(resolved):
+def test_eet_core_first_after_the_fixpack_and_eet_end_last(resolved):
     _code, _text, tmp = resolved
-    eet = planned(tmp, "WeiDU.log")
+    eet = [line for line in planned(tmp, "WeiDU.log") if "eefixpack" not in line]
     assert "EET core (resource importation)" in eet[0]
     assert "EET_end" in eet[-1]
 
 
-def test_eefixpack_is_dropped_from_the_eet_phase_with_weidus_reason(resolved):
+def test_eefixpack_moves_before_the_eet_core_instead_of_being_dropped(resolved):
+    """EEFixPack refuses EET, but the BG2:EE game is not EET until the core is
+    in. EET's readme asks for 'a clean BG2:EE installation ... and (optionally)
+    the Enhanced Edition Fixpack', and BWS-NG's games/eet.json orders
+    eefixpack:0-2 before eet:0 - so the right order keeps it, before the core."""
     _code, text, tmp = resolved
-    assert not any("eefixpack" in line for line in planned(tmp, "WeiDU.log"))
-    assert "refuses game EET" in text
+    eet = planned(tmp, "WeiDU.log")
+    core = position(eet, "EET core (resource importation)")
+    fixpack = [i for i, line in enumerate(eet) if "eefixpack" in line]
+    assert fixpack and max(fixpack) < core
+    assert "moved before the EET core" in text
 
 
 def test_a_bg2_only_tweak_does_not_go_onto_eet(resolved):
@@ -152,3 +159,40 @@ def test_the_installer_runs_the_resolved_plan(resolved, tmp_path):
     assert proc.returncode == 0, proc.stdout.decode()
     args = (tmp_path / "args.txt").read_text().splitlines()
     assert args[0] == "eet"
+
+
+# ------------------------------------------------------ the real game folders
+def _games(tmp_path, sod_file):
+    import struct
+    for name, marker in (("BGEE", b"OH1000"), ("BG2EE", b"OH6000")):
+        root = tmp_path / "games" / name
+        (root / "override").mkdir(parents=True)
+        (root / "chitin.key").write_bytes(
+            b"KEY V1  " + struct.pack("<IIII", 0, 1, 24, 24)
+            + marker.ljust(8, b"\0") + struct.pack("<HI", 0x3F2, 0))
+    sod = tmp_path / "games" / "BGEE" / sod_file
+    sod.parent.mkdir(parents=True, exist_ok=True)
+    sod.write_bytes(b"")
+    return str(tmp_path / "games" / "BGEE"), str(tmp_path / "games" / "BG2EE")
+
+
+def test_the_game_folders_are_verified_against_the_plan(tmp_path):
+    bgee, bg2ee = _games(tmp_path, "dlc/sod-dlc.zip")
+    code, text = run(tmp_path, "--rules", RULES, "--resolve-conflicts",
+                     "--bgee-dir", bgee, "--bg2ee-dir", bg2ee)
+    assert "GAME FOLDERS" in text and "Siege of Dragonspear dlc" in text
+    assert "both folders are what an EET install needs" in text   # DlcMerger planned
+
+
+def test_swapped_game_folders_fail_the_check(tmp_path):
+    bgee, bg2ee = _games(tmp_path, "movies/sodcin05.wbm")
+    code, text = run(tmp_path, "--rules", RULES, "--resolve-conflicts",
+                     "--bgee-dir", bg2ee, "--bg2ee-dir", bgee)
+    assert code == 1
+    assert "is BG2EE, not BGEE" in text
+
+
+def test_one_game_folder_without_the_other_is_refused(tmp_path, capsys):
+    bgee, _bg2ee = _games(tmp_path, "movies/sodcin05.wbm")
+    code, _text = run(tmp_path, "--bgee-dir", bgee)
+    assert code == 2 and "--bg2ee-dir" in capsys.readouterr().err

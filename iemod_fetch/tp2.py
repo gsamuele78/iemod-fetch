@@ -255,9 +255,14 @@ def _number(text: str) -> Optional[int]:
     return int(text) if text.lstrip("-").isdigit() else None
 
 
+# WeiDU's inlined file, `<<<<<<<< name` ... `>>>>>>>>`: its text is file content,
+# not tp2 code - EET_end.tp2 inlines a .d file that reads `BEGIN ~%file%~`.
+_INLINED_FILE = re.compile(r"^[ \t]*<{8}.*?^[ \t]*>{8}", re.MULTILINE | re.DOTALL)
+
+
 def parse_components(content: str) -> List[Tp2Component]:
     """Every component of a tp2 with the constraints WeiDU enforces on it."""
-    clean = strip_comments(content)
+    clean = _INLINED_FILE.sub("", strip_comments(content))
     starts = [m.start() for m in _COMPONENT_START.finditer(clean)]
     components: List[Tp2Component] = []
     for position, start in enumerate(starts):
