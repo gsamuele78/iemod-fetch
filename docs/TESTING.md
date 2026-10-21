@@ -142,6 +142,26 @@ fixture placed where WeiDU does not look. Opt in locally with
 downloads both pinned and sets `IEMOD_REQUIRE_REAL=1`, so a missing tool fails
 instead of skipping.
 
+### Engine limits, measured as WeiDU measures them
+
+`tests/test_real_weidu_limits.py` checks the game-folder measurement of
+`limits.py` (ADR-0034) against the same WeiDU. The synthetic BG2:EE has a real
+`chitin.key` and BIFF (built byte by byte), KITLIST.2DA and SPELL.IDS inside
+the BIFF, and the other tables ADD_KIT appends to in override/:
+
+* with 254, 255 and 256 kits measured, WeiDU's ADD_KIT gives kit 255 and 256,
+  then refuses with its own "more than 256 kits" - so the measured number is
+  WeiDU's, and 256 is a hard limit on BG2:EE;
+* with 2101 and 2102 in SPELL.IDS, SPWI103 in override/ and SPWI105 in the
+  BIFF, ADD_SPELL takes 2104 then 2106, and reuses 2101 for an identifier
+  SPELL.IDS already has - exactly the slots measured as free.
+
+krion64's counts, which stand in when no game folder is known, were audited
+the same day: its spell scanner (`scan_spell_ids.js`) reads only literal
+`APPEND spell.ids`, so of the 103 repositories NWNForBG (6 ADD_SPELL) and
+Region of Terror (4) are recorded with 0; `k` is entered by hand; `ss` counts
+references. Hence the estimate is labelled as one, and the measurement wins.
+
 ### Component names, measured against WeiDU itself
 
 `iemod_fetch/tra.py` names components without running WeiDU. Its claim is
@@ -263,10 +283,10 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 784 (3 run the real WeiDU, opt-in) |
+| Tests | 1,038 (7 run the real WeiDU, opt-in) |
 | Branch coverage | 92% (floor: 85%) |
-| Architecture contracts | 4, all kept |
-| mypy | clean, 33 modules |
+| Architecture contracts | 5, all kept |
+| mypy | clean, 44 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Runtime dependencies | 0 |

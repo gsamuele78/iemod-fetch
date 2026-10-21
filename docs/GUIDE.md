@@ -685,6 +685,18 @@ category, or a rule names specific components, a mod is split across the order
 (the summary says how many). Conflicts are resolved at component level too,
 including two options of one WeiDU subcomponent group (the last one is kept).
 
+After the conflicts, the report shows each install's **engine limits**: kits
+against WeiDU's 256 (the game has 40), spell ids per wizard or priest level
+against WeiDU's 50, and spell states for information only - with the
+components that use them up. A mod krion64 has no counts for is named, and the
+totals then mean "at least". See ADR-0034 for where each number comes from.
+
+Point `-w` at the WeiDU.log **inside your game folder** and the tables are
+measured from the game itself instead (the header says `measured in ...`):
+the kits, spell slots and spell states it already holds, exactly as WeiDU
+will find them, plus krion64's estimate for what you chose that is not
+installed yet. Nothing in the game folder is changed.
+
 `./plan/` now holds:
 
 | File | What it is |

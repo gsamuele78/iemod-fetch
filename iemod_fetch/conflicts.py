@@ -219,6 +219,7 @@ class ConflictReport:
     pairs_with_both_mods: int = 0
     pairs_cleared_by_components: int = 0
     undirected: int = 0
+    engine_limits: List = field(default_factory=list)    # limits.LimitsReport per install
 
     def __len__(self) -> int:
         return len(self.findings)
@@ -240,6 +241,7 @@ class ConflictReport:
                 self.pairs_cleared_by_components,
             "order_rules_with_no_direction": self.undirected,
             "findings": [f.as_dict() for f in self.findings],
+            "engine_limits": [r.as_dict() for r in self.engine_limits],
         }
 
     def write_json(self, path: str) -> None:
@@ -519,6 +521,11 @@ def render_conflict_report(report: ConflictReport, stream, limit: int = 40,
     if not shown_any:
         print("  nothing fired: no installed component pair matches a rule.",
               file=stream)
+    if report.engine_limits:
+        print("\n  ENGINE LIMITS (what the chosen components add to the game's tables):",
+              file=stream)
+        for limits in report.engine_limits:
+            print(limits.render(), file=stream)
 
 
 def _render_one(finding: Finding, stream) -> None:
