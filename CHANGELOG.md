@@ -18,6 +18,12 @@ Python API, which is internal.
   R-studioConf's ADR-0006, adapted (ADR-0027).
 
 ### Added
+- **selection.json** (`--selection`, `--emit-selection`): the mods, components
+  and languages wanted, without a WeiDU.log. One install, or BGEE + EET for an
+  EET setup, in install order. It converts to and from WeiDU.log without loss,
+  so every mode (fetch, check, plan) accepts it. Validated strictly: unknown
+  keys, unknown games and tp2 paths leaving their folder are refused. JSON
+  Schema in `schemas/selection-v1.schema.json` (ADR-0030, milestone M1).
 - **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
   WeiDU and mod_installer are compared with upstream, and an issue opens for
   each one behind, with how to bump it. Dependabot cannot see those two pins.

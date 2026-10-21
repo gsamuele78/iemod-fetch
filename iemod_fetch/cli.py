@@ -5,6 +5,7 @@ from typing import List, Optional, Sequence
 from dataclasses import dataclass, field
 import os
 import sys
+import tempfile
 
 from . import __version__
 from .auth import resolve_credential
@@ -33,6 +34,7 @@ from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, plan_order, tp2_key,
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .report import RunReport, render_summary
 from .runner import Options, Runner
+from .selection import parse_selection, selection_from_logs, selection_to_json
 from .weidu import ParsedLog, parse_weidu_files, split_log_spec
 
 
@@ -57,6 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
                           ":GAME (EET, BGEE, BG2EE, SoD...) to say which install "
                           "the log describes - EET is detected automatically - so "
                           "catalogue compatibility warnings are judged per game")
+    src.add_argument("--selection", metavar="PATH",
+                     help="selection.json (schema 1): the mods, components and "
+                          "languages chosen, without a WeiDU.log - what a UI saves. "
+                          "Used instead of --weidu-log, never with it")
     src.add_argument("--aliases", metavar="PATH",
                      help="JSON map {weidu_folder: manifest_tp2} for entries whose "
                           "names differ between the log and the catalogue")
@@ -94,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "and sha256 filled in from this run - commit it to make "
                           "future runs reproducible (combine with --refresh to pin "
                           "mods already installed)")
+    out.add_argument("--emit-selection", metavar="PATH",
+                     help="write the --weidu-log input as a selection.json; with "
+                          "--check-only nothing else is fetched")
     out.add_argument("--plan-order", metavar="DIR",
                      help="write a rule-compliant WeiDU.log + WeiDU-BGEE.log pair "
                           "into DIR: the components you already have, sorted to "
@@ -222,7 +231,9 @@ def main(argv=None, stream=sys.stdout) -> int:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
     try:
-        return _run(args, stream, config)
+        with tempfile.TemporaryDirectory(prefix="iemod-selection-") as workdir:
+            _use_selection(args, workdir)
+            return _run(args, stream, config)
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
@@ -232,6 +243,43 @@ def main(argv=None, stream=sys.stdout) -> int:
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 130
+
+
+def _use_selection(args, workdir: str) -> None:
+    """
+    Turn --selection into the WeiDU.log inputs every planner already reads.
+
+    A selection says what a log says (ADR-0030), so it is written out as one log
+    per install and passed on as `-w PATH:GAME`. The logs live only for the run.
+    """
+    if not args.selection:
+        return
+    if args.weidu_log:
+        raise ConfigError("--selection and --weidu-log both define what is wanted: "
+                          "give one of them")
+    with open(args.selection, encoding="utf-8") as fh:
+        selection = parse_selection(fh.read(), source=args.selection)
+    for log in selection.weidu_logs():
+        path = os.path.join(workdir, log.name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(log.text)
+        args.weidu_log.append(f"{path}:{log.game}")
+
+
+def _emit_selection(args, stream) -> None:
+    """Write the --weidu-log input as the selection.json a UI would save."""
+    if not args.emit_selection:
+        return
+    if not args.weidu_log:
+        raise ConfigError("--emit-selection converts --weidu-log input: give one")
+    logs = []
+    for spec in args.weidu_log:
+        path, game = split_log_spec(spec)
+        logs.append((game, parse_weidu_files([(path, game)])))
+    with open(args.emit_selection, "w", encoding="utf-8") as fh:
+        fh.write(selection_to_json(selection_from_logs(logs)))
+    if not args.quiet:
+        print(f"  selection   : wrote {args.emit_selection}", file=stream)
 
 
 @dataclass
@@ -577,6 +625,7 @@ def _require_plan(args) -> None:
 
 def _run(args, stream, config=None) -> int:
     _require_plan(args)
+    _emit_selection(args, stream)
     target = os.path.abspath(args.target)
     manifest = load_manifest(args.manifest, allow_http=args.allow_http)
 

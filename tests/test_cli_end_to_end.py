@@ -214,3 +214,46 @@ def test_a_pinned_digest_that_no_longer_matches_fails_the_run(workspace):
     assert code == 1
     assert "sha256 expected" in out
     assert not (tmp_path / "Mods3" / "DlcMerger").exists()
+
+
+# selection.json (ADR-0030): a selection made without any WeiDU.log drives the
+# same run, and a log converts to the selection a UI would save.
+SELECTION = {"schema_version": 1, "installs": [{"game": "BG2EE", "components": [
+    {"tp2": "DlcMerger/DlcMerger.tp2", "component": 3, "language": 0},
+    {"tp2": "eefixpack/SETUP-EEFIXPACK.TP2", "component": 0, "language": 0}]}]}
+
+
+def test_a_selection_without_any_weidu_log_fetches_the_same_mods(workspace):
+    tmp_path, stub = workspace
+    (tmp_path / "selection.json").write_text(json.dumps(SELECTION))
+    code, out = run(["--selection", "selection.json", "-t", "Mods"], tmp_path)
+    assert code == 0, out
+    assert (tmp_path / "Mods" / "DlcMerger" / "DlcMerger.tp2").exists()
+    assert (tmp_path / "Mods" / "eefixpack" / "SETUP-EEFIXPACK.TP2").exists()
+    assert len(stub.downloaded) == 2
+
+
+def test_a_weidu_log_is_converted_to_a_selection(workspace):
+    tmp_path, stub = workspace
+    code, out = run(["-w", "WeiDU.log:BG2EE", "--emit-selection", "sel.json",
+                     "--check-only", "-t", "Mods"], tmp_path)
+    assert code == 0, out
+    written = json.loads((tmp_path / "sel.json").read_text())
+    assert written["schema_version"] == 1
+    assert [(c["tp2"], c["component"]) for c in written["installs"][0]["components"]] \
+        == [("DlcMerger/DlcMerger.tp2", 3), ("eefixpack/SETUP-EEFIXPACK.TP2", 0)]
+    assert stub.downloaded == []
+
+
+def test_a_selection_and_a_weidu_log_together_are_refused(workspace):
+    tmp_path, _stub = workspace
+    (tmp_path / "selection.json").write_text(json.dumps(SELECTION))
+    code, _out = run(["--selection", "selection.json", "-w", "WeiDU.log"], tmp_path)
+    assert code == 2
+
+
+def test_a_broken_selection_is_a_configuration_error(workspace):
+    tmp_path, _stub = workspace
+    (tmp_path / "selection.json").write_text('{"schema_version": 7}')
+    code, _out = run(["--selection", "selection.json"], tmp_path)
+    assert code == 2

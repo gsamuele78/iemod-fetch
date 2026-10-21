@@ -51,7 +51,7 @@ iemod-fetch = "iemod_fetch.cli:main"
 
 [project.optional-dependencies]
 # Split so CI jobs install only what they need and a failure names its own gate.
-test = ["pytest>=7.4", "hypothesis>=6.100", "coverage[toml]>=7.4"]
+test = ["pytest>=7.4", "hypothesis>=6.100", "coverage[toml]>=7.4", "jsonschema>=4.18"]
 # Linters are pinned to a minor series: ruff and mypy add rules in minor
 # releases, and an unpinned linter turns a green main red overnight with no
 # change to the code (it did: ruff 0.17 added ISC004). Dependabot bumps these.

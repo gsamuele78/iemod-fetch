@@ -173,6 +173,35 @@ URLs and new unknown fields all work. The one thing that needs you is a
 **renamed `tp2` key** — it breaks the join and any alias pointing at it, and is
 reported as unresolved with the renamed entry offered as a suggestion.
 
+## 6. Without a WeiDU.log: selection.json
+
+A selection lists the mods, components and languages you want, one install or
+two for EET (`BGEE` then `EET`), in install order. It says exactly what a
+WeiDU.log says, and it is what the future GUI saves (ADR-0030). The format is
+`schemas/selection-v1.schema.json`.
+
+```json
+{"schema_version": 1,
+ "installs": [
+   {"game": "BGEE", "components": [
+      {"tp2": "eefixpack/setup-eefixpack.tp2", "component": 0, "language": 0}]},
+   {"game": "EET", "components": [
+      {"tp2": "EET/EET.tp2", "component": 0, "language": 0,
+       "label": "EET core (resource importation)"}]}]}
+```
+
+```bash
+# Use it instead of -w, for every run mode (fetch, --check-only, --plan-order):
+python3 iemod-fetch.pyz --selection selection.json -t ./Mods
+# Turn existing logs into one, without fetching anything:
+python3 iemod-fetch.pyz -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE \
+    --emit-selection selection.json --check-only
+```
+
+`--selection` and `-w` are never given together. A wrong file is refused with
+where and why: an unknown key, a game that is not one, a tp2 path that leaves
+its folder, or `schema_version` other than 1.
+
 ---
 
 ## Reading the output
