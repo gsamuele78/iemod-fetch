@@ -41,6 +41,7 @@ Standard library only at runtime. One file, no dependencies.
 | **Order** | sorts every component against the BWS-NG and krion64 rule data, then re-checks the result | `--plan-order DIR` |
 | **Order** at component level | splits a mod across the install where krion64 or a component rule places its parts apart | *(with `--plan-order`)* |
 | **Resolve** | removes the components an error-graded incompatibility rule pins, and the earlier of two options of one WeiDU subcomponent group; lists the rest for you | `--resolve-conflicts` |
+| **Decide** | every conflict comes with its options (drop a side, reorder, install what is missing) and their cost; your choice, by option id, is applied to the plan and re-checked | `--decisions decisions.json` |
 | **Simulate** | walks the plan as WeiDU will: each mod's own tp2 REQUIRE/FORBID/GAME_IS, the game turning into EET, EET's merge allow-list; lists every refusal | `--simulate` |
 | **Game folders** | identifies BG:EE / BG2:EE / EET the way WeiDU does; refuses a modded BG2:EE, missing SoD, swapped folders | `--bgee-dir` `--bg2ee-dir` |
 | **Language** | each mod in the first of your languages it offers, read from its own tp2 | `--language-preference it_IT,en_US` |
@@ -336,7 +337,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           ~930 offline tests: characterization, example, property-based, loopback, script execution
+tests/           ~950 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -347,7 +348,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 927 passed + 4 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 949 passed + 4 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -442,6 +443,21 @@ own evidence grade and source, and the narrowest fix — "deselect stratagems
 are marked fixed rather than repeated. Add `--conflict-report conflicts.json`
 for the full machine-readable version, `--show-advisories` for the unverified
 observations withheld by default.
+
+Every outstanding finding is printed with its id and the options that clear
+it, the one the rules recommend marked `*` (none on a tie):
+
+```
+          id: conflict-1887f4d4f9f06816; options:
+             option-2d0badec446ba437  deselect stratagems: #4100 ...  [cost 1]
+             option-a8395462ca46c2a6  deselect cdtweaks: #2370 Tweak  [cost 1]
+```
+
+Write the ones you choose into `decisions.json` - `{"finding": ..., "choose":
+option-id}`, or `"accept": "why"` to keep both - and pass `--decisions
+decisions.json`: your choices are applied to the plan before
+`--resolve-conflicts`, which never overrides them, and the plan is re-checked.
+A decision about a finding that no longer exists is reported and not applied.
 
 See ADR-0016 for why both databases are used, ADR-0017 for what the plan does and
 does not promise, ADR-0018 for how conflicts are narrowed to components,

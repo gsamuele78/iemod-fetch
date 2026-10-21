@@ -1469,3 +1469,43 @@ Measured: the files the tool reads are about 25 MB in total (lcc-docs
   fetched again until upstream moves. An accepted update records what changed
   (counts, mods added and removed, versions and statuses), so an update that
   changes the advice the tool gives is never silent.
+
+---
+
+## ADR-0033 — Conflicts are answered with options; the player's answer wins
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+`--resolve-conflicts` applies the rules' own remedy only where they decide
+(ADR-0021). Everything else - a tie, a warning, a whole mod against a whole
+mod - is "left for you to decide", and until now deciding meant editing the
+plan's WeiDU.log by hand and re-running without the flag. A GUI cannot do
+that, and neither can a player who wants the same choice next time.
+
+### Decision
+
+- Every finding carries **options**: deselect one side (its cost is the
+  number of chosen components lost), reorder (what the plan already does), or
+  install a missing prerequisite (not applicable to a plan: it needs a fetch).
+  Each has a stable id derived from the finding's id. `recommended` marks what
+  `--resolve-conflicts` would do, and only where the rules decide.
+- A **decisions.json** (schema v1) records the player's answers: `choose` an
+  option, or `accept` a finding with a reason.
+- `--decisions` applies them to the plan **before** `--resolve-conflicts`, which
+  skips every decided finding. The plan is re-checked afterwards; the report
+  marks a chosen finding fixed by the plan and an accepted one suppressed,
+  with the reason.
+- A decision whose finding is no longer in the report is **stale**: reported,
+  never re-targeted. An option id that belongs to another finding is an error.
+
+### Consequences
+
+- The "left for you to decide" list becomes a set of buttons for the GUI and a
+  file the CLI can replay; the WeiDU logs are still never edited.
+- Ids are stable for the same selection. Changing the selection can make a
+  decision stale; that is reported, and the player decides again.
+- A player can accept a conflict the rules grade `error`. The report keeps it
+  visible as accepted, with the reason they gave, rather than hiding it.

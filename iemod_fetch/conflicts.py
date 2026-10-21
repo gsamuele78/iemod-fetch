@@ -87,6 +87,7 @@ class Finding:
     fixed_by_plan: Optional[bool] = None
     stale_risk: str = ""
     suppressed: str = ""
+    first: str = ""                   # ORDER: the key of the mod that goes first
 
     @property
     def rank(self) -> int:
@@ -106,6 +107,10 @@ class Finding:
         """Neither withheld nor already dealt with by the ordering plan."""
         return not (self.suppressed or self.fixed_by_plan)
 
+    @property
+    def options(self) -> List["Option"]:
+        return finding_options(self)
+
     def as_dict(self) -> dict:
         return {
             "id": self.id,
@@ -124,7 +129,86 @@ class Finding:
             "order_fixable": self.order_fixable,
             "fixed_by_plan": self.fixed_by_plan,
             "stale_risk": self.stale_risk, "suppressed": self.suppressed,
+            "options": [o.as_dict(self.id) for o in self.options],
         }
+
+
+# ------------------------------------------------------------------- options
+DESELECT = "deselect"       # remove these components from the plan
+REORDER = "reorder"         # install one side before the other
+INSTALL = "install"         # add what is missing - outside a plan's reach
+
+
+@dataclass(frozen=True)
+class Option:
+    """
+    One way to clear a finding, with its price (M2): how many of the chosen
+    components the plan loses. `applicable` says whether `--decisions` can
+    apply it to the plan; adding a missing mod needs a fetch, so it cannot.
+    `recommended` is what `--resolve-conflicts` would do, and only where the
+    rules decide - never on a tie.
+    """
+    action: str
+    mod: str
+    key: str
+    components: Tuple[int, ...]
+    whole_mod: bool
+    cost: int
+    applicable: bool
+    recommended: bool
+    description: str
+    before: str = ""            # REORDER: the mod that goes first
+
+    def id(self, finding_id: str) -> str:
+        return stable_id("option", finding_id, self.action, self.key,
+                         self.components, self.whole_mod, self.before)
+
+    def as_dict(self, finding_id: str) -> dict:
+        return {"id": self.id(finding_id), "action": self.action, "mod": self.mod,
+                "components": list(self.components), "whole_mod": self.whole_mod,
+                "cost": self.cost, "applicable": self.applicable,
+                "recommended": self.recommended, "description": self.description}
+
+
+def _pinned_cost(side: Side) -> int:
+    return 10 ** 6 if side.whole_mod else len(side.components)
+
+
+def _deselect(side: Side, recommended: bool, verb: str = "deselect") -> Option:
+    what = f"drop {side.mod} (whole mod)" if side.whole_mod else f"{verb} {side.describe(3)}"
+    return Option(DESELECT, side.mod, side.key, side.numbers, side.whole_mod,
+                  len(side.components), True, recommended, what)
+
+
+def finding_options(finding: Finding) -> List[Option]:
+    """Every way to clear `finding`, cheapest first."""
+    left, right = finding.left, finding.right
+    if finding.kind == ORDER and right is not None:
+        first, second = (left, right) if finding.first == left.key else (right, left)
+        return [Option(REORDER, second.mod, second.key, (), False, 0, True, True,
+                       f"install {first.mod} before {second.mod}", before=first.key)]
+    if finding.kind == DEPENDS:
+        wanted = right.mod if right else "the prerequisite"
+        options = [_deselect(left, False)]
+        if right is not None:
+            options.insert(0, Option(INSTALL, right.mod, right.key, right.numbers,
+                                     right.whole_mod, 0, False, False,
+                                     f"install {wanted}"))
+        return options
+    if right is None:
+        return [_deselect(left, False)]
+    if finding.origin == SUBCOMPONENT_ORIGIN:
+        # WeiDU's own semantics: the option installed last is the one that stays.
+        return [_deselect(left, True, "keep the last option, deselect"),
+                _deselect(right, False, "keep the earlier option, deselect")]
+    decides = (finding.kind == INCOMPATIBLE and finding.severity == "error"
+               and finding.evidence != "speculative"
+               and not (left.whole_mod and right.whole_mod)
+               and _pinned_cost(left) != _pinned_cost(right))
+    cheaper = left if _pinned_cost(left) < _pinned_cost(right) else right
+    options = [_deselect(left, decides and cheaper is left),
+               _deselect(right, decides and cheaper is right)]
+    return sorted(options, key=lambda o: (not o.recommended, o.whole_mod, o.cost))
 
 
 @dataclass
@@ -304,7 +388,9 @@ def build_conflict_report(installs: Sequence[Install], ruleset: RuleSet,
             workaround=rule.workaround, origin=violation.origin,
             raw_severity=rule.raw_severity, remedy=remedy,
             order_fixable=order_fixable, fixed_by_plan=fixed,
-            stale_risk=violation.stale_risk, suppressed=violation.suppressed))
+            stale_risk=violation.stale_risk, suppressed=violation.suppressed,
+            first=(right.key if right is not None and rule.direction != "before"
+                   else left.key) if rule.kind == ORDER else ""))
 
     report.findings.extend(_known_issues(installs, ruleset))
     report.findings.extend(_subcomponent_clashes(installs))
@@ -459,3 +545,11 @@ def _render_one(finding: Finding, stream) -> None:
         print(f"          may be stale: {finding.stale_risk}", file=stream)
     if finding.suppressed:
         print(f"          suppressed: {finding.suppressed}", file=stream)
+    if finding.actionable and finding.kind != ORDER:
+        # What decisions.json needs: the finding's id and one option's id.
+        print(f"          id: {finding.id}; options:", file=stream)
+        for option in finding.options:
+            mark = "*" if option.recommended else " "
+            note = "" if option.applicable else "  (not applicable to a plan)"
+            print(f"           {mark} {option.id(finding.id)}  {option.description}"
+                  f"  [cost {option.cost}]{note}", file=stream)

@@ -310,6 +310,7 @@ class OrderPlan:
     edges: int = 0
     simulation: Optional[object] = None    # simulate.SimulationResult, if run
     game_report: Optional[object] = None   # gamedir.GameReport, if folders given
+    resolution: Optional[object] = None    # resolution.ResolutionResult, if any
 
     @property
     def compliant(self) -> bool:

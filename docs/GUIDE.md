@@ -426,7 +426,7 @@ The default ceiling is 2 GiB because real mods reach it — BGGO is 1.4 GB.
   the script and run it; iemod-fetch never executes it.
 * **Pick a side it was not told to.** `--resolve-conflicts` removes only what
   an error-graded rule pins to components; every other conflict is listed for
-  you to decide.
+  you to decide, with its options, and `--decisions` applies your choice.
 
 ---
 
@@ -663,13 +663,28 @@ including two options of one WeiDU subcomponent group (the last one is kept).
 |---|---|
 | `WeiDU-BGEE.log` | what installs on BGEE before the merge, in order |
 | `WeiDU.log` | EET core first, then every EET mod, EET_end last |
-| `RESOLUTION.json` | every component `--resolve-conflicts` removed and why, and what it left for you |
+| `RESOLUTION.json` | every component `--decisions` and `--resolve-conflicts` removed and why (`by`: `decision` or `rules`), what was accepted, and what is left for you |
 | `install-eet.sh` / `install-eet.cmd` | the installer for Linux/macOS and for Windows |
 
 Read the `CONFLICT RESOLUTION` block in the output. "Left for you to decide"
-means the rules say two things must not coexist but not which one goes: delete
-one of them from the plan's log, then re-run step 2 without `--resolve-conflicts`
-to re-check the edited plan.
+means the rules say two things must not coexist but not which one goes. The
+conflict report lists, for each finding, its `id` and the options that clear
+it, with their cost; write your answer in a `decisions.json`
+(`schemas/decisions-v1.schema.json`) and re-run step 2 with `--decisions`:
+
+```json
+{"schema_version": 1,
+ "decisions": [
+   {"finding": "conflict-1887f4d4f9f06816", "choose": "option-a8395462ca46c2a6"},
+   {"finding": "conflict-d8821540fb81dfcd", "accept": "tested together, works"}]}
+```
+
+`choose` removes exactly that option's components from the plan; `accept`
+keeps both sides and the report shows the finding as accepted, with your
+reason. Decisions are applied before `--resolve-conflicts`, which never
+overrides them, and the plan is re-checked afterwards. A decision whose finding
+is no longer in the report (the selection changed) is listed as stale and not
+applied. Your WeiDU logs are never touched.
 
 For a single game (BGEE-only or BG2EE-only) pass one log; you get `install.sh`
 and `install.cmd`, which take `GAME_DIR`.

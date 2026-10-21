@@ -6,7 +6,8 @@
 #   core     naming, errors, versions, weidu, tp2, modmeta, manifest,
 #            catalogues, moddb, rules, ordering, conflicts, resolution,
 #            installer, languages, plan, report,
-#            config, pinning, selection, available, contract, tra, freshness
+#            config, pinning, selection, available, contract, tra, freshness,
+#            decisions
 #            -> pure. Parse, compare, decide. No sockets, no subprocesses.
 #   shell    net, auth, archives, install, orgindex, resolvers, datasync, runner,
 #            api, cli
@@ -55,6 +56,7 @@ source_modules =
     iemod_fetch.contract
     iemod_fetch.tra
     iemod_fetch.freshness
+    iemod_fetch.decisions
 forbidden_modules =
     iemod_fetch.net
     iemod_fetch.auth
@@ -142,7 +144,7 @@ layers =
     iemod_fetch.ordering
     iemod_fetch.rules
     iemod_fetch.available
-    iemod_fetch.manifest | iemod_fetch.catalogues | iemod_fetch.moddb | iemod_fetch.selection | iemod_fetch.freshness
+    iemod_fetch.manifest | iemod_fetch.catalogues | iemod_fetch.moddb | iemod_fetch.selection | iemod_fetch.freshness | iemod_fetch.decisions
     iemod_fetch.weidu | iemod_fetch.tp2 | iemod_fetch.modmeta | iemod_fetch.versions
     iemod_fetch.urls
     iemod_fetch.naming | iemod_fetch.contract
