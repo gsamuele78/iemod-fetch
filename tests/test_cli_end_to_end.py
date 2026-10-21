@@ -5,7 +5,7 @@ import zipfile
 
 import pytest
 
-from iemod_fetch import cli
+from iemod_fetch import api, cli
 from iemod_fetch.errors import NetworkError
 from iemod_fetch.net import DownloadResult
 from iemod_fetch.archives import Kind
@@ -72,8 +72,8 @@ def workspace(tmp_path, monkeypatch):
         blobs={url_a: zip_bytes("DlcMerger"),
                url_b: zip_bytes("eefixpack", "eefixpack/SETUP-EEFIXPACK.TP2")})
 
-    monkeypatch.setattr(cli, "HttpClient", lambda **kw: stub)
-    monkeypatch.setattr(cli, "resolve_credential",
+    monkeypatch.setattr(api, "HttpClient", lambda **kw: stub)
+    monkeypatch.setattr(api, "resolve_credential",
                         lambda **kw: type("C", (), {"token": None, "describe":
                                                     lambda self: "anonymous"})())
     monkeypatch.chdir(tmp_path)

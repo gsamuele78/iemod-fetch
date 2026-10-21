@@ -305,12 +305,12 @@ def test_an_absolute_mods_location_is_used_as_is(tmp_path, index):
 
 
 def test_cli_falls_back_to_an_absolute_path_across_drives(tmp_path, monkeypatch):
-    from iemod_fetch import cli
+    from iemod_fetch import api
 
     def other_drive(*_args):
         raise ValueError("path is on mount 'D:', start on mount 'C:'")
 
-    monkeypatch.setattr(cli.os.path, "relpath", other_drive)
+    monkeypatch.setattr(api.os.path, "relpath", other_drive)
     out = tmp_path / "plan"
     code, _text = _cli(["--check-only", "-q",
                         "-m", os.path.join(HERE, "data", "mod_downloads.json"),

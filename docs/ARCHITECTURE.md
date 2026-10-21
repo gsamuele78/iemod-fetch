@@ -34,7 +34,9 @@ budget, and each item is there because a real failure argued for it.
 `.importlinter` is the source of truth; this is the readable version of it.
 
 ```
-                          cli
+                    cli  ·  (GUI, M3)
+                           │
+                          api                              ← the one entry point
                            │
                          runner
                            │
@@ -51,20 +53,23 @@ budget, and each item is there because a real failure argued for it.
                        conflicts
                         ordering
                          rules
-             manifest · catalogues · moddb
+        available · manifest · catalogues · moddb · selection
         weidu · tp2 · modmeta · versions
                         urls
-                       naming
+                  naming  ·  contract
                        errors
 ```
 
-Four contracts are enforced, and CI fails on a violation:
+Five contracts are enforced, and CI fails on a violation:
 
 1. **The core imports nothing from the shell.** Every module below the line is
    testable with no network, no temporary directory and no clock.
 2. **The runtime imports no third-party package** (ADR-0002).
 3. **Nothing imports `cli`** except the entry point.
-4. **The stack above holds**, layer by layer.
+4. **The CLI decides nothing.** It may not import the planners, the runner or
+   the formats; it reaches the tool only through `api`, the same functions the
+   GUI calls (ADR-0029).
+5. **The stack above holds**, layer by layer.
 
 ## What each module is for
 
@@ -94,6 +99,9 @@ Four contracts are enforced, and CI fails on a violation:
 | `report.py` | the run report and its renderers | formatting is not I/O |
 | `config.py` | the INI file and the precedence rules | |
 | `pinning.py` | turning an actual run into a pinned manifest | |
+| `selection.py` | selection.json: a choice of mods without a WeiDU.log, converted to and from one (ADR-0030) | validation only |
+| `available.py` | every mod the given sources know, merged into one entry each | a join over data already read |
+| `contract.py` | `SCHEMA_VERSION` and stable finding ids for every JSON output (ADR-0030) | a digest of what a finding is about |
 
 ### The shell
 
@@ -105,8 +113,9 @@ Four contracts are enforced, and CI fails on a violation:
 | `install.py` | stage a verified mod directory | never deletes an existing directory; `--force` moves it aside |
 | `orgindex.py` | trusted-owner repository listing | a disk cache with a TTL |
 | `resolvers.py` | one manifest entry to one URL | refuses to guess; reports what it found instead |
-| `runner.py` | orchestration and concurrency | |
-| `cli.py` | argument parsing, config precedence, wiring | the only place that writes to a stream |
+| `runner.py` | orchestration and concurrency; progress events and cancellation | a cancelled download leaves no file |
+| `api.py` | the public API: `Settings`, `run`, `list_mods`, `load_selection`, `selection_of_logs` (ADR-0029) | what a front end may rely on is `__all__`; silent unless given a stream |
+| `cli.py` | argument parsing and config precedence, then `api.run` | the only place that reads `sys.argv` |
 
 ## Things worth knowing before changing something
 

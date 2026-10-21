@@ -121,6 +121,10 @@ A milestone is entered only when the previous one passes its tests in phase 3.
 
 ### M1 — The CLI becomes a backend (v2.3) — must have, no UI yet
 
+*Done on 2026-10-21* in #14 (selection.json), #15 (`--list-mods`), #16
+(versioned reports, finding ids), #17 (events, cancellation), #18 (error codes,
+fetch then check in one run) and the API pull request (`iemod_fetch.api`).
+
 | # | Item | Size |
 |---|---|---|
 | 1 | **ADR-0029** accepted: the scope changes (UI yes, installing opt-in later) | S |

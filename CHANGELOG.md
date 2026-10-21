@@ -56,6 +56,13 @@ Python API, which is internal.
   (plus `filesystem` and `internal`). A front end decides what to show from the
   code instead of parsing the message. The codes are pinned by
   `tests/test_error_codes.py` (ADR-0030, M1).
+- **A public API, `iemod_fetch.api`** (ADR-0029): `Settings` (one field per
+  command-line option, same name and default), `run(settings, stream=None,
+  on_event=None, cancel=None) -> Outcome` (exit code, run report, order plan,
+  conflict report), `list_mods`, `load_selection`, `selection_of_logs`. The
+  command line is now a thin client of it, and an import-linter contract
+  keeps it that way: `cli.py` may not import the planners, the runner or the
+  formats. The GUI will call the same functions. This completes milestone M1.
 - **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
   WeiDU and mod_installer are compared with upstream, and an issue opens for
   each one behind, with how to bump it. Dependabot cannot see those two pins.
