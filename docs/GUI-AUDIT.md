@@ -159,8 +159,8 @@ run can be stopped and resumed, or finished from the command line.
 
 | # | Phase / item | Size |
 |---|---|---|
-| 14 | Package skeleton: `iemod_fetch_gui`, `[gui]` extra, import-linter contract (core never imports gui; gui imports only `api`), pytest-qt offscreen in CI | M |
-| 15 | **1. Game and folders**: game type (EET, BGEE, BG2EE), BGEE/BG2EE folders checked with `gamedir`, language | S |
+| 14 | **Done**: `iemod_fetch_gui`, the `gui`/`guitest` extras and the `iemod-fetch-gui` command, two contracts (the tool never imports the GUI; the GUI imports only `api`, with a test keeping the list complete), and a CI job running pytest-qt offscreen on Linux and Windows. Package skeleton: `iemod_fetch_gui`, `[gui]` extra, import-linter contract (core never imports gui; gui imports only `api`), pytest-qt offscreen in CI | M |
+| 15 | **Done**: the phase checks the folders as GAME_IS does while they are typed, and Next saves the project's `iemod-fetch.ini`, which the CLI reads. **1. Game and folders**: game type (EET, BGEE, BG2EE), BGEE/BG2EE folders checked with `gamedir`, language | S |
 | 16 | **2. Mod selection**: category column, search, filters "selected only / conflicts only / updates", mod → component → choice tree with tri-state checkboxes, radio buttons for exclusive groups, drop-downs for prompts, details pane, conflicts panel with one-click options | L |
 | 17 | **3. Install order**: one tab per EET phase, drag to reorder, entries the rules fix are locked, violations marked | M |
 | 18 | **4. Download** and **5. Extraction**: progress per mod and in bytes from the event stream, cancel, retry of the failed ones | M |

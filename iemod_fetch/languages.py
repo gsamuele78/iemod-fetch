@@ -51,6 +51,9 @@ _ALIASES: Dict[str, Tuple[str, ...]] = {
     "tr_TR": ("turkish", "turkce", "tr", "tr_tr"),
     "sv_SE": ("swedish", "svenska", "sv", "sv_se"),
 }
+# Every language a preference can name: (code, English name), for a UI's list.
+LANGUAGES: Tuple[Tuple[str, str], ...] = tuple(
+    (code, names[0].capitalize()) for code, names in _ALIASES.items())
 _LOOKUP = {alias: code for code, names in _ALIASES.items() for alias in names}
 _FOLD = str.maketrans("àáâãäçèéêëìíîïñòóôõöùúûüčěřšž", "aaaaaceeeeiiiinooooouuuucersz")
 

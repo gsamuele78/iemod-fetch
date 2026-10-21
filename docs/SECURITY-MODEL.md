@@ -124,6 +124,9 @@ magic bytes.
   moved into place. There is deliberately no "the archive has one `.tp2`, so it
   must be right" heuristic; that is the class of guessing ADR-0005 forbids.
 - The move into place is atomic where the filesystem allows it.
+- The wizard writes one file: `iemod-fetch.ini` in the project folder the user
+  chose, only known options, written whole and swapped in (`config.write_values`).
+  Other options and sections in that file are kept; comments are not.
 
 ## Credentials
 

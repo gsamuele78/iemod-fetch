@@ -15,6 +15,8 @@
 #               subprocess.
 #   api      what the tool does, as functions: the one thing the CLI and the
 #            GUI call (ADR-0029). The CLI only parses flags and prints.
+#   gui      iemod_fetch_gui, the PySide6 wizard (ADR-0031): imports only
+#            iemod_fetch.api; nothing in iemod_fetch imports it.
 #
 # The core is where the interesting logic lives, and it is testable with no
 # fixtures, no mocks and no clock. That property is worth defending mechanically.
@@ -22,6 +24,7 @@
 [importlinter]
 root_packages =
     iemod_fetch
+    iemod_fetch_gui
 include_external_packages = True
 
 [importlinter:contract:core-is-pure]
@@ -89,6 +92,7 @@ forbidden_modules =
     typer
     rich
     tomli
+    PySide6
 
 [importlinter:contract:cli-is-the-only-entry-point]
 name = Nothing imports the CLI except the entry point
@@ -153,3 +157,61 @@ layers =
     iemod_fetch.urls
     iemod_fetch.naming | iemod_fetch.contract
     iemod_fetch.errors
+
+[importlinter:contract:gui-is-apart]
+name = The tool never imports the GUI (ADR-0031)
+type = forbidden
+source_modules =
+    iemod_fetch
+forbidden_modules =
+    iemod_fetch_gui
+
+[importlinter:contract:gui-only-through-api]
+name = The GUI reaches the tool only through the api, like the CLI (ADR-0031)
+type = forbidden
+source_modules =
+    iemod_fetch_gui
+forbidden_modules =
+    iemod_fetch.archives
+    iemod_fetch.auth
+    iemod_fetch.available
+    iemod_fetch.bio
+    iemod_fetch.catalogues
+    iemod_fetch.cli
+    iemod_fetch.config
+    iemod_fetch.conflicts
+    iemod_fetch.constraints
+    iemod_fetch.contract
+    iemod_fetch.datasync
+    iemod_fetch.decisions
+    iemod_fetch.errors
+    iemod_fetch.freshness
+    iemod_fetch.gamedir
+    iemod_fetch.install
+    iemod_fetch.installer
+    iemod_fetch.languages
+    iemod_fetch.limits
+    iemod_fetch.manifest
+    iemod_fetch.moddb
+    iemod_fetch.modmeta
+    iemod_fetch.naming
+    iemod_fetch.net
+    iemod_fetch.ordering
+    iemod_fetch.orgindex
+    iemod_fetch.pi
+    iemod_fetch.pinning
+    iemod_fetch.plan
+    iemod_fetch.report
+    iemod_fetch.resolution
+    iemod_fetch.resolvers
+    iemod_fetch.rules
+    iemod_fetch.runner
+    iemod_fetch.selection
+    iemod_fetch.simulate
+    iemod_fetch.tp2
+    iemod_fetch.tra
+    iemod_fetch.urls
+    iemod_fetch.versions
+    iemod_fetch.weidu
+# The api itself imports the rest: only the GUI's own imports are judged.
+allow_indirect_imports = True

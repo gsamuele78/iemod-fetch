@@ -58,7 +58,7 @@ changed in each release is in [`CHANGELOG.md`](CHANGELOG.md).
 ## Contents
 
 - [From WeiDU logs to a running EET game](#from-weidu-logs-to-a-running-eet-game)
-- [Install](#install)
+- [Install](#install) · [The wizard (GUI)](#the-wizard-gui)
 - [Checking the install](#checking-the-install)
 - [Making it reproducible](#making-it-reproducible)
 - [Supplementary catalogues](#supplementary-catalogues)
@@ -112,6 +112,26 @@ python3 build.py            # -> ./iemod-fetch.pyz
 # Or as a package, straight from the repository (it is not on PyPI yet).
 pip install git+https://github.com/gsamuele78/iemod-fetch   # then: iemod-fetch --help
 ```
+
+### The wizard (GUI)
+
+A desktop wizard is being built on the same tool (milestone M3, ADR-0031): a
+PySide6 app that reaches the tool only through `iemod_fetch.api`, in BWS-NG's
+phases. It is separate from the CLI, which stays one standard-library file.
+
+```bash
+pip install "iemod-fetch[gui] @ git+https://github.com/gsamuele78/iemod-fetch"
+iemod-fetch-gui --project ~/eet-build      # the folder that keeps the project
+```
+
+**Phase 1, game and folders, works today**: choose EET, BG:EE or BG2:EE, point
+at the game folders - checked as WeiDU's GAME_IS sees them while you type, so
+swapped folders, an EET-converted BG2:EE or a BG:EE without Siege of
+Dragonspear are named before you go on - and the languages to install in.
+Next saves `iemod-fetch.ini` in the project folder, the file the CLI reads:
+`iemod-fetch` run there uses the same folders and languages, so the command
+line can carry on where the wizard stops. Mod selection, order, download and
+extraction follow, one phase at a time.
 
 ### Verifying a release download
 
@@ -346,6 +366,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 
 ```
 iemod_fetch/     the tool
+iemod_fetch_gui/ the PySide6 wizard (optional; imports only iemod_fetch.api)
 legacy/          the original script, kept so its defects stay reproducible
 tests/           ~1,000 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
@@ -362,7 +383,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,031 passed + 8 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 1,054 passed + 9 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
 ```
 
 ## Community data, kept current

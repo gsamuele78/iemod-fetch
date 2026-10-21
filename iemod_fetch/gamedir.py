@@ -261,3 +261,47 @@ def verify_eet(bgee_dir: str, bg2ee_dir: str, plan_mods: Set[str]) -> GameReport
     report.notes.append("the patch level (EET asks for v2.6.6.0 of both games)")
     report.notes.append("whether the game data itself is intact")
     return report
+
+
+def check_folders(game: str, bgee_dir: Optional[str],
+                  bg2ee_dir: Optional[str]) -> GameReport:
+    """
+    The folders a game needs, before anything is chosen (the wizard's first
+    phase): EET needs a BG:EE and a clean BG2:EE (verify_eet), BGEE and BG2EE
+    one folder of that game. A Siege of Dragonspear still in its DLC archive is
+    a note here - DlcMerger is then needed first, which the plan checks later.
+    """
+    game = game.upper()
+    if game == "EET" and not (bgee_dir and bg2ee_dir):
+        report = GameReport(bgee_dir or "", bg2ee_dir or "")
+        report.problems += [f"{label}: no folder chosen" for label, folder in
+                            (("BGEE_DIR", bgee_dir), ("BG2EE_DIR", bg2ee_dir)) if not folder]
+        return report
+    if game == "EET":
+        report = verify_eet(bgee_dir or "", bg2ee_dir or "", plan_mods={"dlcmerger"})
+        if report.sod == "dlc":
+            report.notes.insert(0, "Siege of Dragonspear is a DLC archive here (GOG/"
+                                   "Steam): DlcMerger #1 will be needed first")
+        return report
+    if game not in ("BGEE", "BG2EE"):
+        report = GameReport(bgee_dir or "", bg2ee_dir or "")
+        report.problems.append(f"unknown game {game!r}: EET, BGEE or BG2EE")
+        return report
+    label, folder = ("BGEE_DIR", bgee_dir) if game == "BGEE" else ("BG2EE_DIR", bg2ee_dir)
+    found = identify(folder) if folder and os.path.isdir(folder) else None
+    report = GameReport(bgee_dir or "", bg2ee_dir or "",
+                        games=(found, None) if game == "BGEE" else (None, found))
+    if not folder:
+        report.problems.append(f"{label}: no folder chosen")
+    elif not os.path.isdir(folder):
+        report.problems.append(f"{label} {folder} does not exist")
+    elif _find(folder, "chitin.key") is None:
+        report.problems.append(f"{label} {folder} has no chitin.key: not a game folder")
+    elif found == "EET":
+        report.problems.append(f"{label} {folder} is EET (override/EET.flag), not {game}")
+    elif found != game:
+        report.problems.append(f"{label} {folder} is {found or 'no known game'}, not {game}")
+    if game == "BGEE" and found == "BGEE":
+        report.sod = sod_state(folder or "")
+    report.notes.append("the patch level, and whether the game data itself is intact")
+    return report
