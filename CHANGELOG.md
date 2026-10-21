@@ -52,6 +52,15 @@ Python API, which is internal.
   workflow, but `ci.yml` had no `workflow_call` trigger. It also shared a
   concurrency group with main's own CI run, so either could cancel the other.
 
+### Build
+- **GitHub Actions updated by Dependabot** (#10), still pinned by commit SHA:
+  checkout v4 → v7.0.1, setup-python v5 → v7.0.0, upload-artifact v4 → v7.0.2,
+  download-artifact v4 → v8.0.2, attest-build-provenance v1 → v4.2.2,
+  action-gh-release v2 → v3.0.3, codeql-action v3 → v4.39.0. This clears the
+  Node 20 deprecation warnings. The release-only actions (download-artifact,
+  attest-build-provenance, action-gh-release) are first exercised by a release
+  run; a dry run is *Run workflow* with a released `version` and `dry_run`.
+
 ## [2.2.0] - 2026-10-21
 
 The install-time release: the plan is now checked the way WeiDU will run it,
