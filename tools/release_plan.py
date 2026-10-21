@@ -21,7 +21,8 @@ failing with a bare 403.
 
 prints `release=`, `tag=`, `sha=` and `workflows_differ=` lines for
 $GITHUB_OUTPUT; with no VERSION the newest released section of CHANGELOG.md is
-used, then each version in $BACKFILL (comma-separated) still untagged. An
+used, then each version in $BACKFILL (comma-separated) still untagged.
+`--pull-request` plans the rehearsal of a pull request's own commit. An
 explicit VERSION whose tag exists releases that tag on its commit (a
 tag pushed by hand runs the tagged commit's own, possibly older, workflow).
 """
@@ -100,7 +101,25 @@ def automatic(repo: str, newest: str, backfill: List[str]) -> Dict[str, str]:
     return planned
 
 
+def pull_request(repo: str) -> Dict[str, str]:
+    """A rehearsal on a pull request: its own commit, tagged by its version.
+
+    Build and attestation run, publishing never does. So a change to the
+    release workflow, Dependabot's included, is exercised before it merges.
+    """
+    with open(os.path.join(repo, VERSION_FILE), encoding="utf-8") as fh:
+        found = re.search(r'^__version__ = "(\d+\.\d+\.\d+)"', fh.read(), re.MULTILINE)
+    if found is None:
+        raise SystemExit(f"no __version__ in {VERSION_FILE}")
+    return {"release": "true", "tag": f"v{found.group(1)}",
+            "sha": _git(repo, "rev-parse", "HEAD"), "workflows_differ": "false"}
+
+
 def main(argv) -> int:
+    if argv[1:] == ["--pull-request"]:
+        for key, value in pull_request(".").items():
+            print(f"{key}={value}")
+        return 0
     explicit = len(argv) > 1
     if explicit:
         version = argv[1].lstrip("v")
