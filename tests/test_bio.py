@@ -35,9 +35,19 @@ def bio_made():
 
 
 # ------------------------------------------------------ the acceptance test
-def test_a_code_bio_made_round_trips_to_the_same_code():
+def inflated(code: str) -> bytes:
+    text = "".join(code[len(PREFIX):].split())
+    return zlib.decompress(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+
+
+def test_a_code_bio_made_round_trips_to_the_same_payload_bytes():
+    """The JSON inside is re-written byte for byte. The compressed bytes match
+    too where Python's zlib is the classic one (Linux, macOS, Python 3.9 on
+    Windows); Python 3.14 on Windows ships zlib-ng, whose deflate stream
+    differs but inflates to the same bytes - and BIO reads either."""
     code = bio_made()
-    assert encode_share_code(decode_share_code(code)) == code
+    again = encode_share_code(decode_share_code(code))
+    assert inflated(again) == inflated(code)
 
 
 def test_import_then_export_keeps_every_field():
