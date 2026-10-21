@@ -82,6 +82,11 @@ Release → Run workflow* with `version` = `2.1.0`. Either way it is not marked
 
 **A tag pushed by hand** still works: that exact commit is released.
 
+**Correcting published notes**: fix the section in CHANGELOG.md, merge, then
+*Run workflow* with that `version`. The notes are read from the current
+changelog. The artifacts are rebuilt from the release commit, so they are
+unchanged.
+
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.
 

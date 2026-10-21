@@ -18,6 +18,11 @@ Python API, which is internal.
   R-studioConf's ADR-0006, adapted (ADR-0027).
 
 ### Fixed
+- **The 2.2.0 notes lost the start of the `--simulate` entry** (a text edit
+  cut it). The section is restored, `tests/test_changelog.py` now rejects such
+  stumps and unpaired bold markers, and the release notes are read from the
+  current CHANGELOG.md, so *Run workflow* with `version` = `2.2.0` republishes
+  them corrected.
 - **The release step was refused with 403** for both 2.2.0 and 2.1.0, after
   the build and attestation had passed. GITHUB_TOKEN cannot create a tag on a
   commit whose workflow files differ from main's. Now main's head is tagged
@@ -54,7 +59,7 @@ WeiDU would hit 1 → 0, with EEFixPack kept instead of dropped.
   what `--simulate` predicts, installs the resolved plan to the last component,
   and the generated `install-eet.sh` runs through the real mod_installer into
   both games. The toolchain is pinned: WeiDU by sha256, mod_installer by commit.
-: walk the plan the way WeiDU will run it.** Each component's
+- **`--simulate`: walk the plan the way WeiDU will run it.** Each component's
   own tp2 constraints (REQUIRE/FORBID_COMPONENT, GAME_IS, ENGINE_IS,
   GAME_INCLUDES, MOD_IS_INSTALLED, body-level `NOT GAME_IS … ABORT`) are checked
   in plan order on the game it lands on: the BGEE log on BGEE, the EET log on
