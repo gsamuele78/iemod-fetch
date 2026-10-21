@@ -20,6 +20,15 @@ Python API, which is internal.
   flags, `--data-dir` moves the cache. `api.update_data` and `api.data_status`
   for the GUI; a `data_source` event per source.
 
+- **Guards on every community-data update.** Before a refreshed copy replaces
+  the last good one, every file must be valid JSON and the copy must parse with
+  the tool's own readers; a count (mods, rules, order entries) at zero or below
+  half of the last good copy's - a format change upstream - refuses the update.
+  The last good copy stays and the refused commit is not downloaded again. An
+  accepted update reports what changed: counts before and after, mods added and
+  removed, versions (BWS-NG, krion64) and catalogue statuses (lcc-docs) that
+  moved. The README and guide no longer ask for `git clone`.
+
 ### Changed
 - **`--plan-order` no longer needs `--order-catalogue`**, and checks use the
   community rules without setup, once the cache holds them. A run that gave no

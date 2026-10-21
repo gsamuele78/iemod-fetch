@@ -61,6 +61,12 @@ jobs:
           print(f"BWS-NG   : {len(bws)} rules, {len(bws.warnings)} warnings")
           print(f"krion64  : {len(krion)} rules, {len(krion.notes)} known issues")
           print(f"ordering : {len(index)} mods, {len(index.categories)} categories")
+          # The guard measured each copy before accepting it (ADR-0032).
+          from iemod_fetch.datasync import load_manifest
+          manifest = load_manifest(os.environ["IEMOD_DATA_DIR"])
+          for name, entry in sorted(manifest.items()):
+              print(f"guard    : {name} {entry['commit'][:7]} {entry['metrics']}")
+              assert entry["metrics"] and "rejected" not in entry, name
           # Floors, not expectations: a collapse means the schema moved.
           assert len(lcc) > 1500, "lcc-docs mod count collapsed - schema change?"
           assert len(bws) > 400, "BWS-NG rule count collapsed - schema change?"

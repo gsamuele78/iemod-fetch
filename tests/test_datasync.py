@@ -282,3 +282,103 @@ def test_file_names_with_hash_or_space_are_fetched(tmp_path, hub):
     (result,) = refresh(hub, str(tmp_path), (KRION,))
     assert result.status == "updated", result.detail
     assert (tmp_path / "krion64" / "data" / "mods" / "A7#ImprovedArcher.json").is_file()
+
+
+# ------------------------------------------------- guards on upstream changes
+# A refresh is only as good as what it brings in. Before the new copy replaces
+# the last good one it is read with the tool's own parsers; a copy that does
+# not parse, or whose counts collapse, is refused. What did change - rules,
+# mods, versions, statuses - is recorded, so an update is never silent.
+def _fixture_files(directory, prefix):
+    files = {}
+    for root, _dirs, names in os.walk(directory):
+        for name in names:
+            path = os.path.join(root, name)
+            rel = os.path.relpath(path, directory).replace(os.sep, "/")
+            with open(path, "rb") as fh:
+                files[f"{prefix}/{rel}"] = fh.read()
+    return files
+
+
+KRION_CHECKED = Source("krion64", "o/krion", ("data/categories.json", "data/mods/"),
+                       check=datasync.check_krion64)
+LCC_CHECKED = Source("lcc-docs", "o/lcc", ("db/mods.json",), check=datasync.check_lcc_docs)
+
+
+ONE_PP = {"t": "1pp", "c": "GRAPHICS", "ord": 100, "v": "v4.2.1", "conflicts": [
+    {"with": "cdtweaks", "severity": "hard", "reason": "avatar by armour",
+     "myComps": "#113; #104", "theirComps": "#120; #80", "source": "eemodsetup",
+     "evidenceLevel": "mechanism-verified"}]}
+
+
+@pytest.fixture
+def real_krion(hub):
+    """The krion64 fixture plus one record in krion64's real conflict format."""
+    files = _fixture_files(KRION_DATA, "data")
+    files["data/mods/1pp.json"] = json.dumps(ONE_PP).encode()
+    hub.publish("o/krion", files)
+    return files
+
+
+def test_a_good_update_is_measured_and_kept(tmp_path, hub, real_krion):
+    (result,) = refresh(hub, str(tmp_path), (KRION_CHECKED,))
+    assert result.status == "updated", result.detail
+    entry = json.loads((tmp_path / "sources.json").read_text())["krion64"]
+    assert entry["metrics"]["order entries"] > 0 and entry["metrics"]["rules"] > 0
+
+
+def test_an_update_whose_counts_collapse_is_refused(tmp_path, hub, real_krion):
+    refresh(hub, str(tmp_path), (KRION_CHECKED,))
+    kept = {p: d for p, d in real_krion.items() if not p.startswith("data/mods/")}
+    kept["data/mods/EET_END.json"] = real_krion["data/mods/EET_END.json"]
+    hub.publish("o/krion", kept)
+    (result,) = refresh(hub, str(tmp_path), (KRION_CHECKED,), force=True)
+    assert result.status == "rejected" and "collapsed" in result.detail
+    assert (tmp_path / "krion64" / "data" / "mods" / "cdtweaks.json").is_file()
+
+
+def test_an_update_that_does_not_parse_is_refused(tmp_path, hub, real_krion):
+    refresh(hub, str(tmp_path), (KRION_CHECKED,))
+    hub.publish("o/krion", {**real_krion, "data/categories.json": b"{not json"})
+    (result,) = refresh(hub, str(tmp_path), (KRION_CHECKED,), force=True)
+    assert result.status == "rejected" and "categories.json" in result.detail
+    good = (tmp_path / "krion64" / "data" / "categories.json").read_bytes()
+    assert good == real_krion["data/categories.json"]
+
+
+def test_a_refused_commit_is_not_downloaded_again(tmp_path, hub, real_krion):
+    refresh(hub, str(tmp_path), (KRION_CHECKED,))
+    hub.publish("o/krion", {**real_krion, "data/categories.json": b"{not json"})
+    refresh(hub, str(tmp_path), (KRION_CHECKED,), force=True)
+    hub.calls.clear()
+    (result,) = refresh(hub, str(tmp_path), (KRION_CHECKED,), force=True)
+    assert result.status == "rejected"
+    assert hub.raw_calls() == [] and len(hub.calls) == 1
+
+
+def test_what_changed_upstream_is_reported(tmp_path, hub, real_krion):
+    refresh(hub, str(tmp_path), (KRION_CHECKED,))
+    changed = dict(real_krion)
+    record = json.loads(changed["data/mods/cdtweaks.json"])
+    record["v"] = "v99"
+    changed["data/mods/cdtweaks.json"] = json.dumps(record).encode()
+    del changed["data/mods/eeex.json"]
+    hub.publish("o/krion", changed)
+    (result,) = refresh(hub, str(tmp_path), (KRION_CHECKED,), force=True)
+    assert result.status == "updated", result.detail
+    changes = result.changes
+    assert changes["removed"] == ["eeex"]
+    assert changes["changed"]["cdtweaks"][1] == "v99"
+    text = "\n".join(datasync.describe([result]))
+    assert "1 removed" in text and "cdtweaks" in text and "v99" in text
+
+
+def test_a_status_change_in_the_mod_list_is_reported(tmp_path, hub):
+    entries = [{"tp2": "oldmod", "name": "Old", "status": [], "last_update": "2024-01-01"},
+               {"tp2": "keep", "name": "Keep"}]
+    hub.publish("o/lcc", {"db/mods.json": json.dumps(entries).encode()})
+    refresh(hub, str(tmp_path), (LCC_CHECKED,))
+    entries[0]["status"] = ["obsolete"]
+    hub.publish("o/lcc", {"db/mods.json": json.dumps(entries).encode()})
+    (result,) = refresh(hub, str(tmp_path), (LCC_CHECKED,), force=True)
+    assert result.changes["changed"]["oldmod"][1].startswith("obsolete")

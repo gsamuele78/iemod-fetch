@@ -17,12 +17,10 @@ python3 -m pytest -q                 # 290 passed - confirms the copy is sound
 python3 build.py                     # -> ./iemod-fetch.pyz  (34 KB, no deps)
 ```
 
-Optional but recommended — the community catalogue that fills catalogue gaps
-and provides health warnings:
-
-```bash
-git clone --depth 1 https://github.com/RiwsPy/lcc-docs ~/lcc-docs
-```
+The community catalogue that fills catalogue gaps and provides health
+warnings (lcc-docs), and the rule databases (BigWorldSetup-NG, krion64), need
+no setup: the first run fetches them into a cache and later runs keep it
+current (§9.1).
 
 ### GitHub credential
 
@@ -262,13 +260,9 @@ configuration. `--allow-manual` makes a partially-manual run exit 0.
 build can be checked offline — no network, no downloads:
 
 ```bash
-git clone --depth 1 https://github.com/Selphira/bigworldsetup-next-generation ~/bws-ng
-git clone --depth 1 https://github.com/krion64/krion64.github.io ~/krion
-
-python3 -m iemod_fetch --check-only \
-    -w WeiDU.log -w WeiDU-BGEE.log:BGEE \
-    --rules ~/bws-ng/data/rules --rules ~/krion/data/mods \
-    --mod-db ~/bws-ng/data/mods
+python3 -m iemod_fetch --check-only -w WeiDU.log -w WeiDU-BGEE.log:BGEE
+# the rules (BWS-NG + krion64) and the mod database come from the data cache;
+# --rules / --mod-db with your own paths still win
 ```
 
 Two community sources are understood and the format is detected per file:
@@ -430,6 +424,12 @@ python3 iemod-fetch.pyz ... --no-default-data # only what the flags say
 
 Only the files the tool reads are fetched (about 25 MB the first time, then
 only what changed), each checked against the git hash GitHub lists for it.
+Before an update replaces the last good copy it must pass a guard: valid JSON,
+readable by the tool's own parsers, and no count (mods, rules, order entries)
+at zero or below half of the last good copy. A refused update is reported and
+that commit is not fetched again; an accepted one is reported with what
+changed (counts, mods added and removed, versions and statuses that moved).
+`api.data_status()` keeps the full list for the GUI.
 Offline, the last good copy is used and the header says how old it is. A
 GitHub token (see *GitHub credential*) is not required: a day's refresh is six
 API calls. An explicit path still wins, so a clone you maintain yourself works

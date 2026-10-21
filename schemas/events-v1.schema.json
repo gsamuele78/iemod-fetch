@@ -23,9 +23,10 @@
                     "counts": {"type": "object"}},
      "required": ["cancelled", "counts"]},
     {"properties": {"event": {"const": "data_source"}, "name": {"type": "string"},
-                    "status": {"enum": ["fresh", "current", "updated", "failed"]},
+                    "status": {"enum": ["fresh", "current", "updated", "rejected", "failed"]},
                     "commit": {"type": "string"}, "date": {"type": "string"},
-                    "changed": {"type": "integer"}, "detail": {"type": "string"}},
+                    "changed": {"type": "integer"}, "detail": {"type": "string"},
+                    "changes": {"type": "object"}},
      "required": ["name", "status", "commit", "date", "changed", "detail"]}
   ]
 }

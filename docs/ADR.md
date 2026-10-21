@@ -1463,3 +1463,9 @@ Measured: the files the tool reads are about 25 MB in total (lcc-docs
   are refused.
 - `.github/workflows/community-data.yml` runs the real refresh against GitHub
   on every pull request that changes it and every night.
+- Every update is guarded before it is swapped in: valid JSON, readable by the
+  tool's own parsers, and no count (mods, rules, order entries) at zero or
+  below half of the last good copy's. A refused commit is remembered and not
+  fetched again until upstream moves. An accepted update records what changed
+  (counts, mods added and removed, versions and statuses), so an update that
+  changes the advice the tool gives is never silent.

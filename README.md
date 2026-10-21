@@ -58,9 +58,8 @@ Standard library only at runtime. One file, no dependencies.
 ## From WeiDU logs to a running EET game
 
 ```bash
-# 0. the rule databases (once)
-git clone --depth 1 https://github.com/Selphira/BigWorldSetup-Next-Generation.git
-git clone --depth 1 https://github.com/krion64/krion64.github.io.git
+# 0. nothing to clone: lcc-docs, BigWorldSetup-NG and krion64 are fetched into a
+#    cache and kept current automatically when a run starts (ADR-0032)
 
 # 1. fetch and verify every mod the logs name
 python3 -m iemod_fetch -m mod_downloads.json \
@@ -69,8 +68,6 @@ python3 -m iemod_fetch -m mod_downloads.json \
 # 2. plan the order, resolve what the rules decide, write the installer
 python3 -m iemod_fetch --check-only -m mod_downloads.json \
     -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods \
-    --rules BigWorldSetup-Next-Generation/data/rules \
-    --rules krion64.github.io/data/mods --order-catalogue krion64.github.io \
     --plan-order ./plan --resolve-conflicts --simulate --emit-installer \
     --bgee-dir ~/games/BGEE --bg2ee-dir ~/games/EET \
     --language-preference it_IT,en_US          # optional: Italian, else English
@@ -226,15 +223,14 @@ the La Couronne de Cuivre database (<https://github.com/RiwsPy/lcc-docs>, MIT)
 has ~2,100 WeiDU mods with every known URL, a maintenance status and a quality
 rating, and it covers 142 of the 148 mods in the supplied logs.
 
+It is in the data cache every run keeps current (see *Community data, kept
+current* below), so it is used as a fallback and advisory source with no flag.
+To bake its results into your manifest once:
+
 ```bash
-git clone --depth 1 https://github.com/RiwsPy/lcc-docs ~/lcc-docs
-
-# use it at run time as a fallback + advisory source
-python3 -m iemod_fetch -w WeiDU.log -t ./Mods -c ~/lcc-docs/db/mods.json
-
-# or, better, bake the results into your manifest once
 python3 tools/enrich_from_lcc.py -i mod_downloads.json \
-    -c ~/lcc-docs/db/mods.json -o mod_downloads.enriched.json
+    -c "$(python3 -c 'from iemod_fetch.datasync import *; print(data_paths(default_data_dir()).catalogue)')" \
+    -o mod_downloads.enriched.json
 ```
 
 On the supplied manifest that fills in 12 missing repositories — including
@@ -350,19 +346,42 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 python3 -m pytest -q      # 712 passed + 1 Windows-only, no network, ~14s
 ```
 
+## Community data, kept current
+
+The order, the conflicts and the list of mods come from lcc-docs,
+BigWorldSetup-NG and krion64. Nothing is cloned: each run refreshes a per-user
+cache first, at most once a day, fetching only the files the tool reads and
+only those that changed, and uses it wherever `--catalogue`, `--rules`,
+`--mod-db` or `--order-catalogue` was not given (ADR-0032).
+
+Every update passes a guard before it replaces the last good copy: each file
+must be valid JSON, the copy must parse with the tool's own readers, and no
+count (mods, rules, order entries) may be zero or fall below half of the last
+good copy's - what a format change upstream looks like. A refused update is
+reported, the last good copy stays, and that commit is not fetched again. An
+accepted one is reported with what changed. For example (illustrative numbers):
+
+```
+$ python3 iemod-fetch.pyz --update-data
+  data        : lcc-docs: updated to 1a2b3c4 (2026-11-02), 3 file(s) fetched, 0 removed
+                mods 1834 -> 1838; 4 added, 0 removed, 2 changed
+                added: newmod1, newmod2, newmod3, newmod4
+                oldmod: stable (2019-01-01) -> obsolete (2019-01-01)
+  data        : krion64: update REFUSED by the guard - 9f8e7d6 refused: rules collapsed
+                from 859 to 12; a format change upstream is the likely cause; keeping a8d17c4 (2026-10-19)
+```
+
+`--no-update-data` stays offline, `--no-default-data` uses only the flags,
+`--data-dir` moves the cache. The pinned WeiDU and mod_installer used by the
+test suite are watched the same way, weekly, by `upstream-versions.yml`.
+
 ## Planning the install order
 
 ```bash
-git clone --depth 1 https://github.com/Selphira/BigWorldSetup-Next-Generation.git
-git clone --depth 1 https://github.com/krion64/krion64.github.io.git
-
 python3 -m iemod_fetch --check-only \
   -m mod_downloads.json \
   -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE \
-  --rules BigWorldSetup-Next-Generation/data/rules \
-  --rules krion64.github.io/data/mods \
-  --order-catalogue krion64.github.io \
-  --plan-order ./plan
+  --plan-order ./plan        # rules and order catalogue: from the data cache
 ```
 
 Writes `plan/WeiDU.log` and `plan/WeiDU-BGEE.log`: the same components you have,
