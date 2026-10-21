@@ -19,6 +19,15 @@ Python API, which is internal.
   Linux and Windows in CI.
 - `api.check_game_folders`, `api.languages`, `api.load_project` and
   `api.save_project`: the first phase as functions, for any front end.
+- **The wizard's mod selection** (phase 2, ADR-0035): categories, search,
+  filters, a mod -> component tree with tri-state boxes and exclusive
+  SUBCOMPONENT choices, a details pane; Next writes `selection.json`.
+  Components come from the staged mod's own tp2, else from krion64's records
+  (1,471 of 1,529 WeiDU components on 105 real mods,
+  `tools/krion_components_benchmark.py`); each mod says which. The catalogue
+  loads in a background thread; closing the window while it loads is safe.
+- `api.mod_choices` (mods with their components, for a game) and
+  `api.save_selection`.
 
 ### Fixed
 - **A `%` in `iemod-fetch.ini`** (a path like `C:/Games/100%BG`) stopped the

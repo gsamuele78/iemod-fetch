@@ -142,6 +142,17 @@ fixture placed where WeiDU does not look. Opt in locally with
 downloads both pinned and sets `IEMOD_REQUIRE_REAL=1`, so a missing tool fails
 instead of skipping.
 
+### Components before download: krion64 against WeiDU
+
+The wizard offers a mod's components before it is downloaded from krion64's
+records (ADR-0035). `tools/krion_components_benchmark.py` compares them with
+WeiDU 251's own `--list-components` (the `tools/tra_oracle.py` output, 105
+mods both know): of 1,529 components WeiDU lists, 1,471 are in krion64 under
+the same number; 58 are missing (7 of them marked removed though the tp2 still
+has them), 13 krion64 lists are not in the tp2, and 85 mods are identical.
+Hence each component says where it came from, and the staged tp2 replaces
+krion64 for its mod.
+
 ### Engine limits, measured as WeiDU measures them
 
 `tests/test_real_weidu_limits.py` checks the game-folder measurement of
@@ -283,10 +294,10 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,070 (7 run the real WeiDU, 8 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,097 (7 run the real WeiDU, 23 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
-| mypy | clean, 51 modules |
+| mypy | clean, 53 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Runtime dependencies | 0 |

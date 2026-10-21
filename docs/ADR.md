@@ -1604,3 +1604,49 @@ which calls run. What is exact is the game folder itself.
   XOR-encrypted (classic games) or damaged, falls back to the estimate, and says so by not being
   marked measured. Reading the game is read-only, size-capped, and a BIFF
   path from chitin.key that would leave the game folder is not followed.
+
+---
+
+## ADR-0035 — Components are chosen from the mod's own tp2, else from krion64's records
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+The wizard's mod selection (GUI-AUDIT item 16) offers components before
+anything is downloaded, as BWS-NG does. The only exact list of a mod's
+components is its tp2, read the way WeiDU reads it (`tra.describe`: 9,889 of
+9,889 names identical to WeiDU's). A mod not yet downloaded has no tp2 here.
+The catalogues the tool already reads differ: lcc-docs lists mods, not
+components; krion64's per-mod records list components with WeiDU numbers
+(`wc`), SUBCOMPONENT groups (`g`, named by `scn`), same-mod requirements
+(`rd`) and removed components (`gone`).
+
+Measured against WeiDU 251's own `--list-components` on 105 real mods
+(`tools/krion_components_benchmark.py`): of 1,529 components WeiDU lists,
+krion64 has 1,471 under the same number; 58 are missing from it (7 of them it
+marks as removed though the tp2 still offers them), 13 it lists are not in the
+tp2, and 85 mods are identical. 14 of the mods have no krion64 record.
+
+### Decision
+
+- `choices.py` gives each mod's components per tp2 and says where they came
+  from: `tp2` - the staged mod's own tp2, which alone decides once the mod is
+  staged - else `krion64`. A component removed (`gone`) or hidden
+  (DEPRECATED) is not offered.
+- `api.mod_choices(game, ...)` is list_mods' entry plus `tp2s`, filtered to
+  the game (a mod whose games are unknown is kept), from the same community
+  data cache a run uses.
+- A mod with no known components cannot be chosen yet: a selection names
+  components, and they are not guessed. Its row says so.
+- The choice is `selection.json` (ADR-0030), written by `api.save_selection`
+  through selection.json's own checks; the CLI reads it with `--selection`.
+
+### Consequences
+
+- About 4% of components are not offered before download, and a few offered
+  ones no longer exist. A choice made from krion64's records is checked again
+  against the tp2 once the mod is staged (the plan's own checks).
+- The selection screen works offline from the last good data, and needs no
+  download to start.
