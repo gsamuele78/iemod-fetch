@@ -159,6 +159,16 @@ def test_a_decompression_bomb_stops_at_the_limit(monkeypatch):
         decode_share_code(bomb)
 
 
+@pytest.mark.parametrize("path", ["../../evil.tp2", "a/../../b/setup-b.tp2"])
+def test_a_tp2_path_leaving_its_folder_is_refused(path):
+    """A shared code is untrusted: WeiDU would run a tp2 outside the mods."""
+    modlist = BioModlist({"format_version": 1, "game_install": "BGEE", "install_mode": "x",
+                          "weidu_logs": {"bgee": f"~ok/setup-ok.tp2~ #0 #0 // y\n"
+                                                 f"~{path}~ #0 #0 // x\n"}})
+    with pytest.raises(ConfigError, match="unsafe"):
+        modlist.to_selection()
+
+
 def test_an_empty_list_is_refused_on_import():
     modlist = BioModlist({"format_version": 1, "game_install": "EET",
                           "install_mode": "x", "weidu_logs": {"bgee": "", "bg2ee": ""}})

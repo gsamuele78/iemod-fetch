@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from .errors import ConfigError
-from .selection import Selection, selection_from_logs
+from .selection import Selection, parse_selection, selection_from_logs, selection_to_json
 from .weidu import parse_weidu_log
 
 PREFIX = "BIO-MODLIST-V1:"
@@ -79,7 +79,10 @@ class BioModlist:
         for _game, parsed in logs:
             if parsed.warnings:
                 raise ConfigError(f"BIO share code: {parsed.warnings[0]}")
-        return selection_from_logs(logs)
+        # A code is a stranger's text: every tp2 path goes through selection.json's
+        # own checks, so `~../../evil.tp2~` is refused before WeiDU could run it.
+        return parse_selection(selection_to_json(selection_from_logs(logs)),
+                               source="BIO share code")
 
 
 def _b64url_decode(text: str) -> bytes:
