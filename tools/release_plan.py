@@ -9,10 +9,20 @@ CHANGELOG.md names the release. It is tagged `vX.Y.Z` on the main-line
 made during its review is in, and nothing merged afterwards is. A tag that
 already exists means already released.
 
+When nothing that ships has changed since that commit, the head of main is
+released instead: same artifacts, and the only commit GITHUB_TOKEN may tag when
+the workflow files have changed since (a token without the `workflows`
+permission cannot create a ref whose workflow files differ from the default
+branch - softprops/action-gh-release#411). A back-fill that cannot avoid it is
+reported as `workflows_differ=true`, so the workflow says what to do instead of
+failing with a bare 403.
+
     python3 tools/release_plan.py [VERSION]
 
-prints `release=`, `tag=` and `sha=` lines for $GITHUB_OUTPUT; with no VERSION
-the newest released section of CHANGELOG.md is used.
+prints `release=`, `tag=`, `sha=` and `workflows_differ=` lines for
+$GITHUB_OUTPUT; with no VERSION the newest released section of CHANGELOG.md is
+used. An explicit VERSION whose tag exists releases that tag on its commit (a
+tag pushed by hand runs the tagged commit's own, possibly older, workflow).
 """
 import re
 import subprocess
@@ -20,6 +30,8 @@ import sys
 from typing import Dict, Optional
 
 VERSION_FILE = "iemod_fetch/__init__.py"
+SHIPPED = ("iemod_fetch", "pyproject.toml", "build.py", "README.md", "LICENSE")
+WORKFLOWS = ".github/workflows"
 _SECTION = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -48,22 +60,37 @@ def release_commit(repo: str, version: str) -> Optional[str]:
     return None
 
 
-def plan(repo: str, version: str) -> Dict[str, str]:
+def _same(repo: str, left: str, right: str, *paths: str) -> bool:
+    return subprocess.run(["git", "-C", repo, "diff", "--quiet", left, right,
+                           "--", *paths], check=False).returncode == 0
+
+
+def plan(repo: str, version: str, explicit: bool = False) -> Dict[str, str]:
+    """`explicit`: asked for by version, so an existing tag is released as is."""
     tag = f"v{version}"
-    exists = subprocess.run(["git", "-C", repo, "rev-parse", "-q", "--verify",
-                             f"refs/tags/{tag}"], capture_output=True,
-                            check=False).returncode == 0
-    if exists:
-        return {"release": "false", "tag": tag, "sha": ""}
+    found = subprocess.run(["git", "-C", repo, "rev-parse", "-q", "--verify",
+                            f"refs/tags/{tag}^{{commit}}"], capture_output=True,
+                           text=True, check=False)
+    if found.returncode == 0:
+        if explicit:
+            return {"release": "true", "tag": tag, "sha": found.stdout.strip(),
+                    "workflows_differ": "false"}
+        return {"release": "false", "tag": tag, "sha": "", "workflows_differ": "false"}
     sha = release_commit(repo, version)
     if sha is None:
         raise SystemExit(f"{VERSION_FILE} never says __version__ = \"{version}\" on "
                          f"the main line: bump the version with the changelog")
-    return {"release": "true", "tag": tag, "sha": sha}
+    head = _git(repo, "rev-parse", "HEAD")
+    if _same(repo, sha, head, *SHIPPED):
+        sha = head
+    differ = not _same(repo, sha, head, WORKFLOWS)
+    return {"release": "true", "tag": tag, "sha": sha,
+            "workflows_differ": "true" if differ else "false"}
 
 
 def main(argv) -> int:
-    if len(argv) > 1:
+    explicit = len(argv) > 1
+    if explicit:
         version = argv[1].lstrip("v")
     else:
         with open("CHANGELOG.md", encoding="utf-8") as fh:
@@ -74,7 +101,7 @@ def main(argv) -> int:
         version = found
     if not _SEMVER.match(version):
         raise SystemExit(f"not a version: {version!r}")
-    for key, value in plan(".", version).items():
+    for key, value in plan(".", version, explicit).items():
         print(f"{key}={value}")
     return 0
 

@@ -76,8 +76,53 @@ def test_a_version_never_set_has_no_commit(repo):
 
 
 def test_the_plan_skips_a_version_already_tagged(repo):
-    path, merge = repo
+    path, _merge = repo
+    head = git(path, "rev-parse", "HEAD")     # only notes.txt changed: not shipped
     assert plan(str(path), "2.1.0") == {"release": "true", "tag": "v2.1.0",
-                                        "sha": merge}
-    git(path, "tag", "v2.1.0", merge)
+                                        "sha": head, "workflows_differ": "false"}
+    git(path, "tag", "v2.1.0", head)
     assert plan(str(path), "2.1.0")["release"] == "false"
+
+
+def touch(repo, path, text, message):
+    target = repo / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", message)
+    return git(repo, "rev-parse", "HEAD")
+
+
+def test_the_head_is_released_when_nothing_shipped_changed_since(repo):
+    """GITHUB_TOKEN cannot create a tag on a commit whose workflow files differ
+    from the default branch (softprops/action-gh-release#411). When nothing that
+    ships changed since the version commit, the head IS that release."""
+    path, _merge = repo
+    head = touch(path, ".github/workflows/ci.yml", "on: push\n", "a CI change")
+    assert plan(str(path), "2.1.0")["sha"] == head
+
+
+def test_a_true_backfill_says_what_the_token_cannot_do(repo):
+    path, merge = repo
+    touch(path, ".github/workflows/ci.yml", "on: push\n", "a CI change")
+    commit(path, "2.2.0", "the next release")
+    planned = plan(str(path), "2.1.0")
+    assert planned["sha"] == merge
+    assert planned["workflows_differ"] == "true"
+
+
+def test_workflows_differ_is_false_when_they_do_not(repo):
+    path, _merge = repo
+    assert plan(str(path), "2.1.0")["workflows_differ"] == "false"
+
+
+def test_an_explicit_version_releases_an_existing_tag_on_its_commit(repo):
+    """A tag pushed by hand runs the workflow file of the TAGGED commit - for an
+    old version, the old workflow. So the manual run with that version releases
+    the existing tag with today's workflow; creating no ref, it needs no extra
+    permission."""
+    path, merge = repo
+    git(path, "tag", "v2.1.0", merge)
+    assert plan(str(path), "2.1.0")["release"] == "false"            # automatic: done
+    assert plan(str(path), "2.1.0", explicit=True) == {
+        "release": "true", "tag": "v2.1.0", "sha": merge, "workflows_differ": "false"}

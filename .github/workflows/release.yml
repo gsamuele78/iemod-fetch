@@ -42,6 +42,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       sha: ${{ steps.plan.outputs.sha }}
       latest: ${{ steps.plan.outputs.latest }}
+      workflows_differ: ${{ steps.plan.outputs.workflows_differ }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { persist-credentials: false, fetch-depth: 0, fetch-tags: true }
@@ -64,6 +65,20 @@ jobs:
           tag=$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT" | tail -1)
           if [ "$tag" = "v$newest" ]; then echo "latest=true"; else echo "latest=false"; fi >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
+      # GITHUB_TOKEN cannot create a tag on a commit whose workflow files differ
+      # from main's (it can never hold the `workflows` permission): GitHub
+      # answers 403 at the very last step. Say so now, with the two ways out.
+      - name: The tag can be created with the token this run has
+        env:
+          DIFFER: ${{ steps.plan.outputs.workflows_differ }}
+          HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          if [ "$DIFFER" = "true" ] && [ "$HAS_TOKEN" != "true" ]; then
+            echo "::error::$TAG is on $SHA, whose workflow files differ from main's; GITHUB_TOKEN may not create that tag. Push it by hand (git tag $TAG $SHA && git push origin $TAG) and run this workflow again with this version, or add a RELEASE_TOKEN secret with contents and workflows write. See docs/RELEASING.md."
+            exit 1
+          fi
 
   verify:
     name: Re-run the full gate
@@ -199,6 +214,9 @@ jobs:
           files: dist/*
           draft: false
           make_latest: ${{ needs.decide.outputs.latest }}
+          # Optional: only a back-fill onto a commit with other workflow files
+          # needs a token with the `workflows` permission (ADR-0027).
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
           fail_on_unmatched_files: true
 
   publish-pypi:

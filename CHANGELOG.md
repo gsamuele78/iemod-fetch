@@ -18,6 +18,13 @@ Python API, which is internal.
   R-studioConf's ADR-0006, adapted (ADR-0027).
 
 ### Fixed
+- **The release step was refused with 403** for both 2.2.0 and 2.1.0, after
+  the build and attestation had passed. GITHUB_TOKEN cannot create a tag on a
+  commit whose workflow files differ from main's. Now main's head is tagged
+  when nothing shipped changed since the version commit, so 2.2.0 releases
+  with no token. A back-fill such as 2.1.0 stops early with the two ways out:
+  push the tag by hand and then run the workflow for that version, or add a
+  `RELEASE_TOKEN` secret (docs/RELEASING.md).
 - **The release build ran the wrong `build`.** `python -m build` in the
   repository root imports the repository's own `build.py` (the zipapp script)
   instead of PyPA's build, so no wheel or sdist was made and the first automatic

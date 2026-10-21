@@ -1225,3 +1225,12 @@ hand-written, reviewed changelog with one generated from commit messages.
   fail and say so, instead of tagging the wrong commit.
 - The CI gate a release re-runs is main's current code. A back-filled older
   version, such as 2.1.0, relies on the CI its own pull request passed.
+- GITHUB_TOKEN cannot create a tag on a commit whose workflow files differ from
+  main's; it can never hold the `workflows` permission. Seen on the first runs:
+  403 at the release step for both 2.2.0 and 2.1.0. So when nothing shipped
+  (`iemod_fetch/`, `pyproject.toml`, `build.py`, README, LICENSE) changed since
+  the version commit, main's head is tagged, which gives the same artifacts. A
+  true back-fill stops at planning with the two ways out: a tag pushed by hand
+  and then released by a manual run naming that version (a tag push alone runs
+  the tagged commit's own, older workflow), or an optional `RELEASE_TOKEN`
+  secret.
