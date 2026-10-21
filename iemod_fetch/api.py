@@ -390,7 +390,8 @@ def _text_under(root: str, relative: str) -> Optional[str]:
         for part in relative.replace("\\", "/").split("/"):
             if part in ("", "."):
                 continue
-            if part == ".." or not os.path.isdir(path):
+            # A drive ("C:"), a stream ("x:y") or an absolute part would leave root.
+            if part == ".." or ":" in part or os.path.isabs(part) or not os.path.isdir(path):
                 return None
             direct = os.path.join(path, part)
             if not os.path.lexists(direct):
@@ -401,6 +402,11 @@ def _text_under(root: str, relative: str) -> Optional[str]:
             if os.path.islink(direct):
                 return None
             path = direct
+        real_root = os.path.realpath(root)
+        if os.path.commonpath([real_root, os.path.realpath(path)]) != real_root:
+            return None
+        if not stat.S_ISREG(os.lstat(path).st_mode):    # a FIFO would block the open
+            return None
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
         fd = os.open(path, flags)
         with os.fdopen(fd, "rb") as fh:
@@ -516,9 +522,11 @@ def _pi_selection(settings) -> Selection:
 def _json_records(directory: str):
     for name in sorted(os.listdir(directory)):
         path = os.path.join(directory, name)
-        if not name.endswith(".json") or os.path.getsize(path) > _MAX_TEXT_BYTES:
+        if not name.endswith(".json"):
             continue
         try:
+            if os.path.getsize(path) > _MAX_TEXT_BYTES:
+                continue
             with open(path, encoding="utf-8") as fh:
                 record = json.load(fh)
         except (OSError, ValueError):

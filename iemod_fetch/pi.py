@@ -97,13 +97,17 @@ def index_from_described(mods: Iterable[dict]) -> LabelIndex:
 def add_krion(index: LabelIndex, records: Iterable[dict]) -> LabelIndex:
     """krion64's per-mod records: `co[].pi` is the LABEL, `wp` the tp2, `wc`/`cn` the number."""
     for record in records:
-        for component in record.get("co") or []:
-            path = (component.get("wp") or "").replace("\\", "/")
-            if not path or "/" not in path:
+        components = record.get("co") if isinstance(record, dict) else None
+        for component in components if isinstance(components, list) else []:
+            if not isinstance(component, dict) or not isinstance(component.get("wp"), str):
+                continue
+            path = component["wp"].replace("\\", "/")
+            if "/" not in path:
                 continue
             index.add_tp2(path, KRION)
             number = component.get("wc", component.get("cn"))
-            if component.get("pi") and isinstance(number, int):
+            if isinstance(component.get("pi"), str) and component["pi"] \
+                    and isinstance(number, int):
                 index.add(component["pi"], Target(path, number, KRION))
     return index
 
@@ -154,4 +158,10 @@ def _resolve(ident: str, index: LabelIndex):
         claims = ", ".join(f"{t.tp2} #{t.number}" for t in index.ambiguous[key])
         return f"LABEL claimed by more than one component: {claims}"
     found: Optional[Target] = index.labels.get(key)
-    return found if found is not None else "LABEL not found in any staged tp2 or krion64 record"
+    if found is None:
+        return "LABEL not found in any staged tp2 or krion64 record"
+    staged = index.tp2s.get(normalize_key(found.tp2.split("/")[0]))
+    if found.origin == KRION and staged is not None and staged[1] == TP2:
+        # The mod is here and its tp2 has no such LABEL: krion64 is out of date.
+        return f"the staged {staged[0]} has no such LABEL (krion64 names #{found.number})"
+    return found

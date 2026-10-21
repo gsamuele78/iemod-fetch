@@ -321,8 +321,13 @@ def _joined(text: str) -> str:
 # starts with something else (an action, a patch, ALWAYS-like code).
 _FLAG_WORDS = ("BEGIN", "DESIGNATED", "SUBCOMPONENT", "FORCED_SUBCOMPONENT", "GROUP",
                "LABEL", "DEPRECATED", "REQUIRE_COMPONENT", "FORBID_COMPONENT",
-               "REQUIRE_PREDICATE", "INSTALL_BY_DEFAULT", "NO_LOG_RECORD",
+               "REQUIRE_PREDICATE", "REQUIRE_FILE", "INSTALL_BY_DEFAULT", "NO_LOG_RECORD",
                "METADATA", "@", "~", '"')
+# A REQUIRE_PREDICATE value can run over lines without parentheses: a line that
+# starts like a predicate term continues it.
+_PREDICATE_WORDS = frozenset(("OR", "AND", "NOT", "GAME_IS", "GAME_INCLUDES", "ENGINE_IS",
+                              "MOD_IS_INSTALLED", "FILE_EXISTS", "FILE_EXISTS_IN_GAME",
+                              "VARIABLE_IS_SET", "IS_AN_INT", "BIT_IS_SET"))
 _GROUP = re.compile(r"\bGROUP\s+(~[^~]*~|\"[^\"]*\"|@-?\d+)")
 _LABEL = re.compile(r"\bLABEL\s+(~[^~]*~|\"[^\"]*\"|[^\s~\"]+)")
 _DEPRECATED = re.compile(r"\bDEPRECATED\b")
@@ -335,10 +340,14 @@ def _flags(chunk: str) -> str:
     for n, line in enumerate(chunk.split("\n")):
         word = line.strip().split(None, 1)[0].upper() if line.strip() else ""
         if n and word and not any(word.startswith(w) for w in _FLAG_WORDS) \
-                and not _lines_continue(lines):
+                and not _predicate_term(word) and not _lines_continue(lines):
             break
         lines.append(line)
     return "\n".join(lines)
+
+
+def _predicate_term(word: str) -> bool:
+    return word in _PREDICATE_WORDS or word[0] in "!(%" or word[0].isdigit()
 
 
 def _lines_continue(lines: List[str]) -> bool:

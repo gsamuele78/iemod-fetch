@@ -352,7 +352,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 999 passed + 4 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 1006 passed + 4 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -412,12 +412,14 @@ A PI list names each component by its WeiDU LABEL. The LABEL is looked up in
 the staged mods' own tp2s, read the way WeiDU reads them; for a mod not
 fetched yet, in krion64's records, which agree with the tp2s for 708 of 732
 LABELs - so each entry resolved that way is listed, and the tp2 always wins
-once the mod is there. An entry neither resolves is an error naming the line,
+once the mod is there - a staged tp2 without the LABEL is an error, not a
+fallback to krion64. An entry neither resolves is an error naming the line,
 never a guess from its description.
 
 A mod that ships its own `mod-forge.json` (Infinity Mod Forge's format for
 authors) has its conflicts, dependencies and known issues read into the
-check once it is staged. None of the 103 mods measured ships one yet.
+check once it is staged. Component numbers may be written as `"#0 #1"`, a
+number or a list; a malformed entry is skipped, never a crash. None of the 103 mods measured ships one yet.
 
 ## Choosing mods: names and updates
 

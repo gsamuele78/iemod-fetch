@@ -80,9 +80,16 @@ Python API, which is internal.
   resolved that way is reported; an unresolved entry stops the run, never
   matched by its description.
 - **An author's `mod-forge.json`** in a staged mod adds its conflicts,
-  dependencies and known issues to the check.
+  dependencies (with their component numbers) and known issues to the
+  check; numbers as text, a number or a list.
 
 ### Fixed
+- **Reading a mod's text stays inside the mod**, on Windows too: a tp2 path
+  with a drive (`C:`), a stream or an absolute part is refused, a FIFO is
+  never opened, and the resolved path is checked against the mod folder.
+- **LABELs after `REQUIRE_FILE` or a multi-line `REQUIRE_PREDICATE`** are read.
+- **Malformed krion64 records or JSON files** are skipped instead of stopping
+  the PI-list import.
 - **The version a WeiDU.log records is read.** WeiDU 251 writes
   `Name: VERSION` - one colon, despite its header's `[ : Version]` - and the
   parser looked only for ` : `, so a real log never gave a version. The

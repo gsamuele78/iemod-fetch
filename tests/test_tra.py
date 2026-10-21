@@ -283,3 +283,25 @@ def test_an_unreadable_file_is_unresolved_not_an_abort(tmp_path):
     (mod / "setup.tra").mkdir()          # where a file should be: reading it fails
     (described,) = api.describe_mods(str(tmp_path))
     assert described["components"][0]["resolved"] is False
+
+
+def test_flags_after_require_file_and_a_multiline_predicate_are_read():
+    tp2 = ("BEGIN ~A~\nREQUIRE_FILE ~x.2da~ ~need~\nLABEL ~A-L~\nCOPY ~a~ ~b~\n"
+           "BEGIN ~B~\nREQUIRE_PREDICATE GAME_IS ~bgee~\n  OR MOD_IS_INSTALLED ~x.tp2~ 0 ~n~\n"
+           "LABEL ~B-L~\nCOPY ~a~ ~b~\n  LABEL ~NOT-A-LABEL~\n")
+    found = {c.number: c.labels for c in component_names(tp2, 0, reader({}))}
+    assert found == {0: ["A-L"], 1: ["B-L"]}
+
+
+def test_text_outside_the_mod_folder_is_never_read(tmp_path):
+    (tmp_path / "secret.tra").write_text("@1=~x~")
+    root = tmp_path / "mod"
+    root.mkdir()
+    assert api._text_under(str(root), "../secret.tra") is None
+    assert api._text_under(str(root), "C:/secret.tra") is None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_is_not_opened(tmp_path):
+    os.mkfifo(tmp_path / "x.tra")
+    assert api._text_under(str(tmp_path), "x.tra") is None

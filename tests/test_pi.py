@@ -183,3 +183,42 @@ def test_a_staged_mods_mod_forge_json_reaches_the_check(tmp_path):
     findings = json.loads(report.read_text())["findings"]
     assert any(f["kind"] == "incompatible" and f["right"]["mod"] == "OtherMod"
                for f in findings), findings
+
+
+# ------------------------------------------------------- review follow-ups
+def test_a_staged_tp2_without_the_label_is_not_overruled_by_krion64():
+    index = LabelIndex()
+    index.add_tp2("DlcMerger/DlcMerger.tp2", TP2)
+    add_krion(index, [KRION_DLC])
+    with pytest.raises(ConfigError, match="staged DlcMerger/DlcMerger.tp2 has no such LABEL"):
+        selection_from_pi(parse_pi_list("A7-DLCMERGER-MERGE_SOD;x"), "EET", index)
+
+
+def test_malformed_krion_records_are_skipped():
+    index = add_krion(LabelIndex(), [{"co": ["x", {"wp": 3}, {"wp": None, "pi": "A"}]},
+                                     {"co": "nope"}])
+    assert index.labels == {} and index.tp2s == {}
+
+
+def test_mod_forge_components_as_numbers_or_lists():
+    record = mod_forge_record({
+        "tp2": "MyMod", "components": [],
+        "conflicts": [{"mod": "Other", "myComponents": [0], "theirComponents": [100, "200"]},
+                      {"mod": "Third", "myComponents": {"bad": 1}, "theirComponents": 7}],
+        "dependencies": [{"mod": "Other", "type": "hard", "theirComponents": "#5"}]})
+    assert record["conflicts"][0]["myComps"] == "#0"
+    assert record["conflicts"][0]["theirComps"] == "#100 #200"
+    assert record["conflicts"][1]["myComps"] is None
+    assert record["conflicts"][1]["theirComps"] == "#7"
+    assert record["dependencies"][0]["requiresComps"] == "#5"
+
+
+def test_a_mod_forge_json_with_lists_loads(tmp_path):
+    path = tmp_path / "mod-forge.json"
+    path.write_text(json.dumps({"tp2": "MyMod", "components": [], "conflicts": [
+        {"mod": "Other", "myComponents": [0], "theirComponents": [100]}],
+        "dependencies": [{"mod": "Other", "type": "hard", "theirComponents": "#5"}]}))
+    ruleset = RuleSet.load_file(str(path))
+    by_kind = {r.kind: r for r in ruleset.rules}
+    assert by_kind["incompatible"].right[0].components == {100}
+    assert by_kind["depends"].right[0].components == {5}

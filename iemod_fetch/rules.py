@@ -286,7 +286,8 @@ def _krion_spec(name, comps_text) -> Optional[ModSpec]:
     # a number, or a list. Anything that is not a usable name is not a rule.
     if not isinstance(name, str) or not name:
         return None
-    numbers = {int(n) for n in _COMPONENT_NUMBERS.findall(comps_text or "")}
+    text = comps_text if isinstance(comps_text, str) else ""
+    numbers = {int(n) for n in _COMPONENT_NUMBERS.findall(text)}
     return ModSpec(normalize_key(name), name, frozenset(numbers) if numbers else None)
 
 
@@ -407,21 +408,35 @@ def mod_forge_record(payload) -> Optional[dict]:
         return None
 
     def entries(key):
-        return [e for e in payload.get(key) or [] if isinstance(e, dict)]
+        value = payload.get(key)
+        return [e for e in value if isinstance(e, dict)] if isinstance(value, list) else []
     return {
         "t": payload["tp2"],
         "conflicts": [{"with": e.get("mod"), "severity": e.get("severity"),
-                       "reason": e.get("reason") or "", "myComps": e.get("myComponents"),
-                       "theirComps": e.get("theirComponents"),
+                       "reason": e.get("reason") or "", "myComps": _forge_components(e.get("myComponents")),
+                       "theirComps": _forge_components(e.get("theirComponents")),
                        "source": "the mod's own mod-forge.json"}
                       for e in entries("conflicts")],
         "dependencies": [{"requires": e.get("mod"), "type": e.get("type"),
-                          "reason": e.get("reason") or "", "myComps": e.get("myComponents")}
+                          "reason": e.get("reason") or "",
+                          "myComps": _forge_components(e.get("myComponents")),
+                          "requiresComps": _forge_components(e.get("theirComponents"))}
                          for e in entries("dependencies")],
         "ki": [{"description": e.get("description"), "severity": e.get("severity"),
                 "workaround": e.get("workaround"), "components": e.get("components"),
                 "forum": e.get("forum")} for e in entries("knownIssues")],
     }
+
+
+def _forge_components(value) -> Optional[str]:
+    """krion64's "#0 #1" from what an author writes: that text, a number or a list."""
+    if isinstance(value, str):
+        return value
+    items = value if isinstance(value, list) else [value]
+    numbers = [f"#{v}" for v in items
+               if (isinstance(v, int) and not isinstance(v, bool) and v >= 0)
+               or (isinstance(v, str) and v.isdigit())]
+    return " ".join(numbers) or None
 
 
 def looks_like_krion(payload) -> bool:
