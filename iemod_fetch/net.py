@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional, TypeVar
 
 from .archives import Kind, detect_kind
-from .errors import (ChecksumMismatch, HttpStatusError, InsecureURL,
+from .errors import (Cancelled, ChecksumMismatch, HttpStatusError, InsecureURL,
                      NetworkError, NotAnArchive, TooLarge)
 
 # `_with_retries` returns exactly what the action it wraps returns. Saying so
@@ -51,6 +51,7 @@ GITHUB_AUTH_HOSTS = frozenset({"api.github.com", "github.com"})
 DEFAULT_MAX_BYTES = 2 * 1024 ** 3          # 2 GiB; real mods reach 1.5 GB
 DEFAULT_TIMEOUT = 45
 _CHUNK = 64 * 1024
+_PROGRESS_STEP = 256 * 1024     # a progress bar needs a few updates, not thousands
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 # Errors from the local filesystem, which no amount of retrying will fix.
 _LOCAL_ERRNOS = {errno.ENOSPC, errno.EACCES, errno.EPERM, errno.EROFS,
@@ -265,7 +266,9 @@ class HttpClient:
 
     # -- download ----------------------------------------------------------
     def download(self, url: str, dest_path: str, expected_sha256: Optional[str] = None,
-                 require_archive: bool = True) -> DownloadResult:
+                 require_archive: bool = True,
+                 progress: Optional[Callable[[int, Optional[int]], None]] = None,
+                 cancel=None) -> DownloadResult:
         """
         Stream `url` to `dest_path` atomically.
 
@@ -274,6 +277,12 @@ class HttpClient:
         compared to `expected_sha256` when the manifest pins one. Only then is
         it renamed into place, so a partial or bogus download is never visible
         to the extractor.
+
+        `progress(done, total)` is called as bytes arrive (total is None when
+        the server does not say), at most every _PROGRESS_STEP bytes and once
+        at the end. `cancel` is anything with `is_set()`, a threading.Event:
+        once set, the download stops at the next chunk, raises Cancelled and
+        leaves no file behind. A cancelled download is never retried.
         """
         def action() -> DownloadResult:
             part = dest_path + ".part"
@@ -288,11 +297,18 @@ class HttpClient:
                     if declared and declared.isdigit() and int(declared) > self.max_bytes:
                         raise TooLarge(f"{url}: Content-Length {declared} exceeds "
                                        f"{self.max_bytes} byte ceiling")
+                    expected = int(declared) if declared and declared.isdigit() else None
+                    reported = 0
                     while True:
+                        if cancel is not None and cancel.is_set():
+                            raise Cancelled(f"{url}: cancelled")
                         chunk = resp.read(_CHUNK)
                         if not chunk:
                             break
                         total += len(chunk)
+                        if progress is not None and total - reported >= _PROGRESS_STEP:
+                            progress(total, expected)
+                            reported = total
                         if total > self.max_bytes:
                             raise TooLarge(f"{url}: exceeded {self.max_bytes} byte ceiling")
                         if len(head) < 512:
@@ -306,6 +322,8 @@ class HttpClient:
                         raise http.client.IncompleteRead(b"", int(declared) - total)
                     out.flush()
                     os.fsync(out.fileno())
+                    if progress is not None and reported != total:
+                        progress(total, expected)
 
                 actual = digest.hexdigest()
                 kind = detect_kind(head)

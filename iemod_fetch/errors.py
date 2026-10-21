@@ -9,6 +9,10 @@ class ConfigError(ModFetchError):
     """Invalid CLI options, manifest schema, or alias file."""
 
 
+class Cancelled(ModFetchError):
+    """The run was asked to stop (a UI's cancel button, or Ctrl-C)."""
+
+
 class UnsafeName(ConfigError):
     """A manifest/WeiDU name cannot be used as a filesystem component."""
 

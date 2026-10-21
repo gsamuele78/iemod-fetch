@@ -36,6 +36,15 @@ Python API, which is internal.
   runs. What `--resolve-conflicts` removes or leaves to you names the
   `finding_id` it settles. Schemas in `schemas/` (ADR-0030, M1). Fields were
   only added; existing readers are unaffected.
+- **Progress events and cancellation.** `--events PATH` (`-` for stdout)
+  writes one JSON object per line as the run goes: `run_started`,
+  `mod_started`, `download_progress` (bytes and total, every 256 KiB),
+  `mod_finished`, `run_finished`. The same events reach a `Runner`'s
+  `on_event` callback, and a `cancel` event stops the run: no new mod starts,
+  a download in flight stops at its next chunk without leaving a file, the
+  mods it reached are marked `cancelled`, and the exit code is 130. Ctrl-C now
+  stops downloads in flight the same way instead of waiting for them. Schema
+  in `schemas/events-v1.schema.json` (ADR-0030, M1).
 - **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
   WeiDU and mod_installer are compared with upstream, and an issue opens for
   each one behind, with how to bump it. Dependabot cannot see those two pins.

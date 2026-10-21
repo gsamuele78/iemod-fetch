@@ -212,6 +212,13 @@ python3 iemod-fetch.pyz --list-mods mods.json \
 With the full lcc-docs catalogue and the BWS-NG database that is about 1,800
 mods in under a second. `-` writes to standard output.
 
+For a progress bar, `--events events.jsonl` (or `-` for standard output,
+best with `-q`) writes one JSON object per line as the run goes -
+`run_started`, `mod_started`, `download_progress`, `mod_finished`,
+`run_finished` - in the format of `schemas/events-v1.schema.json`. Ctrl-C stops
+the downloads in flight at their next chunk; the mods reached are reported as
+`cancelled` and the exit code is 130.
+
 `--selection` and `-w` are never given together. A wrong file is refused with
 where and why: an unknown key, a game that is not one, a tp2 path that leaves
 its folder, or `schema_version` other than 1.

@@ -123,3 +123,26 @@ def test_a_404_is_typed_and_not_retried(server, tmp_path):
         _client().download(_url(server), str(tmp_path / "m.zip"))
     assert caught.value.status == 404
     assert len(server.hits) == 1
+
+
+# Progress and cancellation (ADR-0030): a UI shows bytes as they arrive and can
+# stop a download within one chunk, leaving nothing half-written behind.
+def test_progress_is_reported_up_to_the_full_size(server, tmp_path):
+    server.script = ["ok"]
+    seen = []
+    _client().download(_url(server), str(tmp_path / "m.zip"),
+                       progress=lambda done, total: seen.append((done, total)))
+    assert seen and seen[-1] == (len(ZIP), len(ZIP))
+    assert [d for d, _t in seen] == sorted(d for d, _t in seen)
+
+
+def test_a_cancelled_download_stops_and_leaves_no_file(server, tmp_path):
+    from iemod_fetch.errors import Cancelled
+    server.script = ["ok"]
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(Cancelled):
+        _client().download(_url(server), str(tmp_path / "m.zip"), cancel=cancel)
+    assert not (tmp_path / "m.zip").exists()
+    assert not (tmp_path / "m.zip.part").exists()
+    assert len(server.hits) == 1                       # not retried

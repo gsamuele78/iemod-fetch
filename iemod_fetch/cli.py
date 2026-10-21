@@ -1,5 +1,6 @@
 """Command line interface."""
 import argparse
+import contextlib
 import json
 from typing import List, Optional, Sequence
 from dataclasses import dataclass, field
@@ -101,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "and sha256 filled in from this run - commit it to make "
                           "future runs reproducible (combine with --refresh to pin "
                           "mods already installed)")
+    out.add_argument("--events", metavar="PATH",
+                     help="write progress as JSON lines (schema 1: run_started, "
+                          "mod_started, download_progress, mod_finished, "
+                          "run_finished) for a UI or a log collector; '-' for "
+                          "stdout, best with -q")
     out.add_argument("--list-mods", metavar="PATH",
                      help="write every mod the manifest, --catalogue and --mod-db "
                           "know about as JSON (schema 1; '-' for stdout), then "
@@ -288,6 +294,22 @@ def _list_mods(args, stream) -> int:
         if not args.quiet:
             print(f"  mods        : wrote {args.list_mods}", file=stream)
     return 0
+
+
+@contextlib.contextmanager
+def _event_sink(path, stream):
+    """One JSON object per line, flushed, so a reader sees each as it happens."""
+    if not path:
+        yield None
+        return
+    with contextlib.ExitStack() as stack:
+        out = (stream if path == "-"
+               else stack.enter_context(open(path, "w", encoding="utf-8")))
+
+        def write(event: dict) -> None:
+            out.write(json.dumps(event, sort_keys=True) + "\n")
+            out.flush()
+        yield write
 
 
 def _emit_selection(args, stream) -> None:
@@ -748,9 +770,11 @@ def _run(args, stream, config=None) -> int:
         if not args.quiet:
             print(f"  discovery   : enabled over {len(owners)} trusted owner(s)",
                   file=stream)
-    runner = Runner(client, options, stream=None if args.quiet else stream,
-                    org_index=org_index, catalogue=catalogue or None)
-    report = runner.run(plan)
+    with _event_sink(args.events, stream) as on_event:
+        runner = Runner(client, options, stream=None if args.quiet else stream,
+                        org_index=org_index, catalogue=catalogue or None,
+                        on_event=on_event)
+        report = runner.run(plan)
     report.findings = findings
 
     if not args.quiet:

@@ -32,7 +32,8 @@ class StubClient:
                 return payload
         raise NetworkError(f"404 {url}")
 
-    def download(self, url, dest_path, expected_sha256=None, require_archive=True):
+    def download(self, url, dest_path, expected_sha256=None, require_archive=True,
+                 progress=None, cancel=None):
         import hashlib
         if url not in self.blobs:
             raise NetworkError(f"404 {url}")
@@ -200,7 +201,8 @@ def test_a_pinned_digest_that_no_longer_matches_fails_the_run(workspace):
     stub.blobs[url] = zip_bytes("DlcMerger") + b"tampered"
 
     class Strict(type(stub)):
-        def download(self, url, dest_path, expected_sha256=None, require_archive=True):
+        def download(self, url, dest_path, expected_sha256=None, require_archive=True,
+                 progress=None, cancel=None):
             import hashlib
             from iemod_fetch.errors import ChecksumMismatch
             data = self.blobs[url]
@@ -301,3 +303,14 @@ def test_the_run_report_names_its_schema_version(workspace):
                           "report-v1.schema.json")
     with open(schema, encoding="utf-8") as fh:
         jsonschema.validate(report, json.load(fh))
+
+
+def test_events_are_written_one_json_object_per_line(workspace):
+    tmp_path, _stub = workspace
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "--events", "events.jsonl"],
+                    tmp_path)
+    assert code == 0, out
+    lines = (tmp_path / "events.jsonl").read_text().splitlines()
+    events = [json.loads(line) for line in lines]
+    assert events[0]["event"] == "run_started" and events[-1]["event"] == "run_finished"
+    assert sum(e["event"] == "mod_finished" for e in events) == 2

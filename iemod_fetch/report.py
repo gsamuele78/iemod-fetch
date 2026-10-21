@@ -17,6 +17,7 @@ class Status(enum.Enum):
     MANUAL = "manual"         # needs a human: no source, or off-site only
     CONFLICT = "conflict"     # destination exists, --force not given
     FAILED = "failed"         # download / extraction / verification error
+    CANCELLED = "cancelled"   # the run was stopped before this mod finished
 
 
 TERMINAL_BAD = (Status.FAILED, Status.CONFLICT)
@@ -45,9 +46,11 @@ class Record:
 
 
 _COLOURS = {Status.OK: "32", Status.SKIPPED: "34", Status.PLANNED: "36",
-            Status.MANUAL: "33", Status.CONFLICT: "33", Status.FAILED: "31"}
+            Status.MANUAL: "33", Status.CONFLICT: "33", Status.FAILED: "31",
+            Status.CANCELLED: "35"}
 _GLYPHS = {Status.OK: "+", Status.SKIPPED: "-", Status.PLANNED: ".",
-           Status.MANUAL: "!", Status.CONFLICT: "!", Status.FAILED: "x"}
+           Status.MANUAL: "!", Status.CONFLICT: "!", Status.FAILED: "x",
+           Status.CANCELLED: "~"}
 
 
 def _paint(text: str, status: Status, stream) -> str:
@@ -74,6 +77,7 @@ class RunReport:
     findings: List[dict] = field(default_factory=list)   # order / compatibility
     suggestions: List[dict] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    cancelled: bool = False       # stopped on request; what finished is kept
 
     def counts(self) -> dict:
         out = {status.value: 0 for status in Status}
@@ -93,6 +97,8 @@ class RunReport:
                 and not f.get("stale_risk") and not f.get("suppressed")]
 
     def exit_code(self, allow_manual: bool = False) -> int:
+        if self.cancelled:
+            return 130                # what an interrupted command returns
         if self.failed:
             return 1
         manual = [r for r in self.records if r.status is Status.MANUAL] or self.unresolved
@@ -106,6 +112,7 @@ class RunReport:
             "tool": "iemod-fetch",
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.started_at)),
             "duration_seconds": round(time.time() - self.started_at, 2),
+            "cancelled": self.cancelled,
             "counts": self.counts(),
             "records": [r.to_json() for r in self.records],
             "unresolved": self.unresolved,
