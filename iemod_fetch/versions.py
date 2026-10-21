@@ -23,7 +23,8 @@ _PRERELEASE = {
     "beta": -2, "b": -2,
     "rc": -1, "pre": -1, "prerelease": -1,
 }
-_TRIM = re.compile(r"^[vV]\.?\s*")
+# `v1.2`, `V.1.2`, `Version 6.1`, `ver 2`: the word says nothing about order.
+_TRIM = re.compile(r"^(?:(?:version|ver)(?=[\s._\d-])|[vV])\.?\s*", re.IGNORECASE)
 _SPLIT = re.compile(r"[^0-9A-Za-z]+")
 
 
@@ -74,7 +75,10 @@ def compare(left: Optional[str], right: Optional[str]) -> Optional[int]:
     if len(a) == len(b):
         return 0
     longer, sign = (a, 1) if len(a) > len(b) else (b, -1)
-    tail = longer[min(len(a), len(b))]
+    rest = [p for p in longer[min(len(a), len(b)):] if p != 0]
+    if not rest:
+        return 0                         # 1.0 is 1: a trailing zero is no release
+    tail = rest[0]
     if isinstance(tail, str) and tail in _PRERELEASE:
         return -sign                     # 1.0-alpha is older than 1.0
     return sign
@@ -83,3 +87,42 @@ def compare(left: Optional[str], right: Optional[str]) -> Optional[int]:
 def is_newer(candidate: Optional[str], baseline: Optional[str]) -> Optional[bool]:
     result = compare(candidate, baseline)
     return None if result is None else result > 0
+
+
+def _digits(text: str) -> str:
+    return "".join(re.findall(r"\d", text))
+
+
+_BEFORE = re.compile(r"^pre[-_ .]*(?=v?\d)", re.IGNORECASE)
+
+
+def compare_published(left: Optional[str], right: Optional[str]) -> Optional[int]:
+    """
+    `compare`, for two spellings of a release by different hands: an author's
+    tp2 VERSION, its GitHub tag, a database's record of it. Measured on 95 mods
+    (docs/TESTING.md); elsewhere the plain comparison stands.
+
+    * A tag often drops the dots its tp2 keeps - `v071` for 0.71, `V19` for
+      1.9, `v2.02` for 2.0.2. Same digits in the same order, same words, and
+      either one side is a single number or both start with the same one:
+      the same release.
+    * `pre-v6.0` is the work towards 6.0: newer than 5.0, older than 6.0.
+    """
+    if left and _BEFORE.match(left):
+        result = compare_published(_BEFORE.sub("", left), right)
+        return -1 if result == 0 else result
+    if right and _BEFORE.match(right):
+        result = compare_published(left, _BEFORE.sub("", right))
+        return 1 if result == 0 else result
+    result = compare(left, right)
+    if result in (None, 0) or not left or not right:
+        return result
+    a, b = parse_version(left) or (), parse_version(right) or ()
+    numbers_a = [p for p in a if isinstance(p, int)]
+    numbers_b = [p for p in b if isinstance(p, int)]
+    same_words = [p for p in a if isinstance(p, str)] == [p for p in b if isinstance(p, str)]
+    alike = ((len(numbers_a) == 1) != (len(numbers_b) == 1)
+             or (numbers_a[:1] == numbers_b[:1] and len(numbers_a) != len(numbers_b)))
+    if alike and same_words and _digits(left).lstrip("0") == _digits(right).lstrip("0"):
+        return 0
+    return result

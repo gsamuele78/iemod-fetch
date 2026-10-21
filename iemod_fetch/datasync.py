@@ -44,6 +44,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from .catalogues import CatalogueSet
 from .errors import ModFetchError
+from .freshness import parse_release_cache
 from .moddb import ModDatabase
 from .naming import normalize_key, safe_component
 from .ordering import OrderIndex
@@ -91,7 +92,10 @@ def check_krion64(root: str) -> Measure:
             record = json.load(fh)
         if isinstance(record, dict) and isinstance(record.get("t"), str):
             facts[normalize_key(record["t"])] = str(record.get("v") or "")
-    return {"order entries": len(index), "rules": len(rules)}, facts
+    with open(os.path.join(data, "version_cache.json"), encoding="utf-8") as fh:
+        releases = parse_release_cache(json.load(fh))
+    return {"order entries": len(index), "rules": len(rules),
+            "releases": len(releases)}, facts
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,7 @@ class DataPaths:
     mod_db: Optional[str] = None              # --mod-db
     order_catalogue: Optional[str] = None     # --order-catalogue
     eet_sequence: Optional[str] = None        # --eet-sequence
+    releases: Optional[str] = None            # --releases
 
 
 def default_data_dir() -> str:
@@ -389,6 +394,7 @@ def data_paths(data_dir: str, sources: Sequence[Source] = SOURCES) -> DataPaths:
         mods = there("krion64", "data", "mods")
         if mods:
             paths.rules.append(mods)
+        paths.releases = there("krion64", "data", "version_cache.json")
     return paths
 
 

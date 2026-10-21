@@ -76,7 +76,7 @@ class ModDatabase:
         return None
 
     @classmethod
-    def load(cls, path: str) -> "ModDatabase":
+    def load(cls, path: str, origin: Optional[str] = None) -> "ModDatabase":
         """Load a directory of per-mod JSON files (or a single one)."""
         if os.path.isdir(path):
             paths = sorted(glob.glob(os.path.join(path, "*.json")))
@@ -85,7 +85,7 @@ class ModDatabase:
         else:
             raise ConfigError(f"mod database not found: {path}")
 
-        db = cls(origin=os.path.basename(path.rstrip(os.sep)) or "mod database")
+        db = cls(origin=origin or _label(path))
         for item in paths:
             record = _read(item, db.origin)
             if record:
@@ -93,6 +93,18 @@ class ModDatabase:
             else:
                 db.skipped += 1
         return db
+
+
+def _label(path: str) -> str:
+    """
+    The database's name, from its path: `BigWorldSetup-Next-Generation/data/mods`
+    is BigWorldSetup-Next-Generation, and the data cache's `bws-ng/data/mods`
+    is bws-ng - not "mods", which both BWS-NG and krion64 call their folder.
+    """
+    parts = [p for p in os.path.normpath(os.path.abspath(path)).split(os.sep) if p]
+    while len(parts) > 1 and parts[-1].lower() in ("mods", "data"):
+        parts.pop()
+    return parts[-1] if parts else "mod database"
 
 
 def _read(path: str, origin: str) -> Optional[ModRecord]:

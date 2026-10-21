@@ -169,6 +169,26 @@ the oracle on a wider set is the real test. Names built by code at install
 time (an `OUTER_SPRINT` then `BEGIN %name%`) are out of reach by design and
 are reported unresolved, not guessed.
 
+### Versions: what is installed, and what is newest
+
+Two rules decide the update notice, and both are measured with
+`tools/version_benchmark.py` against what the mods themselves say:
+
+```bash
+python3 tools/version_benchmark.py oracle.json krion64/data BWS-NG/data/mods MODS_DIR
+```
+
+* **The version in a WeiDU.log line** (`weidu.log_version`). WeiDU 251 writes
+  `Name: VERSION`, checked by installing a test mod with it, and names have
+  colons too. On the oracle's 1,533 component lines: 1,409 versions read
+  right, 0 wrong, 0 missed, 124 lines rightly without one. Taking whatever
+  follows the last `: ` would have been wrong 111 times.
+* **The newest version** (`freshness.latest`). Against the tp2 VERSION at HEAD
+  of 90 mods, each source alone: GitHub release 67 the same, krion64 60,
+  BWS-NG 42; the newest of the three, 79 (5 older, 6 newer, none unknown).
+  The truth is imperfect: most "newer" are real releases whose author did not
+  bump the tp2, so a right answer counts against the rule.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The

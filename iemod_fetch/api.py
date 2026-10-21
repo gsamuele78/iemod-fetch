@@ -32,6 +32,7 @@ from . import datasync
 from .conflicts import ConflictReport, build_conflict_report, render_conflict_report
 from .constraints import ModConstraints, load_constraints, tp2_rules
 from .errors import ConfigError
+from .freshness import parse_release_cache
 from .gamedir import verify_eet
 from .install import State, find_tp2_files
 from .installer import build_installer
@@ -80,6 +81,7 @@ class Settings:
     mod_db: Optional[str] = None
     order_catalogue: Optional[str] = None
     eet_sequence: Optional[str] = None     # BWS-NG games/eet.json
+    releases: Optional[str] = None         # krion64 data/version_cache.json
     suppress: Optional[str] = None
     all_manifest_entries: bool = False
     only: List[str] = field(default_factory=list)
@@ -252,6 +254,8 @@ def _use_data(settings: Settings, stream, on_event) -> None:
         settings.order_catalogue = cached.order_catalogue
     if not settings.eet_sequence and cached.eet_sequence:
         settings.eet_sequence = cached.eet_sequence
+    if not settings.releases and cached.releases:
+        settings.releases = cached.releases
 
 
 def _before_eet_core(settings: Settings):
@@ -299,14 +303,47 @@ def _http_client(settings: Settings) -> HttpClient:
 
 
 def list_mods(manifest: Optional[str] = None, catalogues: Sequence[str] = (),
-              mod_db: Optional[str] = None, allow_http: bool = False) -> List[AvailableMod]:
-    """Every mod the given sources know about, one entry each, sorted by name."""
+              mod_db: Optional[str] = None, allow_http: bool = False,
+              releases: Optional[str] = None,
+              weidu_logs: Sequence[str] = ()) -> List[AvailableMod]:
+    """
+    Every mod the given sources know about, one entry each, sorted by name.
+
+    `releases` is krion64's version_cache.json (its sibling mods/ adds the
+    versions krion64 records); with `weidu_logs` ("PATH" or "PATH:GAME") each
+    mod also says what is installed and whether a newer version exists (M2d).
+    """
     if manifest and (os.path.exists(manifest) or not (catalogues or mod_db)):
         loaded = load_manifest(manifest, allow_http=allow_http)
     else:
         loaded = Manifest()       # a catalogue alone is enough to choose from
+    release_cache, versions = _releases(releases)
     return available_mods(loaded, CatalogueSet.load(catalogues),
-                          ModDatabase.load(mod_db) if mod_db else None)
+                          ModDatabase.load(mod_db) if mod_db else None,
+                          releases=release_cache, versions=versions,
+                          installed=_installed_versions(weidu_logs))
+
+
+def _releases(path: Optional[str]):
+    if not path:
+        return {}, []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cache = parse_release_cache(json.load(fh))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"--releases: cannot read {path}: {exc}") from None
+    krion = os.path.join(os.path.dirname(os.path.abspath(path)), "mods")
+    return cache, ([ModDatabase.load(krion, origin="krion64")]
+                   if os.path.isdir(krion) else [])
+
+
+def _installed_versions(specs: Sequence[str]) -> dict:
+    """Mod key -> the version its WeiDU.log records, where it records one."""
+    if not specs:
+        return {}
+    installed = parse_weidu_files([split_log_spec(spec) for spec in specs])
+    return {normalize_key(mod.folder): mod.version
+            for mod in installed.mods.values() if mod.version}
 
 
 def load_selection(path: str) -> Selection:
@@ -407,7 +444,8 @@ def _use_selection(settings, workdir: str) -> None:
 def _list_mods(settings, stream) -> int:
     """What a selection screen offers: every mod any given source knows."""
     document = mods_document(list_mods(settings.manifest, settings.catalogue,
-                                       settings.mod_db, settings.allow_http))
+                                       settings.mod_db, settings.allow_http,
+                                       settings.releases, settings.weidu_log))
     if settings.list_mods == "-":
         stream.write(document)
     else:
@@ -432,6 +470,30 @@ def _describe_mods(settings, stream) -> int:
         if not settings.quiet:
             print(f"  components  : wrote {settings.describe_mods}", file=stream)
     return 0
+
+
+def _render_updates(settings, stream) -> None:
+    """
+    The update notice: installed mods some source names a newer version of.
+    Silent without --releases data or a WeiDU.log; a mod whose versions cannot
+    be ranked is counted, never reported as an update.
+    """
+    if not (settings.releases and settings.weidu_log):
+        return
+    mods = [m for m in list_mods(settings.manifest, settings.catalogue, settings.mod_db,
+                                 settings.allow_http, settings.releases, settings.weidu_log)
+            if m.installed]
+    newer = [m for m in mods if m.update_available]
+    unknown = sum(1 for m in mods if m.update_available is None)
+    print(f"  updates     : {len(newer)} of {len(mods)} installed mods with a version "
+          f"have a newer one" + (f" ({unknown} not comparable)" if unknown else ""),
+          file=stream)
+    for mod in newer:
+        latest = mod.latest
+        if latest is None:
+            continue
+        where = ", ".join(x for x in (latest.origin, latest.date) if x)
+        print(f"    {mod.tp2:<24} {mod.installed} -> {latest.version} ({where})", file=stream)
 
 
 @contextlib.contextmanager
@@ -839,6 +901,7 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome"
                 if settings.conflict_report:
                     print(f"  full report written to {settings.conflict_report}",
                           file=stream)
+            _render_updates(settings, stream)
         if settings.json_report:
             report.write_json(settings.json_report)
         refused = bool(order_plan is not None and (
@@ -917,6 +980,7 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome"
             if settings.conflict_report:
                 print(f"  full report written to {settings.conflict_report}",
                       file=stream)
+        _render_updates(settings, stream)
     if settings.emit_pinned_manifest:
         payload = build_pinned_manifest(manifest, report.records,
                                         state=runner.state.mods)

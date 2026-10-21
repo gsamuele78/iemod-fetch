@@ -7,7 +7,12 @@ source knows something different about a mod:
 * the download manifest (`mod_downloads.json`): where to fetch it;
 * the lcc-docs catalogue: games, categories, quality rating, status, last
   update, and its own advisories;
-* the BWS-NG / krion64 mod database: the version and, often, a sha256.
+* the BWS-NG / krion64 mod database: the version and, often, a sha256;
+* krion64's release cache: each GitHub repository's latest release (M2d).
+
+With versions known and a WeiDU.log given, each mod also says what is
+installed, the newest version any source names, and whether that is an update
+(freshness.py has the rule and how it was measured).
 
 They are joined on the folder name folded to its comparison key - the same key
 every other part of the tool joins on - so one mod is one entry, carrying each
@@ -16,9 +21,10 @@ what was given.
 """
 import json
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .catalogues import CatalogueSet
+from .freshness import RELEASE, Candidate, Release, github_repo, latest, update_available
 from .manifest import Manifest
 from .moddb import ModDatabase
 from .naming import normalize_key
@@ -43,8 +49,24 @@ class AvailableMod:
     blocking: bool = False
     advisories: List[str] = field(default_factory=list)
     sources: List[dict] = field(default_factory=list)
+    repos: List[str] = field(default_factory=list)       # GitHub owner/repo, lowercased
+    candidates: List[Candidate] = field(default_factory=list)
+    installed: Optional[str] = None
+    latest: Optional[Candidate] = None
+    update_available: Optional[bool] = None
+
+    def _repo(self, url: Optional[str]) -> None:
+        repo = github_repo(url)
+        if repo and repo not in self.repos:
+            self.repos.append(repo)
 
     def as_dict(self) -> dict:
+        freshness = {"installed": self.installed,
+                     "latest": self.latest.as_dict() if self.latest else None,
+                     "update_available": self.update_available}
+        return {**self._facts(), **freshness}
+
+    def _facts(self) -> dict:
         return {"key": self.key, "tp2": self.tp2, "name": self.name,
                 "in_manifest": self.in_manifest, "games": list(self.games),
                 "categories": list(self.categories), "status": list(self.status),
@@ -66,8 +88,17 @@ def _merge(found: Dict[str, AvailableMod], key: str, tp2: str, name: str) -> Ava
 
 def available_mods(manifest: Optional[Manifest] = None,
                    catalogues: Optional[CatalogueSet] = None,
-                   database: Optional[ModDatabase] = None) -> List[AvailableMod]:
-    """One entry per mod any source knows, sorted by name."""
+                   database: Optional[ModDatabase] = None,
+                   releases: Optional[Mapping[str, Release]] = None,
+                   versions: Sequence[ModDatabase] = (),
+                   installed: Optional[Mapping[str, str]] = None) -> List[AvailableMod]:
+    """
+    One entry per mod any source knows, sorted by name.
+
+    `releases` is the release cache (owner/repo -> latest release), `versions`
+    more databases read only for the version they record (krion64's), and
+    `installed` the installed version by mod key, from a WeiDU.log.
+    """
     found: Dict[str, AvailableMod] = {}
     for source in (manifest.sources.values() if manifest else ()):
         tp2 = source.folder or source.key
@@ -76,6 +107,8 @@ def available_mods(manifest: Optional[Manifest] = None,
         mod.sources.append({k: v for k, v in (
             ("origin", "manifest"), ("url", source.url), ("github", source.github),
             ("sha256", source.sha256), ("release_tag", source.release_tag)) if v})
+        mod._repo(source.github and f"https://github.com/{source.github}")
+        mod._repo(source.url)
 
     for catalogue in (catalogues.catalogues if catalogues else ()):
         for key, entries in catalogue.by_key.items():
@@ -92,6 +125,9 @@ def available_mods(manifest: Optional[Manifest] = None,
                 mod.sources.append({k: v for k, v in (
                     ("origin", entry.origin), ("github", entry.github),
                     ("urls", list(entry.http_urls))) if v} or {"origin": entry.origin})
+                mod._repo(entry.github and f"https://github.com/{entry.github}")
+                for url in entry.http_urls:
+                    mod._repo(url)
 
     origin = database.origin if database else ""
     for record in (database.records.values() if database else ()):
@@ -103,8 +139,41 @@ def available_mods(manifest: Optional[Manifest] = None,
             ("origin", origin), ("url", best.download if best else None),
             ("sha256", best.sha256 if best else None),
             ("version", record.version)) if v})
+        _record_versions(mod, record, origin)
+
+    for extra in versions:
+        for record in extra.records.values():
+            if record.key in found:
+                _record_versions(found[record.key], record, extra.origin)
+
+    for mod in found.values():
+        for repo in _by_likeness(mod.repos, mod.key):
+            release = (releases or {}).get(repo)
+            if release:
+                mod.candidates.insert(0, Candidate(release.tag, RELEASE, release.date,
+                                                   release.url))
+                break
+        mod.latest = latest(mod.candidates)
+        mod.installed = (installed or {}).get(mod.key)
+        mod.update_available = update_available(mod.installed, mod.latest)
 
     return sorted(found.values(), key=lambda m: (m.name.lower(), m.key))
+
+
+def _by_likeness(repos: List[str], key: str) -> List[str]:
+    """The repository named like the mod first: CTB's sub-mods link both
+    their own repository and Check the Bodies'."""
+    def rank(repo: str) -> int:
+        name = normalize_key(repo.split("/", 1)[1])
+        return 0 if name == key else 1 if key and key in name else 2
+    return sorted(repos, key=rank)
+
+
+def _record_versions(mod: AvailableMod, record, origin: str) -> None:
+    for url in [record.homepage] + [f.download for f in record.files]:
+        mod._repo(url)
+    if record.version:
+        mod.candidates.append(Candidate(record.version, origin))
 
 
 def mods_document(mods: List[AvailableMod]) -> str:

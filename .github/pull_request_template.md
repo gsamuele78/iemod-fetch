@@ -19,6 +19,7 @@
 
 - [ ] `docs/ADR.md` records it, or an existing ADR is amended
 - [ ] `CHANGELOG.md` has an entry under `Unreleased`
+- [ ] `README.md` describes the change (new flags, outputs, numbers)
 
 ## If this touches a security boundary
 

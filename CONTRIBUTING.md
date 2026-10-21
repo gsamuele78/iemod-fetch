@@ -51,7 +51,12 @@ and `.importlinter` enforces it. An operator downloads one `.pyz` and runs it
 with whatever Python their game machine has. Developer tooling is free to depend
 on whatever it likes.
 
-**Layering respected.** The functional core (parsers, rules, ordering,
+**The README and the CHANGELOG updated in the same pull request.** A new flag,
+output or measured number that only the code knows about does not exist for
+the people who download the `.pyz`. `CHANGELOG.md` gets an entry under
+`Unreleased`; `README.md` shows what changed for a user.
+
+**Layering respected. The functional core (parsers, rules, ordering,
 reporting) may not import the imperative shell (network, subprocess,
 filesystem). `lint-imports` will tell you before CI does.
 

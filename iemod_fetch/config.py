@@ -35,7 +35,7 @@ SIZE_KEYS = ("max_bytes",)
 STR_KEYS = ("manifest", "target", "aliases", "json_report", "emit_pinned_manifest",
             "mod_db", "suppress", "game_language", "language_preference", "bgee_dir", "bg2ee_dir",
             "token_file", "oauth_client_id", "trusted_owners", "owner_cache",
-            "selection", "emit_selection", "list_mods", "describe_mods", "events", "data_dir", "eet_sequence")
+            "selection", "emit_selection", "list_mods", "describe_mods", "events", "data_dir", "eet_sequence", "releases")
 
 KNOWN_KEYS = frozenset(LIST_KEYS + BOOL_KEYS + INT_KEYS + SIZE_KEYS + STR_KEYS)
 

@@ -65,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "sequence says which mods may go on BG2:EE before the "
                           "EET core (default: the data cache; without it, EET's "
                           "readme rule - only the EE Fixpack)")
+    src.add_argument("--releases", metavar="PATH",
+                     help="krion64's data/version_cache.json: each mod repository's "
+                          "latest GitHub release; with its sibling mods/, the "
+                          "versions krion64 records. Says which installed mods have "
+                          "a newer version. Default: the data cache")
     src.add_argument("--suppress", metavar="PATH",
                      help="JSON list of rules you have verified no longer apply")
     src.add_argument("--all-manifest-entries", action="store_true",
