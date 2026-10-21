@@ -8,6 +8,17 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-21
+
+The backend release (milestone M1 of `docs/GUI-AUDIT.md`): everything the
+command line does is now a public API (`iemod_fetch.api`) that the PySide6 GUI
+will call, and a choice of mods no longer needs a WeiDU.log. Mods can be listed
+from the catalogues, every JSON output is versioned with stable ids, progress
+is reported as events and a run can be cancelled. Measured: 784 → 857 tests;
+five architecture contracts, one of them keeping the CLI free of logic. Only
+additions to the CLI flags and JSON reports, so existing scripts keep working;
+the one new behaviour to know is exit code 130 for a cancelled run.
+
 ### Changed
 - **Releases are automatic.** Merging a release pull request (a new
   `## [X.Y.Z]` section and the matching `__version__`) builds, attests, tags
