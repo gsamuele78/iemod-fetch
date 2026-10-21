@@ -18,6 +18,10 @@ Python API, which is internal.
   R-studioConf's ADR-0006, adapted (ADR-0027).
 
 ### Added
+- **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
+  WeiDU and mod_installer are compared with upstream, and an issue opens for
+  each one behind, with how to bump it. Dependabot cannot see those two pins.
+  Its GitHub Actions updates now come grouped in one pull request (ADR-0028).
 - **Published release notes follow CHANGELOG.md.** Each push to `main`
   rewrites a release body whose changelog section has changed, keeping its
   verification block (`tools/release_notes.py`).

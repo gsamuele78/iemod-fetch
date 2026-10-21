@@ -97,6 +97,26 @@ it once the secret is there.
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.
 
+## Pinned test toolchain
+
+The real-WeiDU job in `ci.yml` installs the mock EET plan with tools pinned
+there. Dependabot cannot update them:
+
+| Tool | Pin | How it is checked |
+|---|---|---|
+| WeiDU | `WEIDU_URL` (release v251.00) and `WEIDU_SHA256` | `sha256sum -c` before it runs |
+| mod_installer | `MOD_INSTALLER_REV` (commit) and `MOD_INSTALLER_VERSION` | built from that commit |
+
+`upstream-versions.yml` compares them with upstream every Monday. It opens an
+issue per tool that is behind ("WeiDU 252.00 is available (pinned 251.00)"),
+and the run turns red until the pin is bumped. To bump: download the new WeiDU
+zip yourself and compute its `sha256sum`. For mod_installer, pick the commit
+whose Cargo.toml has the new version and read its changes. Then update the
+pins and let CI prove the mock EET plan still installs.
+
+Everything else (the developer tools in `pyproject.toml`, the pinned actions)
+is Dependabot's: one grouped pull request per week for each.
+
 ## What the operator can verify
 
 Every release carries the three things needed to check that the download matches

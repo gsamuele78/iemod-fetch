@@ -1240,3 +1240,43 @@ hand-written, reviewed changelog with one generated from commit messages.
   The session that maintains this repository can merge but cannot start a
   workflow or push a tag, so everything after a merge has to happen inside the
   workflow.
+
+---
+
+## ADR-0028 — Dependencies: Dependabot for what it sees, an issue for what it cannot
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+Dependabot was configured for the developer tools (pip) and the pinned actions,
+but had never opened a pull request. On a fork its version updates stay off
+until they are switched on in the repository's settings. The CI logs warn that
+the pinned actions still run on Node 20. The test toolchain added in ADR-0026
+(a WeiDU release zip with a sha256, a mod_installer commit) is invisible to
+Dependabot in any case. The tool itself ships with no dependencies (ADR-0002).
+
+### Decision
+
+- Dependabot keeps the pip and github-actions ecosystems. Action updates are
+  grouped into one weekly pull request, the same way the developer tools are.
+  It is switched on in the repository settings; that is a setting, not code.
+- `upstream-versions.yml` (`tools/upstream_versions.py`) compares the pinned
+  WeiDU and mod_installer with upstream every week. For WeiDU that is the newest
+  release tag, excluding nightlies and release candidates. For mod_installer it
+  is the Cargo.toml version, because its tags stop at v12.1.1. One issue opens
+  per tool behind, and the run stays red until the pin moves. This is the
+  method of Proxmox_biome_log_collector.
+- No automatic pull request for those two, and no auto-merge. A new digest is
+  only as trustworthy as whoever verified it. Auto-merge without required
+  status checks on main would merge before CI finished.
+- The supported Python versions are a product decision, not a dependency:
+  Dependabot does not move them. CI keeps testing the floor and the newest
+  release. Raising the floor from 3.9 is roadmap item E6, a major version.
+
+### Consequences
+
+- Updates arrive as reviewable pull requests or issues. None of them is a
+  release on its own: a release still needs a changelog section (ADR-0027).
+- A person switches Dependabot on once, and verifies each new WeiDU digest.
