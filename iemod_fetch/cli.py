@@ -359,7 +359,7 @@ def _check_rules(args, installed, stream) -> RuleAnalysis:
                                          label=os.path.basename(path)))
     # `rule` is the Rule object the finding drilled down from - useful in
     # process, not serialisable, and the conflict report carries it properly.
-    findings = [{k: v for k, v in vars(f).items() if k != "rule"}
+    findings = [{"id": f.id, **{k: v for k, v in vars(f).items() if k != "rule"}}
                 for f in check_all(installs, ruleset, context)]
     if not args.quiet:
         age = ""

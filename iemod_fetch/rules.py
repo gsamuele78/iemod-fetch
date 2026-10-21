@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import (Any, Dict, FrozenSet, List, Optional, Protocol,
                     Sequence, Tuple)
 
+from .contract import stable_id
 from .errors import ConfigError
 from .naming import normalize_key
 from .versions import is_newer
@@ -101,6 +102,12 @@ class Violation:
     @property
     def blocking(self) -> bool:
         return self.severity == "error" and not (self.stale_risk or self.suppressed)
+
+    @property
+    def id(self) -> str:
+        """The same finding, the same id, run after run (ADR-0030)."""
+        return stable_id("rule", self.kind, self.log, sorted(self.mods),
+                         self.left_components, self.right_components, self.detail)
 
 
 def parse_spec(text: str) -> Optional[ModSpec]:

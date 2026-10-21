@@ -286,3 +286,18 @@ def test_list_mods_works_without_a_manifest_when_a_catalogue_is_given(workspace)
     code, out = run(["--list-mods", "-", "-m", "absent.json", "-c", "lcc.json"], tmp_path)
     assert code == 0, out
     assert [m["key"] for m in json.loads(out)["mods"]] == ["x"]
+
+
+def test_the_run_report_names_its_schema_version(workspace):
+    tmp_path, _stub = workspace
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "--json-report", "r.json"],
+                    tmp_path)
+    assert code == 0, out
+    report = json.loads((tmp_path / "r.json").read_text())
+    assert report["schema_version"] == 1
+    jsonschema = pytest.importorskip("jsonschema")
+    import os
+    schema = os.path.join(os.path.dirname(__file__), os.pardir, "schemas",
+                          "report-v1.schema.json")
+    with open(schema, encoding="utf-8") as fh:
+        jsonschema.validate(report, json.load(fh))

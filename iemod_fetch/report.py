@@ -7,6 +7,8 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
+from .contract import SCHEMA_VERSION
+
 
 class Status(enum.Enum):
     OK = "ok"                 # downloaded, verified, installed
@@ -100,6 +102,7 @@ class RunReport:
 
     def to_json(self) -> dict:
         return {
+            "schema_version": SCHEMA_VERSION,
             "tool": "iemod-fetch",
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.started_at)),
             "duration_seconds": round(time.time() - self.started_at, 2),
