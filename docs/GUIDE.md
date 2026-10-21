@@ -248,7 +248,20 @@ format is `schemas/components-v1.schema.json`.
 python3 iemod-fetch.pyz --describe-mods - --target Mods --language-preference it_IT,en_US -q
 ```
 
-`--selection` and `-w` are never given together. A wrong file is refused with
+A list shared from Born2BSalty's Infinity Orchestrator (BIO) works the same
+way. Save the `BIO-MODLIST-V1:...` code in a file and pass it with
+`--bio-code`: its WeiDU logs become what is wanted (BGEE then EET for an EET
+list). `--emit-bio-code` writes any input - `-w`, `--selection` or a BIO code -
+back as a code BIO imports; a code that came from BIO keeps its name, author,
+download overrides, pinned refs and mod configuration files, which this tool
+does not use but does not drop either.
+
+```bash
+python3 iemod-fetch.pyz --bio-code shared.bio --emit-selection selection.json --check-only
+python3 iemod-fetch.pyz -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE --emit-bio-code - --check-only -q
+```
+
+`--selection`, `--bio-code` and `-w` are never given together. A wrong file is refused with
 where and why: an unknown key, a game that is not one, a tp2 path that leaves
 its folder, or `schema_version` other than 1.
 

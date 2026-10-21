@@ -61,6 +61,15 @@ Python API, which is internal.
   finding as fixed or accepted. A decision whose finding is gone is reported
   as stale, never applied elsewhere. RESOLUTION.json records `by: decision`.
 
+- **BIO share codes in and out.** `--bio-code PATH` reads a
+  `BIO-MODLIST-V1:` code (Born2BSalty's Infinity Orchestrator) as what is
+  wanted, in place of `-w` or `--selection`; `--emit-bio-code PATH` writes any
+  input as one. Nothing is lost: a code BIO made re-encodes to the same payload,
+  byte for byte,
+  and exporting an imported list keeps every field BIO put in it. Checked
+  both ways against BIO's own encoder and decoder. `api.load_bio_code`,
+  `api.bio_code_of`. The format only; no BIO code is used.
+
 ### Fixed
 - **The version a WeiDU.log records is read.** WeiDU 251 writes
   `Name: VERSION` - one colon, despite its header's `[ : Version]` - and the
@@ -69,6 +78,8 @@ Python API, which is internal.
   mod shares it: 1,409 of 1,409 component lines with a version read right, no
   option text (`cdtweaks: Use BG2 values`) taken for one. Rules about mod
   versions (the staleness check) now see installed versions.
+- BIO's prompt answers at the end of a log line (`// @wlb-inputs: C:\My
+  Games\BG2`) are no longer read as the mod's version.
 - **Version comparison:** `Version 6.1` is 6.1, `1.0` equals `1`, and across
   sources `v071`/`0.71`, `V19`/`1.9` and `v2.02`/`2.0.2` are one release;
   `pre-v6.0` sits between 5.0 and 6.0.

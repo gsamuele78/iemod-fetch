@@ -44,6 +44,13 @@ Windows silently strips those, so `evil.` and `evil` are the same file there.
 A property test asserts that anything it accepts, joined onto a root, stays
 under that root.
 
+**A shared list is a stranger's text.** A BIO share code (`--bio-code`) arrives
+pasted from a chat and was written by someone else. Its size is capped before
+and after decompression (a zlib bomb stops at 32 MiB), and every tp2 path in
+its WeiDU logs goes through `selection.json`'s own checks before anything
+uses it: `~../../evil.tp2~` is refused, because WeiDU would otherwise run a
+tp2 from outside the mods folder.
+
 ## Boundary 2 — the network
 
 | Control | What it stops |
