@@ -139,7 +139,11 @@ def parse_rule(entry: dict, kind: str, origin: str) -> Optional[Rule]:
         message = next(iter(translations.values()), "")
     return Rule(kind=kind, left=left, right=right,
                 severity=entry.get("severity") or "warning",
-                direction=entry.get("direction"), message=message, origin=origin)
+                direction=entry.get("direction"), message=message, origin=origin,
+                # BWS-NG rarely grades its claims, but an entry that does must
+                # keep the grade: automatic resolution refuses a speculative one.
+                evidence=str(entry.get("evidenceLevel") or ""),
+                source=str(entry.get("source") or ""))
 
 
 @dataclass(frozen=True)
@@ -442,10 +446,14 @@ class Install:
                 # than any catalogue: it is their install, not a description of
                 # some version of the mod.
                 label = (component.comment or "").split(" : ")[0].strip()
+                # The log's own line, not a counter over the parser's per-mod
+                # grouping: grouped, every component of a mod looked adjacent,
+                # and a mod split across the order could never be judged.
+                at = component.line or line
                 for target in keys:
                     install.components.setdefault(target, set()).add(component.index)
                     install.positions.setdefault(target, {}).setdefault(
-                        component.index, line)
+                        component.index, at)
                     if label:
                         install.labels.setdefault(target, {}).setdefault(
                             component.index, label)
@@ -460,6 +468,11 @@ class Install:
             return set(installed)
         overlap = installed & set(spec.components)
         return overlap or None
+
+    def lines_of(self, spec: ModSpec, components: set) -> List[int]:
+        """The log lines the given components of `spec` were installed at."""
+        table = self.positions.get(spec.mod, {})
+        return [table[c] for c in components if c in table]
 
     def position(self, spec: ModSpec, components: set) -> int:
         table = self.positions.get(spec.mod, {})
@@ -593,10 +606,19 @@ def check(install: Install, ruleset: RuleSet,
                     right_components=tuple(sorted(right_hit)),
                     log=install.label))
             elif rule.kind == ORDER and rule.direction:
-                left_at = install.position(rule.left, left_hit)
-                right_at = install.position(right, right_hit)
-                wrong = (left_at > right_at if rule.direction == "before"
-                         else left_at < right_at)
+                # Every named component, not just the first: a mod split
+                # across the order can have one part on each side of the other
+                # mod, and comparing first lines hid the part on the wrong side.
+                left_lines = install.lines_of(rule.left, left_hit)
+                right_lines = install.lines_of(right, right_hit)
+                if not left_lines or not right_lines:
+                    continue
+                if rule.direction == "before":
+                    left_at, right_at = max(left_lines), min(right_lines)
+                    wrong = left_at > right_at
+                else:
+                    left_at, right_at = min(left_lines), max(right_lines)
+                    wrong = left_at < right_at
                 if wrong:
                     first, second = ((rule.left, right) if rule.direction == "before"
                                      else (right, rule.left))
@@ -650,8 +672,8 @@ def _applicable(ruleset: RuleSet, context: Context) -> List[Rule]:
 
 
 def _pair_detail(install, left, left_hit, right, right_hit, message):
-    parts = [f"installed: {install.name(left)} "
-             f"#{sorted(left_hit)[:6]} and {install.name(right)} #{sorted(right_hit)[:6]}"]
+    parts = [(f"installed: {install.name(left)} "
+             f"#{sorted(left_hit)[:6]} and {install.name(right)} #{sorted(right_hit)[:6]}")]
     if message:
         parts.append(message)
     return " - ".join(parts)

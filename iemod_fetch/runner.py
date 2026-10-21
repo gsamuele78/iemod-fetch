@@ -12,6 +12,7 @@ from .errors import (InstallConflict, ModFetchError, UnsafeArchive,
                      VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
+from .naming import archive_filename
 from .plan import Plan, WorkItem
 from .report import Record, RunReport, Status, line_for
 from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
@@ -71,7 +72,8 @@ class Runner:
         os.makedirs(staging, exist_ok=True)
         workdir = tempfile.mkdtemp(prefix=f"iemod-{folder}-", dir=staging)
         try:
-            archive = os.path.join(workdir, candidate.filename or f"{folder}.bin")
+            archive = os.path.join(workdir,
+                                   archive_filename(candidate.filename, f"{folder}.bin"))
             result = self.client.download(candidate.url, archive,
                                           expected_sha256=candidate.sha256)
             outcome = install_from_archive(archive, self.options.target_dir, folder,

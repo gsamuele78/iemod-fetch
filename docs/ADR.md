@@ -851,3 +851,192 @@ both, and `import-linter` makes it a gate rather than an intention.
   core, because testing it well needs a network. That is the trade — the
   interesting logic is where the tests are strongest, and the untested part is
   the part with the least logic in it.
+
+---
+
+## ADR-0021 — Conflict resolution: only what the rules decide, only in the plan
+
+**Status**: accepted (amends ADR-0017's "an incompatibility is not resolved")
+**Date**: 2026-10-20
+
+### Context
+
+ADR-0018 made every finding name its narrowest remedy — "deselect stratagems
+#4115 (alternative: drop infinity_ui)". Operators then did by hand, for every
+finding, exactly what the report told them. Where the rule itself decides which
+side goes, that manual step adds nothing but typos. Where it does not, an
+automatic choice would be a guess with a delete key.
+
+The Infinity Orchestrator draws the same line: kinds such as `included`,
+`mismatch` and `not_compatible` disable a component automatically; `conflict` is
+only flagged. BWS-NG's own UI does the same.
+
+### Decision
+
+`--resolve-conflicts` (opt-in, requires `--plan-order`) removes components from
+the **plan** — never from the operator's logs — for a finding that is:
+
+1. an incompatibility,
+2. graded `error` by its rule set,
+3. not graded `speculative`,
+4. between two different mods,
+5. pinned to components on at least one side.
+
+The side removed is the one the report already names as cheaper (a pinned side
+is always cheaper than a wholesale one; between two pinned sides, the fewer
+components). Exactly the components the rule named and the plan contains are
+removed; a mod left with none leaves the plan.
+
+Everything else — whole mod vs whole mod, same-mod option groups, missing
+dependencies, warnings, speculative claims — is listed under "left for you to
+decide" with the reason, and the plan is re-verified afterwards. The decision
+record is written beside the plan as `RESOLUTION.json`.
+
+### Consequences
+
+- The input check still reports the conflict and still exits non-zero: the
+  operator's install has not changed. The plan has.
+- A mod key that names two tp2s in one folder (`eet`: EET and EET_end) is
+  refused rather than resolved, because which one the rule meant is ambiguous.
+- Tested both ways: each class of refusal has a test that it removes nothing.
+
+---
+
+## ADR-0022 — Installing the plan: generate scripts for mod_installer, never run them
+
+**Status**: accepted
+**Date**: 2026-10-20
+
+### Context
+
+The tool stopped at a planned `WeiDU.log` pair. Turning that into an installed
+EET game means running WeiDU against two game directories in order, batching
+consecutive components, answering prompts, and handing EET's core the BGEE
+path — then doing the same on Windows and Linux.
+
+That is solved. dark0dave's
+[mod_installer](https://github.com/dark0dave/mod_installer) (GPL-3.0) takes
+exactly such a log pair: `mod_installer eet -1 <BGEE> -y <bgee log> -2 <BG2EE>
+-z <eet log>`. Born2BSalty's Infinity Orchestrator builds no WeiDU command line
+of its own; it writes the logs and runs mod_installer. Reading mod_installer's
+source showed one hard requirement: it recognises the EET core by the log
+comment `EET core (resource importation)`, and only then passes the BGEE path.
+
+### Decision
+
+`--emit-installer` writes `install-eet.sh` + `install-eet.cmd` (or `install.sh`
++ `install.cmd` for a single game) next to the plan. Each script:
+
+- refuses a directory without `chitin.key`, and a game that already has mods
+  (`ALLOW_EXISTING=1` overrides) — a plan is for a fresh install (ADR-0017);
+- resolves mod_installer and WeiDU, or says which one is missing;
+- makes one mod_installer call, with `DRY_RUN=1` to print it instead.
+
+At generation time the plan is checked for what would otherwise fail forty
+minutes in: the EET core's comment, EET_end last, and every mod folder present
+in the staging directory.
+
+**iemod-fetch never executes the scripts, WeiDU or mod_installer.** ADR-0006
+("nothing downloaded is executed") stays literally true; the operator reads and
+runs a 40-line script. mod_installer is invoked, never vendored, so its GPL
+does not reach this MIT repository.
+
+### Consequences
+
+- The full path is: fetch → `--plan-order --resolve-conflicts --emit-installer`
+  → run one script → play. Same artefacts on Windows and Linux.
+- The shell script is executed in the test suite against a stand-in
+  mod_installer; the `.cmd` script is executed on the Windows CI runners.
+- Verified against the real thing: the generated `install-eet.sh` was run with
+  the mod_installer 16.0.0 binary built from source and a stand-in WeiDU that
+  records its calls. mod_installer installed the BGEE log in the BGEE folder,
+  then the EET core, the EET mods and EET_end in BG2EE — and passed WeiDU
+  lower-cased paths (`eet/eet.tp2`). That last fact is why the Linux script
+  refuses mixed-case mods before anything runs, unless `--casefold` is passed.
+- **What is not verified here:** a real WeiDU install against real game data.
+  That needs the games, which no CI runner has.
+- mod_installer marks its EET mode BETA. That is its maturity, inherited
+  honestly, and the guide says so.
+
+**Amendment (2026-10-21) — ties, same-mod conflicts, WeiDU subcomponents.**
+A tie (both sides pin the same number of components) is no longer resolved by
+taking the left side: that was a guess, and it is now left to the operator. A
+same-mod conflict with an unequal split is resolved like a cross-mod one (the
+group with fewer components goes). Two options of one WeiDU SUBCOMPONENT group
+(`// Group -> Option` in the log) are detected without any rule set and resolved
+by keeping the last one — what WeiDU itself ends with, since installing the
+second uninstalls the first. On the real install: 3 resolved, 1 tie left.
+
+---
+
+## ADR-0023 — Component-level install order
+
+**Status**: accepted (closes ROADMAP 2026-09 item C)
+**Date**: 2026-10-21
+
+### Context
+
+A mod is not one thing. krion64 files stratagems #1500 under SPELL MODS and
+#4100 under POST EET (`co[].cat`); BWS-NG's curated EET order splits stratagems
+into four separate runs; rules name components
+(`stratagems(5900):cdtweaks`). The planner sorted whole mods, so none of that
+could be honoured. And the checker judged "A before B" on the *first* component
+of each — and numbered components by the parser's per-mod grouping rather than
+by log line, so a mod's components always looked adjacent.
+
+### Decision
+
+- **The checker** judges every named component: "A before B" means the last of
+  A's named components precedes the first of B's, by real log line.
+- **The planner** splits a mod into contiguous parts where the catalogue
+  (`co[].cat`) or a component-naming order rule distinguishes its components.
+  A mod nothing distinguishes stays one unit, exactly as before. Parts share the
+  mod's catalogue position and are tie-broken by log line, so they keep their
+  original order unless a rule says otherwise. A rule between two components of
+  the same mod is honoured when they fall in different parts.
+- Like krion64's own export, a moved component takes its new category and the
+  MOD's `ord`; the component `ord` field, which krion64 does not read, is not
+  read here either.
+
+### Consequences
+
+- On the real install the old checker's 46 order findings included **34 false
+  positives** ("X should be installed before EET_end", with EET_end logged
+  last); the fixed checker reports 14, two of them new and real. The plan
+  splits 6 mods and verifies against 158 constraints.
+- The plan still contains exactly the input lines (tested).
+- mod_installer installs whatever order the log gives, batching consecutive
+  components of one mod, so a split plan needs nothing new downstream.
+
+---
+
+## ADR-0024 — Preferred installation language, with fallback
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+A log line's `#lang` is an index into that mod's own LANGUAGE declarations:
+1 is Italian in one mod and French in the next. mod_installer passes it
+through unchanged. The community tools differ: krion64 uses one language then
+English; BIO one locale then English, probing `--list-languages`; BWS-NG keeps
+an ordered preference list, takes the first a mod offers, and reads the tp2's
+LANGUAGE declarations through an alias table.
+
+### Decision
+
+BWS-NG's model. `--language-preference it_IT,en_US` (names work too) rewrites
+each planned line's `#lang` to the first preferred language the staged mod's tp2
+declares, matched on the declaration's language directory and then the first
+word of its display name, through an alias table — without BWS-NG's
+"dutch → German" slip. The index is the declaration's position, duplicates
+included. The game language passed to mod_installer defaults to the first
+preference.
+
+### Consequences
+
+- A mod offering none of the preferences keeps its logged index and is listed
+  with what it does offer; a mod not staged yet is listed too. Nothing guessed.
+- It needs the mods fetched first (it reads their tp2), so it belongs to the
+  planning step after the fetch, as the guide's chapter 10 orders it.

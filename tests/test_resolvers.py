@@ -71,6 +71,48 @@ def test_multiple_candidate_assets_warn_and_are_deterministic():
     assert res.alternatives
 
 
+# WeiDU's packaging convention prefixes a release asset with the platform its
+# bundled setup binary is for: win-/wzp- (Windows), lin- (Linux), osx-/mac-.
+# Shortest-name-wins picked lin- on Windows; the prefix is a published
+# convention, not a guess, so it decides before any tie-break does.
+_PLATFORM_ASSETS = ["win-mod-v1.zip", "lin-mod-v1.zip", "osx-mod-v1.zip"]
+
+
+@pytest.mark.parametrize("platform,expected", [
+    ("win32", "win-mod-v1.zip"),
+    ("cygwin", "win-mod-v1.zip"),
+    ("linux", "lin-mod-v1.zip"),
+    ("darwin", "osx-mod-v1.zip"),
+])
+def test_the_asset_packaged_for_this_platform_is_chosen(platform, expected):
+    client = StubClient({"releases/latest": release(_PLATFORM_ASSETS)})
+    res = GitHubResolver(client, platform=platform).resolve(src(github="o/r"))
+    assert res.candidate.filename == expected
+    assert not any("Pin it" in w for w in res.warnings)   # no longer ambiguous
+
+
+def test_wzp_counts_as_windows_and_mac_as_macos():
+    client = StubClient({"releases/latest": release(["wzp-mod.zip", "mac-mod.zip"])})
+    assert GitHubResolver(client, platform="win32").resolve(
+        src(github="o/r")).candidate.filename == "wzp-mod.zip"
+    assert GitHubResolver(client, platform="darwin").resolve(
+        src(github="o/r")).candidate.filename == "mac-mod.zip"
+
+
+def test_a_platform_neutral_asset_beats_another_platforms_package():
+    client = StubClient({"releases/latest": release(["lin-mod.zip", "mod-v2.zip"])})
+    res = GitHubResolver(client, platform="win32").resolve(src(github="o/r"))
+    assert res.candidate.filename == "mod-v2.zip"
+
+
+def test_only_another_platforms_package_is_used_and_said_so():
+    """The mod data is the same; only the bundled setup binary differs."""
+    client = StubClient({"releases/latest": release(["lin-mod.zip"])})
+    res = GitHubResolver(client, platform="win32").resolve(src(github="o/r"))
+    assert res.candidate.filename == "lin-mod.zip"
+    assert any("packaged for another platform" in w for w in res.warnings)
+
+
 def test_a_pinned_asset_wins():
     client = StubClient({"releases/latest": release(["mod.iemod", "mod-docs.zip"])})
     res = GitHubResolver(client).resolve(src(github="o/r", asset="mod-docs.zip"))

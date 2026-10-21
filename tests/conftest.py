@@ -112,3 +112,15 @@ try:
                                                        "default"))
 except ImportError:                          # pragma: no cover - stdlib-only run
     pass
+
+
+def pytest_configure(config):
+    # Hypothesis emits this on slow CI runners; it is a timing observation, not
+    # a defect in the code under test. Registered here rather than in
+    # pyproject.toml so a run without Hypothesis does not fail on the filter.
+    try:
+        import hypothesis.errors  # noqa: F401
+    except ImportError:                      # pragma: no cover - stdlib-only run
+        return
+    config.addinivalue_line(
+        "filterwarnings", "ignore::hypothesis.errors.NonInteractiveExampleWarning")

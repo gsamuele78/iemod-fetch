@@ -158,6 +158,83 @@ def test_transient_5xx_is_retried_then_succeeds(fake_opener, tmp_path):
     assert calls["n"] == 3
 
 
+class _TruncatedResponse(FakeResponse):
+    """The connection closes before Content-Length bytes arrived."""
+
+    def read(self, *_a):
+        import http.client
+        raise http.client.IncompleteRead(b"PK\x03\x04partial", 4096)
+
+
+def test_a_truncated_transfer_is_retried_not_an_internal_error(fake_opener, tmp_path):
+    """IncompleteRead is an HTTPException, not an OSError: it escaped the retry
+    loop and reached the runner as an 'internal error' on the first flaky host."""
+    calls = {"n": 0}
+
+    def flaky(req):
+        calls["n"] += 1
+        return _TruncatedResponse(b"") if calls["n"] == 1 else FakeResponse(_zip_bytes())
+
+    fake_opener(default=flaky)
+    client = HttpClient(retries=3, sleep=lambda *_: None)
+    assert client.download("https://x.example/m.zip", str(tmp_path / "m.zip")).size > 0
+    assert calls["n"] == 2
+
+
+def test_a_full_disk_is_not_retried(fake_opener, tmp_path, monkeypatch):
+    """Retrying a local ENOSPC re-downloads the whole file to fail the same way."""
+    import errno
+    calls = {"n": 0}
+
+    def ok(req):
+        calls["n"] += 1
+        return FakeResponse(_zip_bytes())
+
+    def full(_fd):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    fake_opener(default=ok)
+    monkeypatch.setattr("iemod_fetch.net.os.fsync", full)
+    with pytest.raises(OSError) as caught:
+        HttpClient(retries=3, sleep=lambda *_: None).download(
+            "https://x.example/m.zip", str(tmp_path / "m.zip"))
+    assert caught.value.errno == errno.ENOSPC
+    assert calls["n"] == 1
+    assert not (tmp_path / "m.zip.part").exists()
+
+
+def test_an_exhausted_github_rate_limit_says_so_and_when_it_resets(fake_opener):
+    """A bare 'HTTP 403' reads as a permission problem. GitHub's own headers say
+    it is the hourly quota, and when it comes back - and that a token raises it."""
+    calls = {"n": 0}
+
+    def limited(req):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "rate limit exceeded",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}, None)
+
+    fake_opener(default=limited)
+    with pytest.raises(HttpStatusError) as caught:
+        HttpClient(retries=3, sleep=lambda *_: None).get_json("https://api.github.com/x")
+    message = str(caught.value)
+    assert caught.value.status == 403
+    assert "rate limit" in message and "2023-11-14T22:13:20Z" in message
+    assert "token" in message
+    assert calls["n"] == 1               # waiting up to an hour is the user's call
+
+
+def test_an_absurd_rate_limit_reset_does_not_crash(fake_opener):
+    def limited(req):
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "rate limit exceeded",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "9" * 40}, None)
+
+    fake_opener(default=limited)
+    with pytest.raises(HttpStatusError, match="resets unknown"):
+        HttpClient(retries=1, sleep=lambda *_: None).get_json("https://api.github.com/x")
+
+
 def test_deterministic_404_is_not_retried(fake_opener):
     calls = {"n": 0}
 
@@ -170,6 +247,48 @@ def test_deterministic_404_is_not_retried(fake_opener):
         HttpClient(retries=4, sleep=lambda *_: None).read_bytes("https://x.example/m")
     assert caught.value.status == 404
     assert calls["n"] == 1
+
+
+class _TrackedBody(io.BytesIO):
+    """An HTTPError body that records whether anyone closed it."""
+
+
+@pytest.mark.parametrize("status", [503, 404])
+def test_an_http_error_response_is_closed_not_leaked(fake_opener, status):
+    """An HTTPError owns the response socket. Retried or raised, it is closed -
+    otherwise every 5xx retry leaks a connection until garbage collection, and
+    Python 3.14 reports it as a ResourceWarning."""
+    bodies = []
+
+    def failing(req):
+        body = _TrackedBody(b"error page")
+        bodies.append(body)
+        raise urllib.error.HTTPError(req.full_url, status, "x", {}, body)
+
+    fake_opener(default=failing)
+    with pytest.raises((HttpStatusError, NetworkError)):
+        HttpClient(retries=2, sleep=lambda *_: None).read_bytes("https://x.example/m")
+    assert bodies and all(b.closed for b in bodies)
+
+
+@pytest.mark.parametrize("header", ["-1", "nan", "-inf", "inf", "1e999", "soon"])
+def test_a_hostile_retry_after_becomes_a_sane_delay(fake_opener, header):
+    """Retry-After is server input. A negative or NaN value reached time.sleep,
+    which raises ValueError - escaping the retry loop as an internal error."""
+    slept = []
+    calls = {"n": 0}
+
+    def limited(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError(req.full_url, 503, "busy",
+                                         {"Retry-After": header}, None)
+        return FakeResponse(b'{"ok":true}')
+
+    fake_opener(default=limited)
+    client = HttpClient(retries=3, sleep=slept.append)
+    assert client.get_json("https://api.github.com/x") == {"ok": True}
+    assert len(slept) == 1 and 0.0 <= slept[0] <= 300.0
 
 
 def test_retry_after_is_honoured(fake_opener):

@@ -10,6 +10,7 @@ human to decide, which is slower and correct.
 import fnmatch
 import posixpath
 import re
+import sys
 import urllib.parse
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -24,6 +25,28 @@ from .urls import (ARCHIVE_EXT, has_archive_ext as _has_archive_ext,  # noqa: F4
                    normalize_dropbox, repo_from_url, unwrap_redirect)
 _ASSET_TIERS = ((".iemod",), (".zip",), (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"),
                 (".7z", ".rar"))
+# WeiDU's release convention: an asset prefixed with the platform its bundled
+# setup binary targets. A published convention, so it may decide; anything
+# unprefixed is platform-neutral.
+_PLATFORM_PREFIXES = {"win": ("win-", "wzp-"), "lin": ("lin-",), "mac": ("osx-", "mac-")}
+
+
+def _platform_family(platform: str) -> str:
+    if platform.startswith(("win", "cygwin", "msys")):
+        return "win"
+    if platform == "darwin":
+        return "mac"
+    return "lin"
+
+
+def _asset_platform(name: str) -> Optional[str]:
+    lowered = name.lower()
+    for family, prefixes in _PLATFORM_PREFIXES.items():
+        if lowered.startswith(prefixes):
+            return family
+    return None
+
+
 _ARCHIVE_CT = ("application/zip", "application/x-zip", "application/octet-stream",
                "application/x-7z", "application/x-rar", "application/gzip",
                "application/x-tar", "application/x-msdownload")
@@ -83,9 +106,11 @@ class Resolution:
 class GitHubResolver:
     """Resolves a release asset via the REST API. No name guessing, no search."""
 
-    def __init__(self, client, allow_exe: bool = False):
+    def __init__(self, client, allow_exe: bool = False,
+                 platform: Optional[str] = None):
         self.client = client
         self.allow_exe = allow_exe
+        self.platform = _platform_family(platform or sys.platform)
 
     def resolve(self, source: ModSource) -> Resolution:
         repo = source.github or repo_from_url(source.url or "")
@@ -187,6 +212,17 @@ class GitHubResolver:
                                key=lambda a: (len(a["name"]), a["name"]))
             if not tier_hits:
                 continue
+            # A package built for this platform is exactly what was asked for;
+            # a neutral one is next best; another platform's is the last resort.
+            exact = [a for a in tier_hits if _asset_platform(a["name"]) == self.platform]
+            neutral = [a for a in tier_hits if _asset_platform(a["name"]) is None]
+            if exact or neutral:
+                tier_hits = exact or neutral
+            else:
+                res.warnings.append(
+                    f"{source.key}: every {tier[0]} asset is packaged for another "
+                    f"platform ({[a['name'] for a in tier_hits]}); the mod data is the "
+                    f"same, only the bundled setup binary differs")
             if len(tier_hits) > 1:
                 res.warnings.append(
                     f"{source.key}: release has {len(tier_hits)} {tier[0]} assets "

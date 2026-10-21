@@ -9,7 +9,11 @@ Policy (ADR-0003):
     content sniffing and (when known) sha256 before anything is extracted;
   * retries honour Retry-After and never retry a deterministic 4xx.
 """
+import contextlib
+import errno
 import hashlib
+import http.client
+import math
 import os
 import random
 import shutil
@@ -48,6 +52,9 @@ DEFAULT_MAX_BYTES = 2 * 1024 ** 3          # 2 GiB; real mods reach 1.5 GB
 DEFAULT_TIMEOUT = 45
 _CHUNK = 64 * 1024
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+# Errors from the local filesystem, which no amount of retrying will fix.
+_LOCAL_ERRNOS = {errno.ENOSPC, errno.EACCES, errno.EPERM, errno.EROFS,
+                 errno.ENAMETOOLONG, getattr(errno, "EDQUOT", errno.ENOSPC)}
 
 
 def host_of(url: str) -> str:
@@ -103,6 +110,13 @@ class DownloadResult:
     final_url: str
 
 
+def _release(exc: urllib.error.HTTPError) -> None:
+    # Python 3.9: an HTTPError built with fp=None never initialised its file
+    # wrapper, so close() raises. There is nothing to release in that case.
+    with contextlib.suppress(KeyError, AttributeError):
+        exc.close()
+
+
 class HttpClient:
     def __init__(self, token: Optional[str] = None, allow_http: bool = False,
                  timeout: int = DEFAULT_TIMEOUT, max_bytes: int = DEFAULT_MAX_BYTES,
@@ -153,10 +167,23 @@ class HttpClient:
                 return action()
             except urllib.error.HTTPError as exc:
                 last = exc
+                # The error owns the response socket. Only its status and
+                # headers are used, so release the connection now rather than
+                # whenever the exception is garbage-collected.
+                _release(exc)
                 if exc.code not in _RETRYABLE_STATUS:
-                    raise HttpStatusError(url, exc.code, exc.reason or "") from exc
+                    raise HttpStatusError(url, exc.code,
+                                          self._rate_limit_reason(exc)
+                                          or exc.reason or "") from exc
                 delay = self._retry_after(exc) or self._backoff(attempt)
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
+                    http.client.HTTPException) as exc:
+                # IncompleteRead - a transfer cut short - is an HTTPException,
+                # not an OSError, and is the commonest failure on forum hosts.
+                # A local disk or permission error is not transient: retrying
+                # it only downloads the whole file again to fail the same way.
+                if isinstance(exc, OSError) and exc.errno in _LOCAL_ERRNOS:
+                    raise
                 last = exc
                 delay = self._backoff(attempt)
             if attempt == self.retries:
@@ -170,9 +197,26 @@ class HttpClient:
         if not value:
             return None
         try:
-            return min(float(value), 300.0)
+            seconds = float(value)
         except (TypeError, ValueError):
+            return None          # an HTTP-date, or junk: fall back to backoff
+        # Server input: NaN or a negative value would make time.sleep raise.
+        if math.isnan(seconds):
             return None
+        return min(max(seconds, 0.0), 300.0)
+
+    @staticmethod
+    def _rate_limit_reason(exc) -> Optional[str]:
+        """GitHub's quota, named as such: a bare 403 reads as a permission error."""
+        headers = getattr(exc, "headers", None)
+        if not headers or headers.get("X-RateLimit-Remaining") != "0":
+            return None
+        reset = headers.get("X-RateLimit-Reset") or ""
+        when = "unknown"
+        if reset.isdigit() and len(reset) <= 11:     # epoch seconds; gmtime overflows
+            when = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(reset)))
+        return (f"GitHub API rate limit exhausted (resets {when}); "
+                f"a token raises the limit from 60 to 5000 requests an hour")
 
     @staticmethod
     def _backoff(attempt: int) -> float:
@@ -255,6 +299,11 @@ class HttpClient:
                             head += chunk[:512 - len(head)]
                         digest.update(chunk)
                         out.write(chunk)
+                    # http.client's read(n) does not raise on a short body: it
+                    # returns what arrived, then b"". A cut connection would
+                    # pass as a complete download whose first bytes look right.
+                    if declared and declared.isdigit() and total != int(declared):
+                        raise http.client.IncompleteRead(b"", int(declared) - total)
                     out.flush()
                     os.fsync(out.fileno())
 

@@ -84,9 +84,18 @@ Extracting one entry at a time and re-resolving keeps them the same fact, and
 costs nothing measurable.
 
 External tools (7-Zip, WinRAR) are used for `.rar` and `.7z`. They are invoked
-with an argument **list**, never a shell string, never with remote input in the
-argv, and their output is extracted into a scratch directory that is then walked
-by the same audit as everything else.
+with an argument **list**, never a shell string, and their output is extracted
+into a scratch directory that is then walked by the same audit as everything
+else. Since 2.1.0 the archive is first **listed** with `7z l -slt` and held to
+the zip/tar rules — member names, entry count, total size — before the
+unpacker writes anything. Without 7-Zip there is no listing, and the
+post-extraction audit is what remains.
+
+The archive's own file name is remote input too (a `Content-Disposition`
+header, or a URL path). It is reduced to one safe path component, splitting on
+both `/` and `\`, before it is joined onto the work directory; anything else
+becomes `<folder>.bin`, which is harmless because the type is identified by
+magic bytes.
 
 ## Boundary 4 — writing to disk
 
@@ -116,6 +125,13 @@ misconfigured helper hangs the helper and not the run.
 **The mods themselves.** A `.tp2` is a program and WeiDU executes it. This tool
 stages files; it does not sandbox, review, or vouch for mod content. Everything
 above protects the *fetching*. If you install a malicious mod, none of it helps.
+
+**The installer scripts.** `--emit-installer` writes `install-eet.sh` /
+`.cmd`; iemod-fetch never runs them, nor WeiDU, nor mod_installer. They are
+short and meant to be read before running. Running one executes every `.tp2`
+in the plan through WeiDU, with your user's rights, on the game folders you
+name — the same trust you extend to any mod you install by hand. mod_installer
+is a third-party binary (GPL-3.0); obtain it from its own releases page.
 
 **Upstream rule data.** BWS-NG, krion64 and LCC JSON is read as data and every
 value is coerced to a string before use. But their *claims* are theirs. The

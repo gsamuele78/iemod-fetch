@@ -6,12 +6,14 @@ release asset nobody checksums. It may contain `../` members, absolute paths,
 symlinks pointing at the game install, or be a decompression bomb.
 """
 import enum
+import gzip
 import os
 import posixpath
 import shutil
 import subprocess
 import tarfile
 import zipfile
+import zlib
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -45,6 +47,17 @@ _MAGIC = (
     (b"7z\xbc\xaf\x27\x1c", Kind.SEVENZIP),
     (b"MZ", Kind.MSDOS),
 )
+
+# What the stdlib readers raise on a truncated or corrupted stream - a partial
+# download, in practice. None of it is a ModFetchError, so each is translated
+# at the boundary instead of escaping the runner as an "internal error".
+try:
+    import lzma
+    _LZMA_ERRORS: tuple = (lzma.LZMAError,)
+except ImportError:                                  # pragma: no cover - minimal builds
+    _LZMA_ERRORS = ()
+_DAMAGED = (zipfile.BadZipFile, tarfile.TarError, zlib.error, EOFError,
+            gzip.BadGzipFile) + _LZMA_ERRORS
 
 TAR_LIKE = (Kind.TAR, Kind.GZIP, Kind.BZIP2, Kind.XZ)
 EXTERNAL_ONLY = (Kind.RAR, Kind.SEVENZIP, Kind.MSDOS)
@@ -174,8 +187,15 @@ def _extract_tar(path: str, dest: str) -> None:
                 for member in members:
                     tf.extract(member, dest)
                     _assert_within(dest, os.path.join(dest, member.name))
-    except tarfile.TarError as exc:
-        raise ExtractionError(f"cannot read tar archive {path}: {exc}") from exc
+    except _DAMAGED as exc:
+        raise _damaged(path, exc) from exc
+
+
+def _damaged(path: str, exc: BaseException) -> ExtractionError:
+    return ExtractionError(
+        f"{os.path.basename(path)} is damaged or incomplete "
+        f"({type(exc).__name__}: {exc}) - usually a partial download; "
+        f"delete it and fetch again")
 
 
 # Windows installers do not put these on PATH.
@@ -217,11 +237,58 @@ def _external_tools(kind: Kind, path: str, dest: str):
     return resolved
 
 
+def _seven_zip_listing(path: str) -> Optional[List[tuple]]:
+    """
+    (name, size) for every member, from `7z l -slt`. None when 7-Zip is not
+    installed or cannot read the file - the caller decides what that means.
+    """
+    tool = next((find_tool(t) for t in ("7z", "7za") if find_tool(t)), None)
+    if not tool:
+        return None
+    try:
+        proc = subprocess.run([tool, "l", "-slt", "-ba", "--", path],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              timeout=_TOOL_TIMEOUT, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    members: List[tuple] = []
+    for line in proc.stdout.decode("utf-8", "replace").splitlines():
+        if line.startswith("Path = "):          # -slt gives one key per line
+            members.append((line[7:].strip(), 0))
+        elif line.startswith("Size = ") and members:
+            size = line[7:].strip()
+            members[-1] = (members[-1][0], int(size) if size.isdigit() else 0)
+    return members
+
+
+def _preflight_external(path: str) -> None:
+    """
+    Hold an archive bound for an external unpacker to the zip/tar rules -
+    names, entry count, total size - before anything is written. Without
+    7-Zip there is no listing, and the post-extraction audit is what remains.
+    """
+    members = _seven_zip_listing(path)
+    if members is None:
+        return
+    if len(members) > MAX_ENTRIES:
+        raise UnsafeArchive(f"archive has {len(members)} entries (limit {MAX_ENTRIES})")
+    total = 0
+    for name, size in members:
+        _reject_member(name)
+        total += size
+        if total > MAX_TOTAL_BYTES:
+            raise UnsafeArchive(
+                f"uncompressed size exceeds {MAX_TOTAL_BYTES} bytes (archive bomb?)")
+
+
 def _extract_external(path: str, dest: str, kind: Kind) -> None:
     """
     Hand the container to an unpacker. A .exe is never executed - it is only
     read as a data file by 7z/unar, which understand SFX headers.
     """
+    _preflight_external(path)
     candidates = _external_tools(kind, path, dest)
     if not candidates:
         raise ExtractionError(
@@ -256,7 +323,10 @@ def safe_extract(path: str, dest: str, allow_exe: bool = False) -> Kind:
     os.makedirs(dest, exist_ok=True)
 
     if kind is Kind.ZIP:
-        _extract_zip(path, dest)
+        try:
+            _extract_zip(path, dest)
+        except _DAMAGED as exc:
+            raise _damaged(path, exc) from exc
     elif kind is Kind.TAR:
         _extract_tar(path, dest)
     elif kind is Kind.MSDOS:
@@ -310,19 +380,5 @@ def list_entries(path: str) -> Optional[List[ArchiveEntry]]:
                 return [ArchiveEntry(n) for n in tf.getnames()]
         except (tarfile.TarError, OSError) as exc:
             raise ExtractionError(f"cannot list {path}: {exc}") from exc
-    tool = next((find_tool(t) for t in ("7z", "7za") if find_tool(t)), None)
-    if not tool:
-        return None
-    try:
-        proc = subprocess.run([tool, "l", "-slt", "-ba", "--", path],
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                              timeout=_TOOL_TIMEOUT, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
-        return None
-    names = []
-    for line in proc.stdout.decode("utf-8", "replace").splitlines():
-        if line.startswith("Path = "):          # -slt gives one key per line
-            names.append(ArchiveEntry(line[7:].strip()))
-    return names
+    members = _seven_zip_listing(path)
+    return None if members is None else [ArchiveEntry(name) for name, _ in members]

@@ -56,6 +56,23 @@ def is_safe_component(name) -> bool:
         return False
 
 
+def archive_filename(remote, fallback: str) -> str:
+    """
+    Reduce a server-supplied file name to one safe path component.
+
+    The name comes from a Content-Disposition header or a URL path - remote
+    input - and is joined onto a work directory. Both separators are split on,
+    whatever the host OS, because a backslash is a separator on the machine
+    this tool actually runs on. Anything that is still not a safe component
+    (drive-relative, reserved, too long) becomes `fallback`; the archive type
+    is identified by magic bytes, so the name carries no meaning that matters.
+    """
+    if not isinstance(remote, str):
+        return fallback
+    last = remote.replace("\\", "/").rsplit("/", 1)[-1]
+    return last if is_safe_component(last) else fallback
+
+
 def normalize_key(value: str) -> str:
     """Fold a mod folder / tp2 name to its comparison key: lowercase alphanumerics."""
     return re.sub(r"[^a-z0-9]", "", (value or "").lower())

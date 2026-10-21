@@ -98,6 +98,33 @@ def locate_mod_root(staging: str, folder: str,
         f"add \"expect_tp2\": \"{stem}\" to its manifest entry.")
 
 
+def fold_root_tp2(root: str, tp2_file: str, name: str) -> str:
+    """
+    Handle the older packaging: `setup-<mod>.tp2` beside a `<mod>/` folder.
+
+    A tp2's paths are relative to the game directory, not to the tp2, so
+    `<mod>/setup-<mod>.tp2` installs identically - and it is the only layout a
+    one-folder-per-mod staging area can hold. Returns the directory to install.
+
+    Strict: only a folder whose name IS the matched mod name (case-insensitive,
+    as on Windows) qualifies. With no such folder the archive is used as it is,
+    and the root-level `setup-<mod>.exe` is left behind with it - a WeiDU
+    binary for one platform, not mod data.
+    """
+    if os.path.basename(os.path.normpath(root)).lower() == name.lower():
+        return root                                  # already the mod folder
+    children = [entry for entry in os.listdir(root)
+                if entry.lower() == name.lower()
+                and os.path.isdir(os.path.join(root, entry))]
+    if len(children) != 1:
+        return root
+    mod_dir = os.path.join(root, children[0])
+    inner = os.path.join(mod_dir, tp2_file)
+    if not os.path.exists(inner):
+        shutil.move(os.path.join(root, tp2_file), inner)
+    return mod_dir
+
+
 def install_from_archive(archive_path: str, target_root: str, folder: str,
                          force: bool = False, allow_exe: bool = False,
                          expect_tp2: Optional[str] = None) -> InstallOutcome:
@@ -113,6 +140,7 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
     try:
         safe_extract(archive_path, staging, allow_exe=allow_exe)
         root, tp2_file, matched = locate_mod_root(staging, folder, expect_tp2)
+        root = fold_root_tp2(root, tp2_file, matched)
 
         # When the archive satisfied `expect_tp2` rather than the WeiDU folder,
         # the mod has renamed itself. WeiDU needs the directory to match the tp2

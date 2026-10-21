@@ -28,11 +28,11 @@ BOOL_KEYS = ("dry_run", "force", "refresh", "quiet", "allow_manual", "check_only
              "accept_suggestions", "allow_http", "allow_exe", "accept_offsite",
              "include_optional",
              "no_discovery", "no_gh_cli", "no_git_credential",
-             "all_manifest_entries")
+             "all_manifest_entries", "resolve_conflicts", "emit_installer")
 INT_KEYS = ("workers", "timeout", "retries", "discovery_attempts")
 SIZE_KEYS = ("max_bytes",)
 STR_KEYS = ("manifest", "target", "aliases", "json_report", "emit_pinned_manifest",
-            "mod_db", "suppress",
+            "mod_db", "suppress", "game_language", "language_preference",
             "token_file", "oauth_client_id", "trusted_owners", "owner_cache")
 
 KNOWN_KEYS = frozenset(LIST_KEYS + BOOL_KEYS + INT_KEYS + SIZE_KEYS + STR_KEYS)

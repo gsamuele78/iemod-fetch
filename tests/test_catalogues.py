@@ -147,8 +147,8 @@ def test_a_direct_archive_url_is_recognised(lcc):
     """The real case: LCC points at the archive inside a collection repo."""
     entry = lcc.lookup("vampire_world")
     assert entry.direct_urls == (
-        "https://github.com/Spellhold-Studios/Miscellaneous/raw/refs/heads/main/"
-        "mods/Vampire_world_mod_v.0.56_EET.zip",)
+        ("https://github.com/Spellhold-Studios/Miscellaneous/raw/refs/heads/main/"
+        "mods/Vampire_world_mod_v.0.56_EET.zip"),)
 
 
 def test_a_repository_page_is_not_a_direct_url(lcc):

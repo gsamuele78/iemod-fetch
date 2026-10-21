@@ -23,7 +23,7 @@ scripts/manager/tp2.py in https://github.com/RiwsPy/lcc-docs (MIT,
 import os
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 _MAX_TP2_BYTES = 8 * 1024 * 1024
 
@@ -66,6 +66,9 @@ class Tp2Info:
     authors: List[str] = field(default_factory=list)
     games: List[str] = field(default_factory=list)
     languages: List[str] = field(default_factory=list)
+    # Every LANGUAGE declaration as (display name, language directory/code), in
+    # order and WITH duplicates: WeiDU's `#lang` is the position in this list.
+    language_decls: List[Tuple[str, str]] = field(default_factory=list)
 
     @property
     def normalised_games(self) -> List[str]:
@@ -118,6 +121,8 @@ def parse_tp2(content: str, path: str = "<tp2>") -> Tp2Info:
         # a LANGUAGE block is (display name, directory, tra files...)
         values = _STRING.findall(block.group(1))
         if values:
+            info.language_decls.append(
+                (values[0].strip(), values[1].strip() if len(values) > 1 else ""))
             name = values[0].strip()
             if name and name not in info.languages:
                 info.languages.append(name)

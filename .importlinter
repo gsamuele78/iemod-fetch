@@ -4,7 +4,8 @@
 # The shape is functional core / imperative shell (ADR-0019):
 #
 #   core     naming, errors, versions, weidu, tp2, modmeta, manifest,
-#            catalogues, moddb, rules, ordering, conflicts, plan, report,
+#            catalogues, moddb, rules, ordering, conflicts, resolution,
+#            installer, languages, plan, report,
 #            config, pinning
 #            -> pure. Parse, compare, decide. No sockets, no subprocesses.
 #   shell    net, auth, archives, install, orgindex, resolvers, runner, cli
@@ -36,6 +37,9 @@ source_modules =
     iemod_fetch.rules
     iemod_fetch.ordering
     iemod_fetch.conflicts
+    iemod_fetch.resolution
+    iemod_fetch.languages
+    iemod_fetch.installer
     iemod_fetch.plan
     iemod_fetch.report
     iemod_fetch.config
@@ -93,6 +97,8 @@ layers =
     iemod_fetch.net
     iemod_fetch.archives | iemod_fetch.auth
     iemod_fetch.plan | iemod_fetch.report
+    iemod_fetch.installer
+    iemod_fetch.resolution | iemod_fetch.languages
     iemod_fetch.conflicts
     iemod_fetch.ordering
     iemod_fetch.rules
