@@ -23,6 +23,7 @@ from .install import State
 from .tp2 import read_mod_tp2
 from .conflicts import build_conflict_report, render_conflict_report
 from .installer import build_installer
+from .languages import apply_language_preference, parse_preferences
 from .resolution import resolve_conflicts
 from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, plan_order,
                        render_plan_summary)
@@ -108,9 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
                           "to mod_installer + WeiDU - for EET, both games in one "
                           "run. Written for you to run; never run by iemod-fetch "
                           "(ADR-0022)")
-    out.add_argument("--game-language", default="en_US", metavar="CODE",
-                     help="game language the installer scripts pass on "
-                          "(default: %(default)s)")
+    out.add_argument("--language-preference", metavar="LANGS",
+                     help="with --plan-order: install every mod in the first of "
+                          "these languages it offers, e.g. it_IT,en_US (or "
+                          "italian,english). Read from each staged mod's tp2; a "
+                          "mod offering none keeps its logged language (ADR-0024)")
+    out.add_argument("--game-language", default=None, metavar="CODE",
+                     help="game language the installer scripts pass on (default: "
+                          "the first --language-preference, else en_US)")
     out.add_argument("--conflict-report", metavar="PATH",
                      help="write the full component-level conflict report as "
                           "JSON: which component of which mod fights which "
@@ -332,6 +338,10 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
         report = build_conflict_report(plan.installs(), ruleset or RuleSet(),
                                        context, plan)
         resolution = resolve_conflicts(plan, report, ruleset, context)
+    languages = None
+    if args.language_preference:
+        languages = apply_language_preference(plan, os.path.abspath(args.target),
+                                              args.language_preference)
     written = plan.write(args.plan_order)
     if resolution is not None:
         path = os.path.join(args.plan_order, "RESOLUTION.json")
@@ -347,6 +357,8 @@ def _plan_order(args, analysis: "RuleAnalysis", stream):
             print(f"                wrote {path}", file=stream)
         if resolution is not None:
             print("\n" + resolution.render(), file=stream)
+        if languages is not None:
+            print("\n" + languages.render(), file=stream)
     if args.emit_installer:
         _emit_installer(args, plan, stream)
     return plan
@@ -361,7 +373,7 @@ def _emit_installer(args, plan, stream) -> None:
     except ValueError:            # Windows: the mods and the plan on different drives
         mods_ref = target
     installer = build_installer(plan, mods_relpath=mods_ref.replace(os.sep, "/"),
-                                mods_dir=target, language=args.game_language)
+                                mods_dir=target, language=_game_language(args))
     written = installer.write(plan_dir)
     if args.quiet:
         return
@@ -458,12 +470,22 @@ def _parse_with_config(parser, argv):
     return args, config
 
 
+def _game_language(args) -> str:
+    """--game-language, else the first preferred mod language, else en_US."""
+    if args.game_language:
+        return str(args.game_language)
+    return str(args.language_preference[0]) if args.language_preference else "en_US"
+
+
 def _require_plan(args) -> None:
     """Flags that act on an install plan are meaningless without one."""
+    if args.language_preference:
+        args.language_preference = parse_preferences(args.language_preference)
     if args.plan_order:
         return
     for flag, given in (("--resolve-conflicts", args.resolve_conflicts),
-                        ("--emit-installer", args.emit_installer)):
+                        ("--emit-installer", args.emit_installer),
+                        ("--language-preference", args.language_preference)):
         if given:
             raise ConfigError(f"{flag} works on an install plan: add "
                               f"--plan-order DIR (and --order-catalogue)")

@@ -516,8 +516,20 @@ python3 -m iemod_fetch --check-only -m mod_downloads.json \
     --rules BigWorldSetup-Next-Generation/data/rules \
     --rules krion64.github.io/data/mods \
     --order-catalogue krion64.github.io \
-    --plan-order ./plan --resolve-conflicts --emit-installer
+    --plan-order ./plan --resolve-conflicts --emit-installer \
+    --language-preference it_IT,en_US
 ```
+
+`--language-preference` is optional: each mod is set to the first listed
+language it offers (read from its own tp2, so the mods must be fetched first);
+a mod offering none keeps the language its log had and is listed. The game
+language handed to mod_installer follows the first preference unless
+`--game-language` says otherwise.
+
+The plan is component-level: where krion64 places a component in another
+category, or a rule names specific components, a mod is split across the order
+(the summary says how many). Conflicts are resolved at component level too,
+including two options of one WeiDU subcomponent group (the last one is kept).
 
 `./plan/` now holds:
 
@@ -592,6 +604,6 @@ log onto BG2EE, handing EET's core the BGEE path, and stops at the first error.
 
 * `README.md` — feature overview
 * `docs/AUDIT.md` — what was wrong with the original script, with evidence
-* `docs/ADR.md` — ADR-0001…0022, the design decisions and why
+* `docs/ADR.md` — ADR-0001…0024, the design decisions and why
 * `docs/PLAN.md` — three-phase audit / implementation / validation plan
 * `python3 -m iemod_fetch --help` — full flag reference

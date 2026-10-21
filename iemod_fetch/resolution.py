@@ -28,7 +28,7 @@ plan is re-checked against the same rules afterwards rather than trusted.
 from dataclasses import dataclass, field
 from typing import List, Optional, Set, Tuple
 
-from .conflicts import ConflictReport, Finding, Side
+from .conflicts import SUBCOMPONENT_ORIGIN, ConflictReport, Finding, Side
 from .naming import normalize_key
 from .rules import INCOMPATIBLE, RuleSet
 
@@ -86,8 +86,6 @@ def _why_not(finding: Finding) -> Optional[str]:
         return f"graded {finding.severity}, not error"
     if finding.evidence == "speculative":
         return "the claim is speculative (unverified upstream)"
-    if finding.scope == "same-mod":
-        return "same mod: a choice between two option groups"
     if finding.right is None:
         return "the rule names only one side"
     if finding.left.whole_mod and finding.right.whole_mod:
@@ -95,11 +93,17 @@ def _why_not(finding: Finding) -> Optional[str]:
     return None
 
 
-def _cheaper(left: Side, right: Side) -> Tuple[Side, Side]:
-    """The side to remove, by the conflict report's own cost: pinned < wholesale."""
+def _cheaper(left: Side, right: Side) -> Optional[Tuple[Side, Side]]:
+    """
+    (side to remove, side to keep) by the conflict report's own cost - pinned
+    is cheaper than wholesale, fewer components cheaper than more. None on a
+    tie: then the rules do not say which to keep, and picking one is a guess.
+    """
     def cost(side: Side) -> int:
         return 10 ** 6 if side.whole_mod else len(side.components)
-    return (left, right) if cost(left) <= cost(right) else (right, left)
+    if cost(left) == cost(right):
+        return None
+    return (left, right) if cost(left) < cost(right) else (right, left)
 
 
 def _units_for(plan, log: str, key: str) -> list:
@@ -142,7 +146,19 @@ def resolve_conflicts(plan, report: ConflictReport,
             result.left_for_operator.append(Unresolved(
                 finding.log, _describe(finding), why or "one-sided finding"))
             continue
-        loser, winner = _cheaper(finding.left, finding.right)
+        if finding.origin == SUBCOMPONENT_ORIGIN:
+            # WeiDU's own semantics, not a cost: the last option installed wins.
+            loser, winner = finding.left, finding.right
+        else:
+            choice = _cheaper(finding.left, finding.right)
+            if choice is None:
+                result.left_for_operator.append(Unresolved(
+                    finding.log, _describe(finding),
+                    f"both sides pin an equal number of components "
+                    f"({len(finding.left.components)}): the rules do not say "
+                    f"which to keep"))
+                continue
+            loser, winner = choice
 
         # An earlier removal may already have settled this pair.
         if not _present(plan, finding.log, winner) or not _present(

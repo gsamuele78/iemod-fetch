@@ -12,7 +12,7 @@ Python API, which is internal.
 
 A correctness and hardening release. No flag or report field changed meaning;
 two behaviours changed on purpose and are listed under *Changed*. Measured on
-the same machine before and after: 586 tests with 1 failing → 670 passing;
+the same machine before and after: 586 tests with 1 failing → 713 passing;
 branch coverage 88% → 90%; gate failures on a clean checkout 4 → 0; 11
 defects fixed, each with a test written to fail first.
 
@@ -56,6 +56,14 @@ defects fixed, each with a test written to fail first.
   mypy 2.x refuses.
 
 ### Changed
+- **Order checking is component-correct.** "A before B" now means every named
+  component of A precedes every one of B, by real log line. The old check used
+  each mod's first component and a per-mod grouped line counter: on the real
+  install 34 of its 46 order findings were false ("X before EET_end", with
+  EET_end logged last), and 2 real ones were hidden.
+- `--resolve-conflicts` no longer resolves a tie by taking the left side (a
+  guess); ties go to the operator. Same-mod conflicts with an unequal split are
+  resolved like cross-mod ones.
 - BWS-NG-format rules keep an `evidenceLevel` / `source` when an entry carries
   one, so a speculative claim is never resolved automatically.
 - README no longer says `pip install iemod-fetch`: the package is not on PyPI.
@@ -81,7 +89,18 @@ defects fixed, each with a test written to fail first.
   already named), re-verifies the plan, and writes `RESOLUTION.json`. Whole-mod
   pairs, same-mod option groups, missing dependencies and warnings are listed
   for the operator, never decided (ADR-0021). Your own logs are never edited.
-- `--game-language` (default `en_US`) for the installer scripts.
+- **Component-level install order** (ADR-0023). A mod is split across the order
+  where krion64 places a component in another category (`co[].cat`) or an
+  order rule names specific components; a mod nothing distinguishes stays
+  whole. A rule between two components of one mod is honoured. On the real
+  install: 6 mods split, plan verified against 158 constraints.
+- **Preferred installation language with fallback** (ADR-0024).
+  `--language-preference it_IT,en_US` sets each mod's `#lang` from its own tp2
+  LANGUAGE declarations, first preference it offers; BWS-NG's model.
+- **WeiDU SUBCOMPONENT clashes** (two options of one `Group -> Option` group)
+  are reported without any rule set, and resolved by keeping the last.
+- `--game-language` for the installer scripts (default: the first preferred
+  language, else `en_US`).
 - README banner, contents, feature table and an end-to-end quick start; guide
   chapter 10 (Windows and Linux); ADR-0021 and ADR-0022.
 - `tests/test_net_loopback.py`: the real HTTP stack against a stdlib server on

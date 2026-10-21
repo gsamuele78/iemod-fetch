@@ -32,6 +32,9 @@ from .rules import (DEPENDS, INCOMPATIBLE, ORDER, Context, Install, RuleSet,
 # Not a rule kind - a per-mod known issue, reported alongside the pairwise ones.
 KNOWN_ISSUE = "known-issue"
 
+# Not from any rule set: WeiDU's own SUBCOMPONENT semantics, read off the log.
+SUBCOMPONENT_ORIGIN = "WeiDU SUBCOMPONENT"
+
 # Worst first. `note` is krion64's `advisories` channel: real observations that
 # nobody has verified, useful to read and wrong to act on blindly.
 SEVERITY_ORDER = {"error": 0, "warning": 1, "note": 2}
@@ -292,8 +295,55 @@ def build_conflict_report(installs: Sequence[Install], ruleset: RuleSet,
             stale_risk=violation.stale_risk, suppressed=violation.suppressed))
 
     report.findings.extend(_known_issues(installs, ruleset))
+    report.findings.extend(_subcomponent_clashes(installs))
     report.findings.sort(key=lambda f: (f.rank, f.kind, f.left.mod))
     return report
+
+
+def _subcomponent_clashes(installs: Sequence[Install]) -> List[Finding]:
+    """
+    Two options of one WeiDU SUBCOMPONENT group in the same install.
+
+    WeiDU logs a SUBCOMPONENT choice as `// Group -> Option`. The options of one
+    group are mutually exclusive by the mod's own design: when the second is
+    installed, WeiDU uninstalls the first. No rule set is needed to know that,
+    and the outcome is not a judgement call - the last one wins. The finding
+    names it so the plan can skip the install-then-uninstall round trip.
+    """
+    findings: List[Finding] = []
+    for install in installs:
+        seen = set()
+        for key, labels in install.labels.items():
+            groups: dict = {}
+            for number, label in labels.items():
+                if " -> " not in label:
+                    continue
+                group = label.split(" -> ", 1)[0].strip()
+                at = install.positions.get(key, {}).get(number, 0)
+                groups.setdefault(group, []).append((at, number, label))
+            for group, members in groups.items():
+                if len(members) < 2:
+                    continue
+                members.sort()
+                identity = (group, tuple(n for _at, n, _label in members))
+                if identity in seen:           # a mod registered under two keys
+                    continue
+                seen.add(identity)
+                mod = install.display.get(key, key)
+                *earlier, (_at, last, last_label) = members
+                left = Side(key=key, mod=mod, components=tuple(
+                    (n, label) for _at, n, label in earlier))
+                right = Side(key=key, mod=mod, components=((last, last_label),))
+                findings.append(Finding(
+                    kind=INCOMPATIBLE, severity="error", log=install.label,
+                    left=left, right=right, scope="same-mod",
+                    reason=(f"options of the SUBCOMPONENT group '{group}' are "
+                            f"mutually exclusive; WeiDU uninstalls the earlier "
+                            f"one when it installs #{last}"),
+                    origin=SUBCOMPONENT_ORIGIN,
+                    remedy=f"keep #{last} (the one WeiDU ends with), drop "
+                           + ", ".join(f"#{n}" for _at, n, _label in earlier)))
+    return findings
 
 
 def _known_issues(installs: Sequence[Install], ruleset: RuleSet) -> List[Finding]:

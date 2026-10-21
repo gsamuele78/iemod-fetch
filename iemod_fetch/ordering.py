@@ -82,6 +82,9 @@ class OrderIndex:
     inside it (`ord`), plus the WeiDU folders (`co[].wf`) it installs as.
     """
     slots: Dict[str, Slot] = field(default_factory=dict)
+    # krion64 places single components elsewhere than their mod: stratagems
+    # #1500 in SPELL MODS, #4100 in POST EET (`co[].cn` + `co[].cat`).
+    component_slots: Dict[Tuple[str, int], Slot] = field(default_factory=dict)
     categories: List[str] = field(default_factory=list)
     origin: str = ""
     warnings: List[str] = field(default_factory=list)
@@ -91,6 +94,10 @@ class OrderIndex:
 
     def get(self, key: str) -> Optional[Slot]:
         return self.slots.get(key)
+
+    def component(self, key: str, number: int) -> Optional[Slot]:
+        """Where one component belongs, when the catalogue places it apart."""
+        return self.component_slots.get((key, number))
 
     @classmethod
     def load(cls, path: str) -> "OrderIndex":
@@ -131,12 +138,16 @@ class OrderIndex:
         # EET_end ships inside EET's `eet\` directory. Registering identities
         # first stops EET_end's "EET FINALIZATION" slot from claiming `eet` and
         # sending the EET core to the end of the install.
-        for slot, identities, _folders in loaded:
+        for slot, identities, _folders, _parts in loaded:
             for name in identities:
                 index.slots.setdefault(tp2_key(name), slot)
-        for slot, _identities, folders in loaded:
+        for slot, _identities, folders, _parts in loaded:
             for name in folders:
                 index.slots.setdefault(tp2_key(name), slot)
+        for _slot, identities, folders, parts in loaded:
+            for name in list(identities) + list(folders):
+                for number, part in parts.items():
+                    index.component_slots.setdefault((tp2_key(name), number), part)
         return index
 
     def _slot_for(self, record, rank_of: Dict[str, int], file: str):
@@ -154,17 +165,27 @@ class OrderIndex:
                     pre_eet=(category == PRE_EET_CATEGORY))
 
         identities, folders = set(), set()
+        parts: Dict[int, Slot] = {}
         if isinstance(record.get("t"), str):
             identities.add(record["t"])
         for component in record.get("co") or ():
             if not isinstance(component, dict):
                 continue
+            moved_to = component.get("cat")
+            number = component.get("cn")
+            if (moved_to in rank_of and moved_to != category
+                    and isinstance(number, int) and not isinstance(number, bool)):
+                # krion64's own export orders a moved component by its new
+                # category and the MOD's `ord`; the component `ord` it does not
+                # read, so neither does this.
+                parts[number] = Slot(category=moved_to, rank=rank_of[moved_to],
+                                     ord=slot.ord, pre_eet=False)
             if isinstance(component.get("wp"), str):
                 identities.add(os.path.splitext(
                     os.path.basename(component["wp"].replace("\\", "/")))[0])
             if isinstance(component.get("wf"), str):
                 folders.add(component["wf"])
-        return slot, identities, folders - identities
+        return slot, identities, folders - identities, parts
 
 
 # ------------------------------------------------------------------- the units
@@ -179,6 +200,14 @@ class Unit:
     lines: List[Tuple[str, int, int, str]] = field(default_factory=list)
     slot: Optional[Slot] = None
     target_log: str = ""
+    part: int = 0              # > 0 once a mod is split across the order
+    split: bool = False        # whether this mod was split at all
+    parts: int = 1             # how many parts the mod was split into
+
+    @property
+    def node(self) -> str:
+        """Unique id in the ordering graph: one mod, one log, one part."""
+        return f"{self.target_log}|{self.key}|{self.part}"
 
     @property
     def display(self) -> str:
@@ -186,8 +215,20 @@ class Unit:
         How this unit is named in reports.
 
         The folder alone is ambiguous - `eet` holds both EET and EET_end - so
-        the tp2 stem is appended whenever it differs from the folder.
+        the tp2 stem is appended whenever it differs from the folder. A split
+        mod names the part: `stratagems #4100`, `cdtweaks (part 2/3)`.
         """
+        base = self.mod_display
+        if not self.split:
+            return base
+        numbers = [comp for _path, _lang, comp, _comment in self.lines]
+        if len(numbers) == 1:
+            return f"{base} #{numbers[0]}"
+        return f"{base} (part {self.part + 1}/{self.parts})"
+
+    @property
+    def mod_display(self) -> str:
+        """The mod's own name, whichever part this is."""
         stem = os.path.splitext(self.tp2_file)[0]
         if stem.lower().startswith("setup-"):
             stem = stem[6:]
@@ -307,53 +348,110 @@ class OrderPlan:
         return written
 
 
-def _edges(units: List[Unit], ruleset: RuleSet,
-           include_optional: bool) -> Tuple[Dict[str, Set[str]], int]:
+def _order_rules(ruleset: RuleSet, include_optional: bool) -> List:
     """
-    Hard ordering constraints: `after -> before` pairs, per log.
+    The rules that become ordering constraints.
 
-    Only rules whose BOTH sides are present in the SAME log produce an edge. A
-    mod in the pre-EET log does not order against a mod in the EET log; they are
-    two different installs.
+    ONLY explicit order rules. A dependency says "this mod needs that mod
+    present", which is not the same claim as "install it later": BWS-NG records
+    both `EET: EET_end` and `EET_end: EET`, and reading either as an ordering
+    constraint invents a cycle and pushes the EET core to the end of the
+    install. Dependencies are checked by rules.check(), where they belong.
     """
-    by_log: Dict[str, Dict[str, Unit]] = {}
+    return [rule for rule in ruleset.rules
+            if rule.kind == "order" and rule.direction in ("before", "after")
+            and (include_optional or not rule.optional)]
+
+
+def _numbers(unit: Unit) -> List[int]:
+    return [comp for _path, _lang, comp, _comment in unit.lines]
+
+
+def _split(units: List[Unit], rules: List, index: "OrderIndex") -> List[Unit]:
+    """
+    Split a mod into contiguous parts where its components belong apart.
+
+    Two things put components of one mod in different places: the catalogue
+    (krion64 files stratagems #4100 under POST EET) and a rule that names
+    specific components ("stratagems(5900) after cdtweaks"). A part is a run of
+    consecutive components that agree on both; a mod nothing distinguishes stays
+    one unit, exactly as before. Parts keep their original order unless a rule
+    says otherwise, because they share the mod's catalogue position and are
+    tie-broken by log line.
+    """
+    named: Dict[str, List[frozenset]] = {}
+    for rule in rules:
+        for spec in (rule.left, *rule.right):
+            if spec.components is not None:
+                named.setdefault(spec.mod, []).append(spec.components)
+
+    out: List[Unit] = []
     for unit in units:
-        by_log.setdefault(unit.target_log, {})[unit.key] = unit
+        groups = named.get(unit.key, [])
+
+        def signature(number: int, key: str = unit.key, groups=groups):
+            part = index.component(key, number)
+            return (part.rank if part else None,
+                    tuple(number in group for group in groups))
+
+        runs: List[List[Tuple[str, int, int, str]]] = []
+        last = object()
+        for entry in unit.lines:
+            sig = signature(entry[2])
+            if sig != last:
+                runs.append([])
+                last = sig
+            runs[-1].append(entry)
+        if len(runs) == 1:
+            out.append(unit)
+            continue
+        for n, run in enumerate(runs):
+            first = run[0][2]
+            out.append(Unit(key=unit.key, tp2_file=unit.tp2_file, folder=unit.folder,
+                            source_log=unit.source_log, seq=unit.seq + n,
+                            lines=list(run),
+                            slot=index.component(unit.key, first) or unit.slot,
+                            target_log=unit.target_log, part=n, split=True,
+                            parts=len(runs)))
+    return out
+
+
+def _edges(units: List[Unit], rules: List) -> Tuple[Dict[str, Set[str]], int]:
+    """
+    Hard ordering constraints, between parts: `after -> before`, per log.
+
+    A rule constrains the parts holding the components it names (all parts for
+    a whole-mod side). Only parts in the SAME log are constrained: a mod in the
+    pre-EET log does not order against a mod in the EET log. A rule between two
+    components of one mod is honoured too, as long as they are different parts.
+    """
+    by_log: Dict[str, List[Unit]] = {}
+    for unit in units:
+        by_log.setdefault(unit.target_log, []).append(unit)
+
+    def holders(members: List[Unit], spec) -> List[Unit]:
+        return [u for u in members if u.key == spec.mod
+                and (spec.components is None
+                     or any(n in spec.components for n in _numbers(u)))]
 
     edges: Dict[str, Set[str]] = {}
     count = 0
-    for rule in ruleset.rules:
-        # ONLY explicit order rules become edges. A dependency says "this mod
-        # needs that mod present", which is not the same claim as "install it
-        # later": BWS-NG records both `EET: EET_end` and `EET_end: EET`, and
-        # reading either as an ordering constraint invents a cycle and pushes
-        # the EET core to the end of the install. Dependencies are checked by
-        # rules.check(), where they belong.
-        if rule.kind != "order":
-            continue
-        if rule.optional and not include_optional:
-            continue
-        direction = rule.direction
-        if direction not in ("before", "after"):
-            continue
-
+    for rule in rules:
         for members in by_log.values():
-            left = members.get(rule.left.mod)
-            if left is None:
+            lefts = holders(members, rule.left)
+            if not lefts:
                 continue
             for spec in rule.right:
-                right = members.get(spec.mod)
-                if right is None or right.key == left.key:
-                    continue
-                if direction == "before":
-                    first, second = left.key, right.key
-                else:
-                    first, second = right.key, left.key
-                if second not in edges:
-                    edges[second] = set()
-                if first not in edges[second]:
-                    edges[second].add(first)
-                    count += 1
+                for left in lefts:
+                    for right in holders(members, spec):
+                        if right is left:
+                            continue
+                        first, second = ((left, right) if rule.direction == "before"
+                                         else (right, left))
+                        bucket = edges.setdefault(second.node, set())
+                        if first.node not in bucket:
+                            bucket.add(first.node)
+                            count += 1
     return edges, count
 
 
@@ -374,7 +472,7 @@ def _priorities(units: List[Unit]) -> Dict[str, Tuple[int, int, int]]:
             inherited[unit.target_log] = base
         else:
             base = inherited.get(unit.target_log, (-1, -1))
-        priorities[unit.key] = (base[0], base[1], unit.seq)
+        priorities[unit.node] = (base[0], base[1], unit.seq)
     return priorities
 
 
@@ -392,7 +490,7 @@ def _toposort(units: List[Unit], edges: Dict[str, Set[str]],
     is reported, so the operator always gets a complete plan plus the exact list
     of rules that contradict each other.
     """
-    members = {u.key: u for u in units}
+    members = {u.node: u for u in units}
     pending = {k: {d for d in edges.get(k, ()) if d in members} for k in members}
     dependents: Dict[str, Set[str]] = {k: set() for k in members}
     for key, deps in pending.items():
@@ -408,7 +506,9 @@ def _toposort(units: List[Unit], edges: Dict[str, Set[str]],
     while left:
         if not ready:
             stuck = sorted(left, key=lambda k: priorities[k])
-            cycles.append(stuck if len(stuck) <= 12 else stuck[:12] + ["..."])
+            names = [members[k].display if members[k].split else members[k].key
+                     for k in stuck]
+            cycles.append(names if len(names) <= 12 else names[:12] + ["..."])
             forced = stuck[0]
             pending[forced] = set()
             heapq.heappush(ready, (priorities[forced], forced))
@@ -492,7 +592,9 @@ def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
         if reassign_phase:
             unit.target_log = wanted
 
-    edges, plan.edges = _edges(units, ruleset, include_optional)
+    rules = _order_rules(ruleset, include_optional)
+    units = _split(units, rules, index)
+    edges, plan.edges = _edges(units, rules)
     priorities = _priorities(units)
 
     for role in (PRE_EET_LOG, EET_LOG):
@@ -502,10 +604,11 @@ def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
         ordered, cycles = _toposort(subset, edges, priorities)
         plan.logs[role] = ordered
         plan.cycles.extend(cycles)
-        names = {u.key: u.display for u in ordered}
-        for key, old, new in _minimum_moves([u.key for u in subset],
-                                            [u.key for u in ordered]):
-            plan.moved.append(Move(key, names[key], str(old), str(new), role))
+        by_node = {u.node: u for u in ordered}
+        for node, old, new in _minimum_moves([u.node for u in subset],
+                                             [u.node for u in ordered]):
+            unit = by_node[node]
+            plan.moved.append(Move(unit.key, unit.display, str(old), str(new), role))
 
     plan.reverify(ruleset, context)
     return plan
@@ -520,7 +623,7 @@ def _as_install(units: List[Unit], label: str) -> Install:
             folder = normalize_key(path.replace("\\", "/").split("/")[0])
             label = comment.rsplit(" : ", 1)[0].strip() if comment else ""
             for key in dict.fromkeys((folder, unit.key)):
-                install.display.setdefault(key, unit.display)
+                install.display.setdefault(key, unit.mod_display)
                 install.components.setdefault(key, set()).add(component)
                 install.positions.setdefault(key, {}).setdefault(component, line)
                 if label:
@@ -553,8 +656,11 @@ def render_plan_summary(plan: OrderPlan, directory: str, stream) -> None:
     print(file=stream)
     print("INSTALL ORDER PLAN", file=stream)
     for role, units in plan.logs.items():
-        print(f"  {role:<16} {len(units):>4} mods, "
-              f"{sum(len(u.lines) for u in units):>4} components", file=stream)
+        mods = len({u.key for u in units})
+        split = len({u.key for u in units if u.split})
+        print(f"  {role:<16} {mods:>4} mods, "
+              f"{sum(len(u.lines) for u in units):>4} components"
+              + (f", {split} split across the order" if split else ""), file=stream)
     print(f"  written to       {os.path.abspath(directory)}", file=stream)
     print("  a plan for a FRESH install (mod_installer / Project Infinity);",
           file=stream)

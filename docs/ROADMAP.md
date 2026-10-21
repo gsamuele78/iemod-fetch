@@ -21,7 +21,7 @@ the suite on Python 3.9 and 3.14 via `uv`:
 
 | | Before | After |
 |---|---|---|
-| Tests | 586, **1 failing** | 670, all passing (1 Windows-only) |
+| Tests | 586, **1 failing** | 713, all passing (1 Windows-only) |
 | Branch coverage | 88% | 90% |
 | ruff | **5 errors** (ISC004, new rule) | clean |
 | mypy | **config refused** by mypy 2.x (`python_version = 3.9`) | clean |
@@ -77,7 +77,24 @@ and two features that close the path from logs to a running game:
   WeiDU, EET in one run (ADR-0022). Checked by executing the generated script
   with the real mod_installer 16.0.0 binary and a recording stand-in WeiDU.
 
-### 2.2 Next — fixes (defects known, not yet fixed)
+### 2.1b Done on 2026-10-21 — component level and languages
+
+- Component-level order (ADR-0023, closes 2026-09 item C), WeiDU SUBCOMPONENT
+  clashes, tie handling in resolution (ADR-0021 amendment), preferred language
+  with fallback (ADR-0024).
+- The order checker's 34 false positives on the real install, found by
+  measuring before and after against the real BWS-NG and krion64 data.
+
+**Community comparison** — what each tool does, and whether iemod-fetch adopts it:
+
+| Capability | BWS-NG | krion64 | Infinity Orchestrator | mod_installer | iemod-fetch |
+|---|---|---|---|---|---|
+| Split a mod across the order | hand-curated per-game list of `mod:comp` (stratagems in 4 runs) | per-component `co[].cat` | by hand (drag blocks) | installs the log as given | **automatic**, from krion `co[].cat` + component rules; adopted krion's data, re-verified |
+| Conflict handling | blocks; the user unselects | advisory (hard/partial/soft) | flags | none | report always; opt-in auto-resolve only where a rule pins the side; ties/whole-mod to the user — **more automatic than any of them, by design narrower** |
+| Mutually exclusive options | `MUC` component type | — | — | — | detected from the log's `Group -> Option`, keep the last |
+| Language | ordered list, first match; tp2 LANGUAGE + alias map | one language, then English | one locale, then English; probes `--list-languages` | passes the log's `#lang` | **BWS-NG's model adopted**: ordered list, tp2 LANGUAGE, alias map (minus its dutch→German bug) |
+
+
 
 | ID | Defect | Done when |
 |---|---|---|

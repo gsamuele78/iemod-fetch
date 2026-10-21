@@ -117,7 +117,8 @@ def test_two_findings_on_one_side_do_not_remove_twice(tmp_path, index):
     ({"rule": "stratagems(4115):cdtweaks(1150)", "severity": "warning"}, "warning"),
     ({"rule": "stratagems(4115):cdtweaks(1150)", "severity": "error",
       "evidenceLevel": "speculative"}, "speculative"),
-    ({"rule": "cdtweaks(1150):cdtweaks(2100)", "severity": "error"}, "same mod"),
+    ({"rule": "cdtweaks(1150):cdtweaks(2100)", "severity": "error"}, "equal"),
+    ({"rule": "stratagems(4115):cdtweaks(2100)", "severity": "error"}, "equal"),
 ])
 def test_what_the_rules_do_not_decide_is_left_to_the_operator(tmp_path, index,
                                                               entry, why):
@@ -132,6 +133,46 @@ def test_what_the_rules_do_not_decide_is_left_to_the_operator(tmp_path, index,
     if entry["severity"] == "error":
         assert len(result.left_for_operator) == 1
         assert why in result.left_for_operator[0].why
+
+
+def test_a_same_mod_conflict_drops_the_smaller_group(tmp_path, index):
+    """cdtweaks #1150+#1151 vs cdtweaks #2100: the pinned group of one goes."""
+    rules = ruleset(tmp_path, [{"rule": "cdtweaks(1150,1151):cdtweaks(2100)",
+                                "severity": "error"}])
+    plan, report = planned(tmp_path, index, rules, SCS_VS_TWEAKS)
+    result = resolve_conflicts(plan, report, rules)
+    assert [(r.mod, r.components) for r in result.removed] == [("cdtweaks", (2100,))]
+    assert ("cdtweaks", 1150) in components(plan)
+
+
+# WeiDU logs a SUBCOMPONENT choice as "Group -> Option". Two options of one
+# group are mutually exclusive by the mod's own design: installing the second
+# makes WeiDU uninstall the first. The plan keeps the one WeiDU would end with.
+SUBCOMPONENTS = [
+    r"~cdtweaks\setup-cdtweaks.tp2~ #0 #100 // Stack sizes -> 40",
+    r"~cdtweaks\setup-cdtweaks.tp2~ #0 #2100 // Thieving in heavy armour",
+    r"~cdtweaks\setup-cdtweaks.tp2~ #0 #101 // Stack sizes -> 80",
+]
+
+
+def test_two_options_of_one_subcomponent_group_are_a_conflict(tmp_path, index):
+    plan, report = planned(tmp_path, index, RuleSet(), SUBCOMPONENTS)
+    found = [f for f in report.findings if f.origin == "WeiDU SUBCOMPONENT"]
+    assert len(found) == 1
+    assert found[0].left.numbers == (100,) and found[0].right.numbers == (101,)
+
+
+def test_the_last_option_of_a_subcomponent_group_is_kept(tmp_path, index):
+    plan, report = planned(tmp_path, index, RuleSet(), SUBCOMPONENTS)
+    result = resolve_conflicts(plan, report, RuleSet())
+    assert [(r.mod, r.components) for r in result.removed] == [("cdtweaks", (100,))]
+    assert ("cdtweaks", 101) in components(plan) and ("cdtweaks", 2100) in components(plan)
+
+
+def test_one_option_per_group_is_not_a_conflict(tmp_path, index):
+    lines = [SUBCOMPONENTS[0], SUBCOMPONENTS[1]]
+    _plan, report = planned(tmp_path, index, RuleSet(), lines)
+    assert not [f for f in report.findings if f.origin == "WeiDU SUBCOMPONENT"]
 
 
 def test_a_missing_dependency_is_never_resolved_by_removal(tmp_path, index):

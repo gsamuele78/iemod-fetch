@@ -37,7 +37,9 @@ Standard library only at runtime. One file, no dependencies.
 | **Fetch** | resolves each mod from its catalogue entry, GitHub release or trusted owner; refuses an HTML page served as an archive | *(default)* |
 | **Verify** | magic bytes, size and ratio limits, path-traversal checks, the mod's own `.tp2`, pinned `sha256` | *(always)* |
 | **Order** | sorts every component against the BWS-NG and krion64 rule data, then re-checks the result | `--plan-order DIR` |
-| **Resolve** | removes the components an error-graded incompatibility rule pins; lists the rest for you | `--resolve-conflicts` |
+| **Order** at component level | splits a mod across the install where krion64 or a component rule places its parts apart | *(with `--plan-order`)* |
+| **Resolve** | removes the components an error-graded incompatibility rule pins, and the earlier of two options of one WeiDU subcomponent group; lists the rest for you | `--resolve-conflicts` |
+| **Language** | each mod in the first of your languages it offers, read from its own tp2 | `--language-preference it_IT,en_US` |
 | **Install** | `install-eet.sh` / `.cmd`: hands both logs to [mod_installer](https://github.com/dark0dave/mod_installer) + WeiDU, BGEE first, then EET | `--emit-installer` |
 
 ## Contents
@@ -67,7 +69,8 @@ python3 -m iemod_fetch --check-only -m mod_downloads.json \
     -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE -t ./Mods \
     --rules BigWorldSetup-Next-Generation/data/rules \
     --rules krion64.github.io/data/mods --order-catalogue krion64.github.io \
-    --plan-order ./plan --resolve-conflicts --emit-installer
+    --plan-order ./plan --resolve-conflicts --emit-installer \
+    --language-preference it_IT,en_US          # optional: Italian, else English
 
 # 3. install onto CLEAN copies of both games (needs WeiDU + mod_installer)
 BGEE_DIR=~/games/BGEE BG2EE_DIR=~/games/EET sh ./plan/install-eet.sh
@@ -330,7 +333,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           670 offline tests: characterization, example, property-based, loopback, script execution
+tests/           713 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -341,7 +344,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 669 passed + 1 Windows-only, no network, ~14s
+python3 -m pytest -q      # 712 passed + 1 Windows-only, no network, ~14s
 ```
 
 ## Planning the install order
@@ -378,7 +381,8 @@ observations withheld by default.
 
 See ADR-0016 for why both databases are used, ADR-0017 for what the plan does and
 does not promise, ADR-0018 for how conflicts are narrowed to components,
-ADR-0021 for what is resolved automatically and ADR-0022 for the installer.
+ADR-0021 for what is resolved automatically, ADR-0022 for the installer,
+ADR-0023 for component-level order and ADR-0024 for languages.
 
 ## Development
 
@@ -394,9 +398,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 670, offline, ~14 s |
+| Tests | 713, offline, ~14 s |
 | Branch coverage | 90% (floor 85%) |
-| mypy | clean, 29 modules |
+| mypy | clean, 30 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 4, all kept |

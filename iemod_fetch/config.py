@@ -32,7 +32,7 @@ BOOL_KEYS = ("dry_run", "force", "refresh", "quiet", "allow_manual", "check_only
 INT_KEYS = ("workers", "timeout", "retries", "discovery_attempts")
 SIZE_KEYS = ("max_bytes",)
 STR_KEYS = ("manifest", "target", "aliases", "json_report", "emit_pinned_manifest",
-            "mod_db", "suppress", "game_language",
+            "mod_db", "suppress", "game_language", "language_preference",
             "token_file", "oauth_client_id", "trusted_owners", "owner_cache")
 
 KNOWN_KEYS = frozenset(LIST_KEYS + BOOL_KEYS + INT_KEYS + SIZE_KEYS + STR_KEYS)

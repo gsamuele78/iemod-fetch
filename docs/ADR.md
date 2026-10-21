@@ -957,3 +957,86 @@ does not reach this MIT repository.
   That needs the games, which no CI runner has.
 - mod_installer marks its EET mode BETA. That is its maturity, inherited
   honestly, and the guide says so.
+
+**Amendment (2026-10-21) — ties, same-mod conflicts, WeiDU subcomponents.**
+A tie (both sides pin the same number of components) is no longer resolved by
+taking the left side: that was a guess, and it is now left to the operator. A
+same-mod conflict with an unequal split is resolved like a cross-mod one (the
+group with fewer components goes). Two options of one WeiDU SUBCOMPONENT group
+(`// Group -> Option` in the log) are detected without any rule set and resolved
+by keeping the last one — what WeiDU itself ends with, since installing the
+second uninstalls the first. On the real install: 3 resolved, 1 tie left.
+
+---
+
+## ADR-0023 — Component-level install order
+
+**Status**: accepted (closes ROADMAP 2026-09 item C)
+**Date**: 2026-10-21
+
+### Context
+
+A mod is not one thing. krion64 files stratagems #1500 under SPELL MODS and
+#4100 under POST EET (`co[].cat`); BWS-NG's curated EET order splits stratagems
+into four separate runs; rules name components
+(`stratagems(5900):cdtweaks`). The planner sorted whole mods, so none of that
+could be honoured. And the checker judged "A before B" on the *first* component
+of each — and numbered components by the parser's per-mod grouping rather than
+by log line, so a mod's components always looked adjacent.
+
+### Decision
+
+- **The checker** judges every named component: "A before B" means the last of
+  A's named components precedes the first of B's, by real log line.
+- **The planner** splits a mod into contiguous parts where the catalogue
+  (`co[].cat`) or a component-naming order rule distinguishes its components.
+  A mod nothing distinguishes stays one unit, exactly as before. Parts share the
+  mod's catalogue position and are tie-broken by log line, so they keep their
+  original order unless a rule says otherwise. A rule between two components of
+  the same mod is honoured when they fall in different parts.
+- Like krion64's own export, a moved component takes its new category and the
+  MOD's `ord`; the component `ord` field, which krion64 does not read, is not
+  read here either.
+
+### Consequences
+
+- On the real install the old checker's 46 order findings included **34 false
+  positives** ("X should be installed before EET_end", with EET_end logged
+  last); the fixed checker reports 14, two of them new and real. The plan
+  splits 6 mods and verifies against 158 constraints.
+- The plan still contains exactly the input lines (tested).
+- mod_installer installs whatever order the log gives, batching consecutive
+  components of one mod, so a split plan needs nothing new downstream.
+
+---
+
+## ADR-0024 — Preferred installation language, with fallback
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+A log line's `#lang` is an index into that mod's own LANGUAGE declarations:
+1 is Italian in one mod and French in the next. mod_installer passes it
+through unchanged. The community tools differ: krion64 uses one language then
+English; BIO one locale then English, probing `--list-languages`; BWS-NG keeps
+an ordered preference list, takes the first a mod offers, and reads the tp2's
+LANGUAGE declarations through an alias table.
+
+### Decision
+
+BWS-NG's model. `--language-preference it_IT,en_US` (names work too) rewrites
+each planned line's `#lang` to the first preferred language the staged mod's tp2
+declares, matched on the declaration's language directory and then the first
+word of its display name, through an alias table — without BWS-NG's
+"dutch → German" slip. The index is the declaration's position, duplicates
+included. The game language passed to mod_installer defaults to the first
+preference.
+
+### Consequences
+
+- A mod offering none of the preferences keeps its logged index and is listed
+  with what it does offer; a mod not staged yet is listed too. Nothing guessed.
+- It needs the mods fetched first (it reads their tp2), so it belongs to the
+  planning step after the fetch, as the guide's chapter 10 orders it.
