@@ -21,13 +21,15 @@ failing with a bare 403.
 
 prints `release=`, `tag=`, `sha=` and `workflows_differ=` lines for
 $GITHUB_OUTPUT; with no VERSION the newest released section of CHANGELOG.md is
-used. An explicit VERSION whose tag exists releases that tag on its commit (a
+used, then each version in $BACKFILL (comma-separated) still untagged. An
+explicit VERSION whose tag exists releases that tag on its commit (a
 tag pushed by hand runs the tagged commit's own, possibly older, workflow).
 """
+import os
 import re
 import subprocess
 import sys
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 VERSION_FILE = "iemod_fetch/__init__.py"
 SHIPPED = ("iemod_fetch", "pyproject.toml", "build.py", "README.md", "LICENSE")
@@ -88,6 +90,16 @@ def plan(repo: str, version: str, explicit: bool = False) -> Dict[str, str]:
             "workflows_differ": "true" if differ else "false"}
 
 
+def automatic(repo: str, newest: str, backfill: List[str]) -> Dict[str, str]:
+    """The newest changelog version; once tagged, the first untagged back-fill."""
+    planned = plan(repo, newest)
+    for version in backfill:
+        if planned["release"] == "true":
+            break
+        planned = plan(repo, version)
+    return planned
+
+
 def main(argv) -> int:
     explicit = len(argv) > 1
     if explicit:
@@ -99,9 +111,14 @@ def main(argv) -> int:
             print("release=false")
             return 0
         version = found
-    if not _SEMVER.match(version):
-        raise SystemExit(f"not a version: {version!r}")
-    for key, value in plan(".", version, explicit).items():
+    backfill = [v.strip().lstrip("v") for v in os.environ.get("BACKFILL", "").split(",")
+                if v.strip()]
+    for candidate in [version, *backfill]:
+        if not _SEMVER.match(candidate):
+            raise SystemExit(f"not a version: {candidate!r}")
+    planned = (plan(".", version, explicit) if explicit
+               else automatic(".", version, backfill))
+    for key, value in planned.items():
         print(f"{key}={value}")
     return 0
 

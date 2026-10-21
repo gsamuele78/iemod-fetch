@@ -38,7 +38,7 @@ jobs:
     name: What to release, and which commit
     runs-on: ubuntu-latest
     outputs:
-      release: ${{ steps.plan.outputs.release }}
+      release: ${{ steps.plan.outputs.release == 'true' && steps.gate.outputs.go == 'true' && 'true' || 'false' }}
       tag: ${{ steps.plan.outputs.tag }}
       sha: ${{ steps.plan.outputs.sha }}
       latest: ${{ steps.plan.outputs.latest }}
@@ -54,6 +54,9 @@ jobs:
           VERSION: ${{ inputs.version }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          # Released by the automatic run once the newest version is tagged,
+          # one per run, if still untagged (ADR-0027).
+          BACKFILL: "2.1.0"
         run: |
           if [ "$REF_TYPE" = "tag" ]; then
             # A tag pushed by hand: release exactly what it points at.
@@ -68,17 +71,45 @@ jobs:
       # GITHUB_TOKEN cannot create a tag on a commit whose workflow files differ
       # from main's (it can never hold the `workflows` permission): GitHub
       # answers 403 at the very last step. Say so now, with the two ways out.
+      # An automatic back-fill waits for the token quietly; one asked for by
+      # hand fails, so the person who asked sees why.
       - name: The tag can be created with the token this run has
+        id: gate
         env:
           DIFFER: ${{ steps.plan.outputs.workflows_differ }}
           HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
           TAG: ${{ steps.plan.outputs.tag }}
           SHA: ${{ steps.plan.outputs.sha }}
+          EVENT: ${{ github.event_name }}
         run: |
+          go=true
           if [ "$DIFFER" = "true" ] && [ "$HAS_TOKEN" != "true" ]; then
-            echo "::error::$TAG is on $SHA, whose workflow files differ from main's; GITHUB_TOKEN may not create that tag. Push it by hand (git tag $TAG $SHA && git push origin $TAG) and run this workflow again with this version, or add a RELEASE_TOKEN secret with contents and workflows write. See docs/RELEASING.md."
-            exit 1
+            why="$TAG is on $SHA, whose workflow files differ from main's; GITHUB_TOKEN may not create that tag. Add a RELEASE_TOKEN secret (contents and workflows write), or push the tag by hand (git tag $TAG $SHA && git push origin $TAG) and run this workflow with this version. See docs/RELEASING.md."
+            if [ "$EVENT" = "workflow_dispatch" ]; then echo "::error::$why"; exit 1; fi
+            echo "::notice::not released yet - $why"
+            go=false
           fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+
+  # Published notes follow CHANGELOG.md: a corrected section reaches its
+  # release on the next push. Editing a release creates no ref, so the run's
+  # own token may do it.
+  notes:
+    name: Release notes in step with CHANGELOG.md
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12" }
+      - name: Sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python tools/release_notes.py sync
 
   verify:
     name: Re-run the full gate
@@ -187,15 +218,7 @@ jobs:
           DIGEST: ${{ needs.build.outputs.digest }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          python - <<'PY' > NOTES.md
-          import os, pathlib, re
-          tag = os.environ["TAG"].lstrip("v")
-          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
-          match = re.search(rf"^## \[{re.escape(tag)}\].*?$(.*?)(?=^## \[|\Z)",
-                            text, re.S | re.M)
-          print(match.group(1).strip() if match
-                else f"See CHANGELOG.md for {tag}.")
-          PY
+          python tools/release_notes.py notes "$TAG" > NOTES.md
           {
             echo
             echo '### Verify this download'

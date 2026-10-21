@@ -82,10 +82,17 @@ Release → Run workflow* with `version` = `2.1.0`. Either way it is not marked
 
 **A tag pushed by hand** still works: that exact commit is released.
 
-**Correcting published notes**: fix the section in CHANGELOG.md, merge, then
-*Run workflow* with that `version`. The notes are read from the current
-changelog. The artifacts are rebuilt from the release commit, so they are
-unchanged.
+**Correcting published notes**: fix the section in CHANGELOG.md and merge.
+On every push to `main` the workflow's `notes` job compares each released
+section with its release and rewrites a body that no longer matches. It keeps
+the release's "Verify this download" block, because that digest belongs to the
+artifacts. Editing a release creates no tag, so no extra token is needed.
+
+**Back-fills listed in the workflow** (`BACKFILL`, now `2.1.0`) are released
+by the automatic run once the newest version is tagged, one per run. Each one
+needs the `RELEASE_TOKEN` secret described above; until it exists the run
+skips it with a notice, not a failure, and the next merge to `main` releases
+it once the secret is there.
 
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.
