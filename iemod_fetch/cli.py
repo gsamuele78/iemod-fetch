@@ -38,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="selection.json (schema 1): the mods, components and "
                           "languages chosen, without a WeiDU.log - what a UI saves. "
                           "Used instead of --weidu-log, never with it")
+    src.add_argument("--bio-code", metavar="PATH",
+                     help="a file holding a BIO-MODLIST-V1 share code (Born2BSalty's "
+                          "Infinity Orchestrator): its WeiDU logs are what is wanted, "
+                          "instead of -w or --selection")
     src.add_argument("--aliases", metavar="PATH",
                      help="JSON map {weidu_folder: manifest_tp2} for entries whose "
                           "names differ between the log and the catalogue")
@@ -104,6 +108,10 @@ def build_parser() -> argparse.ArgumentParser:
                           "named as WeiDU names them (tp2 + .tra, in the first "
                           "--language-preference the mod offers), as JSON (schema 1; "
                           "'-' for stdout), then stop. Runs no WeiDU")
+    out.add_argument("--emit-bio-code", metavar="PATH",
+                     help="write what is wanted (-w, --selection or --bio-code) as a "
+                          "BIO-MODLIST-V1 share code ('-' for stdout); an imported "
+                          "code keeps its name, sources and configs")
     out.add_argument("--emit-selection", metavar="PATH",
                      help="write the --weidu-log input as a selection.json; with "
                           "--check-only nothing else is fetched")

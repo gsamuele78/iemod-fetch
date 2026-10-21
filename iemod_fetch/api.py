@@ -48,6 +48,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
+from . import bio
 from .decisions import parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
                          resolve_conflicts, resolve_refusals)
@@ -63,7 +64,8 @@ from .weidu import ParsedLog, parse_weidu_files, split_log_spec
 from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
-           "selection_of_logs", "update_data", "data_status", "describe_mods"]
+           "selection_of_logs", "update_data", "data_status", "describe_mods",
+           "load_bio_code", "bio_code_of"]
 
 
 @dataclass
@@ -77,6 +79,7 @@ class Settings:
     manifest: str = "mod_downloads.json"
     weidu_log: List[str] = field(default_factory=list)     # "PATH" or "PATH:GAME"
     selection: Optional[str] = None
+    bio_code: Optional[str] = None         # a file holding a BIO-MODLIST-V1 code
     aliases: Optional[str] = None
     catalogue: List[str] = field(default_factory=list)
     rules: List[str] = field(default_factory=list)
@@ -95,6 +98,7 @@ class Settings:
     list_mods: Optional[str] = None
     describe_mods: Optional[str] = None
     emit_selection: Optional[str] = None
+    emit_bio_code: Optional[str] = None
     plan_order: Optional[str] = None
     resolve_conflicts: bool = False
     decisions: Optional[str] = None        # decisions.json: the player's answers
@@ -192,7 +196,8 @@ def run(settings: Settings, stream=None, config=None, on_event=None,
         return Outcome(1 if all(r.status == "failed" for r in results) else 0)
     _use_data(settings, stream, on_event)
     with tempfile.TemporaryDirectory(prefix="iemod-selection-") as workdir:
-        _use_selection(settings, workdir)
+        imported = _use_selection(settings, workdir)
+        _emit_bio_code(settings, imported, stream)
         return _run(settings, stream, config, on_event, cancel)
 
 
@@ -423,25 +428,64 @@ def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> Li
 
 
 # --------------------------------------------------------------- internals
-def _use_selection(settings, workdir: str) -> None:
+def load_bio_code(path: str) -> bio.BioModlist:
+    """A BIO share code from a file (the code alone, as BIO copies it)."""
+    with open(path, encoding="utf-8") as fh:
+        return bio.decode_share_code(fh.read(bio.MAX_CODE_CHARS + 1))
+
+
+def bio_code_of(selection: Selection, base: Optional[bio.BioModlist] = None) -> str:
+    """The BIO-MODLIST-V1 code for `selection`, keeping `base`'s other fields."""
+    return bio.encode_share_code(bio.modlist_from_selection(selection, base, __version__))
+
+
+def _use_selection(settings, workdir: str) -> Optional[bio.BioModlist]:
     """
-    Turn --selection into the WeiDU.log inputs every planner already reads.
+    Turn --selection or --bio-code into the WeiDU.log inputs every planner
+    already reads.
 
     A selection says what a log says (ADR-0030), so it is written out as one log
     per install and passed on as `-w PATH:GAME`. The logs live only for the run.
+    Returns the imported BIO payload, so an export can keep its other fields.
     """
-    if not settings.selection:
-        return
-    if settings.weidu_log:
-        raise ConfigError("--selection and --weidu-log both define what is wanted: "
-                          "give one of them")
-    with open(settings.selection, encoding="utf-8") as fh:
-        selection = parse_selection(fh.read(), source=settings.selection)
+    given = [flag for flag, value in (("--selection", settings.selection),
+                                      ("--bio-code", settings.bio_code),
+                                      ("--weidu-log", settings.weidu_log)) if value]
+    if len(given) > 1:
+        raise ConfigError(f"{' and '.join(given)} each define what is wanted: "
+                          f"give one of them")
+    imported = None
+    if settings.bio_code:
+        imported = load_bio_code(settings.bio_code)
+        selection = imported.to_selection()
+    elif settings.selection:
+        with open(settings.selection, encoding="utf-8") as fh:
+            selection = parse_selection(fh.read(), source=settings.selection)
+    else:
+        return None
     for log in selection.weidu_logs():
         path = os.path.join(workdir, log.name)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(log.text)
         settings.weidu_log.append(f"{path}:{log.game}")
+    return imported
+
+
+def _emit_bio_code(settings, imported, stream) -> None:
+    """Write the run's input as a BIO share code (--emit-bio-code)."""
+    if not settings.emit_bio_code:
+        return
+    if not settings.weidu_log:
+        raise ConfigError("--emit-bio-code converts what is wanted: give --weidu-log, "
+                          "--selection or --bio-code")
+    code = bio_code_of(selection_of_logs(settings.weidu_log), imported)
+    if settings.emit_bio_code == "-":
+        stream.write(code + "\n")
+        return
+    with open(settings.emit_bio_code, "w", encoding="utf-8") as fh:
+        fh.write(code + "\n")
+    if not settings.quiet:
+        print(f"  bio code    : wrote {settings.emit_bio_code}", file=stream)
 
 
 def _list_mods(settings, stream) -> int:

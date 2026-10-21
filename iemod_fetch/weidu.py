@@ -106,10 +106,12 @@ def log_version(comment: str) -> Optional[str]:
     `Artisan's Kitpack: Adjust kit THAC0 ...` end the same way a version does.
     What follows the last ': ' is a version only if it looks like one: it has a
     digit, is not a `Group -> Name`, not an unresolved `@N`, and is at most four
-    words (`Beta 2 - Working Master`). Measured on 1,533 component lines of 103
+    words (`Beta 2 - Working Master`). A trailing `// @wlb-inputs: ...` (BIO's
+    recorded prompt answers) is not part of the name. Measured on 1,533 component lines of 103
     mods against their tp2 VERSION: no wrong version, none missed
     (docs/TESTING.md).
     """
+    comment = comment.split(" // @", 1)[0]     # BIO's `// @wlb-inputs: ...` tag
     if ": " not in comment:
         return None
     suffix = comment.rsplit(": ", 1)[1].strip()

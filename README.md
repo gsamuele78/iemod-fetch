@@ -34,6 +34,7 @@ Standard library only at runtime. One file, no dependencies.
 
 | Step | What happens | Flag |
 |---|---|---|
+| **Share** | reads and writes BIO share codes (`BIO-MODLIST-V1:`), keeping every field BIO put in them | `--bio-code` `--emit-bio-code` |
 | **Choose** | every mod lcc-docs, BWS-NG and krion64 know, with games, status, quality and the newest version any of them names; with a WeiDU.log, which installed mods have an update | `--list-mods PATH` |
 | **Name** | each staged mod's components named exactly as WeiDU names them, in your language, from its tp2 and `.tra` files | `--describe-mods PATH` |
 | **Fetch** | resolves each mod from its catalogue entry, GitHub release or trusted owner; refuses an HTML page served as an archive | *(default)* |
@@ -55,6 +56,7 @@ Standard library only at runtime. One file, no dependencies.
 - [Making it reproducible](#making-it-reproducible)
 - [Supplementary catalogues](#supplementary-catalogues)
 - [Community data, kept current](#community-data-kept-current)
+- [Sharing a list with BIO](#sharing-a-list-with-bio)
 - [Choosing mods: names and updates](#choosing-mods-names-and-updates)
 - [Planning the install order](#planning-the-install-order)
 - [What it guarantees](#what-it-guarantees) · [What it deliberately does not do](#what-it-deliberately-does-not-do)
@@ -337,7 +339,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           ~950 offline tests: characterization, example, property-based, loopback, script execution
+tests/           ~975 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -348,7 +350,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 949 passed + 4 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 974 passed + 4 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -380,6 +382,23 @@ $ python3 iemod-fetch.pyz --update-data
 `--no-update-data` stays offline, `--no-default-data` uses only the flags,
 `--data-dir` moves the cache. The pinned WeiDU and mod_installer used by the
 test suite are watched the same way, weekly, by `upstream-versions.yml`.
+
+## Sharing a list with BIO
+
+A mod list shared from [Born2BSalty's Infinity Orchestrator](https://github.com/Born2BSalty/Born2BSaltys_Infinity_Orchestrator)
+is one line, `BIO-MODLIST-V1:...`. Save it in a file and use it in place of the
+WeiDU logs, or turn any list into one:
+
+```bash
+python3 iemod-fetch.pyz --bio-code shared.bio -m mod_downloads.json        # fetch what it lists
+python3 iemod-fetch.pyz -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE \
+    --emit-bio-code mylist.bio --check-only                                # share yours
+```
+
+Nothing is lost either way: a code BIO made decodes and re-encodes to the
+same code, and exporting an imported list keeps its name, author, download
+overrides, pinned refs and mod configs. Tested against BIO's own encoder and
+decoder (docs/TESTING.md). Only the format is implemented; no BIO code is used.
 
 ## Choosing mods: names and updates
 

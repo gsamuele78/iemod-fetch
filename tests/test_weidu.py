@@ -102,6 +102,14 @@ def test_versions_in_the_forms_mods_use():
     assert log_version("Old style : v3") == "v3"
 
 
+def test_bio_prompt_answers_after_the_version_are_not_the_version():
+    """BIO's own help: `... // EET core (resource importation): v14.0 //
+    @wlb-inputs: C:\\My Games\\BG2`."""
+    line = r"EET core (resource importation): v14.0 // @wlb-inputs: C:\My Games\BG2"
+    assert log_version(line) == "v14.0"
+    assert log_version("EET core: v14.0 // @wlb-inputs: y") == "v14.0"
+
+
 def test_a_mod_half_upgraded_has_no_single_version():
     log = parse_weidu_log("~m/setup-m.tp2~ #0 #0 // A: v1\n~m/setup-m.tp2~ #0 #1 // B: v2\n")
     assert log.mods["m"].version is None

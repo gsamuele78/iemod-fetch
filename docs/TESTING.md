@@ -189,6 +189,26 @@ python3 tools/version_benchmark.py oracle.json krion64/data BWS-NG/data/mods MOD
   The truth is imperfect: most "newer" are real releases whose author did not
   bump the tp2, so a right answer counts against the rule.
 
+### BIO share codes, checked against BIO itself
+
+`iemod_fetch/bio.py` implements the `BIO-MODLIST-V1:` format from reading
+BIO's source (33800cc); it uses none of BIO's code. Whether it really speaks
+the format is checked with BIO, built from that commit with one test added
+outside this repository that calls BIO's own `encode_share_payload_text` and
+`decode_share_payload` + `share_preview`:
+
+* `tests/data/bio/eet-mock.bio` was **encoded by BIO** from the mock EET
+  install (with a `// @wlb-inputs:` answer, BIO's extras, non-ASCII text).
+  `tests/test_bio.py` decodes it, re-encodes it to the identical code, and
+  round-trips it through a selection keeping every field.
+* Codes **written by this tool** - a fresh export and an export over the
+  imported code - were decoded and previewed by BIO, which read the same game,
+  install mode, entry counts and name.
+
+To repeat it: append `tools/bio_interop_test.rs` to BIO's
+`src/core/app/modlist_share.rs`, then
+`IEMOD_CODE_IN=ours.bio cargo test --lib iemod_interop -- --nocapture`.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
