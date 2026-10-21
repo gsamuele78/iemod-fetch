@@ -25,9 +25,9 @@ repositories and is refreshed with `git pull`.
 A release is a pull request. Nobody tags by hand (ADR-0027):
 
 ```bash
-# 1. The changelog: move Unreleased into a dated heading, `## [2.3.0] - YYYY-MM-DD`.
+# 1. The changelog: move Unreleased into a dated heading, `## [2.4.0] - YYYY-MM-DD`.
 # 2. The version, in two places that must agree:
-$EDITOR iemod_fetch/__init__.py     # __version__ = "2.3.0"
+$EDITOR iemod_fetch/__init__.py     # __version__ = "2.4.0"
 $EDITOR pyproject.toml              # [project] version
 # 3. Green locally, then open the pull request as usual.
 make check && make cover && make audit && make build

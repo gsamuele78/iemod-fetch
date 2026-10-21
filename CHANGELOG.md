@@ -8,6 +8,20 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-21
+
+The community-data release (milestone M2 of `docs/GUI-AUDIT.md`): what the
+GUI's selection screen needs to show, measured against the tools that are the
+ground truth. The data refreshes itself, guarded; components are named exactly
+as WeiDU names them (9,889 of 9,889 names, 1,499 of 1,499 LABELs); each mod
+says whether an update exists; every conflict comes with its options and
+`--decisions` applies the player's; BIO share codes and Project Infinity lists
+go in (BIO's own encoder and decoder agree), and the engine limits - kits,
+spell slots, spell states - are measured in the game folder by WeiDU's own
+rules, checked against the real WeiDU. Measured: 857 → 1,039 tests; still no
+runtime dependency. Only additions to the CLI flags and JSON reports; the text
+conflict report now prints ids and options for ORDER findings too.
+
 ### Added
 - **The community data is kept current automatically** (ADR-0032). Each run
   refreshes a cache of lcc-docs, BigWorldSetup-NG and krion64 before it starts,

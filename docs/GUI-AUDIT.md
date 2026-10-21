@@ -138,6 +138,11 @@ fetch then check in one run) and the API pull request (`iemod_fetch.api`).
 
 ### M2 — Components and choices (v2.4)
 
+*Done on 2026-10-21* in #23-#29 and released as 2.4.0. Beyond the plan: the
+engine limits of each install (ADR-0034), measured in the game folder by
+WeiDU's own rules after krion64's counts were audited and found to miss
+ADD_SPELL.
+
 | # | Item | Size |
 |---|---|---|
 | 9 | `iemod-fetch describe MOD --json`: components with names resolved through `.tra` for the chosen language, plus SUBCOMPONENT/GROUP/LABEL/DEPRECATED. The `muc`/`sub` vocabulary is taken as an idea from BWS-NG. **Done**: names (`--describe-mods`, 9,889/9,889 against WeiDU 251's `--list-components`) and SUBCOMPONENT, FORCED, GROUP, LABEL, DEPRECATED (1,499/1,499 against its `--list-components-json`) | L |

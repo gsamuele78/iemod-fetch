@@ -32,6 +32,11 @@ the evidence does not decide is reported to you, with the reason.
 
 Standard library only at runtime. One file, no dependencies.
 
+**Current release: 2.4.0** - component names as WeiDU prints them, update
+notices, conflicts with options you choose (`--decisions`), BIO share codes and
+Project Infinity lists in, and engine limits measured in your game folder. What
+changed in each release is in [`CHANGELOG.md`](CHANGELOG.md).
+
 | Step | What happens | Flag |
 |---|---|---|
 | **Share** | reads and writes BIO share codes (`BIO-MODLIST-V1:`), keeping every field BIO put in them | `--bio-code` `--emit-bio-code` |
@@ -353,7 +358,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 1,030 passed + 8 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 1,031 passed + 8 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
