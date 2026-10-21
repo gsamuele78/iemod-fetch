@@ -96,8 +96,11 @@ jobs:
           test "$tag" = "$pkg" || {
             echo "tag $tag does not match packaged version $pkg"; exit 1; }
 
+      # Not `python -m build`: with the repository as the working directory that
+      # imports this repository's own build.py (the zipapp script), not PyPA's
+      # build, and no dist/ is ever made.
       - name: sdist and wheel
-        run: python -m build
+        run: pyproject-build
 
       - name: Single-file zipapp
         run: |

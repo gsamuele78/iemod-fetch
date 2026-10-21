@@ -18,6 +18,11 @@ Python API, which is internal.
   R-studioConf's ADR-0006, adapted (ADR-0027).
 
 ### Fixed
+- **The release build ran the wrong `build`.** `python -m build` in the
+  repository root imports the repository's own `build.py` (the zipapp script)
+  instead of PyPA's build, so no wheel or sdist was made and the first automatic
+  release stopped at "cp: cannot create regular file 'dist/'". The workflow now
+  calls `pyproject-build`; the whole build step was re-run locally on 46eb8cb.
 - **The release workflow could never run.** It called `ci.yml` as a reusable
   workflow, but `ci.yml` had no `workflow_call` trigger. It also shared a
   concurrency group with main's own CI run, so either could cancel the other.
