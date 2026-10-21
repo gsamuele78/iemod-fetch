@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import time
+import urllib.parse
 
 import pytest
 
@@ -57,10 +58,17 @@ class FakeGitHub:
 
     def read_bytes(self, url, limit=None):
         self.calls.append(url)
+        # A URL is what a server sees: '#' starts a fragment and is never sent,
+        # a space is not a valid character. Serve only what a real server would.
+        sent = urllib.parse.urlsplit(url)
+        if sent.fragment or " " in url:
+            raise NetworkError(f"404 {url}")
         for repo, state in self.repos.items():
-            prefix = f"https://raw.githubusercontent.com/{repo}/{state['sha']}/"
-            if url.startswith(prefix):
-                return state["files"][url[len(prefix):]]
+            prefix = f"/{repo}/{state['sha']}/"
+            if sent.netloc == "raw.githubusercontent.com" and sent.path.startswith(prefix):
+                path = urllib.parse.unquote(sent.path[len(prefix):])
+                if path in state["files"]:
+                    return state["files"][path]
         raise NetworkError(f"404 {url}")
 
     def raw_calls(self):
@@ -260,3 +268,17 @@ def test_a_fresh_cache_does_not_even_look_for_a_credential(monkeypatch, tmp_path
     monkeypatch.setattr(api, "_http_client", lambda settings: built.append(1) or hub)
     api.update_data(api.Settings(data_dir=str(tmp_path)))
     assert built == []
+
+
+def test_file_names_with_hash_or_space_are_fetched(tmp_path, hub):
+    """
+    Found by the first refresh against the real GitHub: BWS-NG and krion64 name
+    files after mods like `A7#ImprovedArcher`, and an unencoded '#' turns the
+    rest of the URL into a fragment the server never sees - a 404.
+    """
+    hub.publish("o/krion", {"data/categories.json": b"{}",
+                            "data/mods/A7#ImprovedArcher.json": b'{"t": "x"}',
+                            "data/mods/Two Words.json": b"{}"})
+    (result,) = refresh(hub, str(tmp_path), (KRION,))
+    assert result.status == "updated", result.detail
+    assert (tmp_path / "krion64" / "data" / "mods" / "A7#ImprovedArcher.json").is_file()

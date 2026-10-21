@@ -30,6 +30,7 @@ import os
 import shutil
 import sys
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -179,8 +180,10 @@ def _sync_one(client, data_dir: str, source: Source, entry: dict, force: bool,
 
     def fetch(job):
         path, sha, target = job
-        data = client.read_bytes(f"{RAW}/{source.repo}/{commit}/{path}",
-                                 limit=MAX_FILE_BYTES)
+        # Mod files are named like `A7#ImprovedArcher.json`: unencoded, '#'
+        # would end the path and start a fragment the server never sees.
+        url = f"{RAW}/{source.repo}/{commit}/{urllib.parse.quote(path, safe='/')}"
+        data = client.read_bytes(url, limit=MAX_FILE_BYTES)
         if blob_sha(data) != sha:
             raise ModFetchError(f"{source.repo}: {path} does not match the hash "
                                 f"GitHub lists for it")
