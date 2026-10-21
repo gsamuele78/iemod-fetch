@@ -20,6 +20,7 @@ subclasses, each with a stable `code` (errors.py).
 import contextlib
 import json
 import os
+import stat
 import sys
 import tempfile
 from dataclasses import dataclass, field, fields, replace
@@ -48,7 +49,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio
+from . import bio, pi
 from .decisions import parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
                          resolve_conflicts, resolve_refusals)
@@ -80,6 +81,7 @@ class Settings:
     weidu_log: List[str] = field(default_factory=list)     # "PATH" or "PATH:GAME"
     selection: Optional[str] = None
     bio_code: Optional[str] = None         # a file holding a BIO-MODLIST-V1 code
+    pi_list: Optional[str] = None          # "PATH:GAME": a Project Infinity list
     aliases: Optional[str] = None
     catalogue: List[str] = field(default_factory=list)
     rules: List[str] = field(default_factory=list)
@@ -377,32 +379,51 @@ _WEIDU_OS = "win32" if sys.platform.startswith("win") else (
 def _text_under(root: str, relative: str) -> Optional[str]:
     """
     A mod's text file by the path its tp2 writes, as WeiDU on Windows finds it:
-    case-insensitive, separators either way. Nothing outside `root` is read.
+    case-insensitive, separators either way. Nothing outside `root` is read:
+    `..` and symbolic links are refused at every step (an extracted mod never
+    holds a link - archives.py refuses them), and the file itself is opened
+    without following one.
+    A file that cannot be read is None, like a missing one.
     """
-    path = os.path.realpath(root)
-    for part in relative.replace("\\", "/").split("/"):
-        if part in ("", "."):
-            continue
-        if part == ".." or not os.path.isdir(path):
-            return None
-        direct = os.path.join(path, part)
-        if not os.path.exists(direct):
-            matches = [e for e in os.listdir(path) if e.lower() == part.lower()]
-            if not matches:
+    try:
+        path = os.path.realpath(root)
+        for part in relative.replace("\\", "/").split("/"):
+            if part in ("", "."):
+                continue
+            if part == ".." or not os.path.isdir(path):
                 return None
-            direct = os.path.join(path, matches[0])
-        path = direct
-    real = os.path.realpath(path)
-    if not real.startswith(os.path.realpath(root) + os.sep) or not os.path.isfile(real):
+            direct = os.path.join(path, part)
+            if not os.path.lexists(direct):
+                matches = [e for e in os.listdir(path) if e.lower() == part.lower()]
+                if not matches:
+                    return None
+                direct = os.path.join(path, matches[0])
+            if os.path.islink(direct):
+                return None
+            path = direct
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as fh:
+            info = os.fstat(fh.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_TEXT_BYTES:
+                return None
+            data = fh.read(_MAX_TEXT_BYTES + 1)
+    except OSError:
         return None
-    if os.path.getsize(real) > _MAX_TEXT_BYTES:
-        return None
-    with open(real, "rb") as fh:
-        data = fh.read()
+    return _decode_text(data)
+
+
+def _decode_text(data: bytes) -> str:
+    """UTF-8 (EE mods), else Windows-1252 (pre-EE ones: 0x92 is an apostrophe,
+    not a control character), else Latin-1 for the five bytes 1252 leaves out."""
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
-        return data.decode("latin-1")     # pre-EE mods: Windows-1252 and kin
+        pass
+    try:
+        return data.decode("cp1252")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
 
 
 def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> List[dict]:
@@ -450,6 +471,7 @@ def _use_selection(settings, workdir: str) -> Optional[bio.BioModlist]:
     """
     given = [flag for flag, value in (("--selection", settings.selection),
                                       ("--bio-code", settings.bio_code),
+                                      ("--pi-list", settings.pi_list),
                                       ("--weidu-log", settings.weidu_log)) if value]
     if len(given) > 1:
         raise ConfigError(f"{' and '.join(given)} each define what is wanted: "
@@ -461,6 +483,8 @@ def _use_selection(settings, workdir: str) -> Optional[bio.BioModlist]:
     elif settings.selection:
         with open(settings.selection, encoding="utf-8") as fh:
             selection = parse_selection(fh.read(), source=settings.selection)
+    elif settings.pi_list:
+        selection = _pi_selection(settings)
     else:
         return None
     for log in selection.weidu_logs():
@@ -469,6 +493,38 @@ def _use_selection(settings, workdir: str) -> Optional[bio.BioModlist]:
             fh.write(log.text)
         settings.weidu_log.append(f"{path}:{log.game}")
     return imported
+
+
+def _pi_selection(settings) -> Selection:
+    """--pi-list PATH:GAME, resolved through the staged tp2s, then krion64's records."""
+    path, game = split_log_spec(settings.pi_list)
+    if not game:
+        raise ConfigError("--pi-list needs the game it installs: --pi-list list.txt:EET")
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        lines = pi.parse_pi_list(fh.read())
+    target = os.path.abspath(settings.target)
+    index = pi.index_from_described(describe_mods(target) if os.path.isdir(target) else [])
+    krion = os.path.join(settings.order_catalogue, "mods") if settings.order_catalogue else None
+    if krion and os.path.isdir(krion):
+        pi.add_krion(index, _json_records(krion))
+    selection, notes = pi.selection_from_pi(lines, game, index)
+    for note in notes if not settings.quiet else ():
+        print(f"[note] {note}", file=sys.stderr)
+    return selection
+
+
+def _json_records(directory: str):
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        if not name.endswith(".json") or os.path.getsize(path) > _MAX_TEXT_BYTES:
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                record = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict):
+            yield record
 
 
 def _emit_bio_code(settings, imported, stream) -> None:
@@ -892,6 +948,17 @@ def _rule_context(settings, installed, ruleset, stream):
         if meta and meta.has_order_hints:
             context.mods_with_own_ini.add(folder_key)
             ruleset.add_metadata_order(mod.folder, meta.before, meta.after)
+        forge = os.path.join(mod_dir, "mod-forge.json")
+        if os.path.isfile(forge) and os.path.getsize(forge) <= _MAX_TEXT_BYTES:
+            # The author's own conflicts and known issues (Infinity Mod Forge's
+            # format). A broken file is the author's to fix, not a reason to stop.
+            try:
+                own = RuleSet.load_file(forge)
+            except ConfigError as exc:
+                print(f"[warning] {exc}", file=sys.stderr)
+            else:
+                ruleset.rules.extend(own.rules)
+                ruleset.notes.extend(own.notes)
     return context
 
 

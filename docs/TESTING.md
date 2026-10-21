@@ -163,6 +163,21 @@ line, undesignated numbering as previous + 1, a bare-word .tra value,
 `%MOD_FOLDER%` taken from BACKUP (LCA). Each became a unit test in
 `tests/test_tra.py` or `tests/test_tp2_components.py`.
 
+The same run records `--list-components-json` for language 0, and the
+benchmark checks the rest of WeiDU's view against it: which components are
+listed at all (a DEPRECATED one is not: Might and Guile #145), and each one's
+title, subgroup, groups, labels and forced flag - 109 of 109 lists and 1,499 of
+1,499 components on every field. It also found that the JSON drops a line
+break inside a name where the text output prints a space; `name` follows the
+text, `title` and `subgroup` the JSON.
+
+The same LABELs measure krion64's: of 732 LABELs both krion64's records
+(`co[].pi`) and the tp2s name, 708 point at the same tp2 and component; 24 do
+not, some at another mod altogether (`cd_tweaks_drab_commoners`: cdtweaks
+#100 in the tp2, iwdification #20 in krion64). That is why `--pi-list` takes
+the tp2's answer whenever the mod is staged and reports every entry it took
+from krion64.
+
 Read the 100% honestly: it is the set the parser was fixed against, so it is a
 training score. A new mod can still use a form not seen here; the next run of
 the oracle on a wider set is the real test. Names built by code at install

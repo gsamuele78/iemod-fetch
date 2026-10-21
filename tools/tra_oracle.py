@@ -7,7 +7,10 @@ Ground truth for tools/tra_benchmark.py: WeiDU's own component names.
 MODS_DIR holds one directory per mod repository. For every .tp2 in it and
 every LANGUAGE it declares, this runs `WEIDU --nogame --list-components TP2 N`
 from the directory WeiDU would run in - the parent of the mod folder - and
-records what WeiDU printed. No game is needed and nothing is installed.
+records what WeiDU printed. For language 0 it also records
+`--list-components-json` (number, name, subgroup, group, label, forced), the
+source of truth for everything but the printed name. No game is needed and
+nothing is installed.
 """
 import json
 import os
@@ -35,6 +38,22 @@ def runs(mods_dir: str):
                 yield repo, game, os.path.relpath(os.path.join(dirpath, name), game)
 
 
+def _json(weidu: str, game: str, tp2: str):
+    try:
+        result = subprocess.run([weidu, "--nogame", "--list-components-json", tp2, "0"],
+                                cwd=game, capture_output=True, timeout=60, check=False)
+    except subprocess.TimeoutExpired:
+        return None
+    text = result.stdout.decode("latin-1")
+    start, end = text.find("[{"), text.rfind("}]")
+    if start < 0 or end < start:
+        return None
+    try:
+        return json.loads(text[start:end + 2])
+    except ValueError:
+        return None
+
+
 def main(argv) -> int:
     weidu, mods_dir, out_path = argv[1:4]
     out = []
@@ -54,8 +73,11 @@ def main(argv) -> int:
                 match = LINE.match(line.rstrip("\r").strip(" "))
                 if match and int(match.group("lang")) == lang:
                     components.append([int(match.group("comp")), match.group("text")])
-            out.append({"repo": repo, "game": game, "tp2": tp2, "lang": lang,
-                        "components": components})
+            entry = {"repo": repo, "game": game, "tp2": tp2, "lang": lang,
+                     "components": components}
+            if lang == 0:
+                entry["json"] = _json(weidu, game, tp2)
+            out.append(entry)
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=0)
     lines = sum(len(o["components"]) for o in out)

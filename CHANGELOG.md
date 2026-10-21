@@ -33,7 +33,10 @@ Python API, which is internal.
   for every mod staged under `--target`, its languages and its components
   named from the tp2 and its `.tra` files (`Group -> Name: VERSION`), in the
   first `--language-preference` the mod offers; `api.describe_mods` for the
-  GUI; `schemas/components-v1.schema.json`. Runs no WeiDU. Measured against
+  GUI; `schemas/components-v1.schema.json`. Runs no WeiDU. Each component
+  also carries what WeiDU's `--list-components-json` gives - its `subgroup`
+  (SUBCOMPONENT), `groups`, `labels`, `forced` - and `deprecated`, for the
+  components WeiDU no longer lists: 1,499 of 1,499 identical on 109 tp2s. Measured against
   WeiDU 251's own `--list-components` on 103 real mods: 9,889 of 9,889 names
   identical (`tools/tra_oracle.py`, `tools/tra_benchmark.py`,
   docs/TESTING.md). Paths in the tp2 are matched case-insensitively and never
@@ -70,6 +73,15 @@ Python API, which is internal.
   both ways against BIO's own encoder and decoder. `api.load_bio_code`,
   `api.bio_code_of`. The format only; no BIO code is used.
 
+- **Project Infinity lists in.** `--pi-list PATH:GAME` reads a PI or
+  Infinity Mod Forge list (`LABEL;description`, or `folder:number;...`) as
+  what is wanted. LABELs come from the staged tp2s, else from krion64's
+  records - which agree with the tp2s for 708 of 732 LABELs, so each entry
+  resolved that way is reported; an unresolved entry stops the run, never
+  matched by its description.
+- **An author's `mod-forge.json`** in a staged mod adds its conflicts,
+  dependencies and known issues to the check.
+
 ### Fixed
 - **The version a WeiDU.log records is read.** WeiDU 251 writes
   `Name: VERSION` - one colon, despite its header's `[ : Version]` - and the
@@ -85,6 +97,16 @@ Python API, which is internal.
   `pre-v6.0` sits between 5.0 and 6.0.
 - **A mod database's name** in `--list-mods` is the project, not its folder:
   `BigWorldSetup-Next-Generation`, not `mods`.
+- **A component named `%like this%`** was not seen at all, and every
+  component after it was numbered one too low. WeiDU reads `%...%` as a plain
+  string (`BEGIN %Literal Name%` lists as "Literal Name"; checked with WeiDU
+  251); so does the parser now.
+- `--describe-mods`: a pre-EE `.tra` in Windows-1252 keeps its punctuation
+  (`Imoen’s`, not a control character); a file that cannot be read leaves its
+  names unresolved instead of stopping the run; symbolic links are not
+  followed.
+- The text conflict report shows the id and option of an outstanding order
+  finding too, so it can be written into `decisions.json`.
 - **Component numbers without DESIGNATED** are the previous number + 1, as
   WeiDU numbers them, not their position. A tp2 that designates some
   components and not others (EEUITweaks) had its

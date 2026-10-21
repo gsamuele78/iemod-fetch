@@ -241,8 +241,13 @@ Once mods are staged, `--describe-mods components.json` lists every tp2 under
 them in `--list-components` and WeiDU.log (`Group -> Name: VERSION`), in the
 first `--language-preference` the mod offers. It reads the tp2 and its `.tra`
 files and runs no WeiDU. A name WeiDU itself could not resolve is printed as
-WeiDU prints it (`UNDEFINED STRING:   @N`) and marked `"resolved": false`. The
-format is `schemas/components-v1.schema.json`.
+WeiDU prints it (`UNDEFINED STRING:   @N`) and marked `"resolved": false`.
+Each component also says what a selection screen needs to group and constrain
+it, with WeiDU's own names: `subgroup` (its SUBCOMPONENT: options that exclude
+each other), `forced` (one of them must be chosen), `groups` (the categories
+the mod files it under), `labels` (names that survive renumbering; Project
+Infinity uses them) and `deprecated` (WeiDU no longer offers it). The format is
+`schemas/components-v1.schema.json`.
 
 ```bash
 python3 iemod-fetch.pyz --describe-mods - --target Mods --language-preference it_IT,en_US -q
@@ -261,7 +266,17 @@ python3 iemod-fetch.pyz --bio-code shared.bio --emit-selection selection.json --
 python3 iemod-fetch.pyz -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE --emit-bio-code - --check-only -q
 ```
 
-`--selection`, `--bio-code` and `-w` are never given together. A wrong file is refused with
+A Project Infinity list, or the `install-EET.txt` Infinity Mod Forge exports,
+works the same way with `--pi-list list.txt:GAME`. Each line is
+`LABEL;description` or `folder:number;description`; the LABEL is found in the
+staged mods' tp2s first and in krion64's records (from the data cache) second.
+Fetch the mods once with the list's krion64 resolution, then run again: the
+second run resolves every LABEL from the tp2s themselves. A line nothing
+resolves stops the run with the line number - the description is never used
+to guess. The whole list is one install; for EET, `--reassign-phase` moves
+the BG:EE mods to the BGEE log.
+
+`--selection`, `--bio-code`, `--pi-list` and `-w` are never given together. A wrong file is refused with
 where and why: an unknown key, a game that is not one, a tp2 path that leaves
 its folder, or `schema_version` other than 1.
 

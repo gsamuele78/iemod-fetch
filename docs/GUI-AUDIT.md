@@ -140,11 +140,11 @@ fetch then check in one run) and the API pull request (`iemod_fetch.api`).
 
 | # | Item | Size |
 |---|---|---|
-| 9 | `iemod-fetch describe MOD --json`: components with names resolved through `.tra` for the chosen language, plus SUBCOMPONENT/GROUP/LABEL/DEPRECATED. The `muc`/`sub` vocabulary is taken as an idea from BWS-NG. **Names and SUBCOMPONENT done** (`--describe-mods`, 9,889/9,889 against WeiDU 251); GROUP, LABEL and DEPRECATED not yet | L |
+| 9 | `iemod-fetch describe MOD --json`: components with names resolved through `.tra` for the chosen language, plus SUBCOMPONENT/GROUP/LABEL/DEPRECATED. The `muc`/`sub` vocabulary is taken as an idea from BWS-NG. **Done**: names (`--describe-mods`, 9,889/9,889 against WeiDU 251's `--list-components`) and SUBCOMPONENT, FORCED, GROUP, LABEL, DEPRECATED (1,499/1,499 against its `--list-components-json`) | L |
 | 10 | Conflicts as **options** (drop a side, move before or after, each with its cost), and a `decisions.json` input that is applied and re-checked. **Done** (ADR-0033): every finding of the mock EET plan has options, and each applicable one clears it (`tests/test_decisions.py`) | M |
 | 11 | Freshness: installed vs latest per mod, from a cached weekly release scan (roadmap E2/E4). **Done**: krion64's daily release cache plus BWS-NG and krion64 versions, the newest of the three (79/90 against tp2 VERSION); `installed`, `latest`, `update_available` in `--list-mods` | M |
 | 12 | BIO share-code **import/export** (format only). **Done**: `--bio-code`, `--emit-bio-code`; a BIO-made code round-trips to the same payload byte for byte, and BIO decodes ours | S-M |
-| 13 | Read Project Infinity `weidu-log.csv` and krion64 `mod-forge.json` | S |
+| 13 | Read Project Infinity `weidu-log.csv` and krion64 `mod-forge.json`. **Done**: `--pi-list` (LABELs from the tp2s, krion64 as a reported fallback: 708/732 agree) and staged `mod-forge.json` read as rules (none of 103 measured mods ships one yet) | S |
 
 ### M3 — The wizard up to download (v3.0)
 

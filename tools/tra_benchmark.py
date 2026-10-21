@@ -76,7 +76,49 @@ def main(argv) -> int:
     print(f"{exact}/{total} exact ({accuracy:.2f}%), {missing} components not found")
     for miss in misses[:show]:
         print("  ", miss)
-    return 0 if accuracy >= floor else 1
+    fields_ok = _json_fields(oracle, show)
+    return 0 if accuracy >= floor and fields_ok >= floor else 1
+
+
+def _json_fields(oracle, show: int) -> float:
+    """Against --list-components-json: which components are listed (DEPRECATED
+    ones are not), and each one's title, subgroup, groups, labels and forced."""
+    totals = {key: [0, 0] for key in ("listed", "title", "subgroup", "groups",
+                                      "labels", "forced")}
+    misses = []
+    for run in oracle:
+        if not run.get("json"):
+            continue
+        read, find = reader(run["game"])
+        with open(find(run["tp2"]), "rb") as fh:
+            tp2 = fh.read().decode("latin-1")
+        ours = {c.number: c for c in component_names(tp2, 0, read, weidu_os="unix")
+                if not c.deprecated}
+        want = {c["number"]: c for c in run["json"]}
+        totals["listed"][1] += 1
+        totals["listed"][0] += set(ours) == set(want)
+        for number, expected in want.items():
+            got = ours.get(number)
+            if got is None:
+                continue
+            for key, mine, theirs in (
+                    ("title", got.title, expected["name"]),
+                    ("subgroup", got.subgroup or None, expected.get("subgroup")),
+                    ("groups", got.groups, expected.get("group", [])),
+                    ("labels", got.labels, expected.get("label", [])),
+                    ("forced", got.forced, expected.get("forced", False))):
+                totals[key][1] += 1
+                if mine == theirs:
+                    totals[key][0] += 1
+                else:
+                    misses.append((run["tp2"], number, key, theirs, mine))
+    for key, (right, count) in totals.items():
+        print(f"{key:9} {right}/{count}")
+    for miss in misses[:show]:
+        print("  ", miss)
+    right = sum(r for r, _c in totals.values())
+    count = sum(c for _r, c in totals.values())
+    return 100 * right / count if count else 100.0
 
 
 if __name__ == "__main__":

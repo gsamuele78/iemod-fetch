@@ -212,6 +212,10 @@ class RuleSet:
             raise ConfigError(f"{path} is not valid JSON: {exc}") from exc
 
         origin = os.path.basename(path)
+        forge = mod_forge_record(payload) if origin.lower() == "mod-forge.json" else None
+        if forge is not None:
+            rules, skipped, notes = _krion_rules(forge, f"{forge['t']}/mod-forge.json")
+            return cls(rules=rules, notes=notes, undirected=skipped)
         if looks_like_krion(payload):
             rules, skipped, notes = _krion_rules(payload, origin)
             return cls(rules=rules, notes=notes, undirected=skipped)
@@ -389,6 +393,35 @@ def _krion_rules(record: dict, origin: str) -> Tuple[List[Rule], int, List[Compo
                 str(entry.get("type") or ""), "warning"),
             message=entry.get("reason") or "", origin=origin, optional=soft))
     return out, skipped, _krion_notes(record, origin)
+
+
+def mod_forge_record(payload) -> Optional[dict]:
+    """
+    An author's own `mod-forge.json` (Infinity Mod Forge's per-mod format, in
+    the mod's repository root), as the krion64 record it is a public form of:
+    `tp2`, `conflicts` (mod, severity, myComponents, theirComponents),
+    `dependencies` (mod, type) and `knownIssues`. None if it is not one.
+    """
+    if not (isinstance(payload, dict) and isinstance(payload.get("tp2"), str)
+            and isinstance(payload.get("components"), list)):
+        return None
+
+    def entries(key):
+        return [e for e in payload.get(key) or [] if isinstance(e, dict)]
+    return {
+        "t": payload["tp2"],
+        "conflicts": [{"with": e.get("mod"), "severity": e.get("severity"),
+                       "reason": e.get("reason") or "", "myComps": e.get("myComponents"),
+                       "theirComps": e.get("theirComponents"),
+                       "source": "the mod's own mod-forge.json"}
+                      for e in entries("conflicts")],
+        "dependencies": [{"requires": e.get("mod"), "type": e.get("type"),
+                          "reason": e.get("reason") or "", "myComps": e.get("myComponents")}
+                         for e in entries("dependencies")],
+        "ki": [{"description": e.get("description"), "severity": e.get("severity"),
+                "workaround": e.get("workaround"), "components": e.get("components"),
+                "forum": e.get("forum")} for e in entries("knownIssues")],
+    }
 
 
 def looks_like_krion(payload) -> bool:

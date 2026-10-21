@@ -42,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="a file holding a BIO-MODLIST-V1 share code (Born2BSalty's "
                           "Infinity Orchestrator): its WeiDU logs are what is wanted, "
                           "instead of -w or --selection")
+    src.add_argument("--pi-list", metavar="PATH:GAME",
+                     help="a Project Infinity / Infinity Mod Forge list "
+                          "(LABEL;description or folder:number;description per line) "
+                          "as what is wanted. LABELs are read from the staged tp2s "
+                          "first, krion64's records second; an unknown one is an error")
     src.add_argument("--aliases", metavar="PATH",
                      help="JSON map {weidu_folder: manifest_tp2} for entries whose "
                           "names differ between the log and the catalogue")
