@@ -49,9 +49,7 @@ pasted from a chat and was written by someone else. Its size is capped before
 and after decompression (a zlib bomb stops at 32 MiB), and every tp2 path in
 its WeiDU logs goes through `selection.json`'s own checks before anything
 uses it: `~../../evil.tp2~` is refused, because WeiDU would otherwise run a
-tp2 from outside the mods folder. Project Infinity lists (`--pi-list`) take
-their tp2 paths from the staged mods or krion64's records and go through the
-same checks.
+tp2 from outside the mods folder.
 
 ## Boundary 2 — the network
 
