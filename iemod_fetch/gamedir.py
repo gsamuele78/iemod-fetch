@@ -93,7 +93,7 @@ def read_resource(game_dir: str, resource: str) -> Optional[bytes]:
         if os.path.getsize(override) > _MAX_RESOURCE_BYTES:
             return None
         with open(override, "rb") as fh:
-            return fh.read()
+            return _plain(fh.read())
     name, _dot, ext = resource.lower().rpartition(".")
     data = _key(game_dir)
     if data is None or ext not in _TYPES:
@@ -108,8 +108,14 @@ def read_resource(game_dir: str, resource: str) -> Optional[bytes]:
         kind, locator = struct.unpack_from("<HI", data, start + 8)
         if kind != _TYPES[ext]:
             continue
-        return _from_bif(game_dir, data, bifs, bif_offset, locator)
+        return _plain(_from_bif(game_dir, data, bifs, bif_offset, locator))
     return None
+
+
+def _plain(data: Optional[bytes]) -> Optional[bytes]:
+    """None for an XOR-encrypted 2DA/IDS (classic games: it starts FF FF):
+    WeiDU decrypts those; read as text, one would look nearly empty."""
+    return None if data is None or data[:2] == b"\xff\xff" else data
 
 
 def _from_bif(game_dir: str, key: bytes, bifs: int, bif_offset: int,
@@ -133,6 +139,8 @@ def _from_bif(game_dir: str, key: bytes, bifs: int, bif_offset: int,
         if len(header) < 20 or header[:8] != b"BIFFV1  ":
             return None
         files, _tilesets, table = struct.unpack_from("<III", header, 8)
+        if table + 16 * files > os.fstat(fh.fileno()).st_size:     # a damaged BIFF
+            return None
         fh.seek(table)
         entries = fh.read(16 * files)
         for i in range(len(entries) // 16):
@@ -141,7 +149,8 @@ def _from_bif(game_dir: str, key: bytes, bifs: int, bif_offset: int,
                 if size > _MAX_RESOURCE_BYTES:
                     return None
                 fh.seek(res_offset)
-                return fh.read(size)
+                blob = fh.read(size)
+                return blob if len(blob) == size else None
     return None
 
 

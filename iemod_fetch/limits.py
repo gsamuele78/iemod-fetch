@@ -151,7 +151,7 @@ class Measured:
     spell_states: Optional[int] = None               # ids 0-255 in SPLSTATE.IDS
 
 
-_ROW_NUMBER = re.compile(r"[\r\n]([0-9]+)[ \t]")
+_ROW_NUMBER = re.compile(r"[\r\n]([0-9]+)(?=\s|$)")
 _KITLIST_EX = re.compile(r"[\r\n]([0-9]+)[ \t]+\*[ \t]+\*")
 _IDS_LINE = re.compile(r"^[ \t]*(0x[0-9a-fA-F]+|[0-9]+)[ \t]+\S", re.MULTILINE)
 _SPELL_FILE = {"p": "sppr", "w": "spwi"}
@@ -171,7 +171,11 @@ def kits_in_use(kitlist: str) -> Optional[int]:
 
 
 def ids_numbers(text: str) -> List[int]:
-    """The numbers an IDS file assigns (its header line is not one)."""
+    """The numbers an IDS file assigns (its header line is not one), read as
+    WeiDU's lexer reads it: any line ending, comments skipped."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
+    text = re.sub(r"//[^\r\n]*", "", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     out = []
     for value in _IDS_LINE.findall(text):
         out.append(int(value, 16) if value.lower().startswith("0x") else int(value))

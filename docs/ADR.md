@@ -1600,7 +1600,7 @@ which calls run. What is exact is the game folder itself.
 - For an installed game the tables are exact; for a selection not installed
   yet they are krion64's estimates, labelled so: spell levels can be fuller
   than shown (ADD_SPELL is missed), spell states are an upper bound.
-- A game whose BIFFs are compressed (BIFC, classic games) or whose tables
-  are unreadable falls back to the estimate, and says so by not being
+- A game whose BIFFs are compressed (BIFC, classic games), whose tables are
+  XOR-encrypted (classic games) or damaged, falls back to the estimate, and says so by not being
   marked measured. Reading the game is read-only, size-capped, and a BIFF
   path from chitin.key that would leave the game folder is not followed.

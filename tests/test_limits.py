@@ -265,3 +265,31 @@ def test_a_damaged_key_or_biff_is_not_measured_and_does_not_stop_the_report(tmp_
         fh.truncate(30)
     measured, _installed = api._measure_game(game)
     assert measured.kits is None and measured.spell_slots is None
+
+
+def test_ids_are_read_as_weidus_lexer_reads_them():
+    from iemod_fetch.limits import ids_numbers
+    assert ids_numbers("IDS V1.0\r2101 A\r2102 B\r") == [2101, 2102]          # CR only
+    assert ids_numbers("IDS V1.0\n/* 2101 A */\n2102 B // 2103 C\n") == [2102]
+
+
+def test_a_kitlist_ending_in_a_bare_row_number_is_read_as_weidu_reads_it():
+    assert kits_in_use("2DA V1.0\n*\n  A\n1  A\n42") == 42
+    assert kits_in_use(KITLIST.replace("\n", "\r\n") + "\r\n\r\n") == 40
+
+
+def test_a_biff_whose_table_runs_past_its_end_is_not_read(tmp_path):
+    game = a_game(tmp_path / "g")
+    path = os.path.join(game, "data", "Default.bif")
+    with open(path, "r+b") as fh:
+        fh.seek(8)
+        fh.write(struct.pack("<I", 0xFFFFFFFF))
+    assert gamedir.read_resource(game, "kitlist.2da") is None
+    assert api._measure_game(game)[0].kits is None
+
+
+def test_an_encrypted_table_is_not_read_as_an_empty_one(tmp_path):
+    game = a_game(tmp_path / "g")
+    (tmp_path / "g" / "override" / "SPELL.IDS").write_bytes(b"\xff\xff" + b"\x10" * 40)
+    assert gamedir.read_resource(game, "spell.ids") is None
+    assert api._measure_game(game)[0].spell_slots is None

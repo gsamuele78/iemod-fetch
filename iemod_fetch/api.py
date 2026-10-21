@@ -1038,7 +1038,8 @@ def _measure_game(folder: str):
     def text(resource):
         try:
             data = gamedir.read_resource(folder, resource)
-        except (OSError, ValueError, struct.error):     # a damaged key or BIFF
+        except (OSError, ValueError, struct.error, MemoryError, OverflowError):
+            # a damaged key or BIFF: that table is not measured
             return None
         return None if data is None else data.decode("latin-1")
     kitlist, spell_ids = text("kitlist.2da"), text("spell.ids")
