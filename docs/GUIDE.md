@@ -198,6 +198,20 @@ python3 iemod-fetch.pyz -w WeiDU.log:EET -w WeiDUBGEE.log:BGEE \
     --emit-selection selection.json --check-only
 ```
 
+To see what there is to choose from, `--list-mods` merges every source given -
+the manifest, each `--catalogue` (lcc-docs) and `--mod-db` (BWS-NG or krion64)
+- into one entry per mod: games, categories, quality rating, status, last
+update, version, advisories, and each source's URLs and sha256. It needs no
+WeiDU.log and downloads nothing. The format is `schemas/mods-v1.schema.json`.
+
+```bash
+python3 iemod-fetch.pyz --list-mods mods.json \
+    -c lcc-docs/db/mods.json --mod-db BigWorldSetup-Next-Generation/data/mods
+```
+
+With the full lcc-docs catalogue and the BWS-NG database that is about 1,800
+mods in under a second. `-` writes to standard output.
+
 `--selection` and `-w` are never given together. A wrong file is refused with
 where and why: an unknown key, a game that is not one, a tp2 path that leaves
 its folder, or `schema_version` other than 1.

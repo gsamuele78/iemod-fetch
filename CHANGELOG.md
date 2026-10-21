@@ -24,6 +24,11 @@ Python API, which is internal.
   so every mode (fetch, check, plan) accepts it. Validated strictly: unknown
   keys, unknown games and tp2 paths leaving their folder are refused. JSON
   Schema in `schemas/selection-v1.schema.json` (ADR-0030, milestone M1).
+- **`--list-mods PATH`**: every mod the manifest, the lcc-docs catalogues and
+  the BWS-NG/krion64 mod database know about, one entry per mod with games,
+  categories, rating, status, last update, version, advisories and each
+  source's URLs and sha256. No WeiDU.log needed, nothing downloaded; a
+  catalogue alone is enough. Schema in `schemas/mods-v1.schema.json` (M1).
 - **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
   WeiDU and mod_installer are compared with upstream, and an issue opens for
   each one behind, with how to bump it. Dependabot cannot see those two pins.
