@@ -1178,3 +1178,50 @@ allowed on the BG:EE side.
 - Still not covered: real game data (patch level, the merge itself, mods whose
   bodies fail on content). That needs a self-hosted runner with owned copies
   (ROADMAP F5).
+
+---
+
+## ADR-0027 — Releases are tagged and published by the merge, not by a person
+
+**Status**: accepted
+**Date**: 2026-10-21
+
+### Context
+
+The release process (RELEASING.md) ended with "tag and push", a step done by
+hand on a machine with push rights. It was never done for 2.1.0 or 2.2.0, so the
+releases existed only in the changelog. The workflow behind it had never run:
+it called `ci.yml`, which was not reusable.
+
+Two approaches in the maintainer's own repositories: R-studioConf (ADR-0006)
+tags and releases from the newest CHANGELOG.md section on every push to main;
+Proxmox_biome_log_collector releases on a pushed tag, plus a manual trigger for
+tags made before the workflow existed. Elsewhere, release-please and
+semantic-release derive the version from commit messages. This project already
+writes its changelog by hand and reviews it in the pull request.
+
+### Decision
+
+R-studioConf's model, plus Proxmox_biome_log_collector's manual trigger:
+
+- the newest `## [X.Y.Z]` section of CHANGELOG.md is the release; an existing
+  tag means it is done;
+- the commit released is the first main-line commit where `__version__` says
+  X.Y.Z, which is the merge of the release pull request (`tools/release_plan.py`,
+  tested on a scratch repository);
+- the release workflow creates the tag together with the release. A tag pushed
+  with GITHUB_TOKEN would start no workflow, so it cannot be a separate step;
+- releases are published, not left as drafts: the notes were reviewed in the
+  pull request. PyPI stays opt-in (`PYPI_PUBLISH`) and keeps its environment
+  gate.
+
+release-please and semantic-release are not adopted. They would replace a
+hand-written, reviewed changelog with one generated from commit messages.
+
+### Consequences
+
+- Merging a version bump is the release; there is no step left to forget.
+- A changelog section whose `__version__` never reached main makes the workflow
+  fail and say so, instead of tagging the wrong commit.
+- The CI gate a release re-runs is main's current code. A back-filled older
+  version, such as 2.1.0, relies on the CI its own pull request passed.
