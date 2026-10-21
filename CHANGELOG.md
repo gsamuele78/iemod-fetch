@@ -29,6 +29,23 @@ Python API, which is internal.
   removed, versions (BWS-NG, krion64) and catalogue statuses (lcc-docs) that
   moved. The README and guide no longer ask for `git clone`.
 
+- **Component names, as WeiDU prints them.** `--describe-mods PATH` writes,
+  for every mod staged under `--target`, its languages and its components
+  named from the tp2 and its `.tra` files (`Group -> Name: VERSION`), in the
+  first `--language-preference` the mod offers; `api.describe_mods` for the
+  GUI; `schemas/components-v1.schema.json`. Runs no WeiDU. Measured against
+  WeiDU 251's own `--list-components` on 103 real mods: 9,889 of 9,889 names
+  identical (`tools/tra_oracle.py`, `tools/tra_benchmark.py`,
+  docs/TESTING.md). Paths in the tp2 are matched case-insensitively and never
+  outside `--target`.
+
+### Fixed
+- **Component numbers without DESIGNATED** are the previous number + 1, as
+  WeiDU numbers them, not their position. A tp2 that designates some
+  components and not others (EEUITweaks) had its
+  constraints attached to the wrong numbers. Also read now: FORCED_SUBCOMPONENT
+  groups, and `BEGIN` with the name on the next line (LCA).
+
 ### Changed
 - **What may go on BG2:EE before the EET core comes from BWS-NG.** Its
   `games/eet.json` (maintained, last changed 2026-02-24) orders the EE

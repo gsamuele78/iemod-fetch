@@ -33,7 +33,7 @@ from .conflicts import ConflictReport, build_conflict_report, render_conflict_re
 from .constraints import ModConstraints, load_constraints, tp2_rules
 from .errors import ConfigError
 from .gamedir import verify_eet
-from .install import State
+from .install import State, find_tp2_files
 from .installer import build_installer
 from .languages import apply_language_preference, parse_preferences
 from .manifest import Manifest, load_manifest
@@ -54,12 +54,13 @@ from .selection import (Selection, parse_selection, selection_from_logs,
                         selection_to_json)
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
+from . import tra
 from .contract import SCHEMA_VERSION
 from .weidu import ParsedLog, parse_weidu_files, split_log_spec
 from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
-           "selection_of_logs", "update_data", "data_status"]
+           "selection_of_logs", "update_data", "data_status", "describe_mods"]
 
 
 @dataclass
@@ -88,6 +89,7 @@ class Settings:
     emit_pinned_manifest: Optional[str] = None
     events: Optional[str] = None
     list_mods: Optional[str] = None
+    describe_mods: Optional[str] = None
     emit_selection: Optional[str] = None
     plan_order: Optional[str] = None
     resolve_conflicts: bool = False
@@ -322,6 +324,64 @@ def selection_of_logs(specs: Sequence[str]) -> Selection:
     return selection_from_logs(logs)
 
 
+_MAX_TEXT_BYTES = 8 * 1024 * 1024
+_WEIDU_OS = "win32" if sys.platform.startswith("win") else (
+    "osx" if sys.platform == "darwin" else "unix")
+
+
+def _text_under(root: str, relative: str) -> Optional[str]:
+    """
+    A mod's text file by the path its tp2 writes, as WeiDU on Windows finds it:
+    case-insensitive, separators either way. Nothing outside `root` is read.
+    """
+    path = os.path.realpath(root)
+    for part in relative.replace("\\", "/").split("/"):
+        if part in ("", "."):
+            continue
+        if part == ".." or not os.path.isdir(path):
+            return None
+        direct = os.path.join(path, part)
+        if not os.path.exists(direct):
+            matches = [e for e in os.listdir(path) if e.lower() == part.lower()]
+            if not matches:
+                return None
+            direct = os.path.join(path, matches[0])
+        path = direct
+    real = os.path.realpath(path)
+    if not real.startswith(os.path.realpath(root) + os.sep) or not os.path.isfile(real):
+        return None
+    if os.path.getsize(real) > _MAX_TEXT_BYTES:
+        return None
+    with open(real, "rb") as fh:
+        data = fh.read()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")     # pre-EE mods: Windows-1252 and kin
+
+
+def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> List[dict]:
+    """
+    Every staged mod's components, named as WeiDU would name them (M2e).
+
+    `target` is the --target directory; WeiDU runs from it, so a tp2's paths
+    are read relative to it. `preferences` are language codes in order.
+    """
+    root = os.path.abspath(target)
+    preferences = parse_preferences(preferences) if preferences else []
+    out = []
+    for path in find_tp2_files(root):
+        relative = os.path.relpath(path, root).replace(os.sep, "/")
+        text = _text_under(root, relative)
+        if text is None:
+            continue
+        entry = {"tp2": relative}
+        entry.update(tra.describe(text, lambda p: _text_under(root, p),
+                                  preferences, weidu_os=_WEIDU_OS))
+        out.append(entry)
+    return out
+
+
 # --------------------------------------------------------------- internals
 def _use_selection(settings, workdir: str) -> None:
     """
@@ -355,6 +415,22 @@ def _list_mods(settings, stream) -> int:
             fh.write(document)
         if not settings.quiet:
             print(f"  mods        : wrote {settings.list_mods}", file=stream)
+    return 0
+
+
+def _describe_mods(settings, stream) -> int:
+    """What a component screen shows: the staged mods' components, by name."""
+    document = json.dumps({"schema_version": SCHEMA_VERSION,
+                           "mods": describe_mods(settings.target,
+                                                 settings.language_preference or ())},
+                          indent=2, ensure_ascii=False) + "\n"
+    if settings.describe_mods == "-":
+        stream.write(document)
+    else:
+        with open(settings.describe_mods, "w", encoding="utf-8") as fh:
+            fh.write(document)
+        if not settings.quiet:
+            print(f"  components  : wrote {settings.describe_mods}", file=stream)
     return 0
 
 
@@ -722,6 +798,9 @@ def _analyse(settings, installed, stream):
 def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome":
     if settings.list_mods:
         _list_mods(settings, stream)
+        return Outcome(exit_code=0)
+    if settings.describe_mods:
+        _describe_mods(settings, stream)
         return Outcome(exit_code=0)
     _require_plan(settings)
     _emit_selection(settings, stream)

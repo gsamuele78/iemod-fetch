@@ -217,6 +217,18 @@ best with `-q`) writes one JSON object per line as the run goes -
 the downloads in flight at their next chunk; the mods reached are reported as
 `cancelled` and the exit code is 130.
 
+Once mods are staged, `--describe-mods components.json` lists every tp2 under
+`--target` with its languages and its components, named exactly as WeiDU names
+them in `--list-components` and WeiDU.log (`Group -> Name: VERSION`), in the
+first `--language-preference` the mod offers. It reads the tp2 and its `.tra`
+files and runs no WeiDU. A name WeiDU itself could not resolve is printed as
+WeiDU prints it (`UNDEFINED STRING:   @N`) and marked `"resolved": false`. The
+format is `schemas/components-v1.schema.json`.
+
+```bash
+python3 iemod-fetch.pyz --describe-mods - --target Mods --language-preference it_IT,en_US -q
+```
+
 `--selection` and `-w` are never given together. A wrong file is refused with
 where and why: an unknown key, a game that is not one, a tp2 path that leaves
 its folder, or `schema_version` other than 1.

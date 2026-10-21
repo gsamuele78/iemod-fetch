@@ -89,6 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="write every mod the manifest, --catalogue and --mod-db "
                           "know about as JSON (schema 1; '-' for stdout), then "
                           "stop. Needs no WeiDU.log and downloads nothing")
+    out.add_argument("--describe-mods", metavar="PATH",
+                     help="write the components of every mod staged under --target, "
+                          "named as WeiDU names them (tp2 + .tra, in the first "
+                          "--language-preference the mod offers), as JSON (schema 1; "
+                          "'-' for stdout), then stop. Runs no WeiDU")
     out.add_argument("--emit-selection", metavar="PATH",
                      help="write the --weidu-log input as a selection.json; with "
                           "--check-only nothing else is fetched")
