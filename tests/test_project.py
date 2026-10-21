@@ -162,9 +162,9 @@ def test_the_hyphenated_spelling_the_cli_accepts_is_replaced_too(tmp_path):
 def test_saving_keeps_the_files_permissions(tmp_path):
     ini = tmp_path / "iemod-fetch.ini"
     ini.write_text("[iemod-fetch]\n")
-    os.chmod(ini, 0o640)
+    os.chmod(ini, 0o400)          # read-only for its owner: not what mkstemp would give
     api.save_project(str(tmp_path), "EET", None, None)
-    assert oct(os.stat(ini).st_mode & 0o777) == "0o640"
+    assert oct(os.stat(ini).st_mode & 0o777) == "0o400"
     (tmp_path / "new").mkdir()
     api.save_project(str(tmp_path / "new"), "EET", None, None)    # a new file: owner only
     assert os.stat(tmp_path / "new" / "iemod-fetch.ini").st_mode & 0o077 == 0
