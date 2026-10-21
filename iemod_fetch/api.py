@@ -206,10 +206,15 @@ def update_data(settings: Optional[Settings] = None, force: bool = False,
             on_event({"schema_version": SCHEMA_VERSION, "event": "data_source",
                       "name": result.name, "status": result.status,
                       "commit": result.commit, "date": result.date,
-                      "changed": result.changed, "detail": result.detail})
+                      "changed": result.changed, "detail": result.detail,
+                      "changes": result.changes})
     if stream is not None and not settings.quiet:
         for line in datasync.describe(results):
-            if not line.endswith(", fresh"):
+            if line.endswith(", fresh"):
+                continue
+            if line.startswith("    "):            # the detail of a change
+                print(f"                {line.strip()}", file=stream)
+            else:
                 print(f"  data        : {line}", file=stream)
     return results
 
