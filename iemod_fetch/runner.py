@@ -8,7 +8,8 @@ from dataclasses import dataclass
 
 from dataclasses import replace as _replace
 
-from .errors import (InstallConflict, ModFetchError, UnsafeArchive,
+from .contract import SCHEMA_VERSION
+from .errors import (Cancelled, InstallConflict, ModFetchError, UnsafeArchive,
                      VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
@@ -32,8 +33,19 @@ class Options:
 
 
 class Runner:
+    """
+    Fetch every mod of a plan, several at a time.
+
+    `on_event`, when given, receives a dict for each thing that happens -
+    run_started, mod_started, download_progress, mod_finished, run_finished -
+    each with `schema_version` and `event` (ADR-0030). It is called from worker
+    threads, one call at a time. `cancel` is a threading.Event: once set, no
+    new mod starts, a download in flight stops at its next chunk, and the
+    report says `cancelled`. Ctrl-C sets it too.
+    """
+
     def __init__(self, client, options: Options, stream=None, org_index=None,
-                 catalogue=None):
+                 catalogue=None, on_event=None, cancel=None):
         self.client = client
         self.options = options
         self.org_index = org_index
@@ -44,6 +56,14 @@ class Runner:
         self.state = State.load(options.target_dir)
         self._lock = threading.Lock()
         self._stream = stream
+        self._on_event = on_event
+        self.cancel = cancel if cancel is not None else threading.Event()
+
+    def _emit(self, event: str, **fields) -> None:
+        if self._on_event is None:
+            return
+        with self._lock:
+            self._on_event({"schema_version": SCHEMA_VERSION, "event": event, **fields})
 
     @property
     def has_fallbacks(self) -> bool:
@@ -74,8 +94,13 @@ class Runner:
         try:
             archive = os.path.join(workdir,
                                    archive_filename(candidate.filename, f"{folder}.bin"))
+            extra: dict = {}
+            if self._on_event is not None:
+                extra["progress"] = lambda done, total: self._emit(
+                    "download_progress", folder=folder, bytes=done, total=total)
+            extra["cancel"] = self.cancel
             result = self.client.download(candidate.url, archive,
-                                          expected_sha256=candidate.sha256)
+                                          expected_sha256=candidate.sha256, **extra)
             outcome = install_from_archive(archive, self.options.target_dir, folder,
                                            force=self.options.force,
                                            allow_exe=self.options.allow_exe,
@@ -85,6 +110,12 @@ class Runner:
             shutil.rmtree(workdir, ignore_errors=True)
 
     def process(self, item: WorkItem) -> Record:
+        if self.cancel.is_set():
+            return Record(item.folder, Status.CANCELLED, "the run was stopped before it")
+        self._emit("mod_started", folder=item.folder)
+        return self._process(item)
+
+    def _process(self, item: WorkItem) -> Record:
         folder, source = item.folder, item.source
         dest = os.path.join(self.options.target_dir, folder)
         advisories = self._advisories(folder, source, item.game)
@@ -145,6 +176,9 @@ class Runner:
                 resolution.warnings.append(
                     f"{folder}: the manifest's download did not contain this mod; "
                     f"installed from {entry.origin} instead ({alternate.url})")
+        except Cancelled:
+            return Record(folder, Status.CANCELLED, "stopped during the download",
+                          source_key=source.key, url=candidate.url)
         except InstallConflict as exc:
             return Record(folder, Status.CONFLICT, str(exc), source_key=source.key,
                           url=candidate.url)
@@ -298,6 +332,19 @@ class Runner:
                 return probe, None
         return None
 
+    def _collect(self, report: RunReport, item: WorkItem, future) -> None:
+        try:
+            record = future.result()
+        except Exception as exc:                          # never lose a worker crash
+            record = Record(item.folder, Status.FAILED,
+                            f"internal error: {type(exc).__name__}: {exc}")
+        report.records.append(record)
+        report.warnings.extend(record.warnings)
+        self._emit("mod_finished", folder=record.folder, status=record.status.value,
+                   detail=record.detail)
+        if self._stream:
+            print(line_for(record, self._stream), file=self._stream, flush=True)
+
     # ------------------------------------------------------------- all mods
     def run(self, plan: Plan) -> RunReport:
         report = RunReport(warnings=list(plan.warnings))
@@ -316,19 +363,22 @@ class Runner:
         report.suggestions = [vars(s) for s in plan.suggestions]
 
         workers = max(1, min(self.options.workers, len(targets) or 1))
+        self._emit("run_started", mods=len(targets))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(self.process, item): item for item in targets}
-            for future in as_completed(futures):
-                item = futures[future]
-                try:
-                    record = future.result()
-                except Exception as exc:                  # never lose a worker crash
-                    record = Record(item.folder, Status.FAILED,
-                                    f"internal error: {type(exc).__name__}: {exc}")
-                report.records.append(record)
-                report.warnings.extend(record.warnings)
-                if self._stream:
-                    print(line_for(record, self._stream), file=self._stream, flush=True)
+            try:
+                for future in as_completed(futures):
+                    self._collect(report, futures[future], future)
+            except KeyboardInterrupt:
+                # Stop the downloads in flight at their next chunk instead of
+                # waiting for each to finish; what completed is still recorded.
+                self.cancel.set()
+                for future in futures:
+                    future.cancel()
+                report.cancelled = True
+                raise
+        report.cancelled = self.cancel.is_set()
+        self._emit("run_finished", cancelled=report.cancelled, counts=report.counts())
 
         try:
             self.state.save()

@@ -38,7 +38,8 @@ class DiscoveryStub:
                 return payload
         raise NetworkError(f"404 {url}")
 
-    def download(self, url, dest_path, expected_sha256=None, require_archive=True):
+    def download(self, url, dest_path, expected_sha256=None, require_archive=True,
+                 progress=None, cancel=None):
         if url not in self.blobs:
             raise NetworkError(f"404 {url}")
         data = self.blobs[url]
