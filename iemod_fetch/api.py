@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import stat
+import struct
 import sys
 import tempfile
 from dataclasses import dataclass, field, fields, replace
@@ -34,6 +35,7 @@ from .conflicts import ConflictReport, build_conflict_report, render_conflict_re
 from .constraints import ModConstraints, load_constraints, tp2_rules
 from .errors import ConfigError
 from .freshness import parse_release_cache
+from . import gamedir
 from .gamedir import verify_eet
 from .install import State, find_tp2_files
 from .installer import build_installer
@@ -1000,22 +1002,67 @@ def _require_plan(settings) -> None:
 
 
 def _engine_limits(settings) -> list:
-    """Kits, spell states and spell slots per install, from krion64's counts."""
+    """
+    Kits, spell states and spell slots per install: measured in the game
+    folder when the log sits in one (beside chitin.key), estimated from
+    krion64's counts for what the game does not hold yet.
+    """
     krion = os.path.join(settings.order_catalogue, "mods") if settings.order_catalogue else None
-    if not (krion and os.path.isdir(krion)) or not settings.weidu_log:
+    if not settings.weidu_log:
         return []
-    records = list(_json_records(krion))
+    records = list(_json_records(krion)) if krion and os.path.isdir(krion) else []
     reports = []
     for spec in settings.weidu_log:
         path, game = split_log_spec(spec)
         parsed = parse_weidu_files([(path, game)])
         chosen = [(tp2_key(c.tp2_file), c.index)
                   for mod in parsed.mods.values() for c in mod.components]
-        eeex = any(tp2_key(c.tp2_file) == "eeex"
-                   for mod in parsed.mods.values() for c in mod.components)
-        reports.append(limits.engine_limits(game or parsed.game or os.path.basename(path),
-                                            chosen, records, eeex=eeex))
+        eeex = any(key == "eeex" for key, _number in chosen)
+        folder = os.path.dirname(os.path.abspath(path))
+        measured, installed = _measure_game(folder)
+        if not records and measured is None:
+            continue
+        reports.append(limits.engine_limits(
+            game or parsed.game or os.path.basename(path), chosen, records, eeex=eeex,
+            measured=measured, installed=installed,
+            measured_from=folder if measured is not None else None))
     return reports
+
+
+def _measure_game(folder: str):
+    """(Measured, the components its WeiDU.log lists), or (None, ()) if not a game."""
+    if not os.path.isfile(os.path.join(folder, "chitin.key")) and \
+            not any(e.lower() == "chitin.key" for e in os.listdir(folder)):
+        return None, ()
+
+    def text(resource):
+        try:
+            data = gamedir.read_resource(folder, resource)
+        except (OSError, ValueError, struct.error):     # a damaged key or BIFF
+            return None
+        return None if data is None else data.decode("latin-1")
+    kitlist, spell_ids = text("kitlist.2da"), text("spell.ids")
+    splstate = text("splstate.ids")
+    try:
+        files = gamedir.spell_files(folder)
+    except OSError:
+        files = set()
+    measured = limits.Measured(
+        kits=limits.kits_in_use(kitlist) if kitlist else None,
+        spell_slots=(limits.spell_slots_taken(spell_ids, text("add_spell.ids"), files)
+                     if spell_ids else None),
+        spell_states=limits.spell_states_in_use(splstate) if splstate else None)
+    log = next((os.path.join(folder, e) for e in os.listdir(folder)
+                if e.lower() == "weidu.log"), None)
+    installed = []
+    if log is not None:
+        try:
+            installed = [(tp2_key(c.tp2_file), c.index)
+                         for mod in parse_weidu_files([(log, None)]).mods.values()
+                         for c in mod.components]
+        except (ConfigError, OSError):
+            installed = []
+    return measured, installed
 
 
 def _analyse(settings, installed, stream):

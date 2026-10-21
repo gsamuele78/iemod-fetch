@@ -1547,6 +1547,26 @@ Forum statements (a crash past kit row 256, a Beamdog developer on 256
 spell states) could only be seen through search summaries here; they are
 cited as reported, not verified.
 
+krion64's method, audited before adopting it (its scripts, and its records
+against 103 mod repositories):
+
+- **Spells per level** come from `scripts/scan_spell_ids.js`, which reads only
+  literal `APPEND spell.ids` lines. ADD_SPELL - WeiDU's own way, which picks
+  a free slot - is not seen: NWNForBG adds 6 wizard spells with it and
+  Region of Terror 4; krion64 records 0 for both. Entries with variables are
+  left for "manual review", and the scan is per mod folder.
+- **Spell states** (`ss`) count references, as above.
+- **Kits** (`k`) are "the number of ADD_KIT calls", entered by hand; most
+  mods add kits through function libraries (fl#add_kit_ee, Argent77's
+  ADD_KIT_EX), which no scanner of theirs follows. Argent77's library has the
+  same 256 limit, and exempts multiclass kits on EE 2.0+.
+- Its records also join a mod folder's tp2s: EET and EET_end share `eet/`
+  and component #0.
+
+None of the three is exact, and a static scan of our own would not be either:
+ADD_SPELL reuses an identifier SPELL.IDS already has, and conditions decide
+which calls run. What is exact is the game folder itself.
+
 ### Decision
 
 - `limits.py` counts, per install: kits against 256 with the game's 40;
@@ -1558,9 +1578,18 @@ cited as reported, not verified.
 - The spell-state table is shown and never warned on: its counts are an
   upper bound. With EEex installed its range is lifted.
 - A mod krion64 has no counts for is named, and the totals read "at least".
-- When the game is installed (M4), the base values are measured from it - the
-  next free KITLIST.2DA row, the free ids in SPLSTATE.IDS, the free SPELL.IDS
-  slots - instead of these constants.
+- **Measured, not estimated, wherever the game folder is known**: a WeiDU.log
+  beside a chitin.key is a game. Its tables are read by WeiDU's own rules,
+  from override/ first, then from the BIFF chitin.key names: the last kit
+  number in KITLIST.2DA (`get_next_kit_number`); a spell slot as taken when
+  ADD_SPELL would skip it - an id in SPELL.IDS or ADD_SPELL.IDS, or an
+  SPWI/SPPR file already there (`TB#ADD_SPELL_FIND_SLOT`); the ids 0-255 in
+  SPLSTATE.IDS. krion64's counts then only add the chosen components the
+  game's WeiDU.log does not list. A measured spell-state table is warned on.
+- The measurement is tested against the real WeiDU (CI,
+  `tests/test_real_weidu_limits.py`): on a synthetic BG2:EE with a real KEY
+  and BIFF, ADD_KIT gives kit N+1 after N measured and refuses past 256, and
+  ADD_SPELL takes exactly the slots measured as free.
 
 ### Consequences
 
@@ -1568,5 +1597,10 @@ cited as reported, not verified.
   with who fills them, for the GUI's selection screen.
 - A player told "kits 231/256" by this tool may see a different number in
   Infinity Mod Forge; the report says why.
-- The counts are only as good as krion64's. Kit counts could not be checked
-  statically: most mods call ADD_KIT from included files.
+- For an installed game the tables are exact; for a selection not installed
+  yet they are krion64's estimates, labelled so: spell levels can be fuller
+  than shown (ADD_SPELL is missed), spell states are an upper bound.
+- A game whose BIFFs are compressed (BIFC, classic games) or whose tables
+  are unreadable falls back to the estimate, and says so by not being
+  marked measured. Reading the game is read-only, size-capped, and a BIFF
+  path from chitin.key that would leave the game folder is not followed.

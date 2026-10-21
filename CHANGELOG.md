@@ -90,6 +90,12 @@ Python API, which is internal.
   states are shown but never warned on: krion64's counts include states a mod
   only reads. Values checked in WeiDU's, EEex's and IESDP's sources; Infinity
   Mod Forge's 320 kits has no source. Warnings only, for every game patch.
+  **Measured in the game folder** when the WeiDU.log is in one: the last kit
+  number in KITLIST.2DA, the spell slots ADD_SPELL would skip, the ids in
+  SPLSTATE.IDS - read from override/ or the BIFFs, by WeiDU's own rules, and
+  checked against the real WeiDU in CI. krion64's counts stand in only for
+  what the game does not hold yet: its spell scanner misses ADD_SPELL (an
+  audit of its method found it), so an estimate is labelled as one.
 
 ### Fixed
 - **Reading a mod's text stays inside the mod**, on Windows too: a tp2 path

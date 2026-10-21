@@ -97,7 +97,8 @@
           "mods_without_data",
           "eeex",
           "spells_of_unknown_level",
-          "tables"
+          "tables",
+          "measured_from"
         ],
         "properties": {
           "install": {
@@ -132,7 +133,8 @@
                 "source",
                 "note",
                 "checked",
-                "added_by"
+                "added_by",
+                "measured"
               ],
               "properties": {
                 "label": {
@@ -177,9 +179,20 @@
                       "count"
                     ]
                   }
+                },
+                "measured": {
+                  "type": "boolean",
+                  "description": "The base was read from the game folder by WeiDU's own rules (KITLIST.2DA, SPELL.IDS/ADD_SPELL.IDS/SPxxLnn.SPL, SPLSTATE.IDS) rather than assumed; `added` then covers only components the game does not hold yet."
                 }
               }
             }
+          },
+          "measured_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The game folder the tables were measured in (it holds the WeiDU.log and chitin.key), or null when every table is an estimate."
           }
         }
       }

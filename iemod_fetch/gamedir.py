@@ -25,7 +25,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Set, Tuple
 
 _MAX_KEY_BYTES = 64 * 1024 * 1024
-_TYPES = {"are": 0x3F2, "2da": 0x3F4}
+_MAX_RESOURCE_BYTES = 16 * 1024 * 1024
+_TYPES = {"spl": 0x3EE, "ids": 0x3F0, "are": 0x3F2, "2da": 0x3F4}
 MARKERS = {"bgee": "oh1000.are", "bg2ee": "oh6000.are", "eet": "eet.flag"}
 SOD_MOVIE = os.path.join("movies", "sodcin05.wbm")
 SOD_ARCHIVES = (("sod-dlc.zip",), ("dlc", "sod-dlc.zip"), ("workshop", "sod-dlc.mod"))
@@ -69,6 +70,89 @@ def key_resources(game_dir: str) -> Set[Tuple[str, int]]:
         (kind,) = struct.unpack_from("<H", data, start + 8)
         out.add((name, kind))
     return out
+
+
+def _key(game_dir: str) -> Optional[bytes]:
+    path = _find(game_dir, "chitin.key")
+    if path is None or os.path.getsize(path) > _MAX_KEY_BYTES:
+        return None
+    with open(path, "rb") as fh:
+        data = fh.read()
+    return data if len(data) >= 24 and data[:8] == b"KEY V1  " else None
+
+
+def read_resource(game_dir: str, resource: str) -> Optional[bytes]:
+    """
+    A resource as the game sees it: override/ first, else the BIFF that
+    chitin.key points to - the lookup WeiDU's load_resource makes. None when
+    it is in neither, or its BIFF is compressed (BIFC, classic games only) or
+    unreadable: nothing is guessed.
+    """
+    override = _find(game_dir, "override", resource)
+    if override is not None and os.path.isfile(override):
+        if os.path.getsize(override) > _MAX_RESOURCE_BYTES:
+            return None
+        with open(override, "rb") as fh:
+            return fh.read()
+    name, _dot, ext = resource.lower().rpartition(".")
+    data = _key(game_dir)
+    if data is None or ext not in _TYPES:
+        return None
+    bifs, count, bif_offset, offset = struct.unpack_from("<IIII", data, 8)
+    for i in range(count):
+        start = offset + 14 * i
+        if start + 14 > len(data):
+            return None
+        if data[start:start + 8].split(b"\0", 1)[0].decode("latin-1").lower() != name:
+            continue
+        kind, locator = struct.unpack_from("<HI", data, start + 8)
+        if kind != _TYPES[ext]:
+            continue
+        return _from_bif(game_dir, data, bifs, bif_offset, locator)
+    return None
+
+
+def _from_bif(game_dir: str, key: bytes, bifs: int, bif_offset: int,
+              locator: int) -> Optional[bytes]:
+    index, file_index = locator >> 20, locator & 0x3FFF
+    entry = bif_offset + 12 * index
+    if index >= bifs or entry + 12 > len(key):
+        return None
+    _length, name_offset, name_length, _where = struct.unpack_from("<IIHH", key, entry)
+    relative = key[name_offset:name_offset + name_length].split(b"\0", 1)[0]
+    parts = relative.decode("latin-1").replace("\\", "/").split("/")
+    # A BIFF lives under the game folder: no parent, drive, stream or root part.
+    if any(p == ".." or ":" in p for p in parts):
+        return None
+    parts = [p for p in parts if p not in ("", ".")]
+    path = _find(game_dir, *parts) if parts else None
+    if path is None or not os.path.isfile(path):
+        return None
+    with open(path, "rb") as fh:
+        header = fh.read(20)
+        if len(header) < 20 or header[:8] != b"BIFFV1  ":
+            return None
+        files, _tilesets, table = struct.unpack_from("<III", header, 8)
+        fh.seek(table)
+        entries = fh.read(16 * files)
+        for i in range(len(entries) // 16):
+            res_locator, res_offset, size, _kind = struct.unpack_from("<IIIH", entries, 16 * i)
+            if res_locator & 0x3FFF == file_index:
+                if size > _MAX_RESOURCE_BYTES:
+                    return None
+                fh.seek(res_offset)
+                return fh.read(size)
+    return None
+
+
+def spell_files(game_dir: str) -> Set[str]:
+    """Every SPL resref the game has, in override/ or chitin.key, lower case."""
+    names = {name for name, kind in key_resources(game_dir) if kind == _TYPES["spl"]}
+    override = _find(game_dir, "override")
+    if override is not None and os.path.isdir(override):
+        names.update(entry[:-4].lower() for entry in os.listdir(override)
+                     if entry.lower().endswith(".spl"))
+    return names
 
 
 def _exists(game_dir: str, resource: str, keys: Set[Tuple[str, int]]) -> bool:

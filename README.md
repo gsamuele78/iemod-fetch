@@ -43,7 +43,7 @@ Standard library only at runtime. One file, no dependencies.
 | **Order** | sorts every component against the BWS-NG and krion64 rule data, then re-checks the result | `--plan-order DIR` |
 | **Order** at component level | splits a mod across the install where krion64 or a component rule places its parts apart | *(with `--plan-order`)* |
 | **Resolve** | removes the components an error-graded incompatibility rule pins, and the earlier of two options of one WeiDU subcomponent group; lists the rest for you | `--resolve-conflicts` |
-| **Limits** | kits (256), spell states and spell ids per level (50) the chosen components add, per install, against the limits WeiDU and the engine actually have; warnings, never a block | *(with the conflict report)* |
+| **Limits** | kits (256), spell states and spell ids per level (50), per install, against the limits WeiDU and the engine actually have - measured in the game folder when the log is in one, else estimated from krion64; warnings, never a block | *(with the conflict report)* |
 | **Decide** | every conflict comes with its options (drop a side, reorder, install what is missing) and their cost; your choice, by option id, is applied to the plan and re-checked | `--decisions decisions.json` |
 | **Simulate** | walks the plan as WeiDU will: each mod's own tp2 REQUIRE/FORBID/GAME_IS, the game turning into EET, EET's merge allow-list; lists every refusal | `--simulate` |
 | **Game folders** | identifies BG:EE / BG2:EE / EET the way WeiDU does; refuses a modded BG2:EE, missing SoD, swapped folders | `--bgee-dir` `--bg2ee-dir` |
@@ -353,7 +353,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 1,019 passed + 4 skipped (platform/opt-in), no network, ~30s
+python3 -m pytest -q      # 1,026 passed + 8 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -489,7 +489,13 @@ observations withheld by default.
 
 The report ends with the **engine limits** of each install: how many kits,
 spell states and spell ids per level the chosen components add, and who adds
-them. The limits are the ones in WeiDU's and the engine's own sources - 256
+them. When the WeiDU.log sits in its game folder (beside `chitin.key`), the
+tables are **measured** there, by WeiDU's own rules - the last kit number in
+KITLIST.2DA, the spell slots ADD_SPELL would skip, the ids in SPLSTATE.IDS -
+and checked against the real WeiDU in CI; krion64's counts then only cover
+what the game does not have yet. Without a game folder they are krion64's
+estimates, and the report says what they miss: its spell scanner does not see
+ADD_SPELL, so a level can be fuller than shown. The limits are the ones in WeiDU's and the engine's own sources - 256
 kits (WeiDU refuses ADD_KIT past it on every EE game), 50 wizard or priest
 spells per level - not Infinity Mod Forge's 320 kits, which no source
 supports. They are warnings, for every game patch. Spell states are shown but

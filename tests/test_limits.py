@@ -133,3 +133,135 @@ def test_the_conflict_report_carries_the_limits(tmp_path):
     assert limits["install"] == "EET"
     assert limits["tables"][0]["total"] == 43
     assert "ENGINE LIMITS" in out.getvalue()
+
+
+# ------------------------------------------------- measured in the game folder
+import struct  # noqa: E402
+
+from iemod_fetch import gamedir  # noqa: E402
+from iemod_fetch.limits import (Measured, kits_in_use, spell_slots_taken,  # noqa: E402
+                                spell_states_in_use)
+
+KITLIST = ("2DA V1.0\n*\n     ROWNAME LOWER MIXED HELP ABILITIES PROFICIENCY UNUSABLE CLASS\n"
+           "0  RESERVE 0 0 0 * 0 0x00000000 0\n1  BERSERKER 1 2 3 CLABFI02 1 0x4000 2\n"
+           "40 DARK_MOON 1 2 3 CLABTH05 1 0x4000 4\n")
+KITLIST_EX = KITLIST + "41 * *\n42 * *\n"
+SPELL_IDS = "IDS V1.0\n3\n2101 WIZARD_ONE\n2102 WIZARD_TWO\n1101 CLERIC_ONE\n3101 PSIONIC\n"
+
+
+def test_the_next_kit_number_is_found_as_weidu_finds_it():
+    assert kits_in_use(KITLIST) == 40          # get_next_kit_number would give 41
+    assert kits_in_use(KITLIST_EX) == 40       # the first `N * *` row is next
+
+
+def test_a_spell_slot_is_taken_when_add_spell_would_skip_it():
+    """TB#ADD_SPELL_FIND_SLOT: SPELL.IDS, ADD_SPELL.IDS, or an SPWI/SPPR file."""
+    taken = spell_slots_taken(SPELL_IDS, "2103 WIZARD_THREE\n", ["SPWI104", "sppr101", "x"])
+    assert taken == {"w1": 4, "p1": 1}         # 2101, 2102, 2103, spwi104; 1101 = sppr101
+
+
+def test_spell_states_count_ids_0_to_255_once():
+    assert spell_states_in_use("IDS V1.0\n0 NONE\n1 A\n1 A_AGAIN\n0x10 B\n300 HIGH\n") == 3
+
+
+def bif(resources):
+    """A real BIFF V1 file: (data) in order; locators 0..n-1."""
+    table = 20
+    data_at = table + 16 * len(resources)
+    entries, blobs, offset = b"", b"", data_at
+    for i, (kind, blob) in enumerate(resources):
+        entries += struct.pack("<IIIHH", i, offset, len(blob), kind, 0)
+        blobs += blob
+        offset += len(blob)
+    return b"BIFFV1  " + struct.pack("<III", len(resources), 0, table) + entries + blobs
+
+
+def key(bif_name, resources):
+    """KEY V1 with one BIF: (resref, type) at locator index i."""
+    name = bif_name.encode() + b"\0"
+    bif_at = 24
+    name_at = bif_at + 12
+    res_at = name_at + len(name)
+    header = b"KEY V1  " + struct.pack("<IIII", 1, len(resources), bif_at, res_at)
+    bifs = struct.pack("<IIHH", 0, name_at, len(name), 1)
+    body = b"".join(r.encode().ljust(8, b"\0") + struct.pack("<HI", kind, i)
+                    for i, (r, kind) in enumerate(resources))
+    return header + bifs + name + body
+
+
+def a_game(root, override=None, log=None):
+    (root / "data").mkdir(parents=True)
+    (root / "override").mkdir()
+    (root / "data" / "Default.bif").write_bytes(bif([(0x3F4, KITLIST.encode()),
+                                                     (0x3F0, SPELL_IDS.encode()),
+                                                     (0x3EE, b"SPL V1  ")]))
+    (root / "chitin.key").write_bytes(key("data\\Default.bif", [
+        ("KITLIST", 0x3F4), ("SPELL", 0x3F0), ("SPWI105", 0x3EE)]))
+    for name, text in (override or {}).items():
+        (root / "override" / name).write_text(text)
+    if log is not None:
+        (root / "WeiDU.log").write_text(log)
+    return str(root)
+
+
+def test_resources_are_read_from_override_first_then_the_biff(tmp_path):
+    game = a_game(tmp_path / "g", override={"SPLSTATE.IDS": "IDS V1.0\n0 A\n"})
+    assert gamedir.read_resource(game, "kitlist.2da").decode() == KITLIST
+    assert gamedir.read_resource(game, "SPELL.IDS").decode() == SPELL_IDS
+    assert gamedir.read_resource(game, "splstate.ids") == b"IDS V1.0\n0 A\n"
+    assert gamedir.read_resource(game, "missing.2da") is None
+    assert "spwi105" in gamedir.spell_files(game)
+
+
+def test_a_measured_table_replaces_the_estimate_and_skips_what_is_installed():
+    measured = Measured(kits=250, spell_slots={"w1": 49}, spell_states=200)
+    records = [record("old", [{"cn": 0, "wp": "old/old.tp2", "k": 30, "ss": 9,
+                               "spLv": {"w1": 9}}]),
+               record("new", [{"cn": 0, "wp": "new/new.tp2", "k": 7, "spLv": {"w1": 2}}])]
+    report = engine_limits("BG2EE", [("old", 0), ("new", 0)], records,
+                           measured=measured, installed=[("old", 0)], measured_from="/g")
+    kits = kits_of(report)
+    assert (kits.base, kits.added, kits.total, kits.measured) == (250, 7, 257, True)
+    assert kits.severity == "error"
+    states = report.tallies[1]
+    assert (states.base, states.added, states.checked) == (200, 0, True)   # measured: warned on
+    w1 = next(t for t in report.tallies if t.label.startswith("wizard level 1"))
+    assert (w1.base, w1.added, w1.severity) == (49, 2, "error")
+    assert "measured in /g" in report.render()
+
+
+def test_a_game_folder_beside_the_log_is_measured(tmp_path):
+    log = "~OLD/OLD.TP2~ #0 #0 // Old\n"
+    game = a_game(tmp_path / "g", log=log,
+                  override={"SPLSTATE.IDS": "IDS V1.0\n0 A\n1 B\n"})
+    report_path = tmp_path / "conflicts.json"
+    (tmp_path / "rules").mkdir()
+    api.run(api.Settings(weidu_log=[os.path.join(game, "WeiDU.log") + ":BG2EE"],
+                         check_only=True, quiet=True, conflict_report=str(report_path),
+                         rules=[str(tmp_path / "rules")], no_update_data=True,
+                         no_default_data=True,
+                         manifest=os.path.join(HERE, "data", "mod_downloads.json")))
+    (limits,) = json.loads(report_path.read_text())["engine_limits"]
+    assert limits["measured_from"] == game
+    tables = {t["label"]: t for t in limits["tables"]}
+    assert tables["kits (KITLIST.2DA)"]["total"] == 40
+    assert tables["spell states (SPLSTATE.IDS)"]["total"] == 2
+    assert tables["wizard level 1 spells (SPELL.IDS)"]["total"] == 3     # 2101, 2102, spwi105
+
+
+def test_a_biff_path_that_leaves_the_game_folder_is_not_followed(tmp_path):
+    outside = tmp_path / "outside.bif"
+    outside.write_bytes(bif([(0x3F4, KITLIST.encode())]))
+    for name in ("..\\outside.bif", "C:\\outside.bif", "data\\..\\..\\outside.bif"):
+        root = tmp_path / f"g{abs(hash(name))}"
+        root.mkdir()
+        (root / "chitin.key").write_bytes(key(name, [("KITLIST", 0x3F4)]))
+        assert gamedir.read_resource(str(root), "kitlist.2da") is None
+
+
+def test_a_damaged_key_or_biff_is_not_measured_and_does_not_stop_the_report(tmp_path):
+    game = a_game(tmp_path / "g")
+    with open(os.path.join(game, "data", "Default.bif"), "r+b") as fh:
+        fh.truncate(30)
+    measured, _installed = api._measure_game(game)
+    assert measured.kits is None and measured.spell_slots is None

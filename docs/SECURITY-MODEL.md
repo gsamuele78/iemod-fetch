@@ -54,6 +54,14 @@ their tp2 paths from the staged mods or from krion64's records, and go through
 the same checks. An author's `mod-forge.json` is read as data, size-capped,
 and only into the rule set.
 
+**A game folder is read, never written, by the limit check.** When a WeiDU.log
+sits beside a `chitin.key`, KITLIST.2DA, SPELL.IDS, ADD_SPELL.IDS and
+SPLSTATE.IDS are read from override/ or from the BIFF the key names. Each read
+is size-capped (64 MiB key, 16 MiB resource), only uncompressed `BIFFV1` is
+parsed, and a BIFF path from the key with a `..`, a drive or a stream part is
+not followed - the key is the game's, but a damaged one must not make the
+tool read elsewhere.
+
 ## Boundary 2 — the network
 
 | Control | What it stops |
