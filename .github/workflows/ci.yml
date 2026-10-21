@@ -135,6 +135,7 @@ jobs:
       WEIDU_URL: https://github.com/WeiDUorg/weidu/releases/download/v251.00/WeiDU-Linux-251.zip
       WEIDU_SHA256: 3e1a34ec5d6e934b1d4a34541a1312d0170b120c6efe903a732415acde3bd3c0
       MOD_INSTALLER_REV: 3b6827a039db43e342be19f7610ecdd680fe0a62
+      MOD_INSTALLER_VERSION: "16.0.0"   # Cargo.toml at that commit; upstream-versions.yml compares it
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { persist-credentials: false }

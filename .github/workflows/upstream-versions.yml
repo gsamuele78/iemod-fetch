@@ -1,0 +1,31 @@
+name: Upstream versions
+
+# Dependabot cannot see the test toolchain pinned in ci.yml's real-weidu job:
+# WeiDU is a release zip plus a sha256, mod_installer a commit. This compares
+# them with upstream every week and opens one issue per tool that is behind.
+# It never opens a pull request: a new digest must be checked by a person
+# (ADR-0028; the method of Proxmox_biome_log_collector's upstream-versions.yml).
+on:
+  schedule:
+    - cron: "37 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  toolchain:
+    name: WeiDU and mod_installer against upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: "3.12" }
+      # A red run means something to bump; the issue says what.
+      - name: Compare, and open an issue per tool behind
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python tools/upstream_versions.py

@@ -682,6 +682,6 @@ way. Never install from a branch head you did not pin.
 
 * `README.md` — feature overview
 * `docs/AUDIT.md` — what was wrong with the original script, with evidence
-* `docs/ADR.md` — ADR-0001…0027, the design decisions and why
+* `docs/ADR.md` — ADR-0001…0028, the design decisions and why
 * `docs/PLAN.md` — three-phase audit / implementation / validation plan
 * `python3 -m iemod_fetch --help` — full flag reference

@@ -17,5 +17,10 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly, day: monday }
+    groups:
+      actions:
+        patterns: ["*"]
     commit-message:
       prefix: "ci"
+  # Not covered here: the WeiDU zip and the mod_installer commit pinned in
+  # ci.yml. upstream-versions.yml watches those (ADR-0028).
