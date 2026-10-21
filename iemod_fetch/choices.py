@@ -107,6 +107,8 @@ def from_krion(records: Iterable[dict]) -> Dict[str, List[ModTp2]]:
             name = _text(raw.get("n")) or f"#{numbers[index]}"
             tp2 = out.setdefault(folder_key(path), {}).setdefault(
                 path.lower(), ModTp2(path, KRION))
+            if any(c.number == numbers[index] for c in tp2.components):
+                continue        # two records list this tp2, or one lists a number twice
             tp2.components.append(Component(
                 numbers[index], name, subgroup=subgroup,
                 exclusive=f"g:{group}" if group not in (None, "") else "",

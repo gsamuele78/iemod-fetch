@@ -119,6 +119,20 @@ def _tp2(value, where: str) -> str:
     return "/".join(parts)
 
 
+def tp2_problem(value: str) -> Optional[str]:
+    """Why selection.json would refuse `value` as a tp2 path, or None."""
+    try:
+        _tp2(value, "tp2")
+    except ConfigError as exc:
+        return str(exc)
+    return None
+
+
+def one_line_label(text: str) -> str:
+    """A component's name as selection.json can keep it: one line, no '~'."""
+    return " ".join(text.replace("~", "-").split())
+
+
 def _choice(obj, where: str) -> Choice:
     if not isinstance(obj, dict):
         raise ConfigError(f"{where}: a component is an object, got {obj!r}")

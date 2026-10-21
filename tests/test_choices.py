@@ -103,3 +103,39 @@ def test_a_selection_leaving_its_folder_is_refused_before_anything_is_written(tm
     with pytest.raises(ConfigError):
         api.save_selection(str(tmp_path), "EET", [("../../evil.tp2", 0)])
     assert not (tmp_path / api.SELECTION_FILE).exists()
+
+
+# --------------------------------------------- review follow-ups (#32)
+def test_a_component_listed_twice_is_offered_once():
+    twice = {"co": [{"n": "a", "wc": 1, "wp": "m/m.tp2"}, {"n": "a again", "wc": 1,
+                                                           "wp": "M/M.TP2"}]}
+    (tp2,) = from_krion([twice, twice])["m"]
+    assert [(c.number, c.name) for c in tp2.components] == [(1, "a")]
+
+
+def test_a_name_with_a_tilde_or_a_line_break_is_saved_as_one_line(tmp_path):
+    path = api.save_selection(str(tmp_path), "EET", [("bg1npc/setup-bg1npc.tp2", 110)],
+                              labels={("bg1npc/setup-bg1npc.tp2", 110):
+                                      "Banter Timing: Normal (~27 min)\nsecond line"})
+    (install,) = api.load_selection(path).installs
+    assert install.components[0].label == "Banter Timing: Normal (-27 min) second line"
+
+
+def test_a_tp2_path_selection_json_refuses_is_marked_not_offered(tmp_path):
+    record = {"co": [{"n": "x", "wc": 0, "wp": "OUT, BRIEF CANDLEKEEP!/setup~x.tp2"}]}
+    catalogue = tmp_path / "lcc.json"
+    catalogue.write_text(json.dumps({"mods": [{"name": "Odd", "tp2": "OUT, BRIEF CANDLEKEEP!",
+                                               "games": ["EET"]}]}))
+    mods = api.mod_choices("EET", catalogues=[str(catalogue)],
+                           krion=krion_dir(tmp_path, record), data_dir=str(tmp_path / "x"))
+    (tp2,) = mods[0]["tp2s"]
+    assert "unsafe" in tp2["refused"]
+
+
+def test_a_failed_write_leaves_no_temporary_file(tmp_path, monkeypatch):
+    def broken(src, dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(os, "replace", broken)
+    with pytest.raises(OSError):
+        api.save_selection(str(tmp_path), "EET", [("m/m.tp2", 0)])
+    assert os.listdir(tmp_path) == []

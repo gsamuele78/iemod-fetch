@@ -153,3 +153,68 @@ def test_closing_the_page_while_the_list_loads_does_not_crash(qtbot, tmp_path):
     qtbot.wait(50)                     # the page is gone; its thread is not
     release.set()
     wait_for_loaders(5000)
+
+
+# --------------------------------------------- review follow-ups (#32)
+EXCLUSIVE_NEEDED = [{
+    "key": "fp", "name": "Faiths and Powers", "games": ["EET"], "categories": ["Kits"],
+    "status": [], "advisories": [], "tp2s": [{"tp2": "fp/fp.tp2", "origin": "krion64",
+                                              "refused": None, "components": [
+        component(10, "kit a", "g:paladin"), component(11, "kit b", "g:paladin"),
+        component(30, "needs kit a", requires=[10]),
+        component(30, "listed twice")]}]}]
+
+
+def test_a_needed_component_clears_the_rest_of_its_subcomponent(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, EXCLUSIVE_NEEDED)
+    check(widget, ("fp/fp.tp2", 11))
+    check(widget, ("fp/fp.tp2", 30))
+    assert widget.chosen() == [("fp/fp.tp2", 10), ("fp/fp.tp2", 30)]
+
+
+def test_a_component_listed_twice_has_one_box_that_works(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, EXCLUSIVE_NEEDED)
+    rows = [widget.tree.topLevelItem(0).child(i).text(0)
+            for i in range(widget.tree.topLevelItem(0).childCount())]
+    assert sum(row.startswith("#30") for row in rows) == 1
+
+
+def test_a_refused_tp2_cannot_be_chosen_and_says_why(qtbot, tmp_path):
+    refused = [dict(EXCLUSIVE_NEEDED[0], tp2s=[dict(EXCLUSIVE_NEEDED[0]["tp2s"][0],
+                                                    refused="tp2 path is unsafe")])]
+    widget = page(qtbot, tmp_path, refused)
+    assert widget.tree.topLevelItem(0).isDisabled()
+
+
+def test_changing_the_game_while_the_list_loads_loads_the_new_game(qtbot, tmp_path):
+    import threading
+    gate = threading.Event()
+    asked = []
+
+    def load(game, project):
+        asked.append(game)
+        if game == "EET":
+            gate.wait(5)
+        return [dict(MODS[0], name=f"for {game}")]
+    widget = ModsPage(str(tmp_path), load=load)
+    qtbot.addWidget(widget)
+    widget.start("EET")
+    widget.start("BGEE")                       # Back, another game, Next
+    with qtbot.waitSignal(widget.loaded, timeout=5000):
+        gate.set()
+    assert asked == ["EET", "BGEE"] and widget.game == "BGEE"
+    assert widget.tree.topLevelItem(0).text(0) == "for BGEE"
+
+
+def test_catalogue_text_is_shown_as_text_not_html(qtbot, tmp_path):
+    hostile = [dict(MODS[0], name="<a href='file:///etc/passwd'>click</a>",
+                    advisories=["<img src='file:///x'>"])]
+    widget = page(qtbot, tmp_path, hostile)
+    widget._show(widget.tree.topLevelItem(0))
+    assert "&lt;a href" in widget.details.toHtml() and "<img" not in widget.details.toHtml()
+
+
+def test_a_selection_for_another_game_is_not_carried_over(qtbot, tmp_path):
+    api.save_selection(str(tmp_path), "BGEE", [(TP2, 0)])
+    widget = page(qtbot, tmp_path)                     # loads for EET
+    assert widget.chosen() == []

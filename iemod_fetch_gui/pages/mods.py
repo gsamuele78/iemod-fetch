@@ -13,6 +13,7 @@ A mod whose components are not known yet - not staged, and krion64 has no
 record of it - cannot be chosen here: a selection names components, and
 guessing them is what this tool does not do. It says so in its row.
 """
+import html
 import os
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
@@ -78,7 +79,8 @@ class ModsPage(QWidget):
         super().__init__()
         self.project_dir = project_dir
         self.load = load
-        self.game = ""
+        self.game = ""              # the game the shown list is for
+        self.wanted = ""            # the game asked for last
         self.mods: List[dict] = []
         self.items: Dict[Key, QTreeWidgetItem] = {}
         self.exclusive: Dict[Tuple[str, str], List[QTreeWidgetItem]] = {}
@@ -100,7 +102,9 @@ class ModsPage(QWidget):
         self.tree.itemChanged.connect(self._changed)
         self.tree.currentItemChanged.connect(lambda item, _old: self._show(item))
         self.details = QTextBrowser()
+        self.details.setOpenLinks(False)          # catalogue text is third-party
         self.status = QLabel("Loading the mod list...")
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
 
         bar = QHBoxLayout()
         bar.addWidget(self.search, 1)
@@ -123,7 +127,10 @@ class ModsPage(QWidget):
     # ------------------------------------------------------------ loading
     def start(self, game: str) -> None:
         """Load the catalogue for `game` in a worker thread."""
-        if self._thread is not None or (game == self.game and self.mods):
+        self.wanted = game
+        if self._thread is not None:          # loading: _finished loads again if needed
+            return
+        if game == self.game and self.mods:
             return
         self.game = game
         self.status.setText(f"Loading the mods for {game}...")
@@ -146,6 +153,9 @@ class ModsPage(QWidget):
 
     def _finished(self) -> None:
         self._thread = None
+        if self.wanted and self.wanted != self.game:
+            self.start(self.wanted)     # the game changed while this list loaded
+            return
         self.loaded.emit()              # the thread has ended: safe to close the page
 
     def _failed(self, message: str) -> None:
@@ -183,7 +193,7 @@ class ModsPage(QWidget):
         origin = ", ".join(sorted({t["origin"] for t in tp2s})) or "not known yet"
         item = QTreeWidgetItem([mod.get("name") or mod["key"], version, origin])
         item.setData(0, ROLE, ("mod", mod["key"]))
-        if not any(t["components"] for t in tp2s):
+        if not any(t["components"] and not t.get("refused") for t in tp2s):
             item.setDisabled(True)
             item.setToolTip(0, "Its components are not known until it is downloaded: "
                                "nothing to choose yet.")
@@ -198,13 +208,20 @@ class ModsPage(QWidget):
                                 | Qt.ItemFlag.ItemIsAutoTristate)
                 item.addChild(parent)
             for component in tp2["components"]:
+                key = (tp2["tp2"], component["number"])
+                if key in self.items:               # listed twice: one box, not two
+                    continue
                 name = component["name"]
                 if component["subgroup"]:
                     name = f"{component['subgroup']} -> {name}"
                 child = QTreeWidgetItem([f"#{component['number']}  {name}", "", ""])
                 child.setFlags(child.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                key = (tp2["tp2"], component["number"])
                 child.setData(0, ROLE, ("component", key, component))
+                if tp2.get("refused"):
+                    child.setDisabled(True)
+                    child.setToolTip(0, tp2["refused"])
+                    parent.addChild(child)
+                    continue
                 child.setCheckState(0, Qt.CheckState.Checked if key in saved
                                     else Qt.CheckState.Unchecked)
                 parent.addChild(child)
@@ -223,7 +240,7 @@ class ModsPage(QWidget):
         except Exception:        # a hand-edited file the CLI would refuse: start empty
             return set()
         return {(c.tp2, c.component) for install in selection.installs
-                for c in install.components}
+                if install.game.upper() == self.game.upper() for c in install.components}
 
     # ---------------------------------------------------------- choosing
     def _changed(self, item: QTreeWidgetItem, column: int) -> None:
@@ -233,20 +250,29 @@ class ModsPage(QWidget):
         if not data or data[0] != "component":
             self._count()
             return
-        _kind, (tp2, number), component = data
         if item.checkState(0) == Qt.CheckState.Checked:
             self._updating = True
             try:
-                for other in self.exclusive.get((tp2, component["exclusive"]), []):
-                    if other is not item:
-                        other.setCheckState(0, Qt.CheckState.Unchecked)
-                for needed in component["requires"]:
-                    needed_item = self.items.get((tp2, needed))
-                    if needed_item is not None:
-                        needed_item.setCheckState(0, Qt.CheckState.Checked)
+                self._choose(item, set())
             finally:
                 self._updating = False
         self._count()
+
+    def _choose(self, item: QTreeWidgetItem, seen: Set[Key]) -> None:
+        """Choose `item`: clear the rest of its SUBCOMPONENT, then choose - the
+        same way - every component it needs."""
+        _kind, (tp2, number), component = item.data(0, ROLE)
+        if (tp2, number) in seen:
+            return
+        seen.add((tp2, number))
+        item.setCheckState(0, Qt.CheckState.Checked)
+        for other in self.exclusive.get((tp2, component["exclusive"]), []):
+            if other is not item:
+                other.setCheckState(0, Qt.CheckState.Unchecked)
+        for needed in component["requires"]:
+            needed_item = self.items.get((tp2, needed))
+            if needed_item is not None and not needed_item.isDisabled():
+                self._choose(needed_item, seen)
 
     def chosen(self) -> List[Key]:
         """(tp2, number) of every chosen component, in catalogue order."""
@@ -295,15 +321,19 @@ class ModsPage(QWidget):
         mod = next((m for m in self.mods if m["key"] == item.data(0, ROLE)[1]), None)
         if mod is None:
             return
-        lines = [f"<h3>{mod.get('name') or mod['key']}</h3>",
-                 f"<b>Games:</b> {', '.join(mod.get('games') or []) or 'not stated'}",
-                 f"<b>Categories:</b> {', '.join(mod.get('categories') or []) or '-'}",
-                 f"<b>Status:</b> {', '.join(mod.get('status') or []) or '-'}"]
+        e = html.escape                       # every value here is catalogue text
+        lines = [f"<h3>{e(str(mod.get('name') or mod['key']))}</h3>",
+                 f"<b>Games:</b> {e(', '.join(mod.get('games') or []) or 'not stated')}",
+                 f"<b>Categories:</b> {e(', '.join(mod.get('categories') or []) or '-')}",
+                 f"<b>Status:</b> {e(', '.join(mod.get('status') or []) or '-')}"]
         latest = mod.get("latest") or {}
         if latest:
-            lines.append(f"<b>Newest version:</b> {latest.get('version')} "
-                         f"({latest.get('origin')}, {latest.get('date') or 'no date'})")
-        lines += [f"<b>Warning:</b> {text}" for text in mod.get("advisories") or []]
+            lines.append(f"<b>Newest version:</b> {e(str(latest.get('version')))} "
+                         f"({e(str(latest.get('origin')))}, "
+                         f"{e(str(latest.get('date') or 'no date'))})")
+        lines += [f"<b>Warning:</b> {e(str(text))}" for text in mod.get("advisories") or []]
+        lines += [f"<b>Cannot be chosen:</b> {e(t['refused'])}"
+                  for t in mod.get("tp2s") or [] if t.get("refused")]
         if any(t["origin"] == "krion64" for t in mod.get("tp2s") or []):
             lines.append(f"<i>{KRION_NOTE}</i>")
         self.details.setHtml("<br>".join(lines))

@@ -59,6 +59,7 @@ from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
 from .selection import Install as SelectionInstall
+from .selection import one_line_label, tp2_problem
 from .selection import (Choice, Selection, parse_selection,
                         selection_from_logs, selection_to_json)
 from .simulate import simulate_install, steps_of
@@ -544,7 +545,12 @@ def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
         if wanted and mod.games and wanted not in {g.lower() for g in mod.games}:
             continue
         entry = mod.as_dict()
-        entry["tp2s"] = [t.as_dict() for t in tp2s.get(choices.folder_key(mod.tp2), [])]
+        entry["tp2s"] = []
+        for tp2 in tp2s.get(choices.folder_key(mod.tp2), []):
+            described = tp2.as_dict()
+            # A path selection.json would refuse cannot be chosen: say why.
+            described["refused"] = tp2_problem(tp2.tp2)
+            entry["tp2s"].append(described)
         out.append(entry)
     return out
 
@@ -558,16 +564,22 @@ def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
     """
     labels = labels or {}
     selection = Selection([SelectionInstall(game.upper(), [
-        Choice(tp2=tp2, component=number, label=labels.get((tp2, number), ""))
-        for tp2, number in chosen])])
+        Choice(tp2=tp2, component=number,
+               label=one_line_label(labels.get((tp2, number), "")))
+        for tp2, number in dict.fromkeys(chosen)])])
     text = selection_to_json(selection)
     parse_selection(text, source="the wizard's selection")      # refuse before writing
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, SELECTION_FILE)
     temp = path + ".tmp"
-    with open(temp, "w", encoding="utf-8") as fh:
-        fh.write(text)
-    os.replace(temp, path)
+    try:
+        with open(temp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
     return path
 
 

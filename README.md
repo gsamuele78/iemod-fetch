@@ -393,7 +393,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,062 passed + 10 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
+python3 -m pytest -q      # 1,066 passed + 10 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -577,7 +577,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,087, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,097, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |
