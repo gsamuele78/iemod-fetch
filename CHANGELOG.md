@@ -16,6 +16,11 @@ Python API, which is internal.
   is published with *Run workflow* and its `version`. PyPI publishing is opt-in
   through the `PYPI_PUBLISH` repository variable. This is the method of
   R-studioConf's ADR-0006, adapted (ADR-0027).
+- **One run goes from nothing to a checked plan.** A run that downloads now
+  checks the rules, plans the order and builds the conflict report *after* the
+  downloads, so the mods' own tp2 constraints and languages are read from what
+  it just staged. Before, they were read first, and a fresh selection needed a
+  second run to be checked (M1). `--check-only` is unchanged.
 
 ### Added
 - **selection.json** (`--selection`, `--emit-selection`): the mods, components
@@ -45,6 +50,12 @@ Python API, which is internal.
   mods it reached are marked `cancelled`, and the exit code is 130. Ctrl-C now
   stops downloads in flight the same way instead of waiting for them. Schema
   in `schemas/events-v1.schema.json` (ADR-0030, M1).
+- **Stable error codes.** Every error class has a `code` (`checksum_mismatch`,
+  `not_an_archive`, `http_status`, `unresolved`, `cancelled`, ...), and each
+  record of the JSON report carries `error_code` when the mod did not succeed
+  (plus `filesystem` and `internal`). A front end decides what to show from the
+  code instead of parsing the message. The codes are pinned by
+  `tests/test_error_codes.py` (ADR-0030, M1).
 - **Weekly check of the pinned test toolchain** (`upstream-versions.yml`):
   WeiDU and mod_installer are compared with upstream, and an issue opens for
   each one behind, with how to bump it. Dependabot cannot see those two pins.

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from dataclasses import replace as _replace
 
 from .contract import SCHEMA_VERSION
-from .errors import (Cancelled, InstallConflict, ModFetchError, UnsafeArchive,
+from .errors import (Cancelled, InstallConflict, ModFetchError, Unresolved,
                      VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
@@ -111,7 +111,8 @@ class Runner:
 
     def process(self, item: WorkItem) -> Record:
         if self.cancel.is_set():
-            return Record(item.folder, Status.CANCELLED, "the run was stopped before it")
+            return Record(item.folder, Status.CANCELLED, "the run was stopped before it",
+                          error_code=Cancelled.code)
         self._emit("mod_started", folder=item.folder)
         return self._process(item)
 
@@ -143,14 +144,15 @@ class Runner:
             if not self.has_fallbacks:
                 return Record(folder, Status.MANUAL,
                               item.detail or "no entry in the manifest for this mod",
-                              advisories=advisories)
+                              advisories=advisories, error_code=Unresolved.code)
             source = ModSource(key=folder, name=folder)   # resolved by fallback only
 
         resolution, discovered = self._resolve(source, folder)
         if not resolution.ok:
             return Record(folder, Status.MANUAL, resolution.reason,
                           source_key=source.key, url=source.url,
-                          advisories=advisories, warnings=list(resolution.warnings))
+                          advisories=advisories, warnings=list(resolution.warnings),
+                          error_code=Unresolved.code)
 
         candidate = resolution.candidate
         if self.options.dry_run:
@@ -176,21 +178,19 @@ class Runner:
                 resolution.warnings.append(
                     f"{folder}: the manifest's download did not contain this mod; "
                     f"installed from {entry.origin} instead ({alternate.url})")
-        except Cancelled:
+        except Cancelled as exc:
             return Record(folder, Status.CANCELLED, "stopped during the download",
-                          source_key=source.key, url=candidate.url)
+                          source_key=source.key, url=candidate.url, error_code=exc.code)
         except InstallConflict as exc:
             return Record(folder, Status.CONFLICT, str(exc), source_key=source.key,
-                          url=candidate.url)
-        except (VerificationFailed, UnsafeArchive) as exc:
-            return Record(folder, Status.FAILED, str(exc), source_key=source.key,
-                          url=candidate.url)
+                          url=candidate.url, error_code=exc.code)
         except ModFetchError as exc:
             return Record(folder, Status.FAILED, str(exc), source_key=source.key,
-                          url=candidate.url)
+                          url=candidate.url, error_code=exc.code)
         except OSError as exc:
             return Record(folder, Status.FAILED, f"filesystem error: {exc}",
-                          source_key=source.key, url=candidate.url)
+                          source_key=source.key, url=candidate.url,
+                          error_code="filesystem")
 
         # What the mod says about itself beats what any catalogue guessed.
         advisories = self._reconcile_with_tp2(advisories, outcome, item.game)
@@ -337,7 +337,8 @@ class Runner:
             record = future.result()
         except Exception as exc:                          # never lose a worker crash
             record = Record(item.folder, Status.FAILED,
-                            f"internal error: {type(exc).__name__}: {exc}")
+                            f"internal error: {type(exc).__name__}: {exc}",
+                            error_code="internal")
         report.records.append(record)
         report.warnings.extend(record.warnings)
         self._emit("mod_finished", folder=record.folder, status=record.status.value,
