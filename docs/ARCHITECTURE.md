@@ -41,7 +41,7 @@ budget, and each item is there because a real failure argued for it.
                          runner
                            │
         ┌──────────────────┼──────────────────┐
-    resolvers          install            orgindex          ← imperative
+    resolvers    install    orgindex    datasync          ← imperative
         └──────────────────┼──────────────────┘
                           net
                            │
@@ -113,6 +113,7 @@ Five contracts are enforced, and CI fails on a violation:
 | `install.py` | stage a verified mod directory | never deletes an existing directory; `--force` moves it aside |
 | `orgindex.py` | trusted-owner repository listing | a disk cache with a TTL |
 | `resolvers.py` | one manifest entry to one URL | refuses to guess; reports what it found instead |
+| `datasync.py` | the community-data cache: refresh from GitHub, stand in for source flags (ADR-0032) | each file checked against its git hash; swapped in whole; paths cannot leave the cache |
 | `runner.py` | orchestration and concurrency; progress events and cancellation | a cancelled download leaves no file |
 | `api.py` | the public API: `Settings`, `run`, `list_mods`, `load_selection`, `selection_of_logs` (ADR-0029) | what a front end may rely on is `__all__`; silent unless given a stream |
 | `cli.py` | argument parsing and config precedence, then `api.run` | the only place that reads `sys.argv` |

@@ -28,13 +28,14 @@ BOOL_KEYS = ("dry_run", "force", "refresh", "quiet", "allow_manual", "check_only
              "accept_suggestions", "allow_http", "allow_exe", "accept_offsite",
              "include_optional",
              "no_discovery", "no_gh_cli", "no_git_credential",
-             "all_manifest_entries", "resolve_conflicts", "emit_installer", "simulate")
-INT_KEYS = ("workers", "timeout", "retries", "discovery_attempts")
+             "all_manifest_entries", "resolve_conflicts", "emit_installer", "simulate",
+             "no_update_data", "no_default_data")
+INT_KEYS = ("workers", "timeout", "retries", "discovery_attempts", "data_max_age")
 SIZE_KEYS = ("max_bytes",)
 STR_KEYS = ("manifest", "target", "aliases", "json_report", "emit_pinned_manifest",
             "mod_db", "suppress", "game_language", "language_preference", "bgee_dir", "bg2ee_dir",
             "token_file", "oauth_client_id", "trusted_owners", "owner_cache",
-            "selection", "emit_selection", "list_mods", "events")
+            "selection", "emit_selection", "list_mods", "events", "data_dir")
 
 KNOWN_KEYS = frozenset(LIST_KEYS + BOOL_KEYS + INT_KEYS + SIZE_KEYS + STR_KEYS)
 

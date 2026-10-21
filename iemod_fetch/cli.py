@@ -193,6 +193,26 @@ def build_parser() -> argparse.ArgumentParser:
     sec.add_argument("--timeout", type=int, default=45, metavar="SECONDS")
     sec.add_argument("--retries", type=int, default=3, metavar="N")
 
+    data = parser.add_argument_group(
+        "community data (lcc-docs, BWS-NG, krion64; ADR-0032)",
+        "Kept in a cache and refreshed automatically when a run starts, at most "
+        "once per --data-max-age hours; used for --catalogue, --rules, --mod-db "
+        "and --order-catalogue whenever those are not given")
+    data.add_argument("--update-data", action="store_true",
+                      help="refresh the cached data now, whatever its age, and stop")
+    data.add_argument("--no-update-data", action="store_true",
+                      help="do not contact GitHub for the data; use the cache as it is "
+                           "(also: IEMOD_NO_UPDATE_DATA=1)")
+    data.add_argument("--data-dir", metavar="DIR",
+                      help="where the cache lives (default: $IEMOD_DATA_DIR, else the "
+                           "per-user cache directory, e.g. %%LOCALAPPDATA%%\\iemod-fetch\\data "
+                           "or ~/.cache/iemod-fetch/data)")
+    data.add_argument("--data-max-age", type=int, default=24, metavar="HOURS",
+                      help="refresh when the cache was last checked longer ago than "
+                           "this (default: %(default)s)")
+    data.add_argument("--no-default-data", action="store_true",
+                      help="do not use the cached data in place of flags not given")
+
     auth = parser.add_argument_group("github credential (optional; raises rate limits)")
     auth.add_argument("--token-file", metavar="PATH",
                       help="read the token from a file (preferred over env vars)")

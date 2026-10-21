@@ -124,3 +124,14 @@ def pytest_configure(config):
         return
     config.addinivalue_line(
         "filterwarnings", "ignore::hypothesis.errors.NonInteractiveExampleWarning")
+
+
+@pytest.fixture(autouse=True)
+def _no_community_data_refresh(tmp_path_factory, monkeypatch):
+    """
+    A run refreshes the community data cache when it starts (ADR-0032). Tests
+    never reach GitHub and never touch the user's real cache: the refresh is
+    off and the cache is an empty directory, unless a test turns it on.
+    """
+    monkeypatch.setenv("IEMOD_NO_UPDATE_DATA", "1")
+    monkeypatch.setenv("IEMOD_DATA_DIR", str(tmp_path_factory.mktemp("data-cache")))

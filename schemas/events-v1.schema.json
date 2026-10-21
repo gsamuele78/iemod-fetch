@@ -21,6 +21,11 @@
      "required": ["folder", "status", "detail"]},
     {"properties": {"event": {"const": "run_finished"}, "cancelled": {"type": "boolean"},
                     "counts": {"type": "object"}},
-     "required": ["cancelled", "counts"]}
+     "required": ["cancelled", "counts"]},
+    {"properties": {"event": {"const": "data_source"}, "name": {"type": "string"},
+                    "status": {"enum": ["fresh", "current", "updated", "failed"]},
+                    "commit": {"type": "string"}, "date": {"type": "string"},
+                    "changed": {"type": "integer"}, "detail": {"type": "string"}},
+     "required": ["name", "status", "commit", "date", "changed", "detail"]}
   ]
 }

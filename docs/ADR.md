@@ -1401,3 +1401,65 @@ a desktop wizard in PySide6, the UI the community already knows.
   PyInstaller build per OS at release time.
 - Dependabot watches PySide6 and PyInstaller like the other dev tools; a Qt
   security update means a GUI release.
+
+---
+
+## ADR-0032 — The community data is refreshed automatically when a run starts
+
+**Status**: accepted
+**Date**: 2026-10-21
+**Amends**: ADR-0009 (catalogues were read from a path and "never fetched
+automatically")
+
+### Context
+
+Install order and conflicts are decided from three community databases:
+lcc-docs (the mod list, status, rating), BigWorldSetup-NG (rules, per-mod
+records) and krion64 (order categories, per-mod conflicts, release scan). Until
+now each was a `git clone` the user had to make, pass by path and remember to
+`git pull`. A clone nobody pulls goes stale silently, and every order and
+conflict decision goes stale with it. The owner asked for this problem to be
+solved for good: the data refreshed by itself when the program starts.
+
+Measured: the files the tool reads are about 25 MB in total (lcc-docs
+`db/mods.json` 2.4 MB; BWS-NG `data/` 3.4 MB; krion64 `data/` 14 MB, in a
+487 MB repository that is mostly images).
+
+### Decision
+
+- A per-user cache (`$IEMOD_DATA_DIR`, else `%LOCALAPPDATA%\iemod-fetch\data`,
+  `~/Library/Caches/iemod-fetch/data` or `~/.cache/iemod-fetch/data`) holds the
+  three sources, each pinned to the commit it came from (`sources.json`).
+- Every run refreshes it first, at most once per `--data-max-age` hours
+  (default 24): one API call for the current commit; if it moved, one for its
+  file list; then only the `.json` files under the paths the tool reads, and
+  only those whose git blob hash changed, from raw.githubusercontent.com at
+  that commit. Each file is checked against the hash GitHub listed before it is
+  kept; the new copy is assembled beside the old one and swapped in whole.
+- Offline, rate-limited or refused, a source keeps its last good copy and the
+  run says how old it is. A refresh never stops a run.
+- The cache stands in for `--catalogue`, `--rules`, `--mod-db` and
+  `--order-catalogue` whenever those are not given. An explicit flag always
+  wins. `--no-default-data` turns the stand-in off, `--no-update-data` (or
+  `IEMOD_NO_UPDATE_DATA=1`) the network, and `--update-data` refreshes now and
+  stops.
+- Cached files carry the upstream commit date as their modification time, so
+  the rule-staleness warnings judge upstream's age, not the download's.
+- Still never bundled. The data keeps its licence (lcc-docs and krion64 MIT,
+  BWS-NG GPL-3.0); the user's own run fetches it and the tool reads it as data.
+
+### Consequences
+
+- `--plan-order` no longer needs `--order-catalogue`, and a check uses the
+  community rules without any setup. A run that passed with no rules given may
+  now report findings: that is the point, and `--no-default-data` restores the
+  old behaviour.
+- A run makes up to six GitHub API calls a day; anonymous use allows 60 an hour.
+  The first refresh downloads about 1,200 small files; later ones download what
+  changed.
+- The refresh trusts GitHub for the listing: the hash proves the file is the
+  one GitHub listed at that commit, not who wrote it. The files are data read
+  by size-limited parsers, never executed; paths that would leave the cache
+  are refused.
+- `.github/workflows/community-data.yml` runs the real refresh against GitHub
+  on every pull request that changes it and every night.
