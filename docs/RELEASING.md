@@ -25,9 +25,9 @@ repositories and is refreshed with `git pull`.
 A release is a pull request. Nobody tags by hand (ADR-0027):
 
 ```bash
-# 1. The changelog: move Unreleased into a dated heading, `## [2.3.0] - YYYY-MM-DD`.
+# 1. The changelog: move Unreleased into a dated heading, `## [2.4.0] - YYYY-MM-DD`.
 # 2. The version, in two places that must agree:
-$EDITOR iemod_fetch/__init__.py     # __version__ = "2.3.0"
+$EDITOR iemod_fetch/__init__.py     # __version__ = "2.4.0"
 $EDITOR pyproject.toml              # [project] version
 # 3. Green locally, then open the pull request as usual.
 make check && make cover && make audit && make build
@@ -39,7 +39,8 @@ section, and if `vX.Y.Z` does not exist yet it picks the commit to release: the
 main-line merge where `__version__` first became X.Y.Z, so the pull request's
 review fixes are in and nothing merged later is. Then, in order:
 
-1. re-runs the entire CI gate, including the real-WeiDU job;
+1. re-runs the entire CI gate (Linux and Windows), including the real-WeiDU
+   job; macOS runs in `macos.yml` and is informational, not part of the gate;
 2. builds that commit: sdist, wheel and `.pyz`, after checking that its
    `__version__` matches the tag; records `SHA256SUMS`; writes a CycloneDX SBOM;
 3. attests build provenance through Sigstore keyless signing;
