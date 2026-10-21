@@ -65,6 +65,12 @@ Python API, which is internal.
   is tagged or published. A Dependabot bump of a release-only action is tested
   before it merges (ADR-0027).
 
+### Documentation
+- **GUI audit** (`docs/GUI-AUDIT.md`): what the CLI still lacks before a UI
+  can sit on it, what BIO, BWS-NG, lcc-docs, krion64 and mod_installer do and
+  what of it may be reused, and a plan in milestones with acceptance tests.
+  ADR-0029 to ADR-0031 are proposed, not yet accepted.
+
 ## [2.2.0] - 2026-10-21
 
 The install-time release: the plan is now checked the way WeiDU will run it,

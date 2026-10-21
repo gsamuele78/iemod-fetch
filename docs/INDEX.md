@@ -12,6 +12,7 @@ to change it, and `AUDIT.md` if you want to know why it exists.
 | [`ADR.md`](ADR.md) | Architecture Decision Records 0001–0020: the decisions, their context, and their consequences |
 | [`AUDIT.md`](AUDIT.md) | What was wrong with the original script, ranked by severity, with evidence from real data |
 | [`PLAN.md`](PLAN.md) | The original three-phase delivery plan for the rewrite |
+| [`GUI-AUDIT.md`](GUI-AUDIT.md) | Can this become a complete tool with a UI: what the CLI lacks, what BIO, BWS-NG, lcc-docs, krion64 and mod_installer do, and the plan |
 | [`ROADMAP.md`](ROADMAP.md) | Where the project is now, what is next, and what is deliberately not planned |
 | [`RELEASING.md`](RELEASING.md) | How a release is cut, and what an operator can verify about a download |
 

@@ -319,6 +319,8 @@ runner and asserts the tree.
 ### 2.3 Explicitly not planned
 
 - **A GUI.** Project Infinity is the GUI. This is the thing that feeds it.
+  *Under review (2026-10-21):* [GUI-AUDIT.md](GUI-AUDIT.md) and the proposed
+  ADR-0029 to ADR-0031 would bring a UI into scope once the CLI is complete.
 - **Running WeiDU.** ADR-0003. The tool stages and plans; installation is
   someone else's job and mixing the two makes both harder to reason about.
 - **Vendoring rule data.** A rule inside this repository is a rule nobody can

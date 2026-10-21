@@ -1284,3 +1284,98 @@ Dependabot in any case. The tool itself ships with no dependencies (ADR-0002).
 - Updates arrive as reviewable pull requests or issues. None of them is a
   release on its own: a release still needs a changelog section (ADR-0027).
 - A person switches Dependabot on once, and verifies each new WeiDU digest.
+
+---
+
+## ADR-0029 — A UI on top of the CLI; installing stays opt-in and late
+
+**Status**: proposed
+**Date**: 2026-10-21
+
+### Context
+
+ROADMAP 2.3 rules out a GUI ("Project Infinity is the GUI") and running WeiDU
+(ADR-0003). The owner now wants a complete tool: pick mods and components in a
+UI, see updates, and get the order and conflicts resolved. The audit in
+[GUI-AUDIT.md](GUI-AUDIT.md) found the core strong (verified downloads, a
+computed order, automatic resolution) and the CLI not yet usable as a backend.
+
+### Decision
+
+- A UI is in scope. It is a client of a public API (`iemod_fetch.api`) and has
+  no logic of its own. The CLI is the other client.
+- The CLI is made complete first (milestones M1 and M2), and the UI starts only
+  when their acceptance tests pass.
+- Running WeiDU or mod_installer stays out of scope until M4, and then only as
+  an explicit opt-in. ADR-0003 holds until then.
+- No code or bundled data from GPL projects (BIO, BWS-NG, mod_installer).
+  Their formats are read and written for interoperability.
+
+### Consequences
+
+- The ROADMAP non-goal "A GUI" is withdrawn once this is accepted.
+- `cli.py` loses its private orchestration to `api`, which is a refactor of
+  every entry point and needs the full test suite to stay green throughout.
+
+---
+
+## ADR-0030 — A versioned JSON contract: selection in, reports and events out
+
+**Status**: proposed
+**Date**: 2026-10-21
+
+### Context
+
+The only selection format is WeiDU.log, the JSON reports carry no schema
+version, and progress is printed text. A UI, or any other front end, needs a
+contract it can depend on.
+
+### Decision
+
+- `selection.json` (`schema_version: 1`): game, mods, components, language and
+  subcomponent choices. It turns into the same internal objects as a WeiDU.log.
+- Every JSON output gets `schema_version`, and every finding a stable id.
+  JSON Schema files are published in the repository, and tests validate the
+  outputs against them.
+- `--events jsonl` streams progress events (one JSON object per line). It is
+  the same stream the API delivers to an `on_event` callback.
+- Error records carry a stable `code`.
+- A breaking change to any schema is a major version (the CLI's public surface
+  already includes the JSON report, as CHANGELOG says).
+
+### Consequences
+
+- Front ends in any language can drive the tool through the CLI alone.
+- Schemas become something to maintain and to version with care.
+
+---
+
+## ADR-0031 — The UI is a local web page served by the standard library
+
+**Status**: proposed
+**Date**: 2026-10-21
+
+### Context
+
+ADR-0002 keeps the shipped tool to the standard library in one `.pyz`. The
+options compared in the audit were Tkinter, PySide6/Qt (what BWS-NG uses),
+a local web UI (what krion64 Forge and lcc-docs use), Textual, and a separate
+Tauri/egui front end (Infinity Mod Runner, BIO).
+
+### Decision
+
+- `iemod-fetch ui` starts `http.server` on 127.0.0.1 with a random port and a
+  per-session token, and opens the browser. The page is plain HTML, CSS and
+  JavaScript stored inside the `.pyz`, with no build step and no CDN. It calls
+  only the JSON API from ADR-0030.
+- Qt or Tauri may come later as other clients of the same API. They are not a
+  reason to change the core.
+
+### Consequences
+
+- The `.pyz` stays dependency-free and works the same on Windows, Linux and
+  macOS.
+- Local server security becomes a concern to test: binding to localhost only,
+  the token, Host/Origin checks, and no file access outside the chosen folders.
+- There is no native file picker; paths are typed in, or picked through an API
+  that lists folders.
