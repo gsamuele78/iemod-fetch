@@ -1287,41 +1287,52 @@ Dependabot in any case. The tool itself ships with no dependencies (ADR-0002).
 
 ---
 
-## ADR-0029 — A UI on top of the CLI; installing stays opt-in and late
+## ADR-0029 — A UI on top of the CLI: a phased wizard that ends by installing
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-10-21
 
 ### Context
 
-ROADMAP 2.3 rules out a GUI ("Project Infinity is the GUI") and running WeiDU
-(ADR-0003). The owner now wants a complete tool: pick mods and components in a
-UI, see updates, and get the order and conflicts resolved. The audit in
+ROADMAP 2.3 ruled out a GUI ("Project Infinity is the GUI") and running WeiDU
+(ADR-0003). The owner now wants a complete tool in the style of
+BigWorldSetup-NG, Infinity Mod Forge/Runner and BIO: pick mods and components,
+see updates, get the order and conflicts resolved, then install. The audit in
 [GUI-AUDIT.md](GUI-AUDIT.md) found the core strong (verified downloads, a
 computed order, automatic resolution) and the CLI not yet usable as a backend.
 
 ### Decision
 
 - A UI is in scope. It is a client of a public API (`iemod_fetch.api`) and has
-  no logic of its own. The CLI is the other client.
-- The CLI is made complete first (milestones M1 and M2), and the UI starts only
-  when their acceptance tests pass.
-- Running WeiDU or mod_installer stays out of scope until M4, and then only as
-  an explicit opt-in. ADR-0003 holds until then.
+  no logic of its own. The CLI is the other client, and everything the UI can
+  do the CLI can do too.
+- The UI is a wizard in phases, the order BWS-NG uses: **game and folders →
+  backup → mod selection → install order → download → extraction →
+  installation**. Each phase can be left and resumed, and each one writes a
+  file the CLI also accepts (`selection.json`, the order, the staged folder).
+- **Installing is in scope, as the last phase.** It replaces ADR-0003's "never
+  runs WeiDU". It comes last in delivery (M4), after selection, order,
+  conflicts and download are complete and tested, and it starts only on an
+  explicit action, after a backup of the game folder has been offered.
+- The CLI is made complete first (M1 and M2), and the UI starts only when
+  their acceptance tests pass.
 - No code or bundled data from GPL projects (BIO, BWS-NG, mod_installer).
   Their formats are read and written for interoperability.
 
 ### Consequences
 
-- The ROADMAP non-goal "A GUI" is withdrawn once this is accepted.
-- `cli.py` loses its private orchestration to `api`, which is a refactor of
-  every entry point and needs the full test suite to stay green throughout.
+- ADR-0003 is superseded on one point: the tool may run WeiDU or
+  mod_installer, in the install phase only.
+- `cli.py` loses its private orchestration to `api`. That refactor touches
+  every entry point and needs the full test suite green throughout.
+- Installing brings new failure modes (a half-installed game, WeiDU prompts,
+  Windows paths). M4 has its own acceptance tests and real-WeiDU CI.
 
 ---
 
 ## ADR-0030 — A versioned JSON contract: selection in, reports and events out
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-10-21
 
 ### Context
@@ -1350,32 +1361,43 @@ contract it can depend on.
 
 ---
 
-## ADR-0031 — The UI is a local web page served by the standard library
+## ADR-0031 — The UI is a PySide6 desktop app, packaged apart from the CLI
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-10-21
 
 ### Context
 
 ADR-0002 keeps the shipped tool to the standard library in one `.pyz`. The
-options compared in the audit were Tkinter, PySide6/Qt (what BWS-NG uses),
-a local web UI (what krion64 Forge and lcc-docs use), Textual, and a separate
-Tauri/egui front end (Infinity Mod Runner, BIO).
+options compared in the audit were Tkinter, PySide6/Qt, a local web page,
+Textual, and a separate Tauri/egui front end. The owner chose the BWS-NG model:
+a desktop wizard in PySide6, the UI the community already knows.
 
 ### Decision
 
-- `iemod-fetch ui` starts `http.server` on 127.0.0.1 with a random port and a
-  per-session token, and opens the browser. The page is plain HTML, CSS and
-  JavaScript stored inside the `.pyz`, with no build step and no CDN. It calls
-  only the JSON API from ADR-0030.
-- Qt or Tauri may come later as other clients of the same API. They are not a
-  reason to change the core.
+- The GUI is a separate package, `iemod_fetch_gui`, in this repository. It
+  depends on PySide6 (LGPL-3.0, used unmodified and dynamically linked, which
+  an MIT application may do) and imports only `iemod_fetch.api`.
+- The CLI is unchanged: still standard library only, still one `.pyz`.
+  ADR-0002 holds for the CLI. `iemod_fetch` may never import the GUI, and
+  import-linter enforces it.
+- The GUI ships as its own download per OS, built with PyInstaller in the
+  release workflow, attested like the `.pyz`, together with Qt's LGPL notice.
+  `pip install iemod-fetch[gui]` also works.
+- Screens follow BWS-NG's patterns as ideas, not code: a category column; a
+  mod → component → choice tree with tri-state checkboxes, radio buttons for
+  exclusive groups and drop-downs for prompts; search and "selected only /
+  conflicts only / updates" filters; a details pane; a conflicts panel with
+  one-click options; EET order as one tab per phase with drag to reorder.
+- Long work (download, extraction, install) runs in a worker thread and reaches
+  the UI through the ADR-0030 event stream, so the window never blocks and
+  every phase can be cancelled.
 
 ### Consequences
 
-- The `.pyz` stays dependency-free and works the same on Windows, Linux and
-  macOS.
-- Local server security becomes a concern to test: binding to localhost only,
-  the token, Host/Origin checks, and no file access outside the chosen folders.
-- There is no native file picker; paths are typed in, or picked through an API
-  that lists folders.
+- The GUI download is large (roughly 100-200 MB per OS). The `.pyz` stays small
+  for those who want only the CLI.
+- CI grows: GUI tests under pytest-qt with `QT_QPA_PLATFORM=offscreen`, and a
+  PyInstaller build per OS at release time.
+- Dependabot watches PySide6 and PyInstaller like the other dev tools; a Qt
+  security update means a GUI release.

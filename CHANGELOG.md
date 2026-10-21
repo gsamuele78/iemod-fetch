@@ -69,7 +69,9 @@ Python API, which is internal.
 - **GUI audit** (`docs/GUI-AUDIT.md`): what the CLI still lacks before a UI
   can sit on it, what BIO, BWS-NG, lcc-docs, krion64 and mod_installer do and
   what of it may be reused, and a plan in milestones with acceptance tests.
-  ADR-0029 to ADR-0031 are proposed, not yet accepted.
+  Accepted: ADR-0029 (a phased wizard that ends by installing), ADR-0030
+  (a versioned JSON contract) and ADR-0031 (a PySide6 desktop GUI, packaged
+  apart from the dependency-free CLI).
 
 ## [2.2.0] - 2026-10-21
 

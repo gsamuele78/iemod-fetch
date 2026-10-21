@@ -9,8 +9,10 @@ already reads, and from Born2BSalty's Infinity Orchestrator (BIO)?
 The answer in one line: **yes, but the CLI is not ready to carry a UI, and the
 work to make it ready is most of the work.** The UI comes last. This document
 is the audit (phase 1), the plan (phase 2) and the acceptance tests (phase 3).
-The decisions it proposes are ADR-0029 to ADR-0031 in [ADR.md](ADR.md). They
-stay *Proposed* until the owner accepts them.
+The decisions are ADR-0029 to ADR-0031 in [ADR.md](ADR.md), accepted by the
+owner on 2026-10-21. The answers to §1.1 changed two of the assumptions first
+made: the wizard ends by installing, and the UI is a PySide6 desktop app like
+BWS-NG.
 
 ---
 
@@ -18,11 +20,11 @@ stay *Proposed* until the owner accepts them.
 
 ### 1.1 Missing information, and the assumptions made instead
 
-| Missing | Assumed until told otherwise |
+| Question | Answer (owner, 2026-10-21) or assumption |
 |---|---|
-| Should the UI also **install** (run WeiDU / mod_installer), or only plan, fetch and hand over? | Plan and fetch first. Installing is a later, opt-in step (ADR-0029). |
+| Should the UI also **install** (run WeiDU / mod_installer), or only plan, fetch and hand over? | **Install too**: a wizard in phases like BWS-NG, Forge/Runner and BIO, with installation as the last phase (ADR-0029). |
 | Target users: only EET, or every Enhanced Edition game? | EET, BGEE and BG2EE first. IWDEE next, because BWS-NG and BIO already cover it. PST/IWD2 are out of scope. |
-| Distribution: is a ~200 MB desktop bundle acceptable, or must it stay one `.pyz`? | It stays one `.pyz` with no dependencies (ADR-0002 still holds). That rules out Qt for v1. |
+| Which UI toolkit? | **PySide6, like BWS-NG** (ADR-0031). The GUI is its own package and download; the CLI stays one dependency-free `.pyz`. |
 | Will the BIO, BWS-NG or krion64 authors license their data for reuse? | No. Their data is read at run time as user-supplied input, never bundled. |
 | Windows as the main platform? | Yes. CI already tests Windows, but no real Windows install has run yet. |
 
@@ -140,25 +142,35 @@ A milestone is entered only when the previous one passes its tests in phase 3.
 | 12 | BIO share-code **import/export** (format only) | S-M |
 | 13 | Read Project Infinity `weidu-log.csv` and krion64 `mod-forge.json` | S |
 
-### M3 — The UI (v3.0)
+### M3 — The wizard up to download (v3.0)
 
-| # | Item | Size |
+ADR-0031: `iemod_fetch_gui`, PySide6, importing only `iemod_fetch.api`. The
+phases are BWS-NG's order. Each phase saves a file the CLI also reads, so a
+run can be stopped and resumed, or finished from the command line.
+
+| # | Phase / item | Size |
 |---|---|---|
-| 14 | **ADR-0031**: a local web UI. A stdlib `http.server` bound to 127.0.0.1 with a per-session token serves plain HTML/JS from inside the `.pyz` and calls only `iemod_fetch.api` | M |
-| 15 | Screens, as the BWS-NG and krion64 patterns suggest:<br>**Game** tab: folders and language.<br>**Mods** tab: category column, search, filters for "selected only", "conflicts only" and "updates".<br>**Components** tree: tri-state checkboxes, radio groups, drop-downs for choices, details pane.<br>**Order** tab: per EET phase, drag to reorder, lock what the rules decide.<br>**Conflicts** panel: options as buttons.<br>**Fetch** tab: progress bars from the event stream | L |
-| 16 | Presets: save and load `selection.json`, and import from WeiDU.log, BIO code and PI csv | S |
+| 14 | Package skeleton: `iemod_fetch_gui`, `[gui]` extra, import-linter contract (core never imports gui; gui imports only `api`), pytest-qt offscreen in CI | M |
+| 15 | **1. Game and folders**: game type (EET, BGEE, BG2EE), BGEE/BG2EE folders checked with `gamedir`, language | S |
+| 16 | **2. Mod selection**: category column, search, filters "selected only / conflicts only / updates", mod → component → choice tree with tri-state checkboxes, radio buttons for exclusive groups, drop-downs for prompts, details pane, conflicts panel with one-click options | L |
+| 17 | **3. Install order**: one tab per EET phase, drag to reorder, entries the rules fix are locked, violations marked | M |
+| 18 | **4. Download** and **5. Extraction**: progress per mod and in bytes from the event stream, cancel, retry of the failed ones | M |
+| 19 | Presets: save and load `selection.json`, import from WeiDU.log, BIO code and PI csv | S |
+| 20 | PyInstaller build per OS in the release workflow, attested, with the Qt LGPL notice | M |
 
-### M4 — Optional: installing (v3.x)
+### M4 — Backup and installation (v3.x)
 
-| # | Item | Size |
+| # | Phase / item | Size |
 |---|---|---|
-| 17 | Run mod_installer, or WeiDU directly, with streamed output, Windows first, explicit opt-in, no automatic answers without a recorded answer file | L |
-| 18 | A real Windows end-to-end CI job (roadmap F) and live GitHub API contract tests (item A) | M |
+| 21 | **Backup** phase before installing: copy or zip of the game folder's override, dialogs and WeiDU state, with a restore action | M |
+| 22 | **6. Installation**: drives mod_installer (EET mode) or WeiDU directly, streams the output into the window, recognises prompts and answers them only from a recorded answer file (`@wlb-inputs` style); otherwise it asks the player | L |
+| 23 | Resume after a failure or cancel; the WeiDU.log is the state | M |
+| 24 | A real Windows end-to-end CI job (roadmap F) and live GitHub API contract tests (item A) | M |
 
 **Explicitly not planned:**
 - Copying any BIO, BWS-NG or mod_installer code.
 - Bundling GPL data.
-- A Qt or Tauri front end before the web UI has proved the API.
+- A web or Tauri front end. The API allows one later, but none is planned.
 
 ---
 
@@ -168,8 +180,8 @@ A milestone is entered only when the previous one passes its tests in phase 3.
 |---|---|
 | M1 | A test builds a selection from `mods --json` alone, plans and fetches it in **one** run with no WeiDU.log, and validates every output against its JSON Schema.<br>`--events jsonl` emits progress for every byte range, and a cancel stops the run within one chunk.<br>`cli.py` contains no planning logic: `lint-imports` gets a contract that only `cli` and `ui` import `api`.<br>Every existing test still passes. |
 | M2 | `describe` gives the right component names in English and one other language for a fixture set of real tp2/tra pairs (EET, SCS, BG1NPC).<br>Every conflict in the fixture EET plan has at least one option, and applying it leaves the plan free of that conflict.<br>A BIO share code goes through import and export without losing anything. |
-| M3 | A browser test (Playwright, Chromium already in CI images) picks an EET selection, resolves a conflict, reorders, and downloads the same `selection.json` the CLI accepts.<br>The server refuses requests without the token and from other hosts.<br>The `.pyz` stays standard-library only. |
-| M4 | The mock EET plan installs end to end on Windows and Linux runners with the real WeiDU and mod_installer.<br>Cancelling mid-install leaves a log that mod_installer can resume. |
+| M3 | A pytest-qt test, run offscreen on Windows, Linux and macOS, goes through phases 1-5 on a fixture EET selection: picks components, resolves a conflict, reorders, downloads from a local fixture server, cancels and resumes.<br>The `selection.json` it saves is byte-identical to the CLI's for the same choices.<br>The window never blocks for more than 100 ms during a download.<br>The `.pyz` stays standard-library only, and the PyInstaller build starts on all three OSes. |
+| M4 | The mock EET plan installs end to end from the GUI on Windows and Linux runners with the real WeiDU and mod_installer.<br>Cancelling mid-install, then resuming, finishes with the same WeiDU.log as an uninterrupted run.<br>A prompt without a recorded answer stops and asks; it is never answered by guess.<br>Restoring the backup gives back the game folder as it was. |
 
 Gates that apply throughout: pytest, ruff, mypy, import-linter, bandit,
 actionlint, zizmor, and the real-WeiDU job. A UI change is the same pull
