@@ -60,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="krion64 data directory (categories.json + mods/*.json) "
                           "giving each mod's install-order category and position; "
                           "required by --plan-order")
+    src.add_argument("--eet-sequence", metavar="PATH",
+                     help="BigWorldSetup-NG data/games/eet.json: its bg2ee "
+                          "sequence says which mods may go on BG2:EE before the "
+                          "EET core (default: the data cache; without it, EET's "
+                          "readme rule - only the EE Fixpack)")
     src.add_argument("--suppress", metavar="PATH",
                      help="JSON list of rules you have verified no longer apply")
     src.add_argument("--all-manifest-entries", action="store_true",

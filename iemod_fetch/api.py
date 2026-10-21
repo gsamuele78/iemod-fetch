@@ -47,7 +47,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from .resolution import resolve_conflicts, resolve_refusals
+from .resolution import before_eet_core, resolve_conflicts, resolve_refusals
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
 from .selection import (Selection, parse_selection, selection_from_logs,
@@ -78,6 +78,7 @@ class Settings:
     rules: List[str] = field(default_factory=list)
     mod_db: Optional[str] = None
     order_catalogue: Optional[str] = None
+    eet_sequence: Optional[str] = None     # BWS-NG games/eet.json
     suppress: Optional[str] = None
     all_manifest_entries: bool = False
     only: List[str] = field(default_factory=list)
@@ -247,6 +248,20 @@ def _use_data(settings: Settings, stream, on_event) -> None:
         settings.mod_db = cached.mod_db
     if not settings.order_catalogue and cached.order_catalogue:
         settings.order_catalogue = cached.order_catalogue
+    if not settings.eet_sequence and cached.eet_sequence:
+        settings.eet_sequence = cached.eet_sequence
+
+
+def _before_eet_core(settings: Settings):
+    """What may precede the EET core: BWS-NG's sequence if given, else EET's rule."""
+    if not settings.eet_sequence:
+        return before_eet_core(None)
+    try:
+        with open(settings.eet_sequence, encoding="utf-8") as fh:
+            return before_eet_core(json.load(fh))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"cannot read --eet-sequence {settings.eet_sequence}: "
+                          f"{exc}") from exc
 
 
 class _LazyClient:
@@ -514,7 +529,8 @@ def _plan_order(settings, analysis: "RuleAnalysis", stream):
                                        context, plan)
         resolution = resolve_conflicts(plan, report, ruleset, context)
         if constraints.by_mod:
-            refusals = resolve_refusals(plan, constraints, games, ruleset, context)
+            refusals = resolve_refusals(plan, constraints, games, ruleset, context,
+                                        before_core=_before_eet_core(settings))
             resolution.removed.extend(refusals.removed)
             resolution.left_for_operator.extend(refusals.left_for_operator)
             resolution.moved.extend(refusals.moved)

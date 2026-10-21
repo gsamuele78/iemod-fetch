@@ -140,6 +140,7 @@ class DataPaths:
     rules: List[str] = field(default_factory=list)   # --rules
     mod_db: Optional[str] = None              # --mod-db
     order_catalogue: Optional[str] = None     # --order-catalogue
+    eet_sequence: Optional[str] = None        # --eet-sequence
 
 
 def default_data_dir() -> str:
@@ -377,6 +378,7 @@ def data_paths(data_dir: str, sources: Sequence[Source] = SOURCES) -> DataPaths:
         paths.catalogue = there("lcc-docs", "db", "mods.json")
     if "bws-ng" in names:
         paths.mod_db = there("bws-ng", "data", "mods")
+        paths.eet_sequence = there("bws-ng", "data", "games", "eet.json")
         rules = there("bws-ng", "data", "rules")
         if rules:
             paths.rules.append(rules)
