@@ -8,6 +8,10 @@
 # tags it vX.Y.Z and publishes the GitHub Release with that section as notes.
 # The tag is created here and not pushed separately because a tag pushed with
 # GITHUB_TOKEN starts no workflow. A tag pushed by hand still works.
+#
+# A pull request that changes this pipeline rehearses it on its own commit:
+# gate, build, attestation - never notes, tag, release or PyPI. That is how a
+# Dependabot bump of an action used only here is exercised before it merges.
 name: Release
 
 on:
@@ -15,6 +19,8 @@ on:
     branches: [main]
     paths: ["CHANGELOG.md", "iemod_fetch/__init__.py"]
     tags: ["v*"]
+  pull_request:
+    paths: [".github/workflows/release.yml", "tools/release_plan.py", "tools/release_notes.py"]
   workflow_dispatch:
     inputs:
       version:
@@ -30,8 +36,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: release
-  cancel-in-progress: false
+  # Releases queue one behind the other; a rehearsal has its own group per pull
+  # request, so it never holds up a release and a newer push replaces it.
+  group: ${{ github.event_name == 'pull_request' && format('release-{0}', github.ref) || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   decide:
@@ -54,11 +62,22 @@ jobs:
           VERSION: ${{ inputs.version }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
           # Released by the automatic run once the newest version is tagged,
           # one per run, if still untagged (ADR-0027).
           BACKFILL: "2.1.0"
         run: |
-          if [ "$REF_TYPE" = "tag" ]; then
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ "$HEAD_REPO" = "$REPO" ]; then
+              python tools/release_plan.py --pull-request >> "$GITHUB_OUTPUT"
+            else
+              # A fork's run may not sign an attestation (no id-token).
+              echo "::notice::rehearsal skipped: the pull request comes from a fork"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$REF_TYPE" = "tag" ]; then
             # A tag pushed by hand: release exactly what it points at.
             { echo "release=true"; echo "tag=$REF_NAME"; echo "sha=$GITHUB_SHA"; } >> "$GITHUB_OUTPUT"
           else
@@ -96,7 +115,7 @@ jobs:
   # own token may do it.
   notes:
     name: Release notes in step with CHANGELOG.md
-    if: github.ref_type != 'tag'
+    if: github.ref_type != 'tag' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -195,7 +214,8 @@ jobs:
   publish-github:
     name: Tag and GitHub Release
     needs: [decide, build, provenance]
-    if: needs.decide.outputs.release == 'true' && !inputs.dry_run
+    # Never from a pull request: that run is a rehearsal.
+    if: needs.decide.outputs.release == 'true' && !inputs.dry_run && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write          # creates the tag together with the release
@@ -250,7 +270,7 @@ jobs:
     needs: [decide, build, provenance]
     # Opt-in: set the repository variable PYPI_PUBLISH=true once PyPI trusts
     # this workflow, so an unconfigured PyPI never turns a release red.
-    if: needs.decide.outputs.release == 'true' && !inputs.dry_run && vars.PYPI_PUBLISH == 'true'
+    if: needs.decide.outputs.release == 'true' && !inputs.dry_run && github.event_name != 'pull_request' && vars.PYPI_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: pypi          # requires a manual approval on the environment
     permissions:

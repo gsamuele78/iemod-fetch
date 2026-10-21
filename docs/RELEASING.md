@@ -97,6 +97,16 @@ it once the secret is there.
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.
 
+**Rehearsal on a pull request**: a pull request that changes
+`release.yml`, `tools/release_plan.py` or `tools/release_notes.py` runs the
+same pipeline on its own commit, under the version its `__version__` says:
+the CI gate, the build, the tag-matches-version check and the attestation.
+The notes, tag, release and PyPI jobs never run on a pull request. This is
+how a Dependabot bump of an action used only by releases is tested before it
+merges. A fork's pull request is skipped, since it may not sign an
+attestation. The attestation is real: it records that the pull request's
+workflow built those bytes, and nothing is published with it.
+
 ## Pinned test toolchain
 
 The real-WeiDU job in `ci.yml` installs the mock EET plan with tools pinned

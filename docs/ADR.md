@@ -1240,6 +1240,10 @@ hand-written, reviewed changelog with one generated from commit messages.
   The session that maintains this repository can merge but cannot start a
   workflow or push a tag, so everything after a merge has to happen inside the
   workflow.
+- For the same reason a change to the pipeline is rehearsed on its own pull
+  request (gate, build, attestation; never notes, tag or publish): a manual dry
+  run is not available to that session, and an action bump used only at
+  release time would otherwise first run on a real release.
 
 ---
 

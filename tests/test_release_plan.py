@@ -151,3 +151,16 @@ def test_a_backfill_already_tagged_is_done(repo):
     commit(path, "2.2.0", "the next release")
     git(path, "tag", "v2.2.0")
     assert automatic(str(path), "2.2.0", backfill=["2.1.0"])["release"] == "false"
+
+
+from tools.release_plan import pull_request  # noqa: E402
+
+
+def test_a_pull_request_dry_runs_its_own_head_and_version(repo):
+    """On a pull request that touches the release workflow, the pipeline is
+    rehearsed on the PR's own commit - build and attestation, never publish -
+    so a Dependabot bump of a release-only action is exercised before merge."""
+    path, _merge = repo
+    head = git(path, "rev-parse", "HEAD")
+    assert pull_request(str(path)) == {"release": "true", "tag": "v2.1.0",
+                                       "sha": head, "workflows_differ": "false"}

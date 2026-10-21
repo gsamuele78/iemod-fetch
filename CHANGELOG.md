@@ -60,6 +60,10 @@ Python API, which is internal.
   Node 20 deprecation warnings. The release-only actions (download-artifact,
   attest-build-provenance, action-gh-release) are first exercised by a release
   run; a dry run is *Run workflow* with a released `version` and `dry_run`.
+- **The release pipeline is rehearsed on pull requests** that change it: the
+  gate, build and attestation run on the pull request's own commit, and nothing
+  is tagged or published. A Dependabot bump of a release-only action is tested
+  before it merges (ADR-0027).
 
 ## [2.2.0] - 2026-10-21
 
