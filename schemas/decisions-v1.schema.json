@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gsamuele78/iemod-fetch/schemas/decisions-v1.schema.json",
+  "title": "iemod-fetch decisions, version 1",
+  "description": "--decisions: the player's answer to conflicts the rules do not decide. iemod_fetch/decisions.py is the authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "decisions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding"
+        ],
+        "properties": {
+          "finding": {
+            "type": "string",
+            "pattern": "^conflict-"
+          },
+          "choose": {
+            "type": "string",
+            "pattern": "^option-"
+          },
+          "accept": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "choose"
+            ]
+          },
+          {
+            "required": [
+              "accept"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -50,6 +50,17 @@ Python API, which is internal.
   mods have a newer version. `--releases PATH`, read from the data cache by
   default; the cache's guard now also counts the releases.
 
+- **Conflicts come with options, and `--decisions` applies yours**
+  (ADR-0033). Every conflict-report finding lists the ways to clear it -
+  deselect one side, reorder, install a missing prerequisite - each with a
+  stable id, its cost in components, whether a plan can apply it, and whether
+  the rules recommend it (only where they decide; never on a tie). A
+  `decisions.json` (`schemas/decisions-v1.schema.json`) chooses an option or
+  accepts a finding with a reason; `--decisions` applies it to the plan before
+  `--resolve-conflicts`, re-checks the plan, and the report then shows the
+  finding as fixed or accepted. A decision whose finding is gone is reported
+  as stale, never applied elsewhere. RESOLUTION.json records `by: decision`.
+
 ### Fixed
 - **The version a WeiDU.log records is read.** WeiDU 251 writes
   `Name: VERSION` - one colon, despite its header's `[ : Version]` - and the

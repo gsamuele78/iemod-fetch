@@ -48,7 +48,9 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from .resolution import before_eet_core, resolve_conflicts, resolve_refusals
+from .decisions import parse_decisions
+from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
+                         resolve_conflicts, resolve_refusals)
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
 from .selection import (Selection, parse_selection, selection_from_logs,
@@ -95,6 +97,7 @@ class Settings:
     emit_selection: Optional[str] = None
     plan_order: Optional[str] = None
     resolve_conflicts: bool = False
+    decisions: Optional[str] = None        # decisions.json: the player's answers
     simulate: bool = False
     bgee_dir: Optional[str] = None
     bg2ee_dir: Optional[str] = None
@@ -660,18 +663,28 @@ def _plan_order(settings, analysis: "RuleAnalysis", stream):
                       reassign_phase=settings.reassign_phase)
     games = _phase_games(settings, specs)
     resolution = None
-    if settings.resolve_conflicts:
+    if settings.decisions or settings.resolve_conflicts:
+        resolution = ResolutionResult()
+        decided: set = set()
+        if settings.decisions:
+            # The player's answers first: a choice they made is never second-
+            # guessed by the automatic resolution that follows.
+            with open(settings.decisions, encoding="utf-8") as fh:
+                decisions = parse_decisions(fh.read(), source=settings.decisions)
+            report = build_conflict_report(plan.installs(), ruleset or RuleSet(),
+                                           context, plan)
+            resolution.extend(apply_decisions(plan, report, decisions, ruleset, context))
+            decided = decisions.findings
+    if settings.resolve_conflicts and resolution is not None:
         # Judged on the PLAN's own installs, so the report's log labels are the
         # plan's roles, and re-verified by the same rules afterwards.
         report = build_conflict_report(plan.installs(), ruleset or RuleSet(),
                                        context, plan)
-        resolution = resolve_conflicts(plan, report, ruleset, context)
+        resolution.extend(resolve_conflicts(plan, report, ruleset, context, skip=decided))
         if constraints.by_mod:
-            refusals = resolve_refusals(plan, constraints, games, ruleset, context,
-                                        before_core=_before_eet_core(settings))
-            resolution.removed.extend(refusals.removed)
-            resolution.left_for_operator.extend(refusals.left_for_operator)
-            resolution.moved.extend(refusals.moved)
+            resolution.extend(resolve_refusals(plan, constraints, games, ruleset, context,
+                                               before_core=_before_eet_core(settings)))
+    plan.resolution = resolution
     languages = None
     if settings.language_preference:
         languages = apply_language_preference(plan, os.path.abspath(settings.target),
@@ -780,6 +793,21 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
         return None
     report = build_conflict_report(analysis.installs, analysis.ruleset,
                                    analysis.context, plan)
+    resolution = getattr(plan, "resolution", None)
+    if resolution is not None:
+        # What the plan settled is not outstanding work: an accepted finding is
+        # withheld with the player's reason, a removed side is fixed in the plan.
+        accepted = {a.finding_id: a.why for a in resolution.accepted}
+        removed = {r.finding_id: r for r in resolution.removed if r.finding_id}
+        for finding in report.findings:
+            if finding.id in accepted:
+                finding.suppressed = f"accepted in decisions.json: {accepted[finding.id]}"
+            elif finding.id in removed:
+                gone = removed[finding.id]
+                finding.fixed_by_plan = True
+                finding.remedy = (f"{gone.mod} " + ", ".join(f"#{n}" for n in gone.components)
+                                  + (" removed by your decision" if gone.by == "decision"
+                                     else " removed by --resolve-conflicts"))
     if settings.conflict_report:
         report.write_json(settings.conflict_report)
     return report
@@ -840,6 +868,7 @@ def _require_plan(settings) -> None:
     if settings.plan_order:
         return
     for flag, given in (("--resolve-conflicts", settings.resolve_conflicts),
+                        ("--decisions", settings.decisions),
                         ("--emit-installer", settings.emit_installer),
                         ("--simulate", settings.simulate),
                         ("--bgee-dir", settings.bgee_dir),

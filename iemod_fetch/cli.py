@@ -78,6 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="restrict the run to these mod folders; repeatable")
 
     out = parser.add_argument_group("output")
+    out.add_argument("--decisions", metavar="PATH",
+                     help="decisions.json: your answer to each conflict the rules "
+                          "do not decide - an option id from --conflict-report, or "
+                          "accept with a reason. Applied to the plan before "
+                          "--resolve-conflicts, then re-checked; needs --plan-order")
     out.add_argument("-t", "--target", default="./Mods", help="install root (default: %(default)s)")
     out.add_argument("--json-report", metavar="PATH", help="write a machine-readable report")
     out.add_argument("--emit-pinned-manifest", metavar="PATH",

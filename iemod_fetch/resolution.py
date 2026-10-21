@@ -26,10 +26,13 @@ Only the plan is edited. The operator's WeiDU logs are never touched, and the
 plan is re-checked against the same rules afterwards rather than trusted.
 """
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, Set, Tuple
+from typing import AbstractSet, Dict, List, Optional, Set, Tuple
 
 from .contract import SCHEMA_VERSION
-from .conflicts import SUBCOMPONENT_ORIGIN, ConflictReport, Finding, Side
+from .conflicts import (DESELECT, INSTALL, SUBCOMPONENT_ORIGIN, ConflictReport,
+                        Finding, Side)
+from .decisions import Decisions
+from .errors import ConfigError
 from .naming import normalize_key
 from .rules import INCOMPATIBLE, RuleSet
 
@@ -43,6 +46,7 @@ class Removal:
     because: str            # the other side, as the report describes it
     reason: str = ""        # the rule's own explanation, if it gave one
     finding_id: str = ""    # the conflict-report finding this settles, if any
+    by: str = "rules"       # "rules", or "decision": the player chose it
 
 
 @dataclass
@@ -62,10 +66,27 @@ class Unresolved:
 
 
 @dataclass
+class Accepted:
+    log: str
+    finding: str
+    why: str
+    finding_id: str
+
+
+@dataclass
 class ResolutionResult:
     removed: List[Removal] = field(default_factory=list)
     left_for_operator: List[Unresolved] = field(default_factory=list)
     moved: List[Move] = field(default_factory=list)
+    accepted: List[Accepted] = field(default_factory=list)
+    stale_decisions: List[str] = field(default_factory=list)   # finding ids not found
+
+    def extend(self, other: "ResolutionResult") -> None:
+        self.removed.extend(other.removed)
+        self.left_for_operator.extend(other.left_for_operator)
+        self.moved.extend(other.moved)
+        self.accepted.extend(other.accepted)
+        self.stale_decisions.extend(other.stale_decisions)
 
     def render(self) -> str:
         lines = ["CONFLICT RESOLUTION (--resolve-conflicts; the plan only, never your logs)"]
@@ -78,10 +99,16 @@ class ResolutionResult:
         for item in self.removed:
             shown = ", ".join(f"#{n}" + (f" {label}" if label else "")
                               for n, label in zip(item.components, item.labels))
-            lines.append(f"  removed  [{item.log}] {item.mod}: {shown}")
+            chosen = " (your decision)" if item.by == "decision" else ""
+            lines.append(f"  removed  [{item.log}] {item.mod}: {shown}{chosen}")
             lines.append(f"           conflicts with {item.because}")
             if item.reason:
                 lines.append(f"           why: {item.reason[:200]}")
+        for accepted in self.accepted:
+            lines.append(f"  accepted [{accepted.log}] {accepted.finding} - {accepted.why}")
+        for finding_id in self.stale_decisions:
+            lines.append(f"  stale decision: {finding_id} is no longer in the report "
+                         f"(the selection changed); not applied")
         if self.left_for_operator:
             lines.append(f"  left for you to decide ({len(self.left_for_operator)}):")
             for open_item in self.left_for_operator:
@@ -95,6 +122,8 @@ class ResolutionResult:
             "removed": [vars(r) for r in self.removed],
             "left_for_operator": [vars(u) for u in self.left_for_operator],
             "moved": [vars(m) for m in self.moved],
+            "accepted": [vars(a) for a in self.accepted],
+            "stale_decisions": list(self.stale_decisions),
         }
 
 
@@ -145,9 +174,66 @@ def _present(plan, log: str, side: Side) -> Set[int]:
     return found
 
 
+def apply_decisions(plan, report: ConflictReport, decisions: Decisions,
+                    ruleset: Optional[RuleSet] = None, context=None) -> ResolutionResult:
+    """
+    Apply the player's decisions.json to the plan, then re-check it.
+
+    A chosen option removes exactly its components; a reorder is what the plan
+    already does; adding a missing mod is outside a plan's reach and is listed,
+    not faked. `report` must be built from `plan.installs()`.
+    """
+    result = ResolutionResult()
+    by_id = {finding.id: finding for finding in report.findings}
+    result.stale_decisions = sorted(decisions.findings - set(by_id))
+    for finding_id, why in sorted(decisions.accept.items()):
+        if finding_id in by_id:
+            result.accepted.append(Accepted(by_id[finding_id].log,
+                                            _describe(by_id[finding_id]), why, finding_id))
+    for finding_id, option_id in sorted(decisions.choose.items()):
+        if finding_id not in by_id:
+            continue
+        finding = by_id[finding_id]
+        option = next((o for o in finding.options if o.id(finding_id) == option_id), None)
+        if option is None:
+            raise ConfigError(f"decisions: {option_id} is not an option of {finding_id}; "
+                              f"its options are "
+                              f"{[o.id(finding_id) for o in finding.options]}")
+        if option.action == INSTALL:
+            result.left_for_operator.append(Unresolved(
+                finding.log, _describe(finding),
+                f"you chose to {option.description}: add it to the selection, "
+                f"the plan cannot fetch it", finding_id=finding_id))
+            continue
+        if option.action != DESELECT:
+            continue                  # REORDER: sorting the plan already does it
+        side = Side(key=option.key, mod=option.mod,
+                    components=tuple((n, "") for n in option.components),
+                    whole_mod=option.whole_mod)
+        targets = _present(plan, finding.log, side)
+        units = _units_for(plan, finding.log, option.key)
+        if not targets or not units:
+            continue                  # an earlier decision already removed them
+        labels = dict(finding.left.components
+                      + (finding.right.components if finding.right else ()))
+        for unit in units:
+            unit.lines = [line for line in unit.lines if line[2] not in targets]
+        numbers = tuple(sorted(targets))
+        result.removed.append(Removal(
+            log=finding.log, mod=option.mod, components=numbers,
+            labels=tuple(labels.get(n, "") for n in numbers),
+            because=option.description, reason=finding.reason,
+            finding_id=finding_id, by="decision"))
+    for log, units in list(plan.logs.items()):
+        plan.logs[log] = [u for u in units if u.lines]
+    if ruleset is not None:
+        plan.reverify(ruleset, context)
+    return result
+
+
 def resolve_conflicts(plan, report: ConflictReport,
                       ruleset: Optional[RuleSet] = None,
-                      context=None) -> ResolutionResult:
+                      context=None, skip: AbstractSet[str] = frozenset()) -> ResolutionResult:
     """
     Apply the rules' own remedy to every incompatibility they decide.
 
@@ -157,7 +243,7 @@ def resolve_conflicts(plan, report: ConflictReport,
     result = ResolutionResult()
 
     for finding in report.findings:
-        if finding.kind != INCOMPATIBLE or finding.suppressed:
+        if finding.kind != INCOMPATIBLE or finding.suppressed or finding.id in skip:
             continue
         why = _why_not(finding)
         if why is not None or finding.right is None:
