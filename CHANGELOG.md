@@ -8,6 +8,20 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Changed
+- **Releases are automatic.** Merging a release pull request (a new
+  `## [X.Y.Z]` section and the matching `__version__`) builds, attests, tags
+  `vX.Y.Z` on that merge and publishes the GitHub release, with the changelog
+  section as its notes. Nobody tags by hand. An older version without a release
+  is published with *Run workflow* and its `version`. PyPI publishing is opt-in
+  through the `PYPI_PUBLISH` repository variable. This is the method of
+  R-studioConf's ADR-0006, adapted (ADR-0027).
+
+### Fixed
+- **The release workflow could never run.** It called `ci.yml` as a reusable
+  workflow, but `ci.yml` had no `workflow_call` trigger. It also shared a
+  concurrency group with main's own CI run, so either could cancel the other.
+
 ## [2.2.0] - 2026-10-21
 
 The install-time release: the plan is now checked the way WeiDU will run it,

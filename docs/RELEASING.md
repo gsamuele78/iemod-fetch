@@ -20,35 +20,48 @@ Python API is internal and can change in a patch release.
 A rule-data change is never a version bump: rule data lives in other people's
 repositories and is refreshed with `git pull`.
 
-## Cutting one
+## Cutting one — there is no tagging step
+
+A release is a pull request. Nobody tags by hand (ADR-0027):
 
 ```bash
-# 1. The changelog. Move Unreleased into a dated version heading.
-$EDITOR CHANGELOG.md
-
-# 2. The version, in one place.
-$EDITOR iemod_fetch/__init__.py     # __version__
+# 1. The changelog: move Unreleased into a dated heading, `## [2.3.0] - YYYY-MM-DD`.
+# 2. The version, in two places that must agree:
+$EDITOR iemod_fetch/__init__.py     # __version__ = "2.3.0"
 $EDITOR pyproject.toml              # [project] version
-
-# 3. Everything green, locally, before the tag exists.
+# 3. Green locally, then open the pull request as usual.
 make check && make cover && make audit && make build
-
-# 4. Tag and push.
-git commit -am "Release 2.1.0"
-git tag -a v2.1.0 -m "2.1.0"
-git push origin main --follow-tags
 ```
 
-The release workflow then, in order: re-runs the entire CI gate (a tag does not
-get a shortcut past the tests); checks that the tag and
-`iemod_fetch.__version__` agree and fails loudly if they do not; builds the
-sdist, the wheel and the `.pyz`; records `SHA256SUMS`; generates a CycloneDX
-SBOM; attests build provenance through Sigstore keyless signing; opens a
-**draft** GitHub release with notes extracted from the changelog section for
-that version; and publishes to PyPI through OIDC trusted publishing, gated on a
-manual approval of the `pypi` environment.
+Merging it is the release. The push to `main` changes `CHANGELOG.md`, so the
+release workflow runs `tools/release_plan.py`. It reads the newest `## [X.Y.Z]`
+section, and if `vX.Y.Z` does not exist yet it picks the commit to release: the
+main-line merge where `__version__` first became X.Y.Z, so the pull request's
+review fixes are in and nothing merged later is. Then, in order:
 
-Then a human reads the draft and publishes it.
+1. re-runs the entire CI gate, including the real-WeiDU job;
+2. builds that commit: sdist, wheel and `.pyz`, after checking that its
+   `__version__` matches the tag; records `SHA256SUMS`; writes a CycloneDX SBOM;
+3. attests build provenance through Sigstore keyless signing;
+4. **creates the tag `vX.Y.Z` and publishes the GitHub release**. The notes are
+   that changelog section plus the verification commands;
+5. publishes to PyPI through OIDC trusted publishing. This step is opt-in: it
+   runs only once the repository variable `PYPI_PUBLISH` is `true`, and it is
+   still gated by the `pypi` environment.
+
+The workflow creates the tag itself, with its own `GITHUB_TOKEN`. A tag pushed
+with that token starts no workflow, so creating the tag elsewhere would leave
+nothing to build it. A version that is already tagged is skipped, which makes
+re-runs and edits to old changelog sections harmless.
+
+**An older version without a release** (v2.1.0 was merged before this
+existed): *Actions → Release → Run workflow*, with `version` = `2.1.0`. It is
+released on its own merge commit and not marked "latest".
+
+**A tag pushed by hand** still works: that exact commit is released.
+
+**Dry run**: *Run workflow* with `dry_run` checked builds and attests but
+publishes nothing.
 
 ## What the operator can verify
 
