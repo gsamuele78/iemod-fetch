@@ -1234,3 +1234,9 @@ hand-written, reviewed changelog with one generated from commit messages.
   and then released by a manual run naming that version (a tag push alone runs
   the tagged commit's own, older workflow), or an optional `RELEASE_TOKEN`
   secret.
+- No step needs a person except creating that secret. Corrected notes reach
+  their release on the next push to main; editing a release creates no ref.
+  Listed back-fills are released by the automatic run once the secret exists.
+  The session that maintains this repository can merge but cannot start a
+  workflow or push a tag, so everything after a merge has to happen inside the
+  workflow.

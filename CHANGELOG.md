@@ -17,6 +17,15 @@ Python API, which is internal.
   through the `PYPI_PUBLISH` repository variable. This is the method of
   R-studioConf's ADR-0006, adapted (ADR-0027).
 
+### Added
+- **Published release notes follow CHANGELOG.md.** Each push to `main`
+  rewrites a release body whose changelog section has changed, keeping its
+  verification block (`tools/release_notes.py`).
+- **Back-fills from the workflow itself.** Versions listed in `BACKFILL` are
+  released by the next automatic run once the newest version is tagged. A tag
+  on an older commit needs the `RELEASE_TOKEN` secret; without it the run
+  skips with a notice instead of failing.
+
 ### Fixed
 - **The 2.2.0 notes lost the start of the `--simulate` entry** (a text edit
   cut it). The section is restored, `tests/test_changelog.py` now rejects such

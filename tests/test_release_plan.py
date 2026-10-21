@@ -126,3 +126,28 @@ def test_an_explicit_version_releases_an_existing_tag_on_its_commit(repo):
     assert plan(str(path), "2.1.0")["release"] == "false"            # automatic: done
     assert plan(str(path), "2.1.0", explicit=True) == {
         "release": "true", "tag": "v2.1.0", "sha": merge, "workflows_differ": "false"}
+
+
+from tools.release_plan import automatic  # noqa: E402
+
+
+def test_with_the_newest_released_the_first_untagged_backfill_is_next(repo):
+    """Automatic runs release the newest changelog version; once that is
+    tagged, a version listed for back-fill and still untagged is next."""
+    path, merge = repo
+    head = git(path, "rev-parse", "HEAD")
+    git(path, "tag", "v2.1.0", head)
+    assert automatic(str(path), "2.1.0", backfill=[])["release"] == "false"
+    git(path, "tag", "-d", "v2.1.0")
+    commit(path, "2.2.0", "the next release")
+    git(path, "tag", "v2.2.0")
+    planned = automatic(str(path), "2.2.0", backfill=["2.1.0"])
+    assert (planned["release"], planned["tag"], planned["sha"]) == ("true", "v2.1.0", merge)
+
+
+def test_a_backfill_already_tagged_is_done(repo):
+    path, merge = repo
+    git(path, "tag", "v2.1.0", merge)
+    commit(path, "2.2.0", "the next release")
+    git(path, "tag", "v2.2.0")
+    assert automatic(str(path), "2.2.0", backfill=["2.1.0"])["release"] == "false"
