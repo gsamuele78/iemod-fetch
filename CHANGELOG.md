@@ -83,6 +83,14 @@ Python API, which is internal.
   dependencies (with their component numbers) and known issues to the
   check; numbers as text, a number or a list.
 
+- **Engine limits** (ADR-0034). The conflict report shows, per install, the
+  kits, spell states and spell ids per level the chosen components add, with
+  who adds them: kits against 256 (WeiDU's ADD_KIT limit on every EE game; the
+  game has 40), spell ids against 50 per level (WeiDU's ADD_SPELL). Spell
+  states are shown but never warned on: krion64's counts include states a mod
+  only reads. Values checked in WeiDU's, EEex's and IESDP's sources; Infinity
+  Mod Forge's 320 kits has no source. Warnings only, for every game patch.
+
 ### Fixed
 - **Reading a mod's text stays inside the mod**, on Windows too: a tp2 path
   with a drive (`C:`), a stream or an absolute part is refused, a FIFO is

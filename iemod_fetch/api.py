@@ -49,7 +49,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, pi
+from . import bio, limits, pi
 from .decisions import parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
                          resolve_conflicts, resolve_refusals)
@@ -901,6 +901,7 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
         return None
     report = build_conflict_report(analysis.installs, analysis.ruleset,
                                    analysis.context, plan)
+    report.engine_limits = _engine_limits(settings)
     resolution = getattr(plan, "resolution", None)
     if resolution is not None:
         # What the plan settled is not outstanding work: an accepted finding is
@@ -996,6 +997,25 @@ def _require_plan(settings) -> None:
         if given:
             raise ConfigError(f"{flag} works on an install plan: add "
                               f"--plan-order DIR (and --order-catalogue)")
+
+
+def _engine_limits(settings) -> list:
+    """Kits, spell states and spell slots per install, from krion64's counts."""
+    krion = os.path.join(settings.order_catalogue, "mods") if settings.order_catalogue else None
+    if not (krion and os.path.isdir(krion)) or not settings.weidu_log:
+        return []
+    records = list(_json_records(krion))
+    reports = []
+    for spec in settings.weidu_log:
+        path, game = split_log_spec(spec)
+        parsed = parse_weidu_files([(path, game)])
+        chosen = [(tp2_key(c.tp2_file), c.index)
+                  for mod in parsed.mods.values() for c in mod.components]
+        eeex = any(tp2_key(c.tp2_file) == "eeex"
+                   for mod in parsed.mods.values() for c in mod.components)
+        reports.append(limits.engine_limits(game or parsed.game or os.path.basename(path),
+                                            chosen, records, eeex=eeex))
+    return reports
 
 
 def _analyse(settings, installed, stream):

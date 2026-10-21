@@ -85,6 +85,104 @@
           }
         }
       }
+    },
+    "engine_limits": {
+      "type": "array",
+      "description": "per install: kits, spell states and spell slots the chosen components add (iemod_fetch/limits.py, ADR-0034)",
+      "items": {
+        "type": "object",
+        "required": [
+          "install",
+          "components",
+          "mods_without_data",
+          "eeex",
+          "spells_of_unknown_level",
+          "tables"
+        ],
+        "properties": {
+          "install": {
+            "type": "string"
+          },
+          "components": {
+            "type": "integer"
+          },
+          "mods_without_data": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "eeex": {
+            "type": "boolean"
+          },
+          "spells_of_unknown_level": {
+            "type": "integer"
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "label",
+                "cap",
+                "base",
+                "added",
+                "total",
+                "severity",
+                "source",
+                "note",
+                "checked",
+                "added_by"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "cap": {
+                  "type": "integer"
+                },
+                "base": {
+                  "type": "integer"
+                },
+                "added": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    null
+                  ]
+                },
+                "source": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "checked": {
+                  "type": "boolean",
+                  "description": "false: shown, never warned on (the counts are not reliable)"
+                },
+                "added_by": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "mod",
+                      "component",
+                      "count"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
