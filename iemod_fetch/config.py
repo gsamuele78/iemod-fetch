@@ -197,12 +197,15 @@ def write_values(path: str, values: Dict[str, Any],
             # Read back with interpolation: a literal % is written %% (C:/100%BG).
             parser.set(section, key, text.replace("%", "%%"))
     folder = os.path.dirname(os.path.abspath(path))
-    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.isfile(path) else 0o644
+    # An existing file keeps the permissions its owner gave it; a new one stays
+    # as mkstemp makes it, readable by its owner only.
+    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.isfile(path) else None
     fd, temp = tempfile.mkstemp(prefix=".iemod-fetch-", suffix=".ini", dir=folder)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             parser.write(fh)
-        os.chmod(temp, mode)         # mkstemp makes it 0600; keep what the file had
+        if mode is not None:
+            os.chmod(temp, mode)
         os.replace(temp, path)
     except BaseException:
         if os.path.exists(temp):
