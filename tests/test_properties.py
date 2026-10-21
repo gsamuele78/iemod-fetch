@@ -270,3 +270,26 @@ def test_moving_one_element_to_the_front_costs_one_move(items):
     assume(len(items) > 1)
     rotated = [items[-1]] + items[:-1]
     assert len(_minimum_moves(items, rotated)) == 1
+
+
+# selection.json (ADR-0030) says what a WeiDU.log says, so the trip through a
+# log loses nothing.
+import json  # noqa: E402
+
+from iemod_fetch.selection import parse_selection, selection_from_logs  # noqa: E402
+
+_sel_name = st.from_regex(r"[A-Za-z][A-Za-z0-9_#-]{0,15}", fullmatch=True)
+_sel_choice = st.fixed_dictionaries(
+    {"tp2": st.builds(lambda f, t: f"{f}/{t}.tp2", _sel_name, _sel_name),
+     "component": st.integers(0, 9999), "language": st.integers(0, 30)},
+    optional={"label": st.from_regex(r"[A-Za-z0-9 :()'-]{1,40}", fullmatch=True)
+              .map(str.strip).filter(bool)})
+
+
+@given(st.lists(_sel_choice, max_size=25))
+def test_any_valid_selection_survives_the_trip_through_a_weidu_log(components):
+    original = parse_selection(json.dumps(
+        {"schema_version": 1, "installs": [{"game": "BG2EE", "components": components}]}))
+    text = original.weidu_logs()[0].text
+    again = selection_from_logs([("BG2EE", parse_weidu_log(text))])
+    assert again.as_dict() == original.as_dict()
