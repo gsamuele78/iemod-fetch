@@ -198,7 +198,7 @@ def a_game(root, override=None, log=None):
     (root / "chitin.key").write_bytes(key("data\\Default.bif", [
         ("KITLIST", 0x3F4), ("SPELL", 0x3F0), ("SPWI105", 0x3EE)]))
     for name, text in (override or {}).items():
-        (root / "override" / name).write_text(text)
+        (root / "override" / name).write_bytes(text.encode())   # exact bytes, on Windows too
     if log is not None:
         (root / "WeiDU.log").write_text(log)
     return str(root)
