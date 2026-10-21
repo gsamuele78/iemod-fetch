@@ -34,6 +34,8 @@ Standard library only at runtime. One file, no dependencies.
 
 | Step | What happens | Flag |
 |---|---|---|
+| **Choose** | every mod lcc-docs, BWS-NG and krion64 know, with games, status, quality and the newest version any of them names; with a WeiDU.log, which installed mods have an update | `--list-mods PATH` |
+| **Name** | each staged mod's components named exactly as WeiDU names them, in your language, from its tp2 and `.tra` files | `--describe-mods PATH` |
 | **Fetch** | resolves each mod from its catalogue entry, GitHub release or trusted owner; refuses an HTML page served as an archive | *(default)* |
 | **Verify** | magic bytes, size and ratio limits, path-traversal checks, the mod's own `.tp2`, pinned `sha256` | *(always)* |
 | **Order** | sorts every component against the BWS-NG and krion64 rule data, then re-checks the result | `--plan-order DIR` |
@@ -51,6 +53,8 @@ Standard library only at runtime. One file, no dependencies.
 - [Checking the install](#checking-the-install)
 - [Making it reproducible](#making-it-reproducible)
 - [Supplementary catalogues](#supplementary-catalogues)
+- [Community data, kept current](#community-data-kept-current)
+- [Choosing mods: names and updates](#choosing-mods-names-and-updates)
 - [Planning the install order](#planning-the-install-order)
 - [What it guarantees](#what-it-guarantees) · [What it deliberately does not do](#what-it-deliberately-does-not-do)
 - [Development](#development) · [Documentation](#documentation)
@@ -332,7 +336,7 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
 ```
 iemod_fetch/     the tool
 legacy/          the original script, kept so its defects stay reproducible
-tests/           713 offline tests: characterization, example, property-based, loopback, script execution
+tests/           ~930 offline tests: characterization, example, property-based, loopback, script execution
 tests/data/      your real manifest and WeiDU logs, used as fixtures
 aliases.json     the 9 reviewed folder -> catalogue-key mappings
 docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
@@ -343,7 +347,7 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 ```bash
-python3 -m pytest -q      # 712 passed + 1 Windows-only, no network, ~14s
+python3 -m pytest -q      # 927 passed + 4 skipped (platform/opt-in), no network, ~30s
 ```
 
 ## Community data, kept current
@@ -352,7 +356,8 @@ The order, the conflicts and the list of mods come from lcc-docs,
 BigWorldSetup-NG and krion64. Nothing is cloned: each run refreshes a per-user
 cache first, at most once a day, fetching only the files the tool reads and
 only those that changed, and uses it wherever `--catalogue`, `--rules`,
-`--mod-db` or `--order-catalogue` was not given (ADR-0032).
+`--mod-db`, `--order-catalogue`, `--eet-sequence` or `--releases` was not
+given (ADR-0032).
 
 Every update passes a guard before it replaces the last good copy: each file
 must be valid JSON, the copy must parse with the tool's own readers, and no
@@ -374,6 +379,43 @@ $ python3 iemod-fetch.pyz --update-data
 `--no-update-data` stays offline, `--no-default-data` uses only the flags,
 `--data-dir` moves the cache. The pinned WeiDU and mod_installer used by the
 test suite are watched the same way, weekly, by `upstream-versions.yml`.
+
+## Choosing mods: names and updates
+
+```bash
+# every mod there is to choose from, as JSON - and, given your log, what to update
+python3 iemod-fetch.pyz --list-mods mods.json -w WeiDU.log:EET
+
+# the components of the mods staged in ./Mods, named as WeiDU names them
+python3 iemod-fetch.pyz --describe-mods components.json --language-preference it_IT,en_US
+```
+
+A run with `-w` also prints which installed mods have a newer version:
+
+```
+  updates     : 2 of 41 installed mods with a version have a newer one
+    eet                      v14.0 -> v14.1 (github release, 2025-04-07)
+    SirinesCall              v16.5.1 -> 16.5.2 (BigWorldSetup-Next-Generation)
+```
+
+Both are measured, not assumed (docs/TESTING.md):
+
+* **Component names** match WeiDU 251's own `--list-components` on 9,889 of
+  9,889 lines from 103 real mods. A name WeiDU itself cannot resolve is shown
+  as WeiDU shows it (`UNDEFINED STRING:   @N`) and flagged.
+* **The newest version** is the newest of the mod's latest GitHub release
+  (krion64's release cache), BWS-NG and krion64. Against the mods' own tp2
+  VERSION that agrees for 79 of 90 mods; any one source alone, 42 to 67.
+  The installed version is read from WeiDU.log lines as WeiDU 251 writes
+  them (`Name: VERSION`): 1,409 of 1,409 right, none wrong.
+* `update_available` is `null`, never a guess, when two versions cannot be
+  ranked. Known blind spot: a release tagged without bumping the tp2 VERSION
+  (EET's v14.1 tag carries VERSION v14.0) still shows as an update after it is
+  installed.
+
+The formats are `schemas/mods-v1.schema.json` and
+`schemas/components-v1.schema.json`; the GUI reads the same through
+`iemod_fetch.api` (`list_mods`, `describe_mods`).
 
 ## Planning the install order
 
