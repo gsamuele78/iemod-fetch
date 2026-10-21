@@ -26,7 +26,7 @@ Only the plan is edited. The operator's WeiDU logs are never touched, and the
 plan is re-checked against the same rules afterwards rather than trusted.
 """
 from dataclasses import dataclass, field, replace
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from .contract import SCHEMA_VERSION
 from .conflicts import SUBCOMPONENT_ORIGIN, ConflictReport, Finding, Side
@@ -244,6 +244,34 @@ def _drop(plan, log: str, mod: str, numbers) -> Tuple[Tuple[int, ...], Tuple[str
 BEFORE_EET_CORE = {"eefixpack": "EET's readme allows the Enhanced Edition "
                                 "Fixpack on BG2:EE before its core, and BWS-NG "
                                 "orders it there (games/eet.json)"}
+_FROM_BWS = ("BWS-NG's games/eet.json orders it on BG2:EE before the EET core "
+             "(bg2ee sequence)")
+
+
+def before_eet_core(eet_sequences: Optional[dict]) -> Dict[str, str]:
+    """
+    What may go on BG2:EE before the EET core, and why.
+
+    BWS-NG's `games/eet.json` (`--eet-sequence`, cached by default) is the
+    maintained list: its bg2ee sequence names everything installed before
+    `eet:0`, and it contains what EET's readme allows. When it is not
+    available, or not in the shape expected, the readme's rule stands alone.
+    """
+    allowed = dict(BEFORE_EET_CORE)
+    sequences = eet_sequences.get("sequences") if isinstance(eet_sequences, dict) else None
+    if not isinstance(sequences, list):
+        return allowed
+    for sequence in sequences:
+        if not isinstance(sequence, dict) or str(sequence.get("game")).lower() != "bg2ee":
+            continue
+        for entry in sequence.get("order") or ():
+            mod, _sep, number = str(entry).partition(":")
+            key = normalize_key(mod)
+            if key == "eet" and number.strip() == "0":
+                break
+            if key:
+                allowed.setdefault(key, _FROM_BWS)
+    return allowed
 
 
 def _move_before_core(plan, log: str, mod: str, numbers) -> Tuple[int, ...]:
@@ -265,7 +293,8 @@ def _move_before_core(plan, log: str, mod: str, numbers) -> Tuple[int, ...]:
 
 
 def resolve_refusals(plan, constraints, games=None, ruleset=None,
-                     context=None) -> ResolutionResult:
+                     context=None, before_core: Optional[Dict[str, str]] = None
+                     ) -> ResolutionResult:
     """
     Make the plan one WeiDU can finish (ADR-0025).
 
@@ -277,7 +306,10 @@ def resolve_refusals(plan, constraints, games=None, ruleset=None,
     the wrong options it names) are removed from the BG:EE plan instead - EET's
     own table decides that, not this tool. The EET core itself is never
     removed: refused for any other reason, it is left for the operator.
+    A mod `before_core` names (default: EET's readme rule; see
+    `before_eet_core`) that refuses EET is moved before the core instead.
     """
+    before = before_core if before_core is not None else BEFORE_EET_CORE
     from .simulate import EET_LOG, PRE_EET_LOG, simulate_install, steps_of
 
     result = ResolutionResult()
@@ -309,7 +341,7 @@ def resolve_refusals(plan, constraints, games=None, ruleset=None,
                     refusal.log, "eet #0",
                     f"the EET core would be refused: {refusal.reason}"))
                 continue
-            if (refusal.log == EET_LOG and refusal.mod in BEFORE_EET_CORE
+            if (refusal.log == EET_LOG and refusal.mod in before
                     and ("refuses game EET" in refusal.reason
                          or "the game is EET" in refusal.reason)):
                 moved = _move_before_core(plan, EET_LOG, refusal.mod,
@@ -317,7 +349,7 @@ def resolve_refusals(plan, constraints, games=None, ruleset=None,
                 if moved:
                     changed = True
                     result.moved.append(Move(EET_LOG, refusal.mod, moved,
-                                             BEFORE_EET_CORE[refusal.mod]))
+                                             before[refusal.mod]))
                     continue
             numbers, labels = _drop(plan, refusal.log, refusal.mod,
                                     {refusal.component})

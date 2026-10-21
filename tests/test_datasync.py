@@ -173,7 +173,8 @@ def test_cached_files_carry_the_upstream_commit_date(tmp_path, hub):
 
 def test_the_cache_supplies_every_source_the_planner_reads(tmp_path):
     for rel in ("lcc-docs/db/mods.json", "bws-ng/data/rules/order.json",
-                "bws-ng/data/mods/x.json", "krion64/data/categories.json",
+                "bws-ng/data/mods/x.json", "bws-ng/data/games/eet.json",
+                "krion64/data/categories.json",
                 "krion64/data/mods/x.json"):
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +185,7 @@ def test_the_cache_supplies_every_source_the_planner_reads(tmp_path):
                            str(tmp_path / "krion64" / "data" / "mods")]
     assert paths.mod_db == str(tmp_path / "bws-ng" / "data" / "mods")
     assert paths.order_catalogue == str(tmp_path / "krion64" / "data")
+    assert paths.eet_sequence == str(tmp_path / "bws-ng" / "data" / "games" / "eet.json")
 
 
 def test_the_default_sources_are_the_three_community_databases():

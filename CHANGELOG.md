@@ -30,6 +30,13 @@ Python API, which is internal.
   moved. The README and guide no longer ask for `git clone`.
 
 ### Changed
+- **What may go on BG2:EE before the EET core comes from BWS-NG.** Its
+  `games/eet.json` (maintained, last changed 2026-02-24) orders the EE
+  Fixpack, `correctfrbg2ee` and `bws-fr-fixpack` before `eet:0`; EET's readme
+  names only the Fixpack. `--resolve-conflicts` now moves any of them that
+  refuses EET before the core instead of dropping it. The file is read from
+  the data cache, or `--eet-sequence PATH`; without it, EET's readme rule
+  stands as before.
 - **`--plan-order` no longer needs `--order-catalogue`**, and checks use the
   community rules without setup, once the cache holds them. A run that gave no
   rules may therefore now report findings; `--no-default-data` restores the

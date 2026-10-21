@@ -303,3 +303,40 @@ def test_what_is_left_for_the_operator_points_at_its_finding(tmp_path, index):
     data = result.as_dict()
     assert data["schema_version"] == 1
     assert data["left_for_operator"][0]["finding_id"] in ids
+
+
+# What may go on BG2:EE before the EET core: BWS-NG's games/eet.json, which is
+# maintained (2026) and contains what EET's readme allows (the Fixpack), is the
+# list when it is available; the readme's rule is the floor.
+BWS_EET = {"sequences": [
+    {"game": "sod", "order": ["dlcmerger:1", "eefixpack:0"]},
+    {"game": "bg2ee", "order": ["weidu:0", "eefixpack:0", "eefixpack:1",
+                                "correctfrbg2ee:10", "eet:0", "cdtweaks:4000"]}]}
+
+
+def test_the_bws_ng_sequence_says_what_goes_before_the_eet_core():
+    from iemod_fetch.resolution import before_eet_core
+    allowed = before_eet_core(BWS_EET)
+    assert {"eefixpack", "correctfrbg2ee"} <= set(allowed)
+    assert "cdtweaks" not in allowed and "dlcmerger" not in allowed
+    assert "games/eet.json" in allowed["correctfrbg2ee"]
+
+
+def test_without_the_bws_ng_sequence_the_readme_rule_stands():
+    from iemod_fetch.resolution import BEFORE_EET_CORE, before_eet_core
+    assert before_eet_core(None) == BEFORE_EET_CORE
+    assert before_eet_core({"sequences": "nonsense"}) == BEFORE_EET_CORE
+
+
+def test_a_mod_bws_ng_orders_before_the_core_is_moved_there(tmp_path, index):
+    eet = [r"~eet\EET.tp2~ #0 #0 // EET core (resource importation)",
+           r"~correctfrbg2ee\correctfrbg2ee.tp2~ #0 #10 // Corrections"]
+    constraints = ModConstraints(by_mod={
+        "eet": {0: Tp2Component(0)},
+        "correctfrbg2ee": {10: Tp2Component(10, not_games=["EET"])}})
+    from iemod_fetch.resolution import before_eet_core
+    plan = two_phase_plan(tmp_path, index, BGEE[:1], eet)
+    result = resolve_refusals(plan, constraints, before_core=before_eet_core(BWS_EET))
+    assert [(m.mod, m.components) for m in result.moved] == [("correctfrbg2ee", (10,))]
+    order = [(display.split(" ")[0], number) for display, number in components(plan)]
+    assert order.index(("correctfrbg2ee", 10)) < order.index(("eet", 0))
