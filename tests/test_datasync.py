@@ -175,7 +175,7 @@ def test_the_cache_supplies_every_source_the_planner_reads(tmp_path):
     for rel in ("lcc-docs/db/mods.json", "bws-ng/data/rules/order.json",
                 "bws-ng/data/mods/x.json", "bws-ng/data/games/eet.json",
                 "krion64/data/categories.json",
-                "krion64/data/mods/x.json"):
+                "krion64/data/mods/x.json", "krion64/data/version_cache.json"):
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}")
@@ -186,6 +186,7 @@ def test_the_cache_supplies_every_source_the_planner_reads(tmp_path):
     assert paths.mod_db == str(tmp_path / "bws-ng" / "data" / "mods")
     assert paths.order_catalogue == str(tmp_path / "krion64" / "data")
     assert paths.eet_sequence == str(tmp_path / "bws-ng" / "data" / "games" / "eet.json")
+    assert paths.releases == str(tmp_path / "krion64" / "data" / "version_cache.json")
 
 
 def test_the_default_sources_are_the_three_community_databases():
@@ -302,7 +303,8 @@ def _fixture_files(directory, prefix):
     return files
 
 
-KRION_CHECKED = Source("krion64", "o/krion", ("data/categories.json", "data/mods/"),
+KRION_CHECKED = Source("krion64", "o/krion", ("data/categories.json", "data/mods/",
+                                             "data/version_cache.json"),
                        check=datasync.check_krion64)
 LCC_CHECKED = Source("lcc-docs", "o/lcc", ("db/mods.json",), check=datasync.check_lcc_docs)
 

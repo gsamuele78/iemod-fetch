@@ -39,7 +39,30 @@ Python API, which is internal.
   docs/TESTING.md). Paths in the tp2 are matched case-insensitively and never
   outside `--target`.
 
+- **Update notice.** Each mod's newest known version is the newest any of
+  three sources names: the latest GitHub release (krion64's
+  `version_cache.json`), the BWS-NG database and krion64's records. Each
+  source alone agrees with the mods' own tp2 VERSION for 42-67 of 90 mods;
+  the newest of the three for 79 (`tools/version_benchmark.py`,
+  docs/TESTING.md). `--list-mods` gains `installed`, `latest` (version,
+  origin, date, release page) and `update_available` (null when the versions
+  cannot be ranked - never a guess); with `-w`, a run prints which installed
+  mods have a newer version. `--releases PATH`, read from the data cache by
+  default; the cache's guard now also counts the releases.
+
 ### Fixed
+- **The version a WeiDU.log records is read.** WeiDU 251 writes
+  `Name: VERSION` - one colon, despite its header's `[ : Version]` - and the
+  parser looked only for ` : `, so a real log never gave a version. The
+  suffix is now taken when it looks like a version and every component of the
+  mod shares it: 1,409 of 1,409 component lines with a version read right, no
+  option text (`cdtweaks: Use BG2 values`) taken for one. Rules about mod
+  versions (the staleness check) now see installed versions.
+- **Version comparison:** `Version 6.1` is 6.1, `1.0` equals `1`, and across
+  sources `v071`/`0.71`, `V19`/`1.9` and `v2.02`/`2.0.2` are one release;
+  `pre-v6.0` sits between 5.0 and 6.0.
+- **A mod database's name** in `--list-mods` is the project, not its folder:
+  `BigWorldSetup-Next-Generation`, not `mods`.
 - **Component numbers without DESIGNATED** are the previous number + 1, as
   WeiDU numbers them, not their position. A tp2 that designates some
   components and not others (EEUITweaks) had its

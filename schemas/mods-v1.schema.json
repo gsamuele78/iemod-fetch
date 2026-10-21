@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/gsamuele78/iemod-fetch/schemas/mods-v1.schema.json",
   "title": "iemod-fetch available mods, version 1",
-  "description": "Output of --list-mods: one entry per mod any given source knows (manifest, catalogues, mod database), with each source's facts. iemod_fetch/available.py is the authority.",
+  "description": "Output of --list-mods: one entry per mod any given source knows (manifest, catalogues, mod database), with each source's facts and, given --releases and a WeiDU.log, whether a newer version exists. iemod_fetch/available.py is the authority.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "mods"],
@@ -44,7 +44,23 @@
                 "version": {"type": "string"}
               }
             }
-          }
+          },
+          "installed": {"type": ["string", "null"],
+                        "description": "the version the given WeiDU.log records; null without one"},
+          "latest": {
+            "description": "the newest version any source names (iemod_fetch/freshness.py); null when none names one",
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["version", "origin"],
+            "properties": {
+              "version": {"type": "string"},
+              "origin": {"type": "string", "description": "'github release', or the mod database that names it"},
+              "date": {"type": "string"},
+              "url": {"type": "string"}
+            }
+          },
+          "update_available": {"type": ["boolean", "null"],
+                               "description": "null when installed or latest is unknown, or the two cannot be ranked"}
         }
       }
     }

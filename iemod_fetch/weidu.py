@@ -46,7 +46,7 @@ class Component:
     language: int
     index: int
     comment: str = ""
-    version: Optional[str] = None
+    version: Optional[str] = None     # a suffix shaped like a version (log_version)
     path: str = ""       # tp2 path exactly as the log spelled it, for round-tripping
     line: int = 0        # 1-based line in the log: the true install order
 
@@ -94,6 +94,31 @@ def _mod_from_root_tp2(tp2_file: str) -> str:
     return stem[6:] if stem.lower().startswith("setup-") else stem
 
 
+_DIGIT = re.compile(r"\d")
+
+
+def log_version(comment: str) -> Optional[str]:
+    """
+    The version at the end of a WeiDU.log comment, or None.
+
+    WeiDU 251 writes `Name: VERSION` - one colon, no space before it, whatever
+    its own header says (`[ : Version]`) - so `Margarita for BG: EE` and
+    `Artisan's Kitpack: Adjust kit THAC0 ...` end the same way a version does.
+    What follows the last ': ' is a version only if it looks like one: it has a
+    digit, is not a `Group -> Name`, not an unresolved `@N`, and is at most four
+    words (`Beta 2 - Working Master`). Measured on 1,533 component lines of 103
+    mods against their tp2 VERSION: no wrong version, none missed
+    (docs/TESTING.md).
+    """
+    if ": " not in comment:
+        return None
+    suffix = comment.rsplit(": ", 1)[1].strip()
+    if (not suffix or not _DIGIT.search(suffix) or "->" in suffix
+            or suffix.startswith("@") or len([w for w in suffix.split() if w.strip("-")]) > 4):
+        return None
+    return suffix
+
+
 def parse_weidu_log(text: str, source: str = "<weidu.log>") -> ParsedLog:
     """Parse WeiDU.log content. Unparseable lines are reported, never ignored."""
     out = ParsedLog()
@@ -118,12 +143,7 @@ def parse_weidu_log(text: str, source: str = "<weidu.log>") -> ParsedLog:
         folder, tp2_file = parts[0], parts[-1]
         comment = (m.group("comment") or "").strip()
 
-        # WeiDU writes '// Name : Version'. Only ' : ' (spaced) delimits a
-        # version; 'Option: X' and 'Margarita for BG: EE' must not be mistaken
-        # for one. In the supplied logs NO line carries a version.
-        version = None
-        if " : " in comment:
-            version = comment.rsplit(" : ", 1)[1].strip() or None
+        version = log_version(comment)
 
         comp = Component(folder, tp2_file, int(m.group("lang")),
                          int(m.group("comp")), comment, version,
@@ -136,8 +156,11 @@ def parse_weidu_log(text: str, source: str = "<weidu.log>") -> ParsedLog:
             out.order.append(key)
         mod = out.mods[key]
         mod.components.append(comp)
-        if version and not mod.version:
-            mod.version = version
+    for mod in out.mods.values():
+        # A tp2's VERSION is on every one of its components: a suffix they do
+        # not all share is part of a name, or the mod is half upgraded.
+        versions = {c.version for c in mod.components}
+        mod.version = versions.pop() if len(versions) == 1 else None
     return out
 
 

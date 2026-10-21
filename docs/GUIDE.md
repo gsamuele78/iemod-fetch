@@ -210,6 +210,25 @@ python3 iemod-fetch.pyz --list-mods mods.json \
 With the full lcc-docs catalogue and the BWS-NG database that is about 1,800
 mods in under a second. `-` writes to standard output.
 
+Each mod also carries `latest`: the newest version any source names - the
+mod's latest GitHub release (krion64's `version_cache.json`, `--releases`,
+from the data cache by default), the BWS-NG database, krion64's records - with
+which source named it. Give `-w WeiDU.log` too and each installed mod says
+`installed` and `update_available`; a normal run with `-w` prints the same as
+a short notice:
+
+```text
+  updates     : 2 of 41 installed mods with a version have a newer one
+    eet                      v14.0 -> v14.1 (github release, 2025-04-07)
+    SirinesCall              v16.5.1 -> 16.5.2 (BigWorldSetup-Next-Generation)
+```
+
+`update_available` is `null`, not `false`, when either version is unknown or
+the two cannot be ranked (`EAOB.9` against `v1_Beta260923`). A notice can be
+wrong in one known way: an author who tags a release without bumping the
+tp2's VERSION (EET's v14.1 tag, VERSION v14.0) is reported as having an
+update after installing it.
+
 For a progress bar, `--events events.jsonl` (or `-` for standard output,
 best with `-q`) writes one JSON object per line as the run goes -
 `run_started`, `mod_started`, `download_progress`, `mod_finished`,
