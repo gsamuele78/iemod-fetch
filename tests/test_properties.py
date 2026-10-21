@@ -276,9 +276,12 @@ def test_moving_one_element_to_the_front_costs_one_move(items):
 # log loses nothing.
 import json  # noqa: E402
 
+from iemod_fetch.naming import is_safe_component  # noqa: E402
 from iemod_fetch.selection import parse_selection, selection_from_logs  # noqa: E402
 
-_sel_name = st.from_regex(r"[A-Za-z][A-Za-z0-9_#-]{0,15}", fullmatch=True)
+# Only names a selection accepts: no Windows device names (AUX, CON, ...).
+_sel_name = st.from_regex(r"[A-Za-z][A-Za-z0-9_#-]{0,15}", fullmatch=True).filter(
+    lambda n: is_safe_component(n) and is_safe_component(n + ".tp2"))
 _sel_choice = st.fixed_dictionaries(
     {"tp2": st.builds(lambda f, t: f"{f}/{t}.tp2", _sel_name, _sel_name),
      "component": st.integers(0, 9999), "language": st.integers(0, 30)},

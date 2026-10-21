@@ -669,6 +669,13 @@ def _require_plan(args) -> None:
                               f"--plan-order DIR (and --order-catalogue)")
 
 
+def _analyse(args, installed, stream):
+    """Rule check, order plan and conflict report, over what is staged now."""
+    analysis = _check_rules(args, installed, stream)
+    order_plan = _plan_order(args, analysis, stream)
+    return analysis.findings, order_plan, _conflict_report(args, analysis, order_plan)
+
+
 def _run(args, stream, config=None) -> int:
     if args.list_mods:
         return _list_mods(args, stream)
@@ -696,12 +703,8 @@ def _run(args, stream, config=None) -> int:
         plan.items = [i for i in plan.items if i.folder.lower() in wanted]
         plan.unresolved = [i for i in plan.unresolved if i.folder.lower() in wanted]
 
-    analysis = _check_rules(args, installed, stream)
-    findings = analysis.findings
-    order_plan = _plan_order(args, analysis, stream)
-    conflict_report = _conflict_report(args, analysis, order_plan)
-
     if args.check_only:
+        findings, order_plan, conflict_report = _analyse(args, installed, stream)
         report = RunReport(findings=findings)
         if not args.quiet:
             render_summary(report, target, stream=stream)
@@ -775,7 +778,10 @@ def _run(args, stream, config=None) -> int:
                         org_index=org_index, catalogue=catalogue or None,
                         on_event=on_event)
         report = runner.run(plan)
-    report.findings = findings
+    # Checked and planned AFTER the fetch, so the mods' own tp2s are read from
+    # what this run just staged: one run takes a selection from nothing to a
+    # checked plan.
+    report.findings, order_plan, conflict_report = _analyse(args, installed, stream)
 
     if not args.quiet:
         render_summary(report, target, stream=stream)

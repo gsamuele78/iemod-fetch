@@ -38,6 +38,10 @@ class Record:
     discovered_github: Optional[str] = None
     bytes: int = 0
     warnings: List[str] = field(default_factory=list)
+    # Why it did not succeed, as a stable code (errors.py; ADR-0030). None for
+    # ok/skipped/planned. Besides the error classes' codes: "filesystem",
+    # "internal".
+    error_code: Optional[str] = None
 
     def to_json(self) -> dict:
         data = asdict(self)

@@ -314,3 +314,16 @@ def test_events_are_written_one_json_object_per_line(workspace):
     events = [json.loads(line) for line in lines]
     assert events[0]["event"] == "run_started" and events[-1]["event"] == "run_finished"
     assert sum(e["event"] == "mod_finished" for e in events) == 2
+
+
+def test_one_run_fetches_then_checks_what_it_just_staged(workspace):
+    """
+    The mods' own tp2 constraints are read from the staged folders. They used
+    to be read before the downloads, so a fresh selection needed two runs: one
+    to fetch, one to check. Now fetch comes first and the check sees the mods.
+    """
+    tmp_path, _stub = workspace
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods"], tmp_path)
+    assert code == 0, out
+    assert "own tp2s    : 2 mod(s)" in out
+    assert "not staged" not in out
