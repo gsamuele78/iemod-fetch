@@ -13,6 +13,7 @@ definition of each default and no per-flag plumbing to drift.
 import configparser
 import os
 import re
+import stat
 import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -134,7 +135,11 @@ def _read(path: str) -> FileConfig:
             f"{path}: no [{SECTION}] section; nothing was applied"])
 
     config = FileConfig(path=path)
-    for raw_key, raw_value in parser.items(SECTION):
+    try:
+        items = parser.items(SECTION)
+    except configparser.Error as exc:     # a lone % is interpolation syntax
+        raise ConfigError(f"{path}: {exc} (write a literal % as %%)") from exc
+    for raw_key, raw_value in items:
         key = raw_key.strip().replace("-", "_")
         if key not in KNOWN_KEYS:
             config.warnings.append(f"{path}: ignoring unknown option {raw_key!r}")
@@ -178,19 +183,26 @@ def write_values(path: str, values: Dict[str, Any],
         if not parser.has_section(section):
             parser.add_section(section)
         for key, value in options.items():
+            # The reader accepts `bgee-dir` for `bgee_dir`: replace either spelling.
+            parser.remove_option(section, key.replace("_", "-"))
             if value is None:
                 parser.remove_option(section, key)
-            elif isinstance(value, (list, tuple)):
-                parser.set(section, key, ", ".join(str(v) for v in value))
+                continue
+            if isinstance(value, (list, tuple)):
+                text = ", ".join(str(v) for v in value)
             elif isinstance(value, bool):
-                parser.set(section, key, "true" if value else "false")
+                text = "true" if value else "false"
             else:
-                parser.set(section, key, str(value))
+                text = str(value)
+            # Read back with interpolation: a literal % is written %% (C:/100%BG).
+            parser.set(section, key, text.replace("%", "%%"))
     folder = os.path.dirname(os.path.abspath(path))
+    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.isfile(path) else 0o644
     fd, temp = tempfile.mkstemp(prefix=".iemod-fetch-", suffix=".ini", dir=folder)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             parser.write(fh)
+        os.chmod(temp, mode)         # mkstemp makes it 0600; keep what the file had
         os.replace(temp, path)
     except BaseException:
         if os.path.exists(temp):
@@ -204,6 +216,6 @@ def read_section(path: str, section: str) -> Dict[str, str]:
     try:
         with open(path, "r", encoding="utf-8") as fh:
             parser.read_file(fh)
+        return dict(parser.items(section)) if parser.has_section(section) else {}
     except (OSError, configparser.Error):
         return {}
-    return dict(parser.items(section)) if parser.has_section(section) else {}

@@ -77,7 +77,7 @@ def test_a_saved_project_is_what_the_cli_reads(tmp_path):
                       "language_preference": "it_IT,en_US"}
     assert api.load_project(str(tmp_path)) == {
         "path": path, "game": "EET", "bgee_dir": first, "bg2ee_dir": second,
-        "language_preference": ["it_IT", "en_US"]}
+        "language_preference": ["it_IT", "en_US"], "problem": None}
 
 
 def test_saving_keeps_the_rest_of_the_file_and_drops_an_unused_folder(tmp_path):
@@ -124,3 +124,44 @@ def test_the_gui_contract_forbids_every_module_but_the_api():
     modules = {f"iemod_fetch.{name[:-3]}" for name in os.listdir(os.path.join(root, "iemod_fetch"))
                if name.endswith(".py") and name not in ("__init__.py", "__main__.py", "api.py")}
     assert listed == modules
+
+
+# ------------------------------------------------- review follow-ups (#31)
+@pytest.mark.parametrize("text", [
+    "[iemod-fetch]\nworkers = many\n",
+    "[iemod-fetch]\nlanguage_preference = klingon\n",
+    "no section header\n",
+    "[iemod-fetch]\nbgee_dir = C:/100%BG\n",
+])
+def test_an_unreadable_project_file_is_a_problem_not_a_crash(tmp_path, text):
+    (tmp_path / "iemod-fetch.ini").write_text(text)
+    project = api.load_project(str(tmp_path))
+    assert project["problem"] and project["game"] is None
+
+
+def test_a_foreign_gui_section_with_a_percent_is_ignored(tmp_path):
+    (tmp_path / "iemod-fetch.ini").write_text("[iemod-fetch-gui]\ngame = 50%\n")
+    assert read_section(str(tmp_path / "iemod-fetch.ini"), "iemod-fetch-gui") == {}
+
+
+def test_a_path_with_a_percent_is_saved_and_read_back_by_the_cli(tmp_path):
+    path = api.save_project(str(tmp_path), "BGEE", "C:/Games/100%BG", None)
+    assert "100%%BG" in (tmp_path / "iemod-fetch.ini").read_text()
+    assert load_config(explicit=path).values["bgee_dir"] == "C:/Games/100%BG"
+    assert api.load_project(str(tmp_path))["bgee_dir"] == "C:/Games/100%BG"
+
+
+def test_the_hyphenated_spelling_the_cli_accepts_is_replaced_too(tmp_path):
+    ini = tmp_path / "iemod-fetch.ini"
+    ini.write_text("[iemod-fetch]\nbgee-dir = C:/old\n")
+    api.save_project(str(tmp_path), "BG2EE", None, "C:/bg2")
+    assert load_config(explicit=str(ini)).values == {"bg2ee_dir": "C:/bg2"}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_saving_keeps_the_files_permissions(tmp_path):
+    ini = tmp_path / "iemod-fetch.ini"
+    ini.write_text("[iemod-fetch]\n")
+    os.chmod(ini, 0o644)
+    api.save_project(str(tmp_path), "EET", None, None)
+    assert oct(os.stat(ini).st_mode & 0o777) == "0o644"

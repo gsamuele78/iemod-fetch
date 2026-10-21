@@ -20,6 +20,11 @@ Python API, which is internal.
 - `api.check_game_folders`, `api.languages`, `api.load_project` and
   `api.save_project`: the first phase as functions, for any front end.
 
+### Fixed
+- **A `%` in `iemod-fetch.ini`** (a path like `C:/Games/100%BG`) stopped the
+  CLI with a raw configparser traceback; it is now a ConfigError that says to
+  write `%%`, and the wizard writes it that way.
+
 ## [2.4.0] - 2026-10-21
 
 The community-data release (milestone M2 of `docs/GUI-AUDIT.md`): what the

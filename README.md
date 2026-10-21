@@ -383,7 +383,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,046 passed + 9 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
+python3 -m pytest -q      # 1,054 passed + 9 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
 ```
 
 ## Community data, kept current

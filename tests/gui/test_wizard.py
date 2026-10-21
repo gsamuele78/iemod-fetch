@@ -85,8 +85,10 @@ def test_typing_a_path_rechecks_once_the_typing_stops(qtbot, tmp_path):
     qtbot.addWidget(page)
     page.radios["BG2EE"].setChecked(True)
     folder = bg2ee(tmp_path)
-    with qtbot.waitSignal(page.completeChanged, timeout=2000) as signal:
+    with qtbot.waitSignal(page.completeChanged, timeout=2000,
+                          check_params_cb=lambda complete: complete) as signal:
         page.bg2ee.edit.setText(folder)
+        assert not page.is_complete()          # unchecked until the typing stops
     assert signal.args == [True]
 
 
@@ -95,3 +97,22 @@ def test_the_phases_are_bws_ngs_and_later_ones_say_how_to_go_on(qtbot, tmp_path)
     assert [main.phases.item(i).text() for i in range(main.phases.count())] == [
         f"{n}  {name}" for n, name in enumerate(PHASES, start=1)]
     assert "command line can carry on" in main.pages[1].text.text()
+
+
+def test_next_never_saves_a_path_typed_after_the_last_check(qtbot, tmp_path):
+    """Review of #31: typing, then Next within the re-check delay."""
+    project = tmp_path / "project"
+    main = window(qtbot, project)
+    main.game.radios["BGEE"].setChecked(True)
+    choose(main.game, bgee(tmp_path), "")
+    assert main.next.isEnabled()
+    main.game.bgee.edit.setText(str(tmp_path / "nowhere"))      # timer pending
+    assert not main.next.isEnabled()
+    main.go_next()                                               # e.g. a shortcut
+    assert main.current == 0 and not (project / api.PROJECT_FILE).exists()
+
+
+def test_a_broken_project_file_still_opens_the_wizard(qtbot, tmp_path):
+    (tmp_path / api.PROJECT_FILE).write_text("[iemod-fetch]\nworkers = many\n")
+    main = window(qtbot, tmp_path)
+    assert "could not be read" in main.game.findings.text()

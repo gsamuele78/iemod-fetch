@@ -464,16 +464,24 @@ def languages() -> List[dict]:
 def load_project(folder: str) -> dict:
     """
     The project saved in `folder` (its iemod-fetch.ini): game, the two game
-    folders and the language preference. Missing values are None or [].
+    folders and the language preference. Missing values are None or []; a file
+    that cannot be read is `problem`, with nothing else filled in.
     """
     path = os.path.join(folder, PROJECT_FILE)
-    values = _config.load_config(explicit=path).values if os.path.isfile(path) else {}
-    gui = _config.read_section(path, _GUI_SECTION)
-    game = (gui.get("game") or "").upper()
-    preference = values.get("language_preference")
-    return {"path": path, "game": game if game in GAMES else None,
-            "bgee_dir": values.get("bgee_dir"), "bg2ee_dir": values.get("bg2ee_dir"),
-            "language_preference": parse_preferences(preference) if preference else []}
+    project: dict = {"path": path, "game": None, "bgee_dir": None, "bg2ee_dir": None,
+                     "language_preference": [], "problem": None}
+    try:
+        values = _config.load_config(explicit=path).values if os.path.isfile(path) else {}
+        preference = values.get("language_preference")
+        project["language_preference"] = parse_preferences(preference) if preference else []
+    except ConfigError as exc:
+        # A file the CLI would refuse too: say so, and start from nothing chosen.
+        project["problem"] = str(exc)
+        return project
+    game = (_config.read_section(path, _GUI_SECTION).get("game") or "").upper()
+    project.update(game=game if game in GAMES else None,
+                   bgee_dir=values.get("bgee_dir"), bg2ee_dir=values.get("bg2ee_dir"))
+    return project
 
 
 def save_project(folder: str, game: str, bgee_dir: Optional[str] = None,

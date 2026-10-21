@@ -56,6 +56,7 @@ class GamePage(QWidget):
         super().__init__()
         self.project_dir = project_dir
         self.result: dict = {"ok": False, "problems": [], "notes": []}
+        self.load_problem: Optional[str] = None
 
         self.game_buttons = QButtonGroup(self)
         games = QGroupBox("Game")
@@ -126,6 +127,7 @@ class GamePage(QWidget):
 
     def _load(self) -> None:
         project = api.load_project(self.project_dir)
+        self.load_problem = project.get("problem")
         self.radios[project["game"] or "EET"].setChecked(True)
         self.bgee.edit.setText(project["bgee_dir"] or "")
         self.bg2ee.edit.setText(project["bg2ee_dir"] or "")
@@ -155,6 +157,9 @@ class GamePage(QWidget):
         self._schedule_check()
 
     def _schedule_check(self) -> None:
+        # What was checked no longer holds: Next waits for the new check.
+        self.result = {"ok": False, "problems": [], "notes": []}
+        self.completeChanged.emit(False)
         self.timer.start()
 
     def check(self) -> dict:
@@ -165,6 +170,10 @@ class GamePage(QWidget):
         lines = [f"<b>Problem:</b> {problem}" for problem in self.result["problems"]]
         if self.result["ok"]:
             lines.insert(0, f"<b>The folders are what {game} needs.</b>")
+        if self.load_problem:
+            lines.append(f"<b>The project's {api.PROJECT_FILE} could not be read</b> "
+                         f"({self.load_problem}). The command line reads the same file: "
+                         f"fix it there.")
         lines += [f"Not checked: {note}" if note.startswith(("the patch", "whether"))
                   else f"Note: {note}" for note in self.result["notes"]]
         self.findings.setText("<br>".join(lines))

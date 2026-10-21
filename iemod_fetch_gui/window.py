@@ -70,6 +70,9 @@ class MainWindow(QMainWindow):
 
     def go_next(self) -> None:
         if self.current == 0:
+            if not self.game.check()["ok"]:      # what is typed now, not before
+                self._refresh()
+                return
             try:
                 path = self.game.save()
             except Exception as exc:     # an unwritable folder, a bad value
