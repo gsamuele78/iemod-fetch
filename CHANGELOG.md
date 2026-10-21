@@ -166,6 +166,11 @@ conflict report now prints ids and options for ORDER findings too.
   `community-data.yml`: the real refresh against GitHub, twice (the second must
   fetch nothing), then the parse floors. It also runs on pull requests that
   change the refresh.
+- **macOS is informational, not a gate.** The CI gate (`ci.yml`), which the
+  release re-runs, is Linux and Windows; the macOS test jobs moved to
+  `macos.yml`, which runs on every pull request and on `main` but blocks
+  neither. macOS runners stopped being assigned to this repository on
+  2026-10-21 and held this release; the owner decided they should not.
 
 ## [2.3.0] - 2026-10-21
 

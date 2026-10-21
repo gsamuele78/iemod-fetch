@@ -59,7 +59,10 @@ jobs:
       matrix:
         # Windows is not an afterthought: it is where this tool is actually run,
         # and the path, credential-helper and 7-Zip code paths only exist there.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS runs in macos.yml: informational, not part of this gate, so a
+        # macOS runner that never starts cannot hold up a pull request or a
+        # release (the owner's decision, 2026-10-21).
+        os: [ubuntu-latest, windows-latest]
         # Oldest supported and newest released. 3.14 is not optional: it
         # changed tarfile's default filter and started reporting leaked
         # HTTPError responses, and both surfaced defects on 3.14 alone.

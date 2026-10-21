@@ -357,6 +357,10 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 
 ## Tests
 
+The CI gate - what a pull request and a release must pass - runs on Linux and
+Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
+informational workflow: it is reported, never blocking.
+
 ```bash
 python3 -m pytest -q      # 1,031 passed + 8 skipped (platform/opt-in), no network, ~30s
 ```
