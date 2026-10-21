@@ -308,6 +308,7 @@ class OrderPlan:
     residual: List = field(default_factory=list)           # rules.Violation
     warnings: List[str] = field(default_factory=list)
     edges: int = 0
+    simulation: Optional[object] = None    # simulate.SimulationResult, if run
 
     @property
     def compliant(self) -> bool:

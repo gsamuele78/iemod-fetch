@@ -236,3 +236,56 @@ def test_cli_refuses_to_resolve_without_a_plan(tmp_path, capsys):
     code, _text = _cli(["--check-only", "-w", f"{log}:EET", "--resolve-conflicts"])
     assert code == 2
     assert "--plan-order" in capsys.readouterr().err
+
+
+# --------------------------------------------- what WeiDU would refuse (ADR-0025)
+from iemod_fetch.constraints import EetMergeRules, ModConstraints  # noqa: E402
+from iemod_fetch.resolution import resolve_refusals  # noqa: E402
+from iemod_fetch.tp2 import Tp2Component  # noqa: E402
+
+
+def two_phase_plan(tmp_path, index, bgee_lines, eet_lines):
+    pre = tmp_path / "bgee.log"
+    pre.write_text(HEADER + "\n".join(bgee_lines) + "\n", encoding="utf-8")
+    eet = tmp_path / "eet.log"
+    eet.write_text(HEADER + "\n".join(eet_lines) + "\n", encoding="utf-8")
+    return plan_order([(str(eet), EET_LOG), (str(pre), PRE_EET_LOG)], index)
+
+
+BGEE = [r"~DlcMerger\DlcMerger.tp2~ #0 #1 // Merge SoD",
+        r"~bg1aerie\setup-bg1aerie.tp2~ #0 #0 // Aerie for BG:EE (not in this table)"]
+EET = [r"~eet\EET.tp2~ #0 #0 // EET core (resource importation)",
+       r"~cdtweaks\setup-cdtweaks.tp2~ #0 #4000 // BG2EE-only tweak",
+       r"~eet\EET_end\EET_end.tp2~ #0 #0 // Standard installation"]
+CONSTRAINTS = ModConstraints(by_mod={
+    "dlcmerger": {1: Tp2Component(1, games=["BGEE"])},
+    "bg1aerie": {0: Tp2Component(0)},
+    "eet": {0: Tp2Component(0)},
+    "cdtweaks": {4000: Tp2Component(4000, games=["BG2EE"])},
+    "eetend": {0: Tp2Component(0, requires=[("eet", 0)])},
+}, eet=EetMergeRules(allowed={"dlcmerger"}))
+
+
+def test_bgee_mods_eet_cannot_import_are_dropped_and_the_merge_proceeds(tmp_path, index):
+    plan = two_phase_plan(tmp_path, index, BGEE, EET)
+    result = resolve_refusals(plan, CONSTRAINTS)
+    removed = {(r.log, r.mod): r.because for r in result.removed}
+    assert "compatibility.tbl" in removed[(PRE_EET_LOG, "bg1aerie")]
+    assert ("eet", 0) in components(plan) and ("eet/EET_end", 0) in components(plan)
+
+
+def test_a_component_weidu_would_refuse_is_dropped_with_its_reason(tmp_path, index):
+    plan = two_phase_plan(tmp_path, index, BGEE[:1], EET)
+    result = resolve_refusals(plan, CONSTRAINTS)
+    assert [(r.mod, r.components) for r in result.removed] == [("cdtweaks", (4000,))]
+    assert "game is EET" in result.removed[0].because
+
+
+def test_the_eet_core_is_never_dropped(tmp_path, index):
+    """Refused for a reason other than its merge table: that is yours to fix."""
+    constraints = ModConstraints(by_mod=dict(
+        CONSTRAINTS.by_mod, eet={0: Tp2Component(0, requires=[("ghostmod", 9)])}))
+    plan = two_phase_plan(tmp_path, index, BGEE[:1], EET)
+    result = resolve_refusals(plan, constraints)
+    assert ("eet", 0) in components(plan)
+    assert any("EET core" in item.why for item in result.left_for_operator)

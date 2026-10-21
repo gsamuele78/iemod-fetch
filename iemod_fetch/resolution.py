@@ -191,3 +191,83 @@ def resolve_conflicts(plan, report: ConflictReport,
 def _describe(finding: Finding) -> str:
     right = f" vs {finding.right.describe(limit=3)}" if finding.right else ""
     return f"{finding.left.describe(limit=3)}{right}"
+
+
+# ------------------------------------------------- what WeiDU would refuse
+_EET_CORE = ("eet", 0)
+
+
+def _drop(plan, log: str, mod: str, numbers) -> Tuple[Tuple[int, ...], Tuple[str, ...]]:
+    """Remove `numbers` of `mod` from one log of the plan; what was removed."""
+    gone: List[Tuple[int, str]] = []
+    for unit in plan.logs.get(log, []):
+        if unit.key != mod:
+            continue
+        keep = []
+        for line in unit.lines:
+            if line[2] in numbers:
+                gone.append((line[2], line[3].rsplit(" : ", 1)[0].strip()))
+            else:
+                keep.append(line)
+        unit.lines = keep
+    plan.logs[log] = [u for u in plan.logs.get(log, []) if u.lines]
+    gone.sort()
+    return tuple(n for n, _l in gone), tuple(label for _n, label in gone)
+
+
+def resolve_refusals(plan, constraints, games=None, ruleset=None,
+                     context=None) -> ResolutionResult:
+    """
+    Make the plan one WeiDU can finish (ADR-0025).
+
+    The plan is simulated with every staged mod's own tp2 constraints. A
+    component WeiDU would refuse - wrong game, a requirement not installed by
+    then, a FORBID tripped - is removed, with WeiDU's reason: that is the
+    outcome WeiDU would produce anyway, minus the aborted run. When EET would
+    refuse the merge, the BG:EE mods its compatibility.tbl cannot import (and
+    the wrong options it names) are removed from the BG:EE plan instead - EET's
+    own table decides that, not this tool. The EET core itself is never
+    removed: refused for any other reason, it is left for the operator.
+    """
+    from .simulate import EET_LOG, PRE_EET_LOG, simulate_install, steps_of
+
+    result = ResolutionResult()
+    for _round in range(8):                       # each round can only shrink the plan
+        logs = {role: steps_of(units) for role, units in plan.logs.items()}
+        simulation = simulate_install(logs, constraints.by_mod, games=games,
+                                      eet_rules=constraints.eet)
+        if not simulation.refused:
+            break
+        changed = False
+        for refusal in simulation.refused:
+            step = (refusal.mod, refusal.component)
+            if step == _EET_CORE and refusal.log == EET_LOG:
+                if constraints.eet is not None and refusal.reason.startswith(
+                        "EET refuses the merge"):
+                    for mod, number in logs.get(PRE_EET_LOG, []):
+                        unknown = normalize_key(mod) not in constraints.eet.allowed
+                        if unknown or (mod, number) in constraints.eet.wrong_components:
+                            numbers, labels = _drop(plan, PRE_EET_LOG, mod, {number})
+                            if numbers:
+                                changed = True
+                                result.removed.append(Removal(
+                                    PRE_EET_LOG, mod, numbers, labels,
+                                    because=("EET cannot import it: not in EET's "
+                                             "compatibility.tbl" if unknown else
+                                             "EET fails the merge on this option")))
+                    break                             # re-simulate before going on
+                result.left_for_operator.append(Unresolved(
+                    refusal.log, "eet #0",
+                    f"the EET core would be refused: {refusal.reason}"))
+                continue
+            numbers, labels = _drop(plan, refusal.log, refusal.mod,
+                                    {refusal.component})
+            if numbers:
+                changed = True
+                result.removed.append(Removal(refusal.log, refusal.mod, numbers,
+                                              labels, because=refusal.reason))
+        if not changed:
+            break
+    if ruleset is not None:
+        plan.reverify(ruleset, context)
+    return result

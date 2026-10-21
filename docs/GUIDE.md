@@ -516,9 +516,37 @@ python3 -m iemod_fetch --check-only -m mod_downloads.json \
     --rules BigWorldSetup-Next-Generation/data/rules \
     --rules krion64.github.io/data/mods \
     --order-catalogue krion64.github.io \
-    --plan-order ./plan --resolve-conflicts --emit-installer \
+    --plan-order ./plan --resolve-conflicts --simulate --emit-installer \
     --language-preference it_IT,en_US
 ```
+
+`--simulate` walks the plan the way WeiDU will run it, reading each staged
+mod's own tp2: the BGEE log on BGEE, the EET log on BG2EE, which becomes EET as
+soon as the EET core is in. It prints an `INSTALL SIMULATION` block listing
+every component WeiDU would refuse and the flag that refuses it:
+
+```text
+INSTALL SIMULATION (each component's own tp2 constraints, in plan order)
+  14 component(s) would install, 1 would be refused, 0 unchecked (no tp2 read)
+  WOULD REFUSE - mod_installer stops at the first of these:
+    [WeiDU.log] eet #0: EET refuses the merge: BG:EE mod(s) cdtweaks not in EET's compatibility.tbl (EET's M flag overrides this, at your own risk)
+```
+
+(That is the test suite's mock EET install, `tests/data/eetmock`, as handed
+over. While the EET core is refused the game stays BG2EE in the simulation, so
+the traps that only exist on EET show up once the merge is fixed;
+`--resolve-conflicts` re-simulates until nothing is refused, and on the mock
+ends at `12 component(s) would install, 0 would be refused`.)
+
+The usual EET traps it catches: a BGEE-only mod (DlcMerger) in the EET log; a
+mod that refuses EET (EEFixPack's `!GAME_IS ~eet~`) after the core; a BG2EE-only
+component after the core; a BG:EE mod EET cannot import (not in EET's
+`tbl/compatibility.tbl`), which makes the merge - and everything after it -
+fail; a REQUIRE whose component comes later; a FORBID whose component is
+already in. With `--resolve-conflicts` those components are removed from the
+plan, each with WeiDU's reason, until nothing is refused; the EET core itself
+is never removed. The mods' REQUIRE/FORBID also order the plan, with or without
+`--rules`.
 
 `--language-preference` is optional: each mod is set to the first listed
 language it offers (read from its own tp2, so the mods must be fetched first);

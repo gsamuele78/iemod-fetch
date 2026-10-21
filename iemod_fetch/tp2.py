@@ -50,7 +50,7 @@ _GAMES = re.compile(
 
 # tp2 game tokens -> the identifiers used elsewhere in this tool
 _GAME_ALIASES = {
-    "bg1": "BG", "totsc": "BG", "tutu": "Tutu", "bgt": "BGT",
+    "bg1": "BG", "totsc": "BG", "tutu": "Tutu", "tutu_totsc": "Tutu", "bgt": "BGT",
     "soa": "BG2", "tob": "BG2", "bg2": "BG2",
     "bgee": "BGEE", "sod": "SoD", "bg2ee": "BG2EE", "eet": "EET",
     "iwd": "IWD", "how": "IWD", "totlm": "IWD", "iwd2": "IWD2",
@@ -150,3 +150,160 @@ def read_mod_tp2(mod_dir: str, tp2_file: str) -> Optional[Tp2Info]:
             if name.lower() == tp2_file.lower():
                 return read_tp2(os.path.join(dirpath, name))
     return None
+
+
+# ---------------------------------------------------- component constraints
+# What WeiDU itself enforces when it installs a component (ADR-0025). Only the
+# flag forms are read: REQUIRE_COMPONENT / FORBID_COMPONENT / REQUIRE_PREDICATE
+# are legal ONLY as component flags, so finding them inside a component's text
+# is unambiguous. A MOD_IS_INSTALLED inside an ACTION_IF is code, not a
+# requirement, and is deliberately not read.
+_STR = r'(?:~([^~]*)~|"([^"]*)"|%([^%]*)%|([^\s~"%()]+))'
+# A component's BEGIN starts its own line, with its name on that line. Mid-line
+# BEGINs are code (`DEFINE_ASSOCIATIVE_ARRAY x BEGIN ~k~ => ~v~ END`, ACTION_IF
+# blocks); EET's tp2 has 97 of those and 2 components.
+_COMPONENT_START = re.compile(
+    r'^[ \t]*BEGIN[ \t]+(?:~[^~\n]*~|"[^"\n]*"|@-?\d+|\w+(?=[ \t]+DESIGNATED\b))',
+    re.IGNORECASE | re.MULTILINE)
+_DESIGNATED = re.compile(r"\bDESIGNATED\s+(\d+)", re.IGNORECASE)
+_SUBCOMPONENT = re.compile(r'\bSUBCOMPONENT\s+(~[^~]*~|"[^"]*"|@-?\d+)', re.IGNORECASE)
+_REQUIRE_COMPONENT = re.compile(rf"\bREQUIRE_COMPONENT\s+{_STR}\s+{_STR}", re.IGNORECASE)
+_FORBID_COMPONENT = re.compile(rf"\bFORBID_COMPONENT\s+{_STR}\s+{_STR}", re.IGNORECASE)
+_REQUIRE_PREDICATE = re.compile(r"\bREQUIRE_PREDICATE\b", re.IGNORECASE)
+_ARG = r'(?:~[^~]*~|"[^"]*"|%[^%]*%|[^\s~"%()@]+)'
+_MSG = r'(?:@-?\d+|~[^~]*~|"[^"]*")'
+_NEG = r"(?:NOT\s+|!\s*)"
+# The simple, common predicate forms: one test, optionally negated (`NOT x`,
+# `!x`, `!(x)`) and optionally in one pair of parentheses. Anything else (OR,
+# AND, labels, file checks) is counted as unread rather than half-understood.
+_SIMPLE_PREDICATE = re.compile(
+    rf"\s*(?P<neg1>{_NEG})?(?P<open>\(\s*)?(?P<neg2>{_NEG})?"
+    rf"(?:(?P<kw>GAME_IS|ENGINE_IS|GAME_INCLUDES)\s+(?P<game>{_ARG})"
+    rf"|MOD_IS_INSTALLED\s+(?P<tp2>{_ARG})\s+(?P<num>{_ARG}))"
+    rf"\s*(?(open)\))\s*{_MSG}",
+    re.IGNORECASE)
+# A component that refuses in its body rather than its header: DlcMerger's
+# `ACTION_IF (NOT GAME_IS ~bgee~) BEGIN ABORT @50`.
+_BODY_ABORT = re.compile(
+    rf"\bACTION_IF\s*\(?\s*(?P<neg>{_NEG})?GAME_IS\s+(?P<game>{_ARG})\s*\)?\s*"
+    r"BEGIN\s+(?:ABORT|FAIL)\b", re.IGNORECASE)
+
+# What ENGINE_IS / GAME_INCLUDES hold on, in the games this tool plans for.
+_ENGINE = {"bgee": ["BGEE"], "bg2ee": ["BG2EE", "EET"], "iwdee": ["IWDEE"],
+           "pstee": ["PSTEE"]}
+_INCLUDES = {"bg1": ["BGEE", "EET", "BG", "Tutu", "BGT"], "totsc": ["BGEE", "EET", "BG", "Tutu", "BGT"],
+             "sod": ["BGEE", "EET"], "bg2": ["BG2EE", "EET", "BG2", "BGT"],
+             "soa": ["BG2EE", "EET", "BG2", "BGT"], "tob": ["BG2EE", "EET", "BG2", "BGT"],
+             "iwd": ["IWDEE", "IWD"], "how": ["IWDEE", "IWD"], "pst": ["PSTEE", "PST"]}
+
+
+@dataclass
+class Tp2Component:
+    number: int
+    requires: List[Tuple[str, int]] = field(default_factory=list)
+    forbids: List[Tuple[str, int]] = field(default_factory=list)
+    games: List[str] = field(default_factory=list)       # only on these (all hold)
+    not_games: List[str] = field(default_factory=list)   # never on these
+    group: str = ""                                      # SUBCOMPONENT group
+    unread: int = 0                                      # predicates not understood
+    game_rules: int = 0                                  # game requirements read
+
+
+def _first(groups) -> str:
+    return next((g for g in groups if g is not None), "")
+
+
+def tp2_identity(name: str) -> str:
+    """`cdtweaks/SETUP-CDTWEAKS.TP2` -> `cdtweaks`: how rules name a mod."""
+    stem = os.path.splitext(os.path.basename(name.replace("\\", "/")))[0]
+    if stem.lower().startswith("setup-"):
+        stem = stem[6:]
+    return re.sub(r"[^a-z0-9]", "", stem.lower())
+
+
+def _unquote(text: str) -> str:
+    text = text.strip()
+    return text[1:-1] if text[:1] in "~\"%" and len(text) > 1 else text
+
+
+def _games(text: str, keyword: str = "GAME_IS") -> List[str]:
+    table = {"GAME_IS": None, "ENGINE_IS": _ENGINE, "GAME_INCLUDES": _INCLUDES}[
+        keyword.upper()]
+    out: List[str] = []
+    for token in re.split(r"[\s,]+", _unquote(text).lower()):
+        if not token:
+            continue
+        names = (table.get(token, []) if table is not None
+                 else [_GAME_ALIASES[token]] if token in _GAME_ALIASES else [])
+        out.extend(n for n in names if n not in out)
+    return out
+
+
+def _require_games(component: "Tp2Component", games: List[str]) -> None:
+    """Every game requirement must hold, so they intersect."""
+    if not games:
+        return
+    if component.game_rules == 0:
+        component.games = list(games)
+    else:
+        component.games = [g for g in component.games if g in games] or ["(none)"]
+    component.game_rules += 1
+
+
+def _number(text: str) -> Optional[int]:
+    text = text.strip()
+    return int(text) if text.lstrip("-").isdigit() else None
+
+
+def parse_components(content: str) -> List[Tp2Component]:
+    """Every component of a tp2 with the constraints WeiDU enforces on it."""
+    clean = strip_comments(content)
+    starts = [m.start() for m in _COMPONENT_START.finditer(clean)]
+    components: List[Tp2Component] = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(clean)
+        chunk = clean[start:end]
+        designated = _DESIGNATED.search(chunk)
+        component = Tp2Component(number=int(designated.group(1)) if designated
+                                 else position)
+        group = _SUBCOMPONENT.search(chunk)
+        component.group = group.group(1) if group else ""
+        for match in _REQUIRE_COMPONENT.finditer(chunk):
+            number = _number(_first(match.groups()[4:]))
+            if number is not None:
+                component.requires.append(
+                    (tp2_identity(_first(match.groups()[:4])), number))
+        for match in _FORBID_COMPONENT.finditer(chunk):
+            number = _number(_first(match.groups()[4:]))
+            if number is not None:
+                component.forbids.append(
+                    (tp2_identity(_first(match.groups()[:4])), number))
+        for flag in _REQUIRE_PREDICATE.finditer(chunk):
+            simple = _SIMPLE_PREDICATE.match(chunk, flag.end())
+            if simple is None:
+                component.unread += 1
+                continue
+            negated = bool(simple.group("neg1")) != bool(simple.group("neg2"))
+            if simple.group("kw"):
+                games = _games(simple.group("game"), simple.group("kw"))
+                if negated:
+                    component.not_games.extend(
+                        g for g in games if g not in component.not_games)
+                else:
+                    _require_games(component, games)
+                continue
+            number = _number(_unquote(simple.group("num")))
+            if number is None:
+                component.unread += 1
+                continue
+            target = (tp2_identity(_unquote(simple.group("tp2"))), number)
+            (component.forbids if negated else component.requires).append(target)
+        for abort in _BODY_ABORT.finditer(chunk):
+            games = _games(abort.group("game"))
+            if abort.group("neg"):
+                _require_games(component, games)        # aborts unless one of these
+            else:
+                component.not_games.extend(g for g in games
+                                           if g not in component.not_games)
+        components.append(component)
+    return components

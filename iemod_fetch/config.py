@@ -28,7 +28,7 @@ BOOL_KEYS = ("dry_run", "force", "refresh", "quiet", "allow_manual", "check_only
              "accept_suggestions", "allow_http", "allow_exe", "accept_offsite",
              "include_optional",
              "no_discovery", "no_gh_cli", "no_git_credential",
-             "all_manifest_entries", "resolve_conflicts", "emit_installer")
+             "all_manifest_entries", "resolve_conflicts", "emit_installer", "simulate")
 INT_KEYS = ("workers", "timeout", "retries", "discovery_attempts")
 SIZE_KEYS = ("max_bytes",)
 STR_KEYS = ("manifest", "target", "aliases", "json_report", "emit_pinned_manifest",
