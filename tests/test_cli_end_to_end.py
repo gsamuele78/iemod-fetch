@@ -257,3 +257,32 @@ def test_a_broken_selection_is_a_configuration_error(workspace):
     (tmp_path / "selection.json").write_text('{"schema_version": 7}')
     code, _out = run(["--selection", "selection.json"], tmp_path)
     assert code == 2
+
+
+# --list-mods: what a UI's selection screen shows, with no WeiDU.log at all.
+def test_list_mods_needs_no_weidu_log_and_downloads_nothing(workspace):
+    tmp_path, stub = workspace
+    (tmp_path / "lcc.json").write_text(json.dumps([
+        {"tp2": "eefixpack", "name": "EE Fixpack", "games": ["EET"], "safe": 2},
+        {"tp2": "newmod", "name": "A New Mod", "games": ["BG2EE"]}]))
+    code, out = run(["--list-mods", "mods.json", "-c", "lcc.json"], tmp_path)
+    assert code == 0, out
+    doc = json.loads((tmp_path / "mods.json").read_text())
+    assert doc["schema_version"] == 1
+    assert [m["key"] for m in doc["mods"]] == ["newmod", "dlcmerger", "eefixpack"]
+    assert stub.downloaded == []
+
+
+def test_list_mods_to_stdout_prints_only_the_json(workspace):
+    tmp_path, _stub = workspace
+    code, out = run(["--list-mods", "-"], tmp_path)
+    assert code == 0
+    assert json.loads(out)["mods"][0]["name"] == "DLC Merger"
+
+
+def test_list_mods_works_without_a_manifest_when_a_catalogue_is_given(workspace):
+    tmp_path, _stub = workspace
+    (tmp_path / "lcc.json").write_text(json.dumps([{"tp2": "x", "name": "X"}]))
+    code, out = run(["--list-mods", "-", "-m", "absent.json", "-c", "lcc.json"], tmp_path)
+    assert code == 0, out
+    assert [m["key"] for m in json.loads(out)["mods"]] == ["x"]

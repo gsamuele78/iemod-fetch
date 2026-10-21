@@ -9,10 +9,11 @@ import tempfile
 
 from . import __version__
 from .auth import resolve_credential
+from .available import available_mods, mods_document
 from .catalogues import CatalogueSet
 from .config import LIST_KEYS, load_config
 from .errors import ConfigError, ModFetchError
-from .manifest import load_manifest
+from .manifest import Manifest, load_manifest
 from .net import DEFAULT_MAX_BYTES, HttpClient
 from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
@@ -100,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
                           "and sha256 filled in from this run - commit it to make "
                           "future runs reproducible (combine with --refresh to pin "
                           "mods already installed)")
+    out.add_argument("--list-mods", metavar="PATH",
+                     help="write every mod the manifest, --catalogue and --mod-db "
+                          "know about as JSON (schema 1; '-' for stdout), then "
+                          "stop. Needs no WeiDU.log and downloads nothing")
     out.add_argument("--emit-selection", metavar="PATH",
                      help="write the --weidu-log input as a selection.json; with "
                           "--check-only nothing else is fetched")
@@ -264,6 +269,25 @@ def _use_selection(args, workdir: str) -> None:
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(log.text)
         args.weidu_log.append(f"{path}:{log.game}")
+
+
+def _list_mods(args, stream) -> int:
+    """What a selection screen offers: every mod any given source knows."""
+    if os.path.exists(args.manifest) or not (args.catalogue or args.mod_db):
+        manifest = load_manifest(args.manifest, allow_http=args.allow_http)
+    else:
+        manifest = Manifest()     # a catalogue alone is enough to choose from
+    document = mods_document(available_mods(
+        manifest, CatalogueSet.load(args.catalogue),
+        ModDatabase.load(args.mod_db) if args.mod_db else None))
+    if args.list_mods == "-":
+        stream.write(document)
+    else:
+        with open(args.list_mods, "w", encoding="utf-8") as fh:
+            fh.write(document)
+        if not args.quiet:
+            print(f"  mods        : wrote {args.list_mods}", file=stream)
+    return 0
 
 
 def _emit_selection(args, stream) -> None:
@@ -624,6 +648,8 @@ def _require_plan(args) -> None:
 
 
 def _run(args, stream, config=None) -> int:
+    if args.list_mods:
+        return _list_mods(args, stream)
     _require_plan(args)
     _emit_selection(args, stream)
     target = os.path.abspath(args.target)

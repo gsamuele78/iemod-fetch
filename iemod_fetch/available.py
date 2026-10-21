@@ -1,0 +1,113 @@
+"""
+The mods a player can choose from, merged from every source given (M1).
+
+The selection screen of a UI starts here, before any WeiDU.log exists. Each
+source knows something different about a mod:
+
+* the download manifest (`mod_downloads.json`): where to fetch it;
+* the lcc-docs catalogue: games, categories, quality rating, status, last
+  update, and its own advisories;
+* the BWS-NG / krion64 mod database: the version and, often, a sha256.
+
+They are joined on the folder name folded to its comparison key - the same key
+every other part of the tool joins on - so one mod is one entry, carrying each
+source's facts and where they came from. Nothing is fetched: this reads only
+what was given.
+"""
+import json
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+from .catalogues import CatalogueSet
+from .manifest import Manifest
+from .moddb import ModDatabase
+from .naming import normalize_key
+from .weidu import KNOWN_GAMES
+
+SCHEMA_VERSION = 1
+_GAMES = {game.upper(): game for game in KNOWN_GAMES}
+
+
+@dataclass
+class AvailableMod:
+    key: str                          # comparison key: lowercase alphanumerics
+    tp2: str                          # the folder name, as the first source spells it
+    name: str
+    in_manifest: bool = False
+    games: Tuple[str, ...] = ()
+    categories: Tuple[str, ...] = ()
+    status: Tuple[str, ...] = ()
+    safe: Optional[int] = None
+    last_update: Optional[str] = None
+    version: Optional[str] = None
+    blocking: bool = False
+    advisories: List[str] = field(default_factory=list)
+    sources: List[dict] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {"key": self.key, "tp2": self.tp2, "name": self.name,
+                "in_manifest": self.in_manifest, "games": list(self.games),
+                "categories": list(self.categories), "status": list(self.status),
+                "safe": self.safe, "last_update": self.last_update,
+                "version": self.version, "blocking": self.blocking,
+                "advisories": list(self.advisories), "sources": list(self.sources)}
+
+
+def _games(values) -> Tuple[str, ...]:
+    return tuple(_GAMES[v.upper()] for v in values if isinstance(v, str)
+                 and v.upper() in _GAMES)
+
+
+def _merge(found: Dict[str, AvailableMod], key: str, tp2: str, name: str) -> AvailableMod:
+    if key not in found:
+        found[key] = AvailableMod(key=key, tp2=tp2, name=name or tp2)
+    return found[key]
+
+
+def available_mods(manifest: Optional[Manifest] = None,
+                   catalogues: Optional[CatalogueSet] = None,
+                   database: Optional[ModDatabase] = None) -> List[AvailableMod]:
+    """One entry per mod any source knows, sorted by name."""
+    found: Dict[str, AvailableMod] = {}
+    for source in (manifest.sources.values() if manifest else ()):
+        tp2 = source.folder or source.key
+        mod = _merge(found, normalize_key(tp2), tp2, source.name)
+        mod.in_manifest = True
+        mod.sources.append({k: v for k, v in (
+            ("origin", "manifest"), ("url", source.url), ("github", source.github),
+            ("sha256", source.sha256), ("release_tag", source.release_tag)) if v})
+
+    for catalogue in (catalogues.catalogues if catalogues else ()):
+        for key, entries in catalogue.by_key.items():
+            for entry in entries:
+                mod = _merge(found, key, entry.tp2, entry.name)
+                mod.games = tuple(sorted(set(mod.games) | set(_games(entry.games))))
+                mod.categories = tuple(dict.fromkeys(mod.categories + entry.categories))
+                mod.status = tuple(dict.fromkeys(mod.status + entry.status))
+                mod.safe = mod.safe if mod.safe is not None else entry.safe
+                mod.last_update = mod.last_update or entry.last_update
+                mod.blocking = mod.blocking or entry.blocking
+                mod.advisories.extend(a for a in entry.advisories()
+                                      if a not in mod.advisories)
+                mod.sources.append({k: v for k, v in (
+                    ("origin", entry.origin), ("github", entry.github),
+                    ("urls", list(entry.http_urls))) if v} or {"origin": entry.origin})
+
+    origin = database.origin if database else ""
+    for record in (database.records.values() if database else ()):
+        mod = _merge(found, record.key, record.key, record.name or record.key)
+        mod.version = mod.version or record.version
+        mod.games = tuple(sorted(set(mod.games) | set(_games(record.games))))
+        best = record.best_file
+        mod.sources.append({k: v for k, v in (
+            ("origin", origin), ("url", best.download if best else None),
+            ("sha256", best.sha256 if best else None),
+            ("version", record.version)) if v})
+
+    return sorted(found.values(), key=lambda m: (m.name.lower(), m.key))
+
+
+def mods_document(mods: List[AvailableMod]) -> str:
+    """The versioned JSON a UI reads (ADR-0030)."""
+    return json.dumps({"schema_version": SCHEMA_VERSION,
+                       "mods": [m.as_dict() for m in mods]}, indent=2) + "\n"
