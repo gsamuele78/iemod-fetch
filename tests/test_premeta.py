@@ -153,6 +153,7 @@ def test_one_blocked_repository_does_not_stop_the_others(tmp_path):
     class Blocked(FakeClient):
         def read_bytes(self, url, limit=None):
             if "/o/blocked/" in url:
+                self.asked.append(url)
                 raise HttpStatusError(url, 451, "Unavailable For Legal Reasons")
             return super().read_bytes(url, limit)
     client = Blocked({REPO: {"ub/ub.ini": INI}})
@@ -162,14 +163,36 @@ def test_one_blocked_repository_does_not_stop_the_others(tmp_path):
     assert found == 1 and len(problems) == 1 and "451" in problems[0]
     asked = len(client.asked)
     premeta.fetch(client, cache, [blocked, UB], now=2.0)
-    assert len(client.asked) == asked             # both checked: a week before asking
+    assert len(client.asked) == asked             # the blocked one backs off an hour
+    premeta.fetch(client, cache, [blocked, UB], now=2.0 + 3700)
+    assert len(client.asked) > asked              # then it is asked again; UB is not
 
 
-def test_the_quota_stops_the_run_like_a_network_failure(tmp_path):
-    quota = FakeClient(fail=HttpStatusError("u", 403, "GitHub API rate limit exhausted"))
+def test_a_repositorys_error_keeps_the_ini_found_before(tmp_path):
+    cache = premeta.MetadataCache(str(tmp_path))
+    premeta.fetch(FakeClient({REPO: {"ub/ub.ini": INI}}), cache, [UB], now=1.0)
+
+    class Gone(FakeClient):
+        def read_bytes(self, url, limit=None):
+            raise HttpStatusError(url, 451, "Unavailable For Legal Reasons")
+    premeta.fetch(Gone(), cache, [UB], now=1.0 + 8 * 86400)
+    assert cache.get(UB).before == ["ascension"]
+
+
+@pytest.mark.parametrize("status, reason", [(401, "Bad credentials"), (403, "Forbidden"),
+                                            (429, "Too Many Requests")])
+def test_a_refused_credential_or_a_quota_stops_the_run(tmp_path, status, reason):
+    # 401 would hit every repository; a secondary quota is a bare 403.
+    down = FakeClient(fail=HttpStatusError("u", status, reason))
     mods = [premeta.Wanted(f"m{n}", f"m{n}.tp2", f"o/m{n}") for n in range(5)]
-    premeta.fetch(quota, premeta.MetadataCache(str(tmp_path)), mods, now=1.0)
-    assert len(quota.asked) == 1
+    premeta.fetch(down, premeta.MetadataCache(str(tmp_path)), mods, now=1.0)
+    assert len(down.asked) == 1
+
+
+def test_odd_paths_are_cleaned_before_use():
+    odd = premeta.Wanted("x", "./x//sub/x.tp2", "o/x")
+    assert odd.directory == "x/sub"
+    assert premeta.candidates("x", "./x//sub/x.tp2")[0] == "x/sub/x.ini"
 
 
 def test_each_tp2_of_a_folder_has_its_own_ini(tmp_path):
@@ -200,6 +223,16 @@ def test_the_planned_tp2s_are_listed_one_by_one(tmp_path):
     pairs = api._not_staged(api.Settings(target=str(tmp_path / "none")), installed)
     assert sorted(pairs) == [("eet", "eet/EET.tp2"), ("eet", "eet/EET_end/EET_end.tp2"),
                              ("ub", "ub/setup-ub.tp2")]
+
+
+def test_one_tp2_spelled_two_ways_is_fetched_once(tmp_path):
+    from iemod_fetch.weidu import parse_weidu_files
+    first, second = tmp_path / "a.log", tmp_path / "b.log"
+    first.write_text("~EET\\EET.tp2~ #0 #0 // core\n")
+    second.write_text("~eet\\EET.TP2~ #0 #1 // other\n")
+    installed = parse_weidu_files([(str(first), "EET"), (str(second), "EET")])
+    pairs = api._not_staged(api.Settings(target=str(tmp_path / "none")), installed)
+    assert len(pairs) == 1
 
 
 def test_a_file_without_a_metadata_section_is_not_taken():

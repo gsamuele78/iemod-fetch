@@ -51,10 +51,15 @@ class Wanted:
     repo: str                 # owner/name on GitHub
 
     @property
+    def parts(self) -> List[str]:
+        """The tp2's path, split: no empty or `.` parts (`./x//y.tp2` is x/y.tp2)."""
+        return [p for p in self.tp2_file.replace("\\", "/").split("/") if p not in ("", ".")]
+
+    @property
     def directory(self) -> str:
         """The tp2's folder in the repository, as the log spells it."""
-        path = self.tp2_file.replace("\\", "/")
-        return path.rsplit("/", 1)[0] if "/" in path else self.folder
+        parts = self.parts
+        return "/".join(parts[:-1]) if len(parts) > 1 else self.folder
 
 
 def tp2_name(tp2_file: str) -> str:
@@ -65,8 +70,9 @@ def tp2_name(tp2_file: str) -> str:
 
 def candidates(folder: str, tp2_file: str) -> List[str]:
     """Where the ini may be in the repository: beside the tp2, named after it."""
-    if "/" in tp2_file.replace("\\", "/"):
-        folder = tp2_file.replace("\\", "/").rsplit("/", 1)[0]
+    parts = [p for p in tp2_file.replace("\\", "/").split("/") if p not in ("", ".")]
+    if len(parts) > 1:
+        folder = "/".join(parts[:-1])
     stem = os.path.splitext(os.path.basename(tp2_file.replace("\\", "/")))[0]
     names = [stem]
     if stem.lower().startswith("setup-"):
@@ -182,7 +188,8 @@ def _find(client, repo: str, mod: Wanted) -> Tuple[Optional[str], Optional[str]]
     (text, path) of the mod's ini, or (None, None) when the repository has none.
 
     The likely spellings are tried first, on raw.githubusercontent.com (no API
-    quota). On a miss the folder is listed once and matched ignoring case: a
+    quota). On a miss the repository's root and each level of the tp2's folder
+    are listed (GitHub's contents API) and matched ignoring case: a
     WeiDU log may spell `ASCENSION/ASCENSION.TP2`, and a mod may ship
     `DeitiesOfFaerun/Deitiesoffaerun.ini` beside `DeitiesOffaerun.tp2` - PI runs
     where case does not matter, GitHub does not. Only a listing proves a miss.
@@ -216,12 +223,14 @@ def _find(client, repo: str, mod: Wanted) -> Tuple[Optional[str], Optional[str]]
 
 def _network_down(exc: ModFetchError) -> bool:
     """
-    The network's failure, not this repository's: no connection, a timeout,
-    or GitHub's quota. A 451, a 401, a file over the cap belong to one
-    repository and must not stop the others.
+    A failure of the run, not of one repository: no connection, a timeout, a
+    credential GitHub refuses (401 - it would refuse every repository), or a
+    403/429, which on GitHub is almost always a quota, primary or secondary
+    (the secondary one carries no "rate limit" words). A 404, a 451, a file
+    over the cap belong to one repository and must not stop the others.
     """
     if isinstance(exc, HttpStatusError):
-        return exc.status == 429 or (exc.status == 403 and "rate limit" in str(exc).lower())
+        return exc.status in (401, 403, 429)
     return isinstance(exc, NetworkError)
 
 
@@ -248,8 +257,10 @@ def fetch(client, cache: MetadataCache, wanted: Iterable[Wanted],
                 for rest in todo[n:]:
                     cache.back_off(rest, now)
                 break
-            cache.entries[cache_key(mod)] = {"repo": repo, "path": None, "text": None,
-                                             "checked": now, "problem": str(exc)}
+            # This repository's own failure: it backs off for an hour like a
+            # network error, and an ini found before is kept.
+            cache.back_off(mod, now)
+            cache.entries[cache_key(mod)]["problem"] = str(exc)
             continue
         cache.entries[cache_key(mod)] = {"repo": repo, "path": path, "text": text,
                                          "checked": now}

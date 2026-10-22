@@ -1293,13 +1293,16 @@ def _not_staged(settings, installed) -> list:
     EET_end/EET_end.tp2, and each has its own ini.
     """
     target = os.path.abspath(settings.target)
-    out = []
+    out: list = []
+    seen: set = set()
     for mod in installed.mods.values():
         if os.path.isdir(os.path.join(target, mod.folder)):
             continue
         for component in mod.components:
             path = (component.path or f"{mod.folder}/{component.tp2_file}").replace("\\", "/")
-            if (mod.folder, path) not in out:
+            # Two logs may spell one tp2 differently (EET/EET.tp2, eet/EET.TP2).
+            if (mod.folder.lower(), path.lower()) not in seen:
+                seen.add((mod.folder.lower(), path.lower()))
                 out.append((mod.folder, path))
     return out
 

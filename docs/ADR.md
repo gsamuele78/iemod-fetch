@@ -1831,7 +1831,8 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
 - Per planned tp2, once a week: up to 8 small requests to
   raw.githubusercontent.com (the likely spellings; usually the first hits),
   and when none hits - an ini spelled otherwise, or no ini at all, the common
-  case - a listing of each folder level on GitHub's API (one to three). That
+  case - a listing on GitHub's API of the root and of each level of the tp2's
+  folder (two or three for the usual paths). That
   API allows 60 requests an hour without a credential (the tool's GitHub
   credential is used when it has one), so a large selection without one fills
   in over several hours: the quota is treated as the network being down, and
@@ -1839,8 +1840,10 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
   the plan is what it was.
 - One folder can hold several tp2s (EET's holds EET.tp2 and
   EET_end/EET_end.tp2); each has its own ini, wanted, cached and keyed by its
-  own tp2 name. An error of one repository (a 451, a 401, a file over the
-  cap) is recorded for that tp2 alone; it never stops the others.
+  own tp2 name. An error of one repository (a 451, a file over the cap) backs
+  that tp2 off for an hour and keeps what it found before; it never stops the
+  others. A 401 (a credential GitHub refuses) and a 403 or 429 (GitHub's
+  quotas, the secondary one included) stop the run like a network failure.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.
