@@ -127,6 +127,7 @@ class ModsPage(QWidget):
         self.conflicts: dict = {}
         self._checking: Optional[QThread] = None
         self._recheck = False
+        self._generation = 0      # a check's result is shown only for the list it checked
         self.game = ""              # the game the shown list is for
         self.wanted = ""            # the game asked for last
         self.mods: List[dict] = []
@@ -194,6 +195,11 @@ class ModsPage(QWidget):
             return
         if game == self.game and self.mods:
             return
+        # What was checked was the old list: no result for it may land on the new one.
+        self.timer.stop()
+        self._generation += 1
+        self.conflicts = {}
+        self.panel.clear()
         self.game = game
         self.status.setText(f"Loading the mods for {game}...")
         project = api.load_project(self.project_dir)
@@ -360,8 +366,28 @@ class ModsPage(QWidget):
         self.panel.busy()
         check, args = self.check, (self.game, self.chosen(), self.labels(),
                                    self.project_dir)
-        self._checking = _in_thread(lambda: check(*args), self._checked,
-                                    self.panel.failed, self._check_finished)
+        generation = self._generation
+
+        def run() -> Tuple[int, Optional[dict], str]:
+            # The generation travels with the result: the slots below are the
+            # page's own methods, so Qt runs them on the window's thread (a
+            # lambda slot would run on the worker's).
+            try:
+                return generation, check(*args), ""
+            except Exception as exc:      # shown on the panel, never a crash
+                return generation, None, str(exc)
+        self._checking = _in_thread(run, self._check_done, self.panel.failed,
+                                    self._check_finished)
+
+    def _check_done(self, outcome: tuple) -> None:
+        generation, result, problem = outcome
+        if generation != self._generation:
+            return                      # checked a list this page no longer shows
+        if result is None:
+            self.conflicts = {}
+            self.panel.failed(problem)
+            return
+        self._checked(result)
 
     def _checked(self, result: dict) -> None:
         self.conflicts = result
@@ -373,7 +399,7 @@ class ModsPage(QWidget):
 
     def _check_finished(self) -> None:
         self._checking = None
-        if self._recheck:
+        if self._recheck and self.mods:
             self.check_conflicts()
             return
         self.checked.emit()
@@ -384,19 +410,31 @@ class ModsPage(QWidget):
             if item is not None:
                 item.setCheckState(0, Qt.CheckState.Unchecked)
 
-    def _mod_items(self, key: str, numbers: List[int]) -> List[QTreeWidgetItem]:
-        mod = next((m for m in self.mods if m["key"] == key), None)
-        if mod is None or not numbers:
-            return []
-        found = [self.items.get((t["tp2"], n)) for t in mod.get("tp2s") or []
-                 for n in numbers]
-        return [item for item in found if item is not None and not item.isDisabled()]
+    def _mod_items(self, key: str, numbers: List[int]) -> Dict[int, QTreeWidgetItem]:
+        """
+        The choosable components `numbers` of the tp2 an option's key names,
+        as the plan names it: `eet` is EET.tp2, not EET_end.tp2 in the same
+        folder; a mod's own key only when no tp2 has that key.
+        """
+        tp2s = [t for m in self.mods for t in m.get("tp2s") or [] if t.get("key") == key]
+        if not tp2s:
+            mod = next((m for m in self.mods if m["key"] == key), None)
+            tp2s = (mod or {}).get("tp2s") or []
+            if len(tp2s) != 1:
+                return {}               # which of its tp2s is meant is not known
+        found: Dict[int, QTreeWidgetItem] = {}
+        for tp2 in tp2s:
+            for number in numbers:
+                item = self.items.get((tp2["tp2"], number))
+                if item is not None and not item.isDisabled():
+                    found.setdefault(number, item)
+        return found
 
     def _can_choose(self, key: str, numbers: List[int]) -> bool:
-        return bool(numbers) and len(self._mod_items(key, numbers)) >= len(numbers)
+        return bool(numbers) and set(numbers) <= set(self._mod_items(key, numbers))
 
     def _choose_in(self, key: str, numbers: list) -> None:
-        for item in self._mod_items(key, numbers):
+        for item in self._mod_items(key, numbers).values():
             item.setCheckState(0, Qt.CheckState.Checked)
 
     def _decide(self, finding: str, option: str, why: str) -> None:

@@ -85,6 +85,8 @@ def test_a_decision_saved_by_the_panel_is_applied_by_the_command_line(tmp_path):
     # selection's log name differed from the plan's role
     by_id = {f["id"]: f for f in report}
     assert by_id[accepted["id"]]["suppressed"].endswith("tested, works for me")
+    # the id keeps the plan's name for the install; the reader sees the file's
+    assert {f["log"] for f in report} == {"WeiDU-EET.log"}
 
 
 def test_the_panel_shows_each_decision_and_the_stale_ones(tmp_path):
@@ -121,6 +123,23 @@ def test_without_an_order_catalogue_the_selection_is_judged_as_it_is(tmp_path):
     result = conflicts(tmp_path, order_catalogue=None)
     assert not result["planned"]
     assert not any(f["fixed_by_plan"] for f in result["findings"])
+
+
+def test_a_decision_saved_with_no_order_data_still_matches_a_planned_run(tmp_path):
+    # First run, offline: no krion64 yet. The ids must be the planned run's.
+    unplanned = {f["id"] for f in conflicts(tmp_path, order_catalogue=None)["findings"]
+                 if f["kind"] != "order"}
+    planned = {f["id"] for f in conflicts(tmp_path)["findings"] if f["kind"] != "order"}
+    assert unplanned and unplanned == planned
+
+
+def test_a_key_names_its_own_tp2_not_every_tp2_in_the_folder():
+    from iemod_fetch.api import _covered
+    chosen = [("eet/EET.tp2", 0), ("eet/EET_end/EET_end.tp2", 0), ("ub/setup-ub.tp2", 3)]
+    assert _covered("eet", (0,), False, chosen) == [["eet/EET.tp2", 0]]
+    assert _covered("eetend", (), True, chosen) == [["eet/EET_end/EET_end.tp2", 0]]
+    # a rule naming the folder when no tp2 has that key: the folder's
+    assert _covered("ub", (3,), False, chosen) == [["ub/setup-ub.tp2", 3]]
 
 
 def test_no_rules_no_findings(tmp_path):

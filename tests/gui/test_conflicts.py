@@ -28,15 +28,21 @@ def component(number, name):
             "groups": [], "requires": [], "forced": False}
 
 
-def mod(key, tp2, numbers, category="Tweaks"):
+def tp2(path, numbers, name):
+    key = path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower().replace("setup-", "")
+    return {"tp2": path, "origin": "krion64", "key": key.replace("_", ""),
+            "components": [component(n, f"{name} {n}") for n in numbers]}
+
+
+def mod(key, path, numbers, category="Tweaks"):
     return {"key": key, "name": key, "games": ["EET"], "categories": [category],
-            "status": [], "advisories": [],
-            "tp2s": [{"tp2": tp2, "origin": "krion64",
-                      "components": [component(n, f"{key} {n}") for n in numbers]}]}
+            "status": [], "advisories": [], "tp2s": [tp2(path, numbers, key)]}
 
 
+EET, EET_END = "eet/EET.tp2", "eet/EET_end/EET_end.tp2"
 MODS = [mod("bg1ub", UB, [0, 10]), mod("cdtweaks", TW, [100, 200]),
-        mod("needed", NEED, [0]), mod("bystander", "bystander/b.tp2", [1])]
+        mod("needed", NEED, [0]), mod("bystander", "bystander/b.tp2", [1]),
+        {**mod("eet", EET, [0]), "tp2s": [tp2(EET, [0], "EET"), tp2(EET_END, [0], "EET_end")]}]
 
 
 def option(oid, action, key, components, chosen=(), text=""):
@@ -146,19 +152,27 @@ def test_a_missing_prerequisite_is_chosen_when_the_list_knows_it(qtbot, tmp_path
     assert (NEED, 0) in widget.chosen()
 
 
-def test_a_reorder_is_written_to_decisions_json_and_can_be_undone(qtbot, tmp_path):
+def test_an_order_the_plan_could_not_settle_is_not_offered_as_a_choice(qtbot, tmp_path):
+    # --decisions applies a reorder by sorting the plan, which already failed
+    # for this finding: recording it would mark it settled and change nothing.
     widget, _checker = page(qtbot, tmp_path)
     choose(qtbot, widget, (TW, 100))
-    click(qtbot, widget, "option-000000000000000e")
-    assert api.load_decisions(str(tmp_path))["choose"] == {
-        "conflict-0000000000000002": "option-000000000000000e"}
+    button = widget.panel.buttons["option-000000000000000e"]
+    assert not button.isEnabled() and "could not" in button.toolTip()
+
+
+def test_an_acceptance_is_shown_as_decided_and_can_be_undone(qtbot, tmp_path, monkeypatch):
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (TW, 100))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("known", True))
+    click(qtbot, widget, "accept:conflict-0000000000000002")
     assert open_ids(widget) == []
     assert "1 decided" in widget.panel.summary.text()
     undo = next(b for b in widget.panel.findChildren(type(widget.panel.again))
                 if b.text() == "Undo")
     with qtbot.waitSignal(widget.checked, timeout=5000):
         undo.click()
-    assert api.load_decisions(str(tmp_path))["choose"] == {}
+    assert api.load_decisions(str(tmp_path))["accept"] == {}
     assert open_ids(widget) == ["conflict-0000000000000002"]
 
 
@@ -179,7 +193,8 @@ def test_an_unreadable_decisions_file_is_never_overwritten(qtbot, tmp_path, monk
         label.text() for label in widget.panel.findChildren(QLabel))
     shown = []
     monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[1]))
-    widget.panel.buttons["option-000000000000000e"].click()
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("known", True))
+    widget.panel.buttons["accept:conflict-0000000000000002"].click()
     assert shown == ["decisions.json cannot be read"]
     assert (tmp_path / api.DECISIONS_FILE).read_text() == "{ hand-edited"
 
@@ -207,3 +222,48 @@ def test_a_failing_check_is_said_on_the_panel(qtbot, tmp_path):
         raise RuntimeError("rules unreadable")
     widget, _checker = page(qtbot, tmp_path, checker=broken)
     assert "rules unreadable" in widget.panel.summary.text()
+
+
+def test_an_option_naming_eet_acts_on_eet_tp2_not_on_eet_end(qtbot, tmp_path):
+    # Two tp2s in one folder, both with #0: the plan keys them `eet` and `eetend`.
+    widget, _checker = page(qtbot, tmp_path)
+    assert widget._can_choose("eet", [0]) and not widget._can_choose("eet", [0, 5])
+    widget._choose_in("eet", [0])
+    assert (EET, 0) in widget.chosen() and (EET_END, 0) not in widget.chosen()
+    assert widget._can_choose("eetend", [0])
+
+
+def test_a_check_of_the_previous_game_never_lands_on_the_next(qtbot, tmp_path):
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (UB, 10), (TW, 200))
+    old = widget.conflicts
+    widget.start("BG2EE")                     # the list for another game is loading
+    assert widget.conflicts == {} and widget.panel.buttons == {}
+    widget._check_done((widget._generation - 1, old, ""))
+    assert widget.conflicts == {} and widget.panel.buttons == {}
+    qtbot.waitUntil(lambda: widget._thread is None and widget._checking is None,
+                    timeout=5000)
+
+
+def test_a_failed_check_leaves_no_button_to_press(qtbot, tmp_path):
+    calls = {"n": 0}
+    good = Checker()
+
+    def flaky(*args):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("rules unreadable")
+        return good(*args)
+    widget, _checker = page(qtbot, tmp_path, checker=flaky)
+    choose(qtbot, widget, (UB, 10), (TW, 200))
+    assert widget.panel.buttons == {} and "rules unreadable" in widget.panel.summary.text()
+
+
+def test_the_result_is_shown_on_the_window_thread(qtbot, tmp_path):
+    # A widget made on the worker's thread is the classic Qt crash; slots that
+    # are not the page's own methods would run there.
+    from PySide6.QtWidgets import QGroupBox
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (UB, 10), (TW, 200))
+    rows = widget.panel.findChildren(QGroupBox)
+    assert rows and all(row.thread() is widget.thread() for row in rows)

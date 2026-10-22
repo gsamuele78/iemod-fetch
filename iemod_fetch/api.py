@@ -551,6 +551,7 @@ def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
             described = tp2.as_dict()
             # A path selection.json would refuse cannot be chosen: say why.
             described["refused"] = tp2_problem(tp2.tp2)
+            described["key"] = tp2_key(tp2.tp2)      # what rules and options name
             entry["tp2s"].append(described)
         out.append(entry)
     return out
@@ -675,7 +676,9 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
         if order_catalogue and logs:
             plan = plan_order(_log_roles(logs), OrderIndex.load(order_catalogue),
                               ruleset, analysis.context)
-        report = build_conflict_report(_judged_installs(settings, analysis, plan),
+        # Named by role even with no plan: the ids are then the ones a planned
+        # run gives, so a decision saved now still matches once there is one.
+        report = build_conflict_report(_judged_installs(settings, analysis, True),
                                        ruleset, analysis.context, plan)
     findings = []
     for finding in report.findings:
@@ -702,14 +705,16 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
              chosen: Sequence[Tuple[str, int]]) -> List[List[Any]]:
-    """The chosen (tp2, number) pairs a side or an option names."""
-    out = []
-    for tp2, number in dict.fromkeys(chosen):
-        if key not in (choices.folder_key(tp2), tp2_key(tp2)):
-            continue
-        if whole_mod or number in numbers:
-            out.append([tp2, number])
-    return out
+    """
+    The chosen (tp2, number) pairs a side or an option names: the tp2 the key
+    names, as the plan keys its units - `eet` is EET.tp2, not EET_end.tp2 in
+    the same folder - and only when no tp2 has that key, the folder's.
+    """
+    chosen = list(dict.fromkeys(chosen))
+    named = [c for c in chosen if tp2_key(c[0]) == key]
+    if not named:
+        named = [c for c in chosen if choices.folder_key(c[0]) == key]
+    return [[tp2, number] for tp2, number in named if whole_mod or number in numbers]
 
 
 def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> List[dict]:
@@ -1179,8 +1184,13 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
     """
     if analysis.ruleset is None or not analysis.installs:
         return None
-    report = build_conflict_report(_judged_installs(settings, analysis, plan),
-                                   analysis.ruleset, analysis.context, plan)
+    judged = _judged_installs(settings, analysis, plan is not None)
+    report = build_conflict_report(judged, analysis.ruleset, analysis.context, plan)
+    files = {install.label: original.label
+             for install, original in zip(judged, analysis.installs)}
+    for finding in report.findings:
+        if files.get(finding.log, finding.log) != finding.log:
+            finding.shown_log = files[finding.log]
     report.engine_limits = _engine_limits(settings)
     resolution = getattr(plan, "resolution", None)
     if resolution is not None:
@@ -1202,7 +1212,7 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
     return report
 
 
-def _judged_installs(settings, analysis: "RuleAnalysis", plan):
+def _judged_installs(settings, analysis: "RuleAnalysis", by_role: bool):
     """
     The installs the conflict report judges, named as --decisions names them.
 
@@ -1210,8 +1220,9 @@ def _judged_installs(settings, analysis: "RuleAnalysis", plan):
     (WeiDU.log for the EET game, WeiDU-BGEE.log otherwise), and a finding's id
     includes that name. A log named anything else - every log --selection
     writes, a BG2EE `WeiDU.log` - gave the report ids no decision could match.
+    The report shows each log's own file name (Finding.shown_log).
     """
-    if plan is None:
+    if not by_role:
         return analysis.installs
     roles = [role for _path, role in _log_roles(settings.weidu_log)]
     return [replace(install, label=role)

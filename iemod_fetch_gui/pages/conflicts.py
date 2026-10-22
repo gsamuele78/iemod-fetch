@@ -82,15 +82,21 @@ class ConflictsPanel(QWidget):
         self.summary.setText("Checking the selection against the rules...")
 
     def failed(self, message: str) -> None:
+        self.clear()                    # no button may act on a result that no longer holds
         self.summary.setText(f"The conflicts could not be checked: {message}")
 
-    def show_result(self, result: dict) -> None:
-        self.result = result
+    def clear(self) -> None:
+        self.result = {}
         self.buttons.clear()
         while self.rows.count() > 1:
             item = self.rows.takeAt(0)
             if item.widget() is not None:
                 item.widget().deleteLater()
+        self.summary.setText("Not checked yet.")
+
+    def show_result(self, result: dict) -> None:
+        self.clear()
+        self.result = result
         findings = result.get("findings") or []
         settled = sum(1 for f in findings if f.get("fixed_by_plan"))
         decided = [f for f in findings if f.get("decision") and not f.get("fixed_by_plan")]
@@ -146,7 +152,7 @@ class ConflictsPanel(QWidget):
             buttons.addWidget(undo)
         else:
             for option in finding["options"]:
-                buttons.addWidget(self._option(finding, option))
+                buttons.addWidget(self._option(option))
             accept = QPushButton("Accept...")
             accept.setToolTip("Keep both sides; you give the reason, and the report "
                               "keeps it visible as accepted.")
@@ -157,7 +163,7 @@ class ConflictsPanel(QWidget):
         layout.addLayout(buttons)
         return box
 
-    def _option(self, finding: dict, option: dict) -> QPushButton:
+    def _option(self, option: dict) -> QPushButton:
         label = option["description"]
         if option.get("recommended"):
             label += "  (recommended)"
@@ -177,9 +183,14 @@ class ConflictsPanel(QWidget):
                 button.setEnabled(False)
                 button.setToolTip("Not in the list for this game with these components: "
                                   "it has to be added to the catalogue or fetched first.")
-        else:                          # reorder: the plan applies it
-            button.clicked.connect(lambda _c=False, f=finding["id"], o=option["id"]:
-                                   self.decide.emit(f, o, ""))
+        else:
+            # Reorder: sorting the plan is what applies it, and this finding is
+            # one the planned order did not settle (a cycle, or no order data).
+            # Recording it would change nothing, so it is not offered as a choice.
+            button.setEnabled(False)
+            button.setToolTip("The install order applies this by itself where it can; "
+                              "here it could not (no krion64 order data, or the rules "
+                              "contradict each other). Deselect a side or accept it.")
         return button
 
     def _accept(self, finding: dict) -> None:

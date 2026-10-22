@@ -31,10 +31,13 @@ Python API, which is internal.
 - **The wizard's conflicts panel** (phase 2, ADR-0033): the selection is
   checked against the rules a run uses, in a worker thread after each change;
   each conflict's options are buttons - deselect a side, choose a missing
-  prerequisite, or write an install-order choice or an acceptance with its
-  reason to `decisions.json`, which `--decisions` applies. A filter shows only
-  the mods still in conflict. An unreadable `decisions.json` is reported and
-  never overwritten.
+  prerequisite the list knows, or accept a conflict with its reason in
+  `decisions.json`, which `--decisions` applies. An order finding the plan
+  could not settle is explained, not offered as a choice: `--decisions`
+  applies a reorder only by sorting, which already failed for it. A filter
+  shows only the mods still in conflict. An unreadable `decisions.json` is
+  reported and never overwritten; a check of a list the page no longer shows
+  (another game) is dropped.
 - `api.selection_conflicts`, `api.load_decisions` and `api.save_decisions`:
   the panel as functions; the findings and ids are those of a run with
   `--selection --plan-order`.
