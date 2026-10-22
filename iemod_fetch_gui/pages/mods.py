@@ -54,8 +54,11 @@ def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str)
     project = api.load_project(project_dir)
     # The authors' own install order is fetched for what is chosen (ADR-0037):
     # one small file per mod, once a week at most, kept in the data cache.
+    # The order set by hand in phase 3 is part of what the run judges too.
+    order = os.path.join(project_dir, api.INSTALL_ORDER_FILE)
     return api.selection_conflicts(game, chosen, labels, folder=project_dir,
-                                   target=_target(project), fetch_metadata=True)
+                                   target=_target(project), fetch_metadata=True,
+                                   sorting_order=order if os.path.isfile(order) else None)
 
 
 def load_choices(game: str, project: dict) -> List[dict]:
@@ -302,8 +305,13 @@ class ModsPage(QWidget):
             selection = api.load_selection(path)
         except Exception:        # a hand-edited file the CLI would refuse: start empty
             return set()
+        # An EET build is saved as two installs, the BG:EE phase and EET; a
+        # BG:EE install alone is a BG:EE build, not EET's first phase.
+        saved = {install.game.upper() for install in selection.installs}
+        games = ({"EET", "BGEE"} if self.game.upper() == "EET" and "EET" in saved
+                 else {self.game.upper()})
         return {(c.tp2, c.component) for install in selection.installs
-                if install.game.upper() == self.game.upper() for c in install.components}
+                if install.game.upper() in games for c in install.components}
 
     # ---------------------------------------------------------- choosing
     def _changed(self, item: QTreeWidgetItem, column: int) -> None:

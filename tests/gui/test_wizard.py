@@ -19,6 +19,10 @@ from iemod_fetch_gui.window import PHASES, MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
 
 
+def no_plan(*_args):
+    return {"phases": [], "cycles": [], "violations": [], "planned": False, "custom": False}
+
+
 def no_check(*_args):
     return {"findings": [], "stale": [], "rules_checked": 0, "planned": False,
             "problem": None}
@@ -26,7 +30,8 @@ def no_check(*_args):
 
 def window(qtbot, folder):
     # No test reaches the network: the catalogue comes from an empty loader.
-    main = MainWindow(str(folder), load=lambda game, project: [], check=no_check)
+    main = MainWindow(str(folder), load=lambda game, project: [], check=no_check,
+                      plan=no_plan)
     qtbot.addWidget(main)
     return main
 
@@ -102,7 +107,7 @@ def test_the_phases_are_bws_ngs_and_later_ones_say_how_to_go_on(qtbot, tmp_path)
     main = window(qtbot, tmp_path)
     assert [main.phases.item(i).text() for i in range(main.phases.count())] == [
         f"{n}  {name}" for n, name in enumerate(PHASES, start=1)]
-    assert "command line can carry on" in main.pages[2].text.text()
+    assert "command line can carry on" in main.pages[3].text.text()
 
 
 def test_next_never_saves_a_path_typed_after_the_last_check(qtbot, tmp_path):

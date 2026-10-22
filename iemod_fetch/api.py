@@ -75,7 +75,9 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "load_bio_code", "bio_code_of", "check_game_folders", "languages",
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
-           "load_decisions", "save_decisions", "DECISIONS_FILE"]
+           "load_decisions", "save_decisions", "DECISIONS_FILE",
+           "selection_plan", "save_install_order", "reset_install_order",
+           "INSTALL_ORDER_FILE"]
 
 
 @dataclass
@@ -561,24 +563,58 @@ def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
 
 
 def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
-                   labels: Optional[dict] = None) -> str:
+                   labels: Optional[dict] = None, data_dir: Optional[str] = None,
+                   order_catalogue: Optional[str] = None) -> str:
     """
     Write `folder`/selection.json: `chosen` is (tp2, component number) in
-    install order, for one install of `game`. The CLI reads it with
-    --selection; it goes through selection.json's own checks first.
+    install order. For EET it is two installs - the BG:EE phase and EET - as
+    krion64's categories place each component (ADR-0038). The CLI reads it
+    with --selection; it goes through selection.json's own checks first.
     """
-    text = selection_to_json(_wizard_selection(game, chosen, labels))
+    text = selection_to_json(_wizard_selection(game, chosen, labels,
+                                               _order_index(data_dir, order_catalogue)))
     parse_selection(text, source="the wizard's selection")      # refuse before writing
     return _write_whole(folder, SELECTION_FILE, text)
 
 
+def _order_index(data_dir: Optional[str], order_catalogue: Optional[str] = None):
+    """krion64's install order from the data cache (or the path given), if there."""
+    path = order_catalogue or datasync.data_paths(
+        data_dir or datasync.default_data_dir()).order_catalogue
+    if not path:
+        return None
+    try:
+        return OrderIndex.load(path)
+    except ConfigError:
+        return None
+
+
 def _wizard_selection(game: str, chosen: Sequence[Tuple[str, int]],
-                      labels: Optional[dict] = None) -> Selection:
+                      labels: Optional[dict] = None, index=None) -> Selection:
+    """
+    The wizard's choice as a selection. An EET build is two installs: what
+    krion64 files under a pre-EET category goes on BG:EE before the
+    conversion, the rest on the EET game (ADR-0038). Without krion64's data,
+    or for one game, it is one install.
+    """
     labels = labels or {}
-    return Selection([SelectionInstall(game.upper(), [
-        Choice(tp2=tp2, component=number,
-               label=one_line_label(labels.get((tp2, number), "")))
-        for tp2, number in dict.fromkeys(chosen)])])
+
+    def choices(pairs):
+        return [Choice(tp2=tp2, component=number,
+                       label=one_line_label(labels.get((tp2, number), "")))
+                for tp2, number in pairs]
+
+    pairs = list(dict.fromkeys(chosen))
+    if game.upper() == "EET" and index is not None:
+        def pre_eet(tp2: str, number: int) -> bool:
+            slot = index.component(tp2_key(tp2), number) or index.get(tp2_key(tp2))
+            return bool(slot and slot.pre_eet)
+        before = [pair for pair in pairs if pre_eet(*pair)]
+        if before:
+            rest = [pair for pair in pairs if not pre_eet(*pair)]
+            return Selection([SelectionInstall("BGEE", choices(before)),
+                              SelectionInstall("EET", choices(rest))])
+    return Selection([SelectionInstall(game.upper(), choices(pairs))])
 
 
 def _write_whole(folder: str, name: str, text: str) -> str:
@@ -661,34 +697,11 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
     yet when it is in the data cache; `fetch_metadata` fetches the missing ones
     first (network). `sorting_order` is a Project Infinity Sorting Order file.
     """
-    data_dir = data_dir or datasync.default_data_dir()
-    cached = datasync.data_paths(data_dir)
-    rules = list(rules) or list(cached.rules)
-    mod_db = mod_db or cached.mod_db
-    order_catalogue = order_catalogue or cached.order_catalogue
-    selection = _wizard_selection(game, chosen, labels)
     decided = (load_decisions(folder) if folder
                else {"choose": {}, "accept": {}, "problem": None})
-    with tempfile.TemporaryDirectory(prefix="iemod-conflicts-") as work:
-        logs = []
-        for log in selection.weidu_logs():
-            path = os.path.join(work, log.name)
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(log.text)
-            logs.append(f"{path}:{log.game}")
-        settings = Settings(weidu_log=logs, rules=rules, mod_db=mod_db,
-                            order_catalogue=order_catalogue, quiet=True,
-                            target=target or os.path.join(work, "Mods"),
-                            data_dir=data_dir, fetch_metadata=fetch_metadata,
-                            sorting_order=sorting_order,
-                            catalogue=[cached.catalogue] if cached.catalogue else [])
-        installed = parse_weidu_files([split_log_spec(spec) for spec in logs])
-        analysis = _check_rules(settings, installed, _Silent())
-        ruleset = analysis.ruleset or RuleSet()
-        plan = None
-        if order_catalogue and logs:
-            plan = plan_order(_log_roles(logs), OrderIndex.load(order_catalogue),
-                              ruleset, analysis.context)
+    with _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
+                             order_catalogue, fetch_metadata, sorting_order) as (
+                                 settings, analysis, ruleset, plan):
         # Named by role even with no plan: the ids are then the ones a planned
         # run gives, so a decision saved now still matches once there is one.
         report = build_conflict_report(_judged_installs(settings, analysis, True),
@@ -714,6 +727,145 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
     stale = sorted((set(decided["choose"]) | set(decided["accept"])) - known)
     return {"findings": findings, "stale": stale, "rules_checked": report.rules_checked,
             "planned": plan is not None, "problem": decided["problem"]}
+
+
+@contextlib.contextmanager
+def _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
+                        order_catalogue, fetch_metadata, sorting_order):
+    """
+    A wizard selection judged as a run judges it: its logs written as
+    --selection writes them, the rules checked, and the order planned when
+    krion64's data is there. Yields (settings, analysis, ruleset, plan).
+    """
+    data_dir = data_dir or datasync.default_data_dir()
+    cached = datasync.data_paths(data_dir)
+    rules = list(rules) or list(cached.rules)
+    mod_db = mod_db or cached.mod_db
+    order_catalogue = order_catalogue or cached.order_catalogue
+    index = _order_index(data_dir, order_catalogue)
+    selection = _wizard_selection(game, chosen, labels, index)
+    with tempfile.TemporaryDirectory(prefix="iemod-selection-") as work:
+        logs = []
+        for log in selection.weidu_logs():
+            path = os.path.join(work, log.name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(log.text)
+            logs.append(f"{path}:{log.game}")
+        settings = Settings(weidu_log=logs, rules=rules, mod_db=mod_db,
+                            order_catalogue=order_catalogue, quiet=True,
+                            target=target or os.path.join(work, "Mods"),
+                            data_dir=data_dir, fetch_metadata=fetch_metadata,
+                            sorting_order=sorting_order,
+                            catalogue=[cached.catalogue] if cached.catalogue else [])
+        installed = parse_weidu_files([split_log_spec(spec) for spec in logs])
+        analysis = _check_rules(settings, installed, _Silent())
+        ruleset = analysis.ruleset or RuleSet()
+        plan = None
+        if index is not None and logs:
+            plan = plan_order(_log_roles(logs), index, ruleset, analysis.context)
+        yield settings, analysis, ruleset, plan
+
+
+INSTALL_ORDER_FILE = "install-order.txt"
+_PHASE_TITLES = {EET_LOG: "EET", PRE_EET_LOG: "BG:EE before the conversion"}
+
+
+def selection_plan(game: str, chosen: Sequence[Tuple[str, int]],
+                   labels: Optional[dict] = None, folder: Optional[str] = None,
+                   target: Optional[str] = None, data_dir: Optional[str] = None,
+                   rules: Sequence[str] = (), mod_db: Optional[str] = None,
+                   order_catalogue: Optional[str] = None,
+                   fetch_metadata: bool = False) -> dict:
+    """
+    The install order of a wizard selection (M3 phase 3, ADR-0038), planned
+    as a run with --selection --plan-order plans it. `folder`/install-order.txt,
+    the order the player set by hand, is applied as --sorting-order applies it
+    (ADR-0037): on top of the rules, and a contradiction is reported.
+
+    Returns {"phases": [{"role", "title", "units": [{"node", "name", "tp2",
+    "category", "components": [[tp2, number, label]], "constrained", "moved",
+    "flagged"}]}], "cycles": [[names]], "violations": [text], "planned",
+    "custom": whether install-order.txt is in use}.
+    """
+    order_file = os.path.join(folder, INSTALL_ORDER_FILE) if folder else None
+    custom = bool(order_file and os.path.isfile(order_file))
+    with _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
+                             order_catalogue, fetch_metadata,
+                             order_file if custom else None) as (
+                                 _settings, _analysis, _ruleset, plan):
+        if plan is None:
+            return {"phases": [], "cycles": [], "violations": [], "planned": False,
+                    "custom": custom}
+        moved = {move.key for move in plan.moved}
+        bad = {key for violation in plan.residual for key in violation.mods}
+        phases = []
+        for role in (PRE_EET_LOG, EET_LOG):
+            units = plan.logs.get(role)
+            if not units:
+                continue
+            title = (_PHASE_TITLES[role] if game.upper() == "EET"
+                     else game.upper())
+            phases.append({"role": role, "title": title, "units": [{
+                "node": unit.node, "name": unit.display, "tp2": unit.tp2_file,
+                "key": unit.key, "part": unit.part, "split": unit.split,
+                "category": unit.slot.category if unit.slot else "",
+                "components": [[path.replace("\\", "/"), number, comment]
+                               for path, _lang, number, comment in unit.lines],
+                "constrained": unit.node in plan.constrained,
+                "moved": unit.key in moved,
+                # what an order rule still finds wrong; a cycle names every
+                # unit left when it was broken, so it is reported, not marked
+                "flagged": unit.key in bad,
+            } for unit in units]})
+        return {"phases": phases, "cycles": [list(c) for c in plan.cycles],
+                "violations": [v.summary for v in plan.residual],
+                "planned": True, "custom": custom}
+
+
+def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
+    """
+    Write the order the player set by hand, `phases` being each phase's units
+    (as selection_plan gives them) in the order wanted, as
+    `folder`/install-order.txt: a Project Infinity Sorting Order file, which
+    the CLI reads with --sorting-order and PI itself can apply.
+    """
+    lines = ["// Install order set in the iemod-fetch wizard (Project Infinity",
+             "// Sorting Order format). Delete this file to use the computed order."]
+    for units in phases:
+        for unit in units:
+            # A tp2 name may hold spaces (`Setup-Unofficial Item Pack.tp2`); its
+            # key ignores them, so the line drops them.
+            name = "".join(premeta.tp2_name(unit["tp2"]).split())
+            if not normalize_key(name):
+                raise ConfigError(f"cannot write {unit['tp2']!r} as a sorting order line")
+            numbers = " ".join(str(c[1]) for c in unit["components"])
+            lines.append(f"{name} {numbers}" if unit.get("split") else f"{name} *")
+    text = "\n".join(lines) + "\n"
+    sortorder.parse(text, source="the wizard's install order")   # refuse before writing
+    # The project's ini names it first, so the command line uses it too: if
+    # the ini cannot be written, no order file is left for the wizard alone.
+    project = os.path.join(folder, PROJECT_FILE)
+    before = _config.read_section(project, _config.SECTION).get("sorting_order")
+    if before != INSTALL_ORDER_FILE:
+        _config.write_values(project, {"sorting_order": INSTALL_ORDER_FILE})
+    try:
+        return _write_whole(folder, INSTALL_ORDER_FILE, text)
+    except BaseException:
+        if before != INSTALL_ORDER_FILE:     # put back what was there, if anything
+            _config.write_values(project, {"sorting_order": before})
+        raise
+
+
+def reset_install_order(folder: str) -> None:
+    """Forget the order set by hand: the computed one applies again."""
+    project = os.path.join(folder, PROJECT_FILE)
+    # First, as above; and only the wizard's own file - a path the player
+    # wrote there by hand is theirs.
+    if _config.read_section(project, _config.SECTION).get("sorting_order") == INSTALL_ORDER_FILE:
+        _config.write_values(project, {"sorting_order": None})
+    path = os.path.join(folder, INSTALL_ORDER_FILE)
+    if os.path.isfile(path):
+        os.unlink(path)
 
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,

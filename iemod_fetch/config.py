@@ -40,6 +40,10 @@ STR_KEYS = ("manifest", "target", "aliases", "json_report", "emit_pinned_manifes
             "selection", "emit_selection", "list_mods", "describe_mods", "events", "data_dir", "eet_sequence", "releases", "decisions", "bio_code", "emit_bio_code", "pi_list",
             "sorting_order")
 
+# Files the wizard writes beside the project's ini and names in it: read
+# relative to the ini, wherever the command line is run from.
+FILE_RELATIVE_KEYS = ("sorting_order",)
+
 KNOWN_KEYS = frozenset(LIST_KEYS + BOOL_KEYS + INT_KEYS + SIZE_KEYS + STR_KEYS)
 
 _SIZE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGT]?)(I?)B?\s*$", re.IGNORECASE)
@@ -155,7 +159,10 @@ def _read(path: str) -> FileConfig:
             elif key in LIST_KEYS:
                 config.values[key] = _split_list(raw_value)
             else:
-                config.values[key] = raw_value.strip()
+                value = raw_value.strip()
+                if key in FILE_RELATIVE_KEYS and value and not os.path.isabs(value):
+                    value = os.path.join(os.path.dirname(os.path.abspath(path)), value)
+                config.values[key] = value
         except ValueError as exc:
             raise ConfigError(f"{path}: option {raw_key!r} = {raw_value!r}: {exc}") from exc
     return config

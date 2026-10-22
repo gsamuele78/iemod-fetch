@@ -4,6 +4,7 @@ The catalogue comes from a fixed loader - the page's loader is injected - so
 the tests need no network and no community data.
 """
 import json
+import os
 
 import pytest
 
@@ -18,6 +19,10 @@ from iemod_fetch_gui.window import MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
 
 TP2 = "bg1ub/setup-bg1ub.tp2"
+
+
+def no_plan(*_args):
+    return {"phases": [], "cycles": [], "violations": [], "planned": False, "custom": False}
 
 
 def no_check(*_args):
@@ -128,8 +133,13 @@ def test_a_loader_that_fails_is_shown_not_raised(qtbot, tmp_path):
 
 def test_the_wizard_goes_from_folders_to_mods_and_saves_both(qtbot, tmp_path):
     project = tmp_path / "project"
+    planned = {"phases": [{"role": "WeiDU.log", "title": "EET", "units": [{
+        "node": "n", "name": "bg1ub", "tp2": "setup-bg1ub.tp2", "key": "bg1ub", "part": 0,
+        "split": False, "category": "", "components": [[TP2, 0, ""]],
+        "constrained": False, "moved": False, "flagged": False}]}],
+        "cycles": [], "violations": [], "planned": True, "custom": False}
     main = MainWindow(str(project), load=lambda game, proj: json.loads(json.dumps(MODS)),
-                      check=no_check)
+                      check=no_check, plan=lambda *a: planned)
     qtbot.addWidget(main)
     main.game.bgee.edit.setText(bgee(tmp_path))
     main.game.bg2ee.edit.setText(bg2ee(tmp_path))
@@ -139,8 +149,12 @@ def test_the_wizard_goes_from_folders_to_mods_and_saves_both(qtbot, tmp_path):
     assert main.current == 1 and not main.next.isEnabled()
     check(main.mods, (TP2, 0))
     assert main.next.isEnabled()
-    qtbot.mouseClick(main.next, Qt.MouseButton.LeftButton)
+    with qtbot.waitSignal(main.order.planned, timeout=5000):
+        qtbot.mouseClick(main.next, Qt.MouseButton.LeftButton)
     assert main.current == 2 and (project / api.SELECTION_FILE).is_file()
+    # once the order is planned, Next goes on (it stayed disabled: the page
+    # said it was complete before its thread had ended)
+    assert main.order.is_complete() and main.next.isEnabled()
 
 
 def test_closing_the_page_while_the_list_loads_does_not_crash(qtbot, tmp_path):
@@ -226,3 +240,15 @@ def test_a_selection_for_another_game_is_not_carried_over(qtbot, tmp_path):
     api.save_selection(str(tmp_path), "BGEE", [(TP2, 0)])
     widget = page(qtbot, tmp_path)                     # loads for EET
     assert widget.chosen() == []
+
+
+def test_an_eet_build_saved_in_two_phases_is_chosen_again(qtbot, tmp_path):
+    # bg1ub belongs to the BG:EE phase (krion64): selection.json holds it in a
+    # BGEE install beside the EET one, and the EET page must find it there.
+    krion = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "krion")
+    api.save_selection(str(tmp_path), "EET", [(TP2, 0), ("eet/EET.tp2", 0)],
+                       order_catalogue=krion)
+    saved = api.load_selection(str(tmp_path / api.SELECTION_FILE))
+    assert [i.game for i in saved.installs] == ["BGEE", "EET"]
+    widget = page(qtbot, tmp_path)
+    assert widget.chosen() == [(TP2, 0)]
