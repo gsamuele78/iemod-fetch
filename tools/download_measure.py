@@ -25,13 +25,16 @@ def load(path):
 def summary(title, report):
     records = report.get("records") or []
     unresolved = report.get("unresolved") or []
-    by_status = collections.Counter(r["status"] for r in records)
+    # over the run's --max-bytes: the measurement's own cap, not a defect
+    by_status = collections.Counter(
+        "over the size cap" if "byte ceiling" in str(r.get("detail") or "") else r["status"]
+        for r in records)
     by_status["manual"] += len(unresolved)
     by_origin = collections.Counter(r.get("origin") or "-" for r in records
                                     if r["status"] in ("planned", "ok", "skipped"))
     lines = [f"### {title}", "",
              f"{len(records) + len(unresolved)} mods: " + ", ".join(
-                 f"{n} {status}" for status, n in sorted(by_status.items())), ""]
+                 f"{n} {status}" for status, n in sorted(by_status.items()) if n), ""]
     if by_origin:
         lines += ["| candidate origin | mods |", "|---|---|"]
         lines += [f"| {origin} | {n} |" for origin, n in by_origin.most_common()]

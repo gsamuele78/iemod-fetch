@@ -2018,8 +2018,19 @@ command line either.
     downloading them. That needs the GitHub API and the mod sites, which a
     session sandbox cannot reach: its proxy refuses every repository the
     session was not given, and the forum hosts. `download-sources.yml` makes
-    the measurement on GitHub's runners (dry runs, then 20 real downloads);
-    its numbers are not claimed until it has run.
+    the measurement on GitHub's runners. Its first run (2026-10-22):
+    - **catalogue only**: 135 of 145 mods resolved to a candidate (86 a
+      release asset, 28 a branch snapshot, 20 a landing-page link, 1 a
+      direct archive); 10 not: 5 that lcc-docs names otherwise, 2 records
+      with no URL, 3 landing pages that answer 403 to a script
+      (gibberlings3.net, shsforums.net, nexusmods.com);
+    - **with the manifest**: 139 of 145;
+    - **20 real downloads** of the catalogue's candidates: 14 installed, each
+      archive holding the tp2 it must; 4 were over the run's 300 MB cap
+      (BGGO, Autumn's Twilight, Classic Movies, Aura: big, not wrong); 2
+      failed because downloads.weaselmods.net answered its download link with
+      an HTML page, not the archive. About 20 of the log's mods are
+      WeaselMods'; that is the next defect to fix, with the manifest too.
   - Measuring in the sandbox anyway found three defects, fixed here: a mod
     the catalogue could not resolve said only "entry has no url and no
     github repository"; a link typed with accents crashed the mod; a bare

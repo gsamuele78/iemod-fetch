@@ -17,13 +17,16 @@ def test_the_summary_counts_each_status_and_lists_the_misses(tmp_path, capsys):
         unresolved=[{"folder": "x", "detail": "no entry"}])
     real = report(tmp_path / "real.json", [
         {"folder": "ub", "status": "ok", "origin": "release-asset", "detail": "installed"},
-        {"folder": "eet", "status": "failed", "detail": "archive does not contain eet.tp2"}])
+        {"folder": "eet", "status": "failed", "detail": "archive does not contain eet.tp2"},
+        {"folder": "bggo", "status": "failed",
+         "detail": "Content-Length 1457111463 exceeds 314572800 byte ceiling"}])
     assert download_measure.main([dry, "--real", real]) == 0
     out = capsys.readouterr().out
     assert "4 mods: 2 manual, 2 planned" in out
     assert "| release-asset | 2 |" in out
     assert "| ghost | manual | no manifest entry / none |" in out
     assert "| eet | failed | archive does not contain eet.tp2 |" in out
+    assert "3 mods: 1 failed, 1 ok, 1 over the size cap" in out
 
 
 def test_pick_names_planned_mods_in_a_stable_order(tmp_path, capsys):
