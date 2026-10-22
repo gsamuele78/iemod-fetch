@@ -1280,18 +1280,28 @@ def _authors_order(settings, installed) -> dict:
     cache = _metadata_cache(settings)
     out = {}
     for wanted in _metadata_wanted(settings, pairs):
-        meta = cache.get(wanted.folder, wanted.repo)
+        meta = cache.get(wanted)
         if meta is not None:
-            stem = os.path.splitext(os.path.basename(wanted.tp2_file.replace("\\", "/")))[0]
-            out[stem[6:] if stem.lower().startswith("setup-") else stem] = meta
+            out[premeta.tp2_name(wanted.tp2_file)] = meta
     return out
 
 
 def _not_staged(settings, installed) -> list:
-    """(folder, tp2 file) of the planned mods not staged: their ini is not here yet."""
+    """
+    (folder, tp2 path) of every tp2 planned from a mod not staged: its ini is
+    not here yet. Per tp2, not per mod - EET's folder holds EET.tp2 and
+    EET_end/EET_end.tp2, and each has its own ini.
+    """
     target = os.path.abspath(settings.target)
-    return [(mod.folder, mod.tp2_file) for mod in installed.mods.values()
-            if not os.path.isdir(os.path.join(target, mod.folder))]
+    out = []
+    for mod in installed.mods.values():
+        if os.path.isdir(os.path.join(target, mod.folder)):
+            continue
+        for component in mod.components:
+            path = (component.path or f"{mod.folder}/{component.tp2_file}").replace("\\", "/")
+            if (mod.folder, path) not in out:
+                out.append((mod.folder, path))
+    return out
 
 
 def _sorting_rules(settings, installed) -> list:

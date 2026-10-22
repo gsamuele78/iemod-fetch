@@ -1828,11 +1828,19 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
 - 19 order pairs per 314 (6%) reach the plan and the conflicts check before
   download; the 7 that contradict krion64 move mods where their authors put
   them.
-- One to four small requests per chosen mod per week to
-  raw.githubusercontent.com, and for an ini spelled otherwise, a listing on
-  GitHub's API (60 an hour without a credential; the tool's GitHub credential
-  is used when it has one). Offline, the cache is used; without it, the plan
-  is what it was.
+- Per planned tp2, once a week: up to 8 small requests to
+  raw.githubusercontent.com (the likely spellings; usually the first hits),
+  and when none hits - an ini spelled otherwise, or no ini at all, the common
+  case - a listing of each folder level on GitHub's API (one to three). That
+  API allows 60 requests an hour without a credential (the tool's GitHub
+  credential is used when it has one), so a large selection without one fills
+  in over several hours: the quota is treated as the network being down, and
+  what is left backs off for an hour. Offline, the cache is used; without it,
+  the plan is what it was.
+- One folder can hold several tp2s (EET's holds EET.tp2 and
+  EET_end/EET_end.tp2); each has its own ini, wanted, cached and keyed by its
+  own tp2 name. An error of one repository (a 451, a 401, a file over the
+  cap) is recorded for that tp2 alone; it never stops the others.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.

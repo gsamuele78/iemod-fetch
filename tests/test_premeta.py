@@ -71,8 +71,8 @@ def test_the_ini_is_looked_for_beside_the_tp2_named_after_it():
         "ub/setup-ub.ini", "setup-ub.ini", "ub/ub.ini", "ub.ini"]
     # GitHub is case-sensitive; Region of Terror ships RoT/rot.ini
     assert "RoT/rot.ini" in premeta.candidates("RoT", "setup-RoT.tp2")
-    assert premeta.candidates("eet", "EET_end/EET_end.tp2") == [
-        "eet/EET_end.ini", "EET_end.ini", "eet/eet_end.ini", "eet_end.ini"]
+    # a tp2 below its mod folder: its ini is beside it, not in the mod folder
+    assert premeta.candidates("eet", "eet/EET_end/EET_end.tp2")[0] == "eet/EET_end/EET_end.ini"
 
 
 def test_a_found_ini_is_cached_and_gives_the_authors_order(tmp_path):
@@ -80,10 +80,11 @@ def test_a_found_ini_is_cached_and_gives_the_authors_order(tmp_path):
     cache = premeta.MetadataCache(str(tmp_path))
     assert premeta.fetch(client, cache, [UB], now=100.0) == (1, 0, [])
     cache.save()
-    meta = premeta.MetadataCache(str(tmp_path)).get("ub", REPO)
+    meta = premeta.MetadataCache(str(tmp_path)).get(UB)
     assert meta.before == ["ascension"] and meta.after == ["eet"]
     # an ini from another repository than the catalogue names today does not count
-    assert premeta.MetadataCache(str(tmp_path)).get("ub", "someone/else") is None
+    moved = premeta.Wanted("ub", "setup-ub.tp2", "someone/else")
+    assert premeta.MetadataCache(str(tmp_path)).get(moved) is None
 
 
 @pytest.mark.parametrize("folder, tp2, path", [
@@ -96,8 +97,9 @@ def test_a_found_ini_is_cached_and_gives_the_authors_order(tmp_path):
 def test_the_ini_is_found_whatever_its_case(tmp_path, folder, tp2, path):
     client = FakeClient({"o/r": {path: INI, f"{path.split('/')[0]}/x.tp2": ""}})
     cache = premeta.MetadataCache(str(tmp_path))
-    assert premeta.fetch(client, cache, [premeta.Wanted(folder, tp2, "o/r")], now=1.0) == (1, 0, [])
-    assert cache.entries[premeta.cache_key(folder)]["path"] == path
+    wanted = premeta.Wanted(folder, tp2, "o/r")
+    assert premeta.fetch(client, cache, [wanted], now=1.0) == (1, 0, [])
+    assert cache.entries[premeta.cache_key(wanted)]["path"] == path
 
 
 def test_a_missing_ini_is_remembered_and_not_asked_for_again_for_a_week(tmp_path):
@@ -105,7 +107,7 @@ def test_a_missing_ini_is_remembered_and_not_asked_for_again_for_a_week(tmp_path
     cache = premeta.MetadataCache(str(tmp_path))
     assert premeta.fetch(client, cache, [UB], now=100.0) == (0, 1, [])
     asked = len(client.asked)
-    assert asked and cache.get("ub", REPO) is None
+    assert asked and cache.get(UB) is None
     premeta.fetch(client, cache, [UB], now=100.0 + 86400)
     assert len(client.asked) == asked
     premeta.fetch(client, cache, [UB], now=100.0 + 8 * 86400)
@@ -128,7 +130,7 @@ def test_a_network_error_keeps_the_last_good_entry(tmp_path):
     down = FakeClient(fail=NetworkError("offline"))
     found, missing, problems = premeta.fetch(down, cache, [UB], now=100.0 + 8 * 86400)
     assert (found, missing) == (0, 0) and problems == ["ub: offline"]
-    assert cache.get("ub", REPO).before == ["ascension"]
+    assert cache.get(UB).before == ["ascension"]
 
 
 def test_offline_costs_one_request_then_backs_off_for_an_hour(tmp_path):
@@ -143,6 +145,61 @@ def test_offline_costs_one_request_then_backs_off_for_an_hour(tmp_path):
     assert len(down.asked) == 1
     premeta.fetch(down, cache, mods, now=100.0 + 3700)
     assert len(down.asked) == 2
+
+
+def test_one_blocked_repository_does_not_stop_the_others(tmp_path):
+    # A 451 (or 401, or a file over the cap) is that repository's: recorded as
+    # checked for it alone, and the next mod is still asked.
+    class Blocked(FakeClient):
+        def read_bytes(self, url, limit=None):
+            if "/o/blocked/" in url:
+                raise HttpStatusError(url, 451, "Unavailable For Legal Reasons")
+            return super().read_bytes(url, limit)
+    client = Blocked({REPO: {"ub/ub.ini": INI}})
+    blocked = premeta.Wanted("blocked", "blocked.tp2", "o/blocked")
+    cache = premeta.MetadataCache(str(tmp_path))
+    found, missing, problems = premeta.fetch(client, cache, [blocked, UB], now=1.0)
+    assert found == 1 and len(problems) == 1 and "451" in problems[0]
+    asked = len(client.asked)
+    premeta.fetch(client, cache, [blocked, UB], now=2.0)
+    assert len(client.asked) == asked             # both checked: a week before asking
+
+
+def test_the_quota_stops_the_run_like_a_network_failure(tmp_path):
+    quota = FakeClient(fail=HttpStatusError("u", 403, "GitHub API rate limit exhausted"))
+    mods = [premeta.Wanted(f"m{n}", f"m{n}.tp2", f"o/m{n}") for n in range(5)]
+    premeta.fetch(quota, premeta.MetadataCache(str(tmp_path)), mods, now=1.0)
+    assert len(quota.asked) == 1
+
+
+def test_each_tp2_of_a_folder_has_its_own_ini(tmp_path):
+    # EET ships EET.tp2 and EET_end/EET_end.tp2 in one folder, each with an ini.
+    files = {"eet/EET.ini": "[Metadata]\nAfter = eefixpack\n",
+             "eet/EET_end/EET_end.ini": "[Metadata]\nAfter = stratagems\n"}
+    client = FakeClient({"o/eet": files})
+    eet = premeta.Wanted("eet", "eet/EET.tp2", "o/eet")
+    end = premeta.Wanted("eet", "eet/EET_end/EET_end.tp2", "o/eet")
+    cache = premeta.MetadataCache(str(tmp_path))
+    assert premeta.fetch(client, cache, [eet, end], now=1.0) == (2, 0, [])
+    assert cache.get(eet).after == ["eefixpack"] and cache.get(end).after == ["stratagems"]
+    # and a log in capitals still finds the one below, by listing each level
+    caps = premeta.Wanted("EET", "EET/EET_END/EET_END.TP2", "o/eet")
+    fresh = premeta.MetadataCache(str(tmp_path / "other"))
+    assert premeta.fetch(client, fresh, [caps], now=1.0) == (1, 0, [])
+    assert fresh.entries[premeta.cache_key(caps)]["path"] == "eet/EET_end/EET_end.ini"
+
+
+def test_the_planned_tp2s_are_listed_one_by_one(tmp_path):
+    from iemod_fetch.weidu import parse_weidu_files
+    log = tmp_path / "WeiDU.log"
+    log.write_text("~eet\\EET.tp2~ #0 #0 // EET core\n"
+                   "~ub\\setup-ub.tp2~ #0 #0 // UB\n"
+                   "~eet\\EET_end\\EET_end.tp2~ #0 #0 // EET end\n"
+                   "~ub\\setup-ub.tp2~ #0 #1 // UB 1\n")
+    installed = parse_weidu_files([(str(log), "EET")])
+    pairs = api._not_staged(api.Settings(target=str(tmp_path / "none")), installed)
+    assert sorted(pairs) == [("eet", "eet/EET.tp2"), ("eet", "eet/EET_end/EET_end.tp2"),
+                             ("ub", "ub/setup-ub.tp2")]
 
 
 def test_a_file_without_a_metadata_section_is_not_taken():
@@ -217,7 +274,7 @@ def test_without_the_ini_the_log_order_stands(tmp_path):
 def cached_ub_ini(tmp_path, repo):
     data = tmp_path / "data"
     data.mkdir(exist_ok=True)
-    (data / premeta.CACHE_FILE).write_text(json.dumps({"ub": {
+    (data / premeta.CACHE_FILE).write_text(json.dumps({"ub:ub": {
         "repo": repo, "path": "ub/ub.ini", "text": INI, "checked": 1}}))
     catalogue = tmp_path / "lcc.json"
     catalogue.write_text(json.dumps([{"tp2": "ub", "name": "UB", "games": ["EET"],

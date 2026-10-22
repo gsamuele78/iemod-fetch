@@ -27,7 +27,7 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from .errors import ModFetchError
+from .errors import HttpStatusError, ModFetchError, NetworkError
 from .modmeta import ModMetadata, parse_metadata_ini
 from .naming import normalize_key
 
@@ -41,14 +41,32 @@ RETRY_AFTER_SECONDS = 3600   # after a network error: not before this
 
 @dataclass(frozen=True)
 class Wanted:
-    """A mod whose ini is wanted: its folder, its tp2 file, its repository."""
+    """
+    A tp2 whose ini is wanted: its mod folder, the tp2's path as the log gives
+    it (`eet/EET_end/EET_end.tp2` - one folder can hold several tp2s, each with
+    its own ini), and the repository.
+    """
     folder: str
     tp2_file: str
     repo: str                 # owner/name on GitHub
 
+    @property
+    def directory(self) -> str:
+        """The tp2's folder in the repository, as the log spells it."""
+        path = self.tp2_file.replace("\\", "/")
+        return path.rsplit("/", 1)[0] if "/" in path else self.folder
+
+
+def tp2_name(tp2_file: str) -> str:
+    """The tp2's name as rules give it: no folder, no extension, no `setup-`."""
+    stem = os.path.splitext(os.path.basename(tp2_file.replace("\\", "/")))[0]
+    return stem[6:] if stem.lower().startswith("setup-") else stem
+
 
 def candidates(folder: str, tp2_file: str) -> List[str]:
     """Where the ini may be in the repository: beside the tp2, named after it."""
+    if "/" in tp2_file.replace("\\", "/"):
+        folder = tp2_file.replace("\\", "/").rsplit("/", 1)[0]
     stem = os.path.splitext(os.path.basename(tp2_file.replace("\\", "/")))[0]
     names = [stem]
     if stem.lower().startswith("setup-"):
@@ -65,8 +83,8 @@ def candidates(folder: str, tp2_file: str) -> List[str]:
     return out
 
 
-def cache_key(folder: str) -> str:
-    return normalize_key(folder)
+def cache_key(mod: Wanted) -> str:
+    return f"{normalize_key(mod.folder)}:{normalize_key(tp2_name(mod.tp2_file))}"
 
 
 class MetadataCache:
@@ -86,18 +104,18 @@ class MetadataCache:
         except (OSError, ValueError):
             pass                  # no cache yet, or a broken one: start again
 
-    def get(self, folder: str, repo: str) -> Optional[ModMetadata]:
-        """The cached ini of `folder`, if it came from `repo` and gives an order."""
-        entry = self.entries.get(cache_key(folder)) or {}
+    def get(self, mod: Wanted) -> Optional[ModMetadata]:
+        """The cached ini of `mod`, if it came from its repository and gives an order."""
+        entry = self.entries.get(cache_key(mod)) or {}
         text = entry.get("text")
-        if not isinstance(text, str) or entry.get("repo") != repo.lower():
+        if not isinstance(text, str) or entry.get("repo") != mod.repo.lower():
             return None
         meta = parse_metadata_ini(text, source=f"{entry.get('repo')}:{entry.get('path')}")
         return meta if meta.has_order_hints else None
 
-    def fresh(self, folder: str, repo: str, now: float) -> bool:
-        entry = self.entries.get(cache_key(folder))
-        if not entry or entry.get("repo") != repo.lower():
+    def fresh(self, mod: Wanted, now: float) -> bool:
+        entry = self.entries.get(cache_key(mod))
+        if not entry or entry.get("repo") != mod.repo.lower():
             return False
         if now - float(entry.get("failed") or 0) < RETRY_AFTER_SECONDS:
             return True           # backing off after a network error
@@ -105,12 +123,12 @@ class MetadataCache:
             return False          # never checked: only ever failed
         return now - float(entry["checked"]) < MAX_AGE_DAYS * 86400
 
-    def back_off(self, folder: str, repo: str, now: float) -> None:
+    def back_off(self, mod: Wanted, now: float) -> None:
         """Remember a network failure; what was found before is kept."""
-        key = cache_key(folder)
+        key = cache_key(mod)
         entry = dict(self.entries.get(key) or {})
-        if entry.get("repo") != repo.lower():
-            entry = {"repo": repo.lower(), "path": None, "text": None, "checked": 0}
+        if entry.get("repo") != mod.repo.lower():
+            entry = {"repo": mod.repo.lower(), "path": None, "text": None, "checked": 0}
         entry["failed"] = now
         self.entries[key] = entry
 
@@ -175,10 +193,17 @@ def _find(client, repo: str, mod: Wanted) -> Tuple[Optional[str], Optional[str]]
             return text, where
     wanted = set(_names(mod.tp2_file))
     root = _listed(client, repo, "") or []
-    folders = [e["name"] for e in root if e.get("type") == "dir"
-               and str(e.get("name", "")).lower() == mod.folder.lower()]
-    places = [("", root)] + [(name, _listed(client, repo, name) or []) for name in folders]
-    for prefix, entries in reversed(places):           # the mod folder first
+    places = [("", root)]
+    prefix, entries = "", root
+    for part in mod.directory.split("/"):              # each level, ignoring case
+        match = next((e["name"] for e in entries if e.get("type") == "dir"
+                      and str(e.get("name", "")).lower() == part.lower()), None)
+        if match is None:
+            break
+        prefix = f"{prefix}/{match}" if prefix else match
+        entries = _listed(client, repo, prefix) or []
+        places.append((prefix, entries))
+    for prefix, entries in reversed(places):           # the tp2's own folder first
         for entry in entries:
             name = str(entry.get("name", ""))
             if entry.get("type") == "file" and name.lower() in wanted:
@@ -189,29 +214,45 @@ def _find(client, repo: str, mod: Wanted) -> Tuple[Optional[str], Optional[str]]
     return None, None
 
 
+def _network_down(exc: ModFetchError) -> bool:
+    """
+    The network's failure, not this repository's: no connection, a timeout,
+    or GitHub's quota. A 451, a 401, a file over the cap belong to one
+    repository and must not stop the others.
+    """
+    if isinstance(exc, HttpStatusError):
+        return exc.status == 429 or (exc.status == 403 and "rate limit" in str(exc).lower())
+    return isinstance(exc, NetworkError)
+
+
 def fetch(client, cache: MetadataCache, wanted: Iterable[Wanted],
           now: Optional[float] = None) -> Tuple[int, int, List[str]]:
     """
-    Fetch the ini of every `wanted` mod whose cache entry is missing or old.
-    Returns (found, missing, problems). A network error is the network's, not
-    the file's: nothing more is asked this time, every mod still to ask backs
-    off for an hour, and what was found before is kept.
+    Fetch the ini of every `wanted` tp2 whose cache entry is missing or old.
+    Returns (found, missing, problems). When the network is down (or the quota
+    spent), nothing more is asked this time, every tp2 still to ask backs off
+    for an hour, and what was found before is kept. An error of one repository
+    is recorded for that tp2 alone, as checked, and the others go on.
     """
     now = time.time() if now is None else now
     found = missing = 0
     problems: List[str] = []
-    todo = [mod for mod in wanted if not cache.fresh(mod.folder, mod.repo, now)]
+    todo = [mod for mod in wanted if not cache.fresh(mod, now)]
     for n, mod in enumerate(todo):
         repo = mod.repo.lower()
         try:
             text, path = _find(client, repo, mod)
         except ModFetchError as exc:
             problems.append(f"{mod.folder}: {exc}")
-            for rest in todo[n:]:
-                cache.back_off(rest.folder, rest.repo, now)
-            break
-        cache.entries[cache_key(mod.folder)] = {"repo": repo, "path": path, "text": text,
-                                                "checked": now}
+            if _network_down(exc):
+                for rest in todo[n:]:
+                    cache.back_off(rest, now)
+                break
+            cache.entries[cache_key(mod)] = {"repo": repo, "path": None, "text": None,
+                                             "checked": now, "problem": str(exc)}
+            continue
+        cache.entries[cache_key(mod)] = {"repo": repo, "path": path, "text": text,
+                                         "checked": now}
         if text is None:
             missing += 1
         else:
