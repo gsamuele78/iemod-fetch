@@ -434,3 +434,14 @@ def test_the_conflict_report_names_its_schema_version(tmp_path):
     jsonschema = __import__("pytest").importorskip("jsonschema")
     with open(os.path.join(SCHEMAS, "conflicts-v1.schema.json"), encoding="utf-8") as fh:
         jsonschema.validate(data, json.load(fh))
+
+
+def test_a_known_issue_validates_against_the_schema():
+    from iemod_fetch.conflicts import KNOWN_ISSUE, ConflictReport, Finding, Side
+    jsonschema = __import__("pytest").importorskip("jsonschema")
+    finding = Finding(kind=KNOWN_ISSUE, severity="warning", log="WeiDU.log",
+                      left=Side(key="ub", mod="ub", components=((3, ""),)),
+                      scope=KNOWN_ISSUE, reason="breaks a quest")
+    data = ConflictReport(findings=[finding]).as_dict()
+    with open(os.path.join(SCHEMAS, "conflicts-v1.schema.json"), encoding="utf-8") as fh:
+        jsonschema.validate(data, json.load(fh))

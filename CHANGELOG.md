@@ -52,7 +52,12 @@ Python API, which is internal.
   could not match whenever a log's file name was not the plan's role
   (`WeiDU.log` for EET, `WeiDU-BGEE.log` otherwise): every `--selection` run,
   and a BG2EE `WeiDU.log`. The report now names the installs as the plan does,
-  so an accepted or chosen decision shows in it.
+  so an accepted or chosen decision shows in it, with each log's own file
+  name.
+- The conflict report's schema did not allow the `known-issue` scope its
+  known-issue findings carry, so a report with one failed validation.
+- An EET plan given two non-EET logs merged them into one BG:EE phase, and
+  their findings shared ids; it is now refused with what to give instead.
 - **A `%` in `iemod-fetch.ini`** (a path like `C:/Games/100%BG`) stopped the
   CLI with a raw configparser traceback; it is now a ConfigError that says to
   write `%%`, and the wizard writes it that way.

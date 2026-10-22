@@ -177,3 +177,14 @@ def test_a_decision_the_cli_would_refuse_is_not_written(tmp_path, choose, accept
     with pytest.raises(ConfigError):
         api.save_decisions(str(tmp_path), choose, accept)
     assert not (tmp_path / api.DECISIONS_FILE).exists()
+
+
+def test_two_pre_eet_logs_are_refused_not_merged(tmp_path):
+    # The plan has one BG:EE phase; two logs would share its name, and their
+    # findings their ids.
+    import shutil
+    second = tmp_path / "other-BGEE.log"
+    shutil.copy(os.path.join(MOCK, "WeiDU-BGEE.log"), second)
+    with pytest.raises(ConfigError, match="more than one log is not the EET install"):
+        api._log_roles([os.path.join(MOCK, "WeiDU.log") + ":EET",
+                        os.path.join(MOCK, "WeiDU-BGEE.log") + ":BGEE", f"{second}:BGEE"])

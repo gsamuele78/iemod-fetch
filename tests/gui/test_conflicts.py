@@ -16,7 +16,9 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
-from iemod_fetch_gui.pages.mods import ModsPage  # noqa: E402
+from iemod_fetch_gui.pages.mods import CHECK_DELAY_MS, ModsPage  # noqa: E402
+
+CHECK_WAIT_MS = CHECK_DELAY_MS + 300
 
 UB = "bg1ub/setup-bg1ub.tp2"
 TW = "cdtweaks/setup-cdtweaks.tp2"
@@ -267,3 +269,50 @@ def test_the_result_is_shown_on_the_window_thread(qtbot, tmp_path):
     choose(qtbot, widget, (UB, 10), (TW, 200))
     rows = widget.panel.findChildren(QGroupBox)
     assert rows and all(row.thread() is widget.thread() for row in rows)
+
+
+def test_no_check_runs_while_the_next_games_list_loads(qtbot, tmp_path):
+    # The old list is still shown while the new one loads: checking it as the
+    # new game would put the old list's buttons under the new game's name.
+    import threading
+    gate = threading.Event()
+    checker = Checker()
+
+    def load(game, project):
+        if game == "BG2EE":
+            gate.wait(5)
+        return json.loads(json.dumps(MODS))
+    widget = ModsPage(str(tmp_path), load=load, check=checker)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.start("EET")
+    choose(qtbot, widget, (UB, 10), (TW, 200))
+    calls = checker.calls
+    widget.start("BG2EE")
+    widget.panel.again.click()
+    widget.items[(UB, 0)].setCheckState(0, Qt.CheckState.Checked)
+    qtbot.wait(CHECK_WAIT_MS)
+    assert checker.calls == calls and widget.panel.buttons == {}
+    assert widget.tabs.tabText(1) == "Conflicts"
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        gate.set()
+    assert checker.calls == calls + 1       # the new list, once it is shown
+
+
+def test_a_failed_check_resets_the_count_and_the_filter(qtbot, tmp_path):
+    calls = {"n": 0}
+    good = Checker()
+
+    def flaky(*args):
+        calls["n"] += 1
+        if calls["n"] > 2:
+            raise RuntimeError("rules unreadable")
+        return good(*args)
+    widget, _checker = page(qtbot, tmp_path, checker=flaky)
+    choose(qtbot, widget, (UB, 10), (TW, 200))
+    widget.filter.setCurrentText("Conflicts only")
+    assert widget.tabs.tabText(1) == "Conflicts (1)"
+    choose(qtbot, widget, (TW, 100))
+    assert widget.tabs.tabText(1) == "Conflicts"
+    assert all(widget.tree.topLevelItem(i).isHidden()
+               for i in range(widget.tree.topLevelItemCount()))

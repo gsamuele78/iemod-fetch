@@ -7,8 +7,12 @@ buttons. A button does one of three things, never more:
 * **deselect** - unchoose the components of that side in the tree;
 * **install** - choose the missing prerequisite's components, when the
   catalogue knows them;
-* **reorder** or **accept** - write the player's answer to decisions.json,
+* **accept** - write the player's answer, with the reason, to decisions.json,
   which the command line applies with --decisions.
+
+A **reorder** is shown, not offered: the planned order applies it by itself
+where it can, and a finding listed here is one it could not settle, so
+recording it would change nothing (ADR-0033).
 
 A finding the planned install order already settles is counted, not listed as
 work. Everything shown is third-party text (rules, mod names), so it is set as

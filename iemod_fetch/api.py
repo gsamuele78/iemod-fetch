@@ -1020,6 +1020,13 @@ def _log_roles(specs):
         raise ConfigError(
             "two logs both look like the EET install (" + ", ".join(eet_logs) +
             "). Name the pre-EET one explicitly, e.g. -w WeiDUBGEE.log:BGEE")
+    others = [path for path, role in roles if role == PRE_EET_LOG]
+    if len(others) > 1:
+        # The plan has one pre-EET install; two logs would be merged into it.
+        raise ConfigError(
+            "more than one log is not the EET install (" + ", ".join(others) +
+            "). An EET plan has one BG:EE phase: give one -w PATH:BGEE and one "
+            "-w PATH:EET")
     if not eet_logs and len(roles) > 1:
         raise ConfigError(
             "no log installs the EET core, so which one is the merged game is a "

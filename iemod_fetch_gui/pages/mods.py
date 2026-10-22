@@ -128,6 +128,7 @@ class ModsPage(QWidget):
         self._checking: Optional[QThread] = None
         self._recheck = False
         self._generation = 0      # a check's result is shown only for the list it checked
+        self._loading = False     # a list is on its way: the one shown is not checked
         self.game = ""              # the game the shown list is for
         self.wanted = ""            # the game asked for last
         self.mods: List[dict] = []
@@ -198,8 +199,8 @@ class ModsPage(QWidget):
         # What was checked was the old list: no result for it may land on the new one.
         self.timer.stop()
         self._generation += 1
-        self.conflicts = {}
-        self.panel.clear()
+        self._loading = True
+        self._set_conflicts({})
         self.game = game
         self.status.setText(f"Loading the mods for {game}...")
         project = api.load_project(self.project_dir)
@@ -215,9 +216,12 @@ class ModsPage(QWidget):
         self.loaded.emit()              # the thread has ended: safe to close the page
 
     def _failed(self, message: str) -> None:
+        self._loading = False
         self.status.setText(f"The mod list could not be loaded: {message}")
 
     def _fill(self, mods: list) -> None:
+        self._loading = False
+        self._generation += 1           # nothing checked before this list applies to it
         self._updating = True
         self.mods = mods
         self.tree.clear()
@@ -359,6 +363,8 @@ class ModsPage(QWidget):
         """Check the selection now, in a worker thread; a check asked for while
         one runs is made once that one ends."""
         self.timer.stop()
+        if self._loading:
+            return                      # the list arriving is checked when it is shown
         if self._checking is not None:
             self._recheck = True
             return
@@ -384,14 +390,18 @@ class ModsPage(QWidget):
         if generation != self._generation:
             return                      # checked a list this page no longer shows
         if result is None:
-            self.conflicts = {}
+            self._set_conflicts({})
             self.panel.failed(problem)
             return
-        self._checked(result)
+        self._set_conflicts(result)
 
-    def _checked(self, result: dict) -> None:
+    def _set_conflicts(self, result: dict) -> None:
+        """Show `result` ({} for none): the panel, the tab's count, the filter."""
         self.conflicts = result
-        self.panel.show_result(result)
+        if result:
+            self.panel.show_result(result)
+        else:
+            self.panel.clear()
         waiting = len(open_findings(result))
         self.tabs.setTabText(1, f"Conflicts ({waiting})" if waiting else "Conflicts")
         if self.filter.currentText() == "Conflicts only":
@@ -399,7 +409,7 @@ class ModsPage(QWidget):
 
     def _check_finished(self) -> None:
         self._checking = None
-        if self._recheck and self.mods:
+        if self._recheck and not self._loading:
             self.check_conflicts()
             return
         self.checked.emit()

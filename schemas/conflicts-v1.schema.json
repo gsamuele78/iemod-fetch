@@ -48,7 +48,8 @@
             "enum": [
               "cross-mod",
               "same-mod",
-              "missing"
+              "missing",
+              "known-issue"
             ]
           },
           "left": {
