@@ -1,0 +1,166 @@
+"""
+Phase 4, download and extraction, driven like a player drives it (M3,
+GUI-AUDIT item 18, ADR-0039). The downloader is injected: it answers the way
+api.download_selection answers, sending its events from other threads as the
+run's worker pool does (test_download_selection.py checks the real one).
+"""
+import threading
+
+import pytest
+
+pytest.importorskip("PySide6")
+pytest.importorskip("pytestqt")
+
+from iemod_fetch_gui.pages.download import DownloadPage  # noqa: E402
+from iemod_fetch_gui.window import PHASES, MainWindow  # noqa: E402
+
+
+def event(kind, **fields):
+    return {"schema_version": 1, "event": kind, **fields}
+
+
+def record(folder, status, detail="", size=0):
+    return {"folder": folder, "status": status, "detail": detail, "url": None,
+            "version": None, "bytes": size, "error_code": None}
+
+
+class Fake:
+    """Downloads `mods`; those in `failing` fail until `failing` is emptied."""
+
+    def __init__(self, mods=("ub", "tweaks"), failing=(), progress=3, hold=False):
+        self.mods, self.failing, self.progress = list(mods), set(failing), progress
+        self.hold = hold                    # wait for cancel before finishing
+        self.calls = []
+        self.started = threading.Event()
+
+    def __call__(self, folder, on_event, cancel, only):
+        self.calls.append(list(only))
+        mods = [m for m in self.mods if not only or m in only]
+        records = []
+
+        def pool():                         # the run's worker threads
+            on_event(event("run_started", mods=len(mods)))
+            for mod in mods:
+                on_event(event("mod_started", folder=mod))
+                self.started.set()
+                if self.hold:
+                    cancel.wait(5)
+                if cancel.is_set():
+                    records.append(record(mod, "cancelled", "stopped during the download"))
+                    on_event(event("mod_finished", folder=mod, status="cancelled",
+                                   detail="stopped during the download"))
+                    continue
+                for n in range(1, self.progress + 1):
+                    on_event(event("download_progress", folder=mod, bytes=n * 1000,
+                                   total=self.progress * 1000))
+                if mod in self.failing:
+                    records.append(record(mod, "failed", "HTTP 404"))
+                    on_event(event("mod_finished", folder=mod, status="failed",
+                                   detail="HTTP 404"))
+                    continue
+                on_event(event("mod_extracting", folder=mod))
+                records.append(record(mod, "ok", f"installed {mod}.tp2", 3000))
+                on_event(event("mod_finished", folder=mod, status="ok",
+                               detail=f"installed {mod}.tp2"))
+            on_event(event("run_finished", cancelled=cancel.is_set(), counts={}))
+        thread = threading.Thread(target=pool)
+        thread.start()
+        thread.join()
+        counts = {}
+        for r in records:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        return {"records": records, "cancelled": cancel.is_set(), "counts": counts,
+                "exit_code": 0 if all(r["status"] == "ok" for r in records) else 1}
+
+
+def page(qtbot, tmp_path, fake):
+    widget = DownloadPage(str(tmp_path), fake)
+    qtbot.addWidget(widget)
+    return widget
+
+
+def run(qtbot, widget, only=None):
+    with qtbot.waitSignal(widget.finished, timeout=5000):
+        if only is None:
+            widget.start_button.click()
+        else:
+            widget.retry_button.click()
+
+
+def states(widget):
+    return {folder: item.text(1) for folder, item in widget.rows.items()}
+
+
+def test_nothing_is_downloaded_until_the_player_asks(qtbot, tmp_path):
+    fake = Fake()
+    widget = page(qtbot, tmp_path, fake)
+    assert fake.calls == [] and not widget.is_complete()
+    run(qtbot, widget)
+    assert fake.calls == [[]]
+    assert states(widget) == {"ub": "Done", "tweaks": "Done"}
+    assert widget.is_complete() and not widget.retry_button.isEnabled()
+    assert "2 done" in widget.summary.text()
+    assert widget.rows["ub"].text(2) == "2.9 KiB"
+
+
+def test_progress_reaches_the_window_at_most_ten_times_a_second(qtbot, tmp_path):
+    fake = Fake(mods=["ub"], progress=2000)
+    widget = page(qtbot, tmp_path, fake)
+    shown = []
+    widget._bridge.event.connect(lambda e: shown.append(e["event"]))
+    run(qtbot, widget)
+    # 2,000 chunks in well under a second: the first and the last one pass
+    assert 2 <= shown.count("download_progress") < 50
+    assert widget.rows["ub"].text(1) == "Done"
+
+
+def test_a_failed_mod_can_be_retried_alone(qtbot, tmp_path):
+    fake = Fake(failing=["tweaks"])
+    widget = page(qtbot, tmp_path, fake)
+    run(qtbot, widget)
+    assert states(widget) == {"ub": "Done", "tweaks": "Failed"}
+    assert widget.rows["tweaks"].text(3) == "HTTP 404"
+    assert not widget.is_complete() and widget.retry_button.isEnabled()
+    fake.failing.clear()
+    with qtbot.waitSignal(widget.completeChanged, timeout=5000,
+                          check_params_cb=lambda complete: complete):
+        widget.retry_button.click()
+    assert fake.calls[-1] == ["tweaks"]
+    assert states(widget) == {"ub": "Done", "tweaks": "Done"}       # ub kept, not redone
+
+
+def test_cancel_stops_the_run_and_says_so(qtbot, tmp_path):
+    fake = Fake(hold=True)
+    widget = page(qtbot, tmp_path, fake)
+    with qtbot.waitSignal(widget.finished, timeout=5000):
+        widget.start_button.click()
+        assert fake.started.wait(5)
+        assert widget.cancel_button.isEnabled() and not widget.start_button.isEnabled()
+        widget.cancel_button.click()
+    assert set(states(widget).values()) == {"Cancelled"}
+    assert widget.summary.text().startswith("Cancelled")
+    assert not widget.is_complete() and widget.start_button.isEnabled()
+
+
+def test_a_download_that_cannot_start_is_shown_not_a_crash(qtbot, tmp_path):
+    def broken(*_args):
+        raise RuntimeError("no download source: no manifest")
+    widget = page(qtbot, tmp_path, broken)
+    run(qtbot, widget)
+    assert "no download source" in widget.summary.text()
+    assert not widget.is_complete() and widget.start_button.isEnabled()
+
+
+def test_the_wizard_goes_on_once_every_mod_is_there(qtbot, tmp_path):
+    assert PHASES[3:] == ["Download and extraction", "Installation"]
+    fake = Fake()
+    main = MainWindow(str(tmp_path), load=lambda game, project: [],
+                      check=lambda *a: {"findings": [], "stale": [], "rules_checked": 0,
+                                        "planned": False, "problem": None},
+                      plan=lambda *a: {}, download=fake)
+    qtbot.addWidget(main)
+    main.stack.setCurrentIndex(3)
+    main._refresh()
+    assert main.pages[3] is main.download and not main.next.isEnabled()
+    run(qtbot, main.download)
+    assert main.next.isEnabled()

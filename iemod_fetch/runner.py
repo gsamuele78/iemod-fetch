@@ -101,6 +101,7 @@ class Runner:
             extra["cancel"] = self.cancel
             result = self.client.download(candidate.url, archive,
                                           expected_sha256=candidate.sha256, **extra)
+            self._emit("mod_extracting", folder=folder)
             outcome = install_from_archive(archive, self.options.target_dir, folder,
                                            force=self.options.force,
                                            allow_exe=self.options.allow_exe,

@@ -75,6 +75,32 @@ def test_an_entry_with_a_repository_is_preferred_over_a_bare_link():
     assert catalogue.lookup("dupe").github == "o/dupe"
 
 
+def test_each_tp2_of_a_multi_tp2_record_is_found_by_its_own_name():
+    # lcc-docs lists EET as `EET;EET_end;EET_gui`: read as one name, EET itself
+    # was never found, so its catalogue download was never tried
+    catalogue = SupplementaryCatalogue.from_entries([
+        {"tp2": "EET;EET_end;EET_gui", "name": "Enhanced Edition Trilogy",
+         "urls": ["https://github.com/Gibberlings3/EET"]},
+        {"tp2": "iwd1_eet;iwd2_eet", "name": "IWD1-IWD2-EET",
+         "urls": ["https://github.com/The-Gate-Project/IWD1_EET",
+                  "https://github.com/The-Gate-Project/IWD2_EET"]}])
+    assert {catalogue.lookup(t).tp2 for t in ("eet", "EET_end", "eet_gui")} == {
+        "EET", "EET_end", "EET_gui"}
+    assert catalogue.lookup("eet").github == "Gibberlings3/EET"
+    assert catalogue.lookup("iwd2_eet").github == "The-Gate-Project/IWD2_EET"
+    assert catalogue.lookup("eeteetendeetgui") is None
+
+
+def test_a_repository_named_after_the_mod_wins_among_records_of_one_tp2():
+    # real data: EET_Android ships the same tp2s as EET, and is listed after it
+    catalogue = SupplementaryCatalogue.from_entries([
+        {"tp2": "EET;EET_end", "name": "EET Android",
+         "urls": ["https://github.com/Maryionet/EET_Android"]},
+        {"tp2": "EET;EET_end", "name": "Enhanced Edition Trilogy",
+         "urls": ["https://github.com/Gibberlings3/EET"]}])
+    assert catalogue.lookup("eet").github == "Gibberlings3/EET"
+
+
 # ---------------------------------------------------------------- advisories
 def test_quality_and_status_advisories_are_surfaced(lcc):
     notes = lcc.lookup("Vampire_World").advisories()

@@ -107,7 +107,8 @@ def test_the_phases_are_bws_ngs_and_later_ones_say_how_to_go_on(qtbot, tmp_path)
     main = window(qtbot, tmp_path)
     assert [main.phases.item(i).text() for i in range(main.phases.count())] == [
         f"{n}  {name}" for n, name in enumerate(PHASES, start=1)]
-    assert "command line can carry on" in main.pages[3].text.text()
+    assert "command line can carry on" in main.pages[4].text.text()
+    assert "M4" in main.pages[4].text.text()
 
 
 def test_next_never_saves_a_path_typed_after_the_last_check(qtbot, tmp_path):

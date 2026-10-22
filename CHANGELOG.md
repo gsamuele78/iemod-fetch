@@ -9,6 +9,17 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The wizard's download and extraction** (phase 4, ADR-0039): a row per mod
+  (downloading with bytes, extracting, done, already there, failed, no
+  download found, cancelled), *Download*, *Cancel*, *Retry the failed*;
+  running again resumes. It is the command line's run in the project
+  (`api.download_selection`, `api.project_settings`), so either can carry on
+  from the other. Phase 5 is now Installation, with M4.
+- With no manifest (`Settings.manifest = None`, a project ini without
+  `manifest`), every mod is found through the community catalogue; with
+  neither, the run stops with "no download source".
+- A `mod_extracting` progress event: the download is complete and verified,
+  and its archive is being unpacked and checked. Additive to events schema 1.
 - The conflicts panel offers **Forget them...** for decisions in
   `decisions.json` that match no conflict of the selection any more (an id
   saved by an earlier build, a conflict whose mod is gone). It asks first and
@@ -21,6 +32,13 @@ Python API, which is internal.
   listing the unit tests could only fake. It runs on pull requests that change
   the fetch and weekly. A repository gone, or one repository's own error,
   fails it; only a quota or network failure is inconclusive.
+
+### Fixed
+- An lcc-docs record listing several tp2s (`EET;EET_end;EET_gui`) was read as
+  one name, so EET, IWD1_EET and IWD2_EET were never found in the catalogue,
+  by the command line's fallback either. Each tp2 is now found by its own
+  name; among records sharing a tp2, the repository named after the mod wins
+  (EET over EET_Android).
 
 ## [2.5.0] - 2026-10-22
 

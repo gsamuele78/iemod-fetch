@@ -231,8 +231,9 @@ update after installing it.
 
 For a progress bar, `--events events.jsonl` (or `-` for standard output,
 best with `-q`) writes one JSON object per line as the run goes -
-`run_started`, `mod_started`, `download_progress`, `mod_finished`,
-`run_finished` - in the format of `schemas/events-v1.schema.json`. Ctrl-C stops
+`run_started`, `mod_started`, `download_progress`, `mod_extracting` (the
+download is complete and verified; the archive is being unpacked and checked),
+`mod_finished`, `run_finished` - in the format of `schemas/events-v1.schema.json`. Ctrl-C stops
 the downloads in flight at their next chunk; the mods reached are reported as
 `cancelled` and the exit code is 130.
 

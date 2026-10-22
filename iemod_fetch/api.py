@@ -77,7 +77,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "selection_plan", "save_install_order", "reset_install_order",
-           "INSTALL_ORDER_FILE"]
+           "INSTALL_ORDER_FILE", "project_settings", "download_selection"]
 
 
 @dataclass
@@ -88,7 +88,7 @@ class Settings:
     the command line mean the same thing by the same word.
     """
     # inputs
-    manifest: str = "mod_downloads.json"
+    manifest: Optional[str] = "mod_downloads.json"   # None: the catalogue only
     weidu_log: List[str] = field(default_factory=list)     # "PATH" or "PATH:GAME"
     selection: Optional[str] = None
     bio_code: Optional[str] = None         # a file holding a BIO-MODLIST-V1 code
@@ -870,6 +870,75 @@ def reset_install_order(folder: str) -> None:
     path = os.path.join(folder, INSTALL_ORDER_FILE)
     if os.path.isfile(path):
         os.unlink(path)
+
+
+# Settings that name a file, read relative to the project as the command line
+# reads them when run in it (target is handled on its own: it has a default).
+_PROJECT_PATH_KEYS = ("manifest", "aliases", "catalogue", "rules", "mod_db", "suppress",
+                      "token_file", "trusted_owners", "owner_cache", "decisions",
+                      "data_dir", "eet_sequence", "releases", "json_report", "events",
+                      "emit_pinned_manifest")
+
+
+def project_settings(folder: str) -> Settings:
+    """
+    The run `iemod-fetch --config FOLDER/iemod-fetch.ini` makes when started in
+    FOLDER: the project ini's values over the defaults, the target and the
+    manifest read relative to the project. With no manifest in the ini, the
+    community catalogue is the only download source (ADR-0039).
+    """
+    path = os.path.join(folder, PROJECT_FILE)
+    values = _config.load_config(explicit=path).values if os.path.isfile(path) else {}
+    names = {f.name for f in fields(Settings)}
+
+    def here(value):                    # a relative path, as read in FOLDER
+        if isinstance(value, list):
+            return [here(v) for v in value]
+        if isinstance(value, str) and value and value != "-":
+            return os.path.join(folder, value)
+        return value
+    settings = Settings(**{key: here(value) if key in _PROJECT_PATH_KEYS else value
+                           for key, value in values.items() if key in names})
+    settings.target = os.path.join(folder, values.get("target") or "Mods")
+    if not values.get("manifest"):
+        settings.manifest = None
+    return settings
+
+
+def download_selection(folder: str, on_event=None, cancel=None,
+                       only: Sequence[str] = ()) -> dict:
+    """
+    Phase 4 of the wizard (ADR-0039): download, verify and extract every mod of
+    `folder`/selection.json into the project's target - the run
+    `iemod-fetch --config FOLDER/iemod-fetch.ini --selection
+    FOLDER/selection.json` makes in FOLDER. A mod already there and verified is
+    skipped, so running again resumes; `only` (mod folders) retries those.
+    `on_event` receives the run's progress events (from worker threads);
+    setting `cancel` stops the downloads at their next chunk.
+
+    Returns {"records": [{"folder", "status", "detail", "url", "version",
+    "bytes", "error_code"}], "cancelled": bool, "counts": {...},
+    "exit_code": int}.
+    """
+    settings = replace(
+        project_settings(folder), selection=os.path.join(folder, SELECTION_FILE),
+        # the selection is what is wanted, and this is a download
+        weidu_log=[], pi_list=None, bio_code=None, only=list(only), quiet=True,
+        check_only=False, dry_run=False, list_mods=None, describe_mods=None,
+        emit_selection=None, emit_bio_code=None, update_data=False)
+    outcome = run(settings, on_event=on_event, cancel=cancel)
+    report = outcome.report
+    if report is None:                  # not reached: a download run always reports
+        raise ConfigError("the download run produced no report")
+    records = [{"folder": r.folder, "status": r.status.value, "detail": r.detail,
+                "url": r.url, "version": r.version, "bytes": r.bytes,
+                "error_code": r.error_code} for r in report.records]
+    # with no catalogue to fall back on, a mod the manifest lacks is not tried
+    records += [{"folder": u["folder"], "status": "manual", "detail": u["detail"],
+                 "url": None, "version": None, "bytes": 0, "error_code": "unresolved"}
+                for u in report.unresolved]
+    return {"records": records, "cancelled": report.cancelled,
+            "counts": report.counts(), "exit_code": outcome.exit_code}
 
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
@@ -1671,7 +1740,16 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome"
     _require_plan(settings)
     _emit_selection(settings, stream)
     target = os.path.abspath(settings.target)
-    manifest = load_manifest(settings.manifest, allow_http=settings.allow_http)
+    if settings.manifest:
+        manifest = load_manifest(settings.manifest, allow_http=settings.allow_http)
+    elif settings.catalogue:
+        # No manifest (the wizard, ADR-0039): every mod is found through the
+        # community catalogue - lcc-docs, from the data cache - and must still
+        # prove itself by the tp2 its archive contains.
+        manifest = Manifest()
+    else:
+        raise ConfigError("no download source: no manifest, and no lcc-docs catalogue "
+                          "in the data cache (run with --update-data, or give -m)")
 
     if settings.weidu_log:
         installed = parse_weidu_files([split_log_spec(spec) for spec in settings.weidu_log])
@@ -1730,7 +1808,8 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome"
         if config is not None and config.path:
             print(f"  config      : {config.path} ({len(config.values)} setting(s))",
                   file=stream)
-        print(f"  catalogue   : {settings.manifest} ({len(manifest.sources)} entries)", file=stream)
+        print(f"  catalogue   : {settings.manifest or '(none: the community catalogue)'} "
+              f"({len(manifest.sources)} entries)", file=stream)
         games = sorted({m.game for m in installed.mods.values() if m.game})
         print(f"  weidu logs  : {', '.join(settings.weidu_log) or '(none)'} "
               f"({len(installed.mods)} mods, {installed.component_count} components"

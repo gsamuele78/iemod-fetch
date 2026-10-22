@@ -172,9 +172,24 @@ file, and the project's ini names it (read relative to the ini), so
 `iemod-fetch --config PROJECT/iemod-fetch.ini --selection PROJECT/selection.json
 --plan-order PLAN` plans the same order. Your order goes on top of the rules;
 where it contradicts one, that is shown, not silently won. *Use the computed
-order* forgets it. Download and extraction follow. Answers to WeiDU prompts come with the
+order* forgets it. Answers to WeiDU prompts come with the
 install step (M4): only BWS-NG describes prompts as data, for 4 components
 (ADR-0036).
+
+**Phase 4, download and extraction** (ADR-0039): *Download* fetches every mod
+of the selection, checks it, unpacks it and checks it holds the tp2 it must,
+then puts it in the project's mod folder (`Mods`, or the ini's `target`). A
+row per mod says where it is: downloading (bytes of total), extracting, done,
+already there, failed, no download found. *Cancel* stops at the next chunk;
+what finished stays, and running again skips every mod already there and
+verified. *Retry the failed* runs only those. It is the command line's own run,
+`iemod-fetch --config PROJECT/iemod-fetch.ini --selection PROJECT/selection.json`
+in the project folder, so either can carry on from the other. With no
+`manifest` in the project's ini, mods are found through the lcc-docs catalogue
+in the data cache: on the supplied 145-mod EET log, 138 have a candidate there
+(114 a GitHub repository, 23 only a landing page, the weakest), and 7 do not,
+because lcc-docs names them otherwise. A `manifest` in the ini still comes
+first. Installing is phase 5, with M4.
 
 ### Verifying a release download
 
@@ -439,7 +454,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,066 passed + 10 skipped (platform/opt-in; the GUI tests need .[guitest]), no network, ~30s
+python3 -m pytest -q      # 1,191 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
