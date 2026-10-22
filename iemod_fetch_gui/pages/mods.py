@@ -164,6 +164,7 @@ class ModsPage(QWidget):
         self.panel.choose.connect(self._choose_in)
         self.panel.decide.connect(self._decide)
         self.panel.undo.connect(self._undo)
+        self.panel.forget.connect(self._forget)
         self.panel.check.connect(self.check_conflicts)
         self.tabs = QTabWidget()
         self.tabs.addTab(self.details, "Details")
@@ -464,6 +465,24 @@ class ModsPage(QWidget):
     def _undo(self, finding: str) -> None:
         self._write_decisions(lambda choose, accept: (choose.pop(finding, None),
                                                       accept.pop(finding, None)))
+
+    def _forget(self, findings: list) -> None:
+        # Only what the current, settled check calls stale: the selection may
+        # have changed since the row was shown, or while the question was
+        # open, and a decision it names may be live again.
+        if self.timer.isActive() or self._checking is not None:
+            return                      # the check under way shows the row again if it holds
+        stale = set(self.conflicts.get("stale") or []) if \
+            self.conflicts.get("rules_checked") else set()
+        findings = [finding for finding in findings if finding in stale]
+        if not findings:
+            return
+
+        def change(choose: dict, accept: dict) -> None:
+            for finding in findings:
+                choose.pop(finding, None)
+                accept.pop(finding, None)
+        self._write_decisions(change)
 
     def _write_decisions(self, change: Callable[[dict, dict], Any]) -> None:
         current = api.load_decisions(self.project_dir)

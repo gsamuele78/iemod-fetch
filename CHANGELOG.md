@@ -6,6 +6,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html), where
 the public surface is the CLI's flags and the JSON report schema — not the
 Python API, which is internal.
 
+## [Unreleased]
+
+### Added
+- The conflicts panel offers **Forget them...** for decisions in
+  `decisions.json` that match no conflict of the selection any more (an id
+  saved by an earlier build, a conflict whose mod is gone). It asks first and
+  removes only those; a decision about a mod you only unticked for now goes
+  too, which the button's tooltip says. It acts only on the current, finished
+  check (a decision live again by the time you answer is kept), and with no
+  rules to judge by (no community data yet) no decision is called stale.
+- `mod-metadata.yml` and `tools/premeta_live_check.py`: the metadata ini
+  search checked against the real GitHub, including the case-insensitive
+  listing the unit tests could only fake. It runs on pull requests that change
+  the fetch and weekly. A repository gone, or one repository's own error,
+  fails it; only a quota or network failure is inconclusive.
+
 ## [2.5.0] - 2026-10-22
 
 ### Added

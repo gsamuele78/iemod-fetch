@@ -156,7 +156,10 @@ order data is downloaded, so the wizard and the command line agree on what was
 decided. An order conflict the planned order could not settle is explained,
 not offered as a choice. A
 conflict the planned install order already settles is counted, not listed as
-work; the filter *Conflicts only* shows the mods still to decide.
+work; the filter *Conflicts only* shows the mods still to decide. Decisions
+that no longer match any conflict (the mod is gone, or an older build saved
+them) are counted, and *Forget them...* removes them from `decisions.json`
+after asking.
 
 **Phase 3, install order**: the chosen components in the order the run will
 install them, planned by the same planner as `--plan-order`, one tab per
@@ -568,7 +571,8 @@ tool always read it from a downloaded mod; `--fetch-metadata` now fetches it
 for the planned mods not downloaded yet - one small text file per mod, from the
 repository the catalogue names, found whatever its case, cached for a week in
 the data cache; offline it backs off rather than slowing every check - and the
-wizard does so for what you choose. Measured on 85 real inis
+wizard does so for what you choose. The search, including its case-insensitive
+listing, is checked weekly against the real GitHub (`mod-metadata.yml`). Measured on 85 real inis
 (`tools/pi_metadata_benchmark.py`): of the 314 order pairs they state, krion64's
 order agrees with 239 and a rule already covers 34 more, but 19 are known only
 to the author - 7 of them contradicting krion64 (Region of Terror after IWD1_EET
