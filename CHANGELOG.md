@@ -55,7 +55,8 @@ Python API, which is internal.
   85 real inis, 19 were known to no rule and no catalogue
   (`tools/pi_metadata_benchmark.py`).
 - `--sorting-order FILE`: a Project Infinity Sorting Order file, read as order
-  rules between consecutive lines of what is chosen.
+  rules between consecutive lines of what is chosen. It is the player's own:
+  a downloaded mod's ini never silences it.
 
 ### Fixed
 - `--conflict-report` with `--plan-order` gave findings ids that `--decisions`

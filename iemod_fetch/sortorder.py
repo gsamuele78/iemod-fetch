@@ -21,9 +21,9 @@ from typing import Dict, List, Optional, Set, Tuple
 from .errors import ConfigError
 from .naming import normalize_key
 from .ordering import tp2_key
-from .rules import ORDER, ModSpec, Rule
+from .rules import ORDER, SORTING_ORDER, ModSpec, Rule
 
-ORIGIN = "SortingOrder"
+ORIGIN = SORTING_ORDER
 _MAX_BYTES = 4 * 1024 * 1024
 
 
@@ -69,19 +69,23 @@ def rules(entries: List[Entry], chosen: Dict[str, Set[int]]) -> List[Rule]:
     """
     Order rules from `entries` for a selection: `chosen` maps a tp2 key to the
     components chosen from it. A `*` line stands for the chosen components not
-    named on a line of their own; a group nothing chosen falls in is skipped.
+    named on a line of their own; a group nothing chosen falls in is skipped,
+    and a component already placed by an earlier line stays there (a repeated
+    line would otherwise order a mod before itself).
     """
     named: Dict[str, Set[int]] = {}
     for entry in entries:
         if entry.numbers is not None:
             named.setdefault(entry.key, set()).update(entry.numbers)
     groups: List[Tuple[Entry, frozenset]] = []
+    placed: Dict[str, Set[int]] = {}
     for entry in entries:
-        have = chosen.get(entry.key, set())
+        have = chosen.get(entry.key, set()) - placed.get(entry.key, set())
         wanted = (have - named.get(entry.key, set()) if entry.numbers is None
                   else have & set(entry.numbers))
         if wanted:
             groups.append((entry, frozenset(wanted)))
+            placed.setdefault(entry.key, set()).update(wanted)
     out = []
     for (first, a), (second, b) in zip(groups, groups[1:]):
         out.append(Rule(

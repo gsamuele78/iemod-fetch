@@ -552,7 +552,8 @@ default, because that changes which game the mod installs onto.
 metadata ini, whose `Before`/`After` say what the author wants around it. The
 tool always read it from a downloaded mod; `--fetch-metadata` now fetches it
 for the planned mods not downloaded yet - one small text file per mod, from the
-repository the catalogue names, cached for a week in the data cache - and the
+repository the catalogue names, found whatever its case, cached for a week in
+the data cache; offline it backs off rather than slowing every check - and the
 wizard does so for what you choose. Measured on 85 real inis
 (`tools/pi_metadata_benchmark.py`): of the 314 order pairs they state, krion64's
 order agrees with 239 and a rule already covers 34 more, but 19 are known only

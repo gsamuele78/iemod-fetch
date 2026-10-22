@@ -21,23 +21,48 @@ INI = "[Metadata]\nName = Unfinished Business\nBefore = ascension\nAfter = EET\n
 
 
 class FakeClient:
+    """raw.githubusercontent.com and the contents API, from `files`
+    ({"owner/repo": {"Path/In/Repo.ini": text}}); `fail` fails every request."""
+
     def __init__(self, files=None, fail=None):
-        self.files, self.fail, self.asked = files or {}, fail or {}, []
+        self.files, self.fail, self.asked = files or {}, fail, []
+
+    def _repo_path(self, url, base):
+        rest = url[len(base) + 1:]
+        owner, name, *path = rest.split("/")
+        return f"{owner}/{name}", path
 
     def read_bytes(self, url, limit=None):
         self.asked.append(url)
-        if url in self.fail:
-            raise self.fail[url]
-        if url in self.files:
-            return self.files[url].encode()
+        if self.fail:
+            raise self.fail
+        repo, path = self._repo_path(url, premeta.RAW)
+        where = "/".join(path[1:])                  # after HEAD
+        if where in self.files.get(repo, {}):
+            return self.files[repo][where].encode()
         raise HttpStatusError(url, 404, "Not Found")
 
-
-def raw(repo, path):
-    return f"{premeta.RAW}/{repo}/HEAD/{path}"
+    def get_json(self, url):
+        self.asked.append(url)
+        if self.fail:
+            raise self.fail
+        repo, path = self._repo_path(url, premeta.API)
+        folder = "/".join(path[1:]).strip("/")         # after "contents"
+        files = self.files.get(repo, {})
+        if folder and not any(p.startswith(folder + "/") for p in files):
+            raise HttpStatusError(url, 404, "Not Found")
+        out = {}
+        for p in files:
+            if folder and not p.startswith(folder + "/"):
+                continue
+            rest = p[len(folder) + 1:] if folder else p
+            head, _, tail = rest.partition("/")
+            out[head] = "dir" if tail else "file"
+        return [{"name": name, "type": kind} for name, kind in out.items()]
 
 
 UB = premeta.Wanted("ub", "setup-ub.tp2", "Pocket-Plane-Group/ub")
+REPO = "pocket-plane-group/ub"
 
 
 # ------------------------------------------------------------- fetching
@@ -51,20 +76,36 @@ def test_the_ini_is_looked_for_beside_the_tp2_named_after_it():
 
 
 def test_a_found_ini_is_cached_and_gives_the_authors_order(tmp_path):
-    client = FakeClient({raw("pocket-plane-group/ub", "ub/ub.ini"): INI})
+    client = FakeClient({REPO: {"ub/ub.ini": INI}})
     cache = premeta.MetadataCache(str(tmp_path))
     assert premeta.fetch(client, cache, [UB], now=100.0) == (1, 0, [])
     cache.save()
-    meta = premeta.MetadataCache(str(tmp_path)).get("ub")
+    meta = premeta.MetadataCache(str(tmp_path)).get("ub", REPO)
     assert meta.before == ["ascension"] and meta.after == ["eet"]
+    # an ini from another repository than the catalogue names today does not count
+    assert premeta.MetadataCache(str(tmp_path)).get("ub", "someone/else") is None
+
+
+@pytest.mark.parametrize("folder, tp2, path", [
+    # Deities of Faerun ships Deitiesoffaerun.ini beside DeitiesOffaerun.tp2
+    ("DeitiesOfFaerun", "DeitiesOffaerun.tp2", "DeitiesOfFaerun/Deitiesoffaerun.ini"),
+    # a WeiDU log may spell the whole path in capitals
+    ("ASCENSION", "ASCENSION.TP2", "ascension/Ascension.ini"),
+    ("might_and_guile", "setup-might_and_guile.tp2", "might_and_guile/Might_and_Guile.ini"),
+])
+def test_the_ini_is_found_whatever_its_case(tmp_path, folder, tp2, path):
+    client = FakeClient({"o/r": {path: INI, f"{path.split('/')[0]}/x.tp2": ""}})
+    cache = premeta.MetadataCache(str(tmp_path))
+    assert premeta.fetch(client, cache, [premeta.Wanted(folder, tp2, "o/r")], now=1.0) == (1, 0, [])
+    assert cache.entries[premeta.cache_key(folder)]["path"] == path
 
 
 def test_a_missing_ini_is_remembered_and_not_asked_for_again_for_a_week(tmp_path):
-    client = FakeClient()
+    client = FakeClient({REPO: {"ub/setup-ub.tp2": ""}})
     cache = premeta.MetadataCache(str(tmp_path))
     assert premeta.fetch(client, cache, [UB], now=100.0) == (0, 1, [])
     asked = len(client.asked)
-    assert asked == 4 and cache.get("ub") is None
+    assert asked and cache.get("ub", REPO) is None
     premeta.fetch(client, cache, [UB], now=100.0 + 86400)
     assert len(client.asked) == asked
     premeta.fetch(client, cache, [UB], now=100.0 + 8 * 86400)
@@ -81,18 +122,31 @@ def test_another_repository_is_asked_again(tmp_path):
 
 
 def test_a_network_error_keeps_the_last_good_entry(tmp_path):
-    good = FakeClient({raw("pocket-plane-group/ub", "ub/setup-ub.ini"): INI})
+    good = FakeClient({REPO: {"ub/setup-ub.ini": INI}})
     cache = premeta.MetadataCache(str(tmp_path))
     premeta.fetch(good, cache, [UB], now=100.0)
-    down = FakeClient(fail={raw("pocket-plane-group/ub", "ub/setup-ub.ini"):
-                            NetworkError("offline")})
+    down = FakeClient(fail=NetworkError("offline"))
     found, missing, problems = premeta.fetch(down, cache, [UB], now=100.0 + 8 * 86400)
     assert (found, missing) == (0, 0) and problems == ["ub: offline"]
-    assert cache.get("ub").before == ["ascension"]
+    assert cache.get("ub", REPO).before == ["ascension"]
+
+
+def test_offline_costs_one_request_then_backs_off_for_an_hour(tmp_path):
+    # The wizard checks after every change: offline must not ask for every mod
+    # every time.
+    mods = [premeta.Wanted(f"m{n}", f"m{n}.tp2", f"o/m{n}") for n in range(50)]
+    down = FakeClient(fail=NetworkError("offline"))
+    cache = premeta.MetadataCache(str(tmp_path))
+    found, missing, problems = premeta.fetch(down, cache, mods, now=100.0)
+    assert len(down.asked) == 1 and len(problems) == 1 and (found, missing) == (0, 0)
+    premeta.fetch(down, cache, mods, now=100.0 + 1800)
+    assert len(down.asked) == 1
+    premeta.fetch(down, cache, mods, now=100.0 + 3700)
+    assert len(down.asked) == 2
 
 
 def test_a_file_without_a_metadata_section_is_not_taken():
-    client = FakeClient({raw("pocket-plane-group/ub", "ub/setup-ub.ini"): "[Settings]\nx=1\n"})
+    client = FakeClient({REPO: {"ub/setup-ub.ini": "[Settings]\nx=1\n"}})
     cache = premeta.MetadataCache("/nonexistent-for-the-test")
     assert premeta.fetch(client, cache, [UB], now=1.0) == (0, 1, [])
 
@@ -126,6 +180,14 @@ def test_named_components_leave_their_mods_star_line():
                      (("ajantisbg2", [0]), ("ascension", [101, 102]))]
 
 
+def test_a_repeated_line_does_not_order_a_mod_before_itself():
+    entries = sortorder.parse("a *\nb *\na *\na 1 2\n")
+    rules = sortorder.rules(entries, {"a": {1, 2, 3}, "b": {1}})
+    assert all(r.left.mod != r.right[0].mod or not (r.left.components & r.right[0].components)
+               for r in rules)
+    assert [(r.left.mod, sorted(r.left.components)) for r in rules][0] == ("a", [3])
+
+
 def test_what_is_not_chosen_is_not_ordered():
     entries = sortorder.parse("a *\nb *\nc *\n")
     rules = sortorder.rules(entries, {"a": {1}, "c": {2}})
@@ -134,13 +196,14 @@ def test_what_is_not_chosen_is_not_ordered():
 
 # ------------------------------------------------------------ end to end
 def plan(tmp_path, **extra):
+    extra.setdefault("no_default_data", True)
     settings = api.Settings(
         check_only=True, quiet=True, manifest=os.path.join(HERE, "data", "mod_downloads.json"),
         weidu_log=[os.path.join(MOCK, "WeiDU.log") + ":EET"],
         target=str(tmp_path / "nothing-staged"), rules=[os.path.join(MOCK, "rules")],
         order_catalogue=os.path.join(HERE, "data", "krion"),
         plan_order=str(tmp_path / "plan"), data_dir=str(tmp_path / "data"),
-        no_update_data=True, no_default_data=True, **extra)
+        no_update_data=True, **extra)
     api.run(settings)
     lines = (tmp_path / "plan" / "WeiDU.log").read_text().splitlines()
     return [line.split("\\")[0].lstrip("~").lower() for line in lines if line.startswith("~")]
@@ -151,13 +214,44 @@ def test_without_the_ini_the_log_order_stands(tmp_path):
     assert order.index("ascension") < order.index("ub")
 
 
-def test_a_cached_ini_moves_a_mod_not_downloaded_yet(tmp_path):
+def cached_ub_ini(tmp_path, repo):
     data = tmp_path / "data"
-    data.mkdir()
+    data.mkdir(exist_ok=True)
     (data / premeta.CACHE_FILE).write_text(json.dumps({"ub": {
-        "repo": "pocket-plane-group/ub", "path": "ub/ub.ini", "text": INI, "checked": 1}}))
-    order = plan(tmp_path)
+        "repo": repo, "path": "ub/ub.ini", "text": INI, "checked": 1}}))
+    catalogue = tmp_path / "lcc.json"
+    catalogue.write_text(json.dumps([{"tp2": "ub", "name": "UB", "games": ["EET"],
+                                      "urls": ["https://github.com/Pocket-Plane-Group/ub"]}]))
+    return str(catalogue)
+
+
+def test_a_cached_ini_moves_a_mod_not_downloaded_yet(tmp_path):
+    catalogue = cached_ub_ini(tmp_path, REPO)
+    order = plan(tmp_path, catalogue=[catalogue], fetch_metadata=False,
+                 no_default_data=False)
     assert order.index("ub") < order.index("ascension")
+
+
+def test_an_ini_from_another_repository_is_not_used(tmp_path):
+    catalogue = cached_ub_ini(tmp_path, "someone/else")
+    order = plan(tmp_path, catalogue=[catalogue], no_default_data=False)
+    assert order.index("ascension") < order.index("ub")
+
+
+def test_no_default_data_means_no_cached_ini_either(tmp_path):
+    catalogue = cached_ub_ini(tmp_path, REPO)
+    order = plan(tmp_path, catalogue=[catalogue])
+    assert order.index("ascension") < order.index("ub")
+
+
+def test_a_staged_mods_own_ini_does_not_silence_the_players_sorting_order():
+    # A mod's own ini replaces the COMMUNITY's order rules about it; the
+    # player's Sorting Order is not one of them.
+    from iemod_fetch.rules import Context, RuleSet, _applicable
+    rule = sortorder.rules(sortorder.parse("ascension *\nub *\n"),
+                           {"ascension": {0}, "ub": {0}})[0]
+    kept = _applicable(RuleSet(rules=[rule]), Context(mods_with_own_ini={"ascension"}))
+    assert kept == [rule]
 
 
 def test_a_sorting_order_moves_what_it_names(tmp_path):

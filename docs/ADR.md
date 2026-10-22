@@ -1794,20 +1794,33 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
 
 - `premeta.py` fetches a planned mod's metadata ini before download: from the
   repository lcc-docs names (ADR-0036), else krion64's, at its default
-  branch, on raw.githubusercontent.com; beside the tp2, named after it with or
-  without `setup-`, in its own case and in lower case (Region of Terror ships
-  `RoT/rot.ini` beside `setup-RoT.tp2`; PI runs where case does not matter). At
-  most 1 MiB, read as text with the same parser as a staged ini, never
-  executed. Found and not-found are both cached in the data cache, by mod,
-  with the date, for a week; a network error keeps the last entry.
+  branch: beside the tp2, named after it with or without `setup-`, ignoring
+  case. PI runs where case does not matter and GitHub does not: Region of
+  Terror ships `RoT/rot.ini` beside `setup-RoT.tp2`, Deities of Faerun
+  `Deitiesoffaerun.ini` beside `DeitiesOffaerun.tp2`, and a WeiDU log may spell
+  `ASCENSION/ASCENSION.TP2`. The likely spellings are tried on
+  raw.githubusercontent.com (no API quota); on a miss the folder is listed
+  once (GitHub's contents API) and matched ignoring case, and only a listing
+  records "no ini". At most 1 MiB, read as text with the same parser as a
+  staged ini, never executed. Found and not-found are cached in the data
+  cache, by mod and repository, for a week; an ini cached from another
+  repository than the catalogue names today is not used.
+- A network error is the network's, not the file's: nothing more is asked in
+  that run, every mod still to ask backs off for an hour, and what was found
+  before is kept. Requests are tried once with a short timeout, so the
+  wizard's check, which asks after every change, costs seconds offline.
 - `--fetch-metadata` asks for it in a run; the wizard's conflicts check asks
   for what is chosen. A fetched ini is used by every run once cached - its
-  `Before`/`After` become order rules with the author's file named as their
-  origin - for the mods not staged; a staged mod's own ini wins.
+  `Before`/`After` become order rules keyed by the tp2 name, with the
+  author's file named as their origin - for the mods not staged; a staged
+  mod's own ini wins. With `--no-default-data` the cache is used only when
+  the run asked for it.
 - `--sorting-order FILE` reads a PI Sorting Order file as order rules between
   consecutive lines of what is chosen; what is not chosen is skipped, nothing
-  is added. A contradiction with another rule is reported as any order
-  conflict is, not silently won.
+  is added, and a component already placed by an earlier line stays there.
+  It is the player's own: a staged mod's ini replaces the community's order
+  rules about that mod, never these. A contradiction with another rule is
+  reported as any order conflict is, not silently won.
 - Install Order Groups and `LabelType` add nothing here and are not adopted.
 
 ### Consequences
@@ -1815,8 +1828,11 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
 - 19 order pairs per 314 (6%) reach the plan and the conflicts check before
   download; the 7 that contradict krion64 move mods where their authors put
   them.
-- One small request per chosen mod per week, to raw.githubusercontent.com (no
-  API quota). Offline, the cache is used; without it, the plan is what it was.
+- One to four small requests per chosen mod per week to
+  raw.githubusercontent.com, and for an ini spelled otherwise, a listing on
+  GitHub's API (60 an hour without a credential; the tool's GitHub credential
+  is used when it has one). Offline, the cache is used; without it, the plan
+  is what it was.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.

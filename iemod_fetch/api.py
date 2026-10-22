@@ -985,9 +985,9 @@ def _check_rules(settings, installed, stream) -> RuleAnalysis:
     ruleset = RuleSet.load(settings.rules) if settings.rules else RuleSet()
     # The author's own Before/After, fetched before download (ADR-0037); a staged
     # mod's own ini is read in _rule_context instead, and wins.
-    for folder, meta in authors.items():
-        ruleset.add_metadata_order(folder, meta.before, meta.after,
-                                   origin=f"{folder}'s own ini ({meta.source})")
+    for name, meta in authors.items():
+        ruleset.add_metadata_order(name, meta.before, meta.after,
+                                   origin=f"{name}'s own ini ({meta.source})")
     ruleset.rules.extend(sorting)
     if not settings.quiet and (authors or sorting):
         print(f"  own inis    : {len(authors)} mod(s) not staged yet give their order"
@@ -1268,17 +1268,30 @@ def _metadata_cache(settings) -> premeta.MetadataCache:
 
 
 def _authors_order(settings, installed) -> dict:
-    """Fetched metadata inis with an order, for the planned mods NOT staged."""
+    """
+    Fetched metadata inis with an order, for the planned mods NOT staged, by
+    tp2 name - what the plan's units and the rules are keyed by. Only an ini
+    from the repository the catalogue names today counts; with
+    --no-default-data, only when this run asked for them (--fetch-metadata).
+    """
+    if settings.no_default_data and not settings.fetch_metadata:
+        return {}
+    pairs = _not_staged(settings, installed)
     cache = _metadata_cache(settings)
-    target = os.path.abspath(settings.target)
     out = {}
-    for mod in installed.mods.values():
-        if os.path.isdir(os.path.join(target, mod.folder)):
-            continue                      # staged: its own ini, read where it lies
-        meta = cache.get(mod.folder)
+    for wanted in _metadata_wanted(settings, pairs):
+        meta = cache.get(wanted.folder, wanted.repo)
         if meta is not None:
-            out[mod.folder] = meta
+            stem = os.path.splitext(os.path.basename(wanted.tp2_file.replace("\\", "/")))[0]
+            out[stem[6:] if stem.lower().startswith("setup-") else stem] = meta
     return out
+
+
+def _not_staged(settings, installed) -> list:
+    """(folder, tp2 file) of the planned mods not staged: their ini is not here yet."""
+    target = os.path.abspath(settings.target)
+    return [(mod.folder, mod.tp2_file) for mod in installed.mods.values()
+            if not os.path.isdir(os.path.join(target, mod.folder))]
 
 
 def _sorting_rules(settings, installed) -> list:
@@ -1315,12 +1328,12 @@ def _metadata_wanted(settings, folders_tp2s) -> list:
 
 
 def _fetch_metadata(settings, installed, stream) -> dict:
-    target = os.path.abspath(settings.target)
-    pairs = [(mod.folder, mod.tp2_file) for mod in installed.mods.values()
-             if not os.path.isdir(os.path.join(target, mod.folder))]
     cache = _metadata_cache(settings)
-    found, missing, problems = premeta.fetch(_LazyClient(settings), cache,
-                                             _metadata_wanted(settings, pairs))
+    # One try, a short wait: an ini is a nicety, and the wizard checks after
+    # every change - offline must cost seconds, not minutes (premeta backs off).
+    quick = replace(settings, retries=1, timeout=min(settings.timeout, 15))
+    found, missing, problems = premeta.fetch(
+        _LazyClient(quick), cache, _metadata_wanted(settings, _not_staged(settings, installed)))
     cache.save()
     if not settings.quiet:
         print(f"  mod inis    : fetched {found}, none for {missing}"
