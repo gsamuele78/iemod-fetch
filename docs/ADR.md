@@ -1847,6 +1847,10 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.
+- *Amendment (2026-10-22).* The case-insensitive listing is checked against
+  the real GitHub by `mod-metadata.yml` (`tools/premeta_live_check.py`), on
+  pull requests that touch the fetch and weekly; until then it had been tested
+  only with fake clients.
 
 ---
 
@@ -1906,4 +1910,5 @@ decisions.json holds (ADR-0033).
   back (a BGEE install alone is a BG:EE build, not EET's first phase).
 - A finding's id names its install, so decisions saved by the unreleased
   phase-2 panel for mods of the BG:EE phase are reported stale once and must
-  be made again.
+  be made again. The panel offers to forget stale decisions (asked first;
+  amendment, 2026-10-22), so they do not stay in the file for ever.

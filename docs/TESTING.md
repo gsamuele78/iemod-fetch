@@ -124,6 +124,20 @@ because the double was written to raise `IncompleteRead`.
 Borrowed from the download tests of Born2BSalty's Infinity Orchestrator, which
 serve fixtures over a loopback TCP listener for the same reason.
 
+**Against the real GitHub.** Two workflows go further and ask GitHub itself,
+because a double of a third-party API is only what its author believes it
+does. `community-data.yml` refreshes the three community sources from nothing.
+`mod-metadata.yml` runs `tools/premeta_live_check.py`: premeta's metadata ini
+search on real repositories whose ini only the contents-API listing finds
+(Deities of Faerun ships `Deitiesoffaerun.ini` beside `DeitiesOffaerun.tp2`; a
+WeiDU log may spell `ASCENSION/ASCENSION.TP2`), one raw.githubusercontent.com
+finds directly, and one with no ini. Both run on a pull request that changes
+the code they check and on a schedule. A quota or network failure is reported
+as inconclusive, never as a pass. Writing the cases found a wrong belief of
+our own: Ascension's `ascension.ini` looks like the mod's settings file, but
+under the settings it carries a `[Metadata]` section that Project Infinity
+reads, and premeta was right to take it.
+
 ## 8. The real WeiDU as oracle — no game data needed
 
 `tests/test_real_weidu.py` runs the mock EET install through the real WeiDU
@@ -318,7 +332,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,170 collected (7 run the real WeiDU, 49 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,172 collected (7 run the real WeiDU, 51 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 57 modules |

@@ -22,7 +22,8 @@ from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+                               QMessageBox, QPushButton, QScrollArea, QVBoxLayout,
+                               QWidget)
 
 SEVERITY = {"error": "Error", "warning": "Warning", "note": "Note"}
 ACTIONS = {"deselect": "Deselect", "install": "Choose", "reorder": "Install order:"}
@@ -56,6 +57,7 @@ class ConflictsPanel(QWidget):
     choose = Signal(str, list)       # mod key, component numbers to choose
     decide = Signal(str, str, str)   # finding id, option id or "", why or ""
     undo = Signal(str)               # finding id
+    forget = Signal(list)            # decided finding ids no finding has any more
     check = Signal()
 
     def __init__(self) -> None:
@@ -115,19 +117,38 @@ class ConflictsPanel(QWidget):
         if not result.get("rules_checked"):
             parts = ["No rules to check against: the community data is not here yet."]
         self.summary.setText("; ".join(parts) + ".")
-        notes = []
         if result.get("problem"):
-            notes.append(f"decisions.json could not be read, and is not used: "
-                         f"{result['problem']}")
-        if result.get("stale"):
-            notes.append(f"{len(result['stale'])} decision(s) in decisions.json no longer "
-                         f"match a conflict of this selection; they are not applied.")
-        for note in notes:
-            self.rows.insertWidget(self.rows.count() - 1, plain(note))
+            self.rows.insertWidget(self.rows.count() - 1, plain(
+                f"decisions.json could not be read, and is not used: {result['problem']}"))
+        elif result.get("stale"):
+            self.rows.insertWidget(self.rows.count() - 1, self._stale(list(result["stale"])))
         order = sorted(waiting, key=lambda f: ("error", "warning", "note").index(
             f["severity"]) if f["severity"] in ("error", "warning", "note") else 3)
         for finding in order + decided:
             self.rows.insertWidget(self.rows.count() - 1, self._row(finding))
+
+    def _stale(self, ids: List[str]) -> QWidget:
+        """The decisions no finding of this selection has, and a way to drop them."""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(plain(f"{len(ids)} decision(s) in decisions.json no longer match "
+                               f"a conflict of this selection; they are not applied."), 1)
+        forget = QPushButton("Forget them...")
+        forget.setToolTip("Remove them from decisions.json. A decision about a mod you "
+                          "only unticked for now is removed too.")
+        forget.clicked.connect(lambda _c=False, i=ids: self._forget(i))
+        self.buttons["forget:"] = forget
+        layout.addWidget(forget)
+        return row
+
+    def _forget(self, ids: List[str]) -> None:
+        answer = QMessageBox.question(
+            self, "Forget decisions",
+            f"Remove {len(ids)} decision(s) from decisions.json?\n\n" + "\n".join(ids[:10])
+            + ("\n..." if len(ids) > 10 else ""))
+        if answer == QMessageBox.StandardButton.Yes:
+            self.forget.emit(ids)
 
     def _row(self, finding: dict) -> QGroupBox:
         title = SEVERITY.get(finding["severity"], finding["severity"].title())

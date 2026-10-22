@@ -97,7 +97,9 @@ class Checker:
                                    if fid in decided["choose"] else
                                    {"accept": decided["accept"][fid]}
                                    if fid in decided["accept"] else None)
-        return {"findings": findings, "stale": [], "rules_checked": 2, "planned": True,
+        known = {f["id"] for f in findings}
+        stale = sorted((set(decided["choose"]) | set(decided["accept"])) - known)
+        return {"findings": findings, "stale": stale, "rules_checked": 2, "planned": True,
                 "problem": decided["problem"]}
 
 
@@ -316,3 +318,32 @@ def test_a_failed_check_resets_the_count_and_the_filter(qtbot, tmp_path):
     assert widget.tabs.tabText(1) == "Conflicts"
     assert all(widget.tree.topLevelItem(i).isHidden()
                for i in range(widget.tree.topLevelItemCount()))
+
+
+def test_decisions_no_conflict_has_any_more_can_be_forgotten(qtbot, tmp_path, monkeypatch):
+    # e.g. ids saved by an earlier build, or a conflict whose mod is gone
+    api.save_decisions(str(tmp_path), {"conflict-00000000000000ff": "option-0000000000000001"},
+                       {"conflict-0000000000000002": "known", "conflict-00000000000000fe": "old"})
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (TW, 100))
+    assert widget.conflicts["stale"] == ["conflict-00000000000000fe",
+                                         "conflict-00000000000000ff"]
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: asked.append(a[2]) or QMessageBox.StandardButton.No)
+    widget.panel.buttons["forget:"].click()
+    assert asked and "conflict-00000000000000ff" in asked[0]
+    assert len(api.load_decisions(str(tmp_path))["accept"]) == 2     # No keeps them
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.Yes)
+    click(qtbot, widget, "forget:")
+    decided = api.load_decisions(str(tmp_path))
+    assert decided["choose"] == {}
+    assert decided["accept"] == {"conflict-0000000000000002": "known"}    # live one kept
+    assert widget.conflicts["stale"] == [] and "forget:" not in widget.panel.buttons
+
+
+def test_no_forget_button_while_decisions_json_cannot_be_read(qtbot, tmp_path):
+    (tmp_path / api.DECISIONS_FILE).write_text("{ hand-edited")
+    widget, _checker = page(qtbot, tmp_path)
+    assert "forget:" not in widget.panel.buttons
