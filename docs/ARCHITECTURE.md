@@ -84,6 +84,8 @@ Five contracts are enforced, and CI fails on a violation:
 | `weidu.py` | the WeiDU log: the statement of desired state | attacker-adjacent input; every unreadable line becomes a warning, never an exception |
 | `tp2.py` | the installed mod's own version and supported games | the mod is the authority on itself |
 | `modmeta.py` | `.iemod` / Project Infinity `[Metadata]` | the developer's own ordering claims outrank any third-party rule |
+| `premeta.py` | a planned mod's own metadata ini, fetched before download and cached (ADR-0037) | read as text, never executed; 1 MiB cap; a staged mod's own ini wins |
+| `sortorder.py` | Project Infinity's Sorting Order file, as order rules (ADR-0037) | sorts only what is chosen, never adds or drops |
 | `manifest.py` | the download catalogue, validated on load | "parse, don't validate": a `ModSource` cannot hold an unsafe folder name |
 | `catalogues.py`, `moddb.py` | LCC, BWS-NG and krion64 records | other people's JSON, read as data, never executed |
 | `rules.py` | order / incompatibility / dependency rules and the checker | one rule vocabulary, three upstream formats |

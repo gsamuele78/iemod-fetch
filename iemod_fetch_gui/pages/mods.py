@@ -52,8 +52,10 @@ def _target(project: dict) -> str:
 def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str) -> dict:
     """The real checker: the selection's conflicts and the project's decisions."""
     project = api.load_project(project_dir)
+    # The authors' own install order is fetched for what is chosen (ADR-0037):
+    # one small file per mod, once a week at most, kept in the data cache.
     return api.selection_conflicts(game, chosen, labels, folder=project_dir,
-                                   target=_target(project))
+                                   target=_target(project), fetch_metadata=True)
 
 
 def load_choices(game: str, project: dict) -> List[dict]:

@@ -52,7 +52,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, choices, limits, pi
+from . import bio, choices, limits, pi, premeta, sortorder
 from .decisions import Decisions, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
                          resolve_conflicts, resolve_refusals)
@@ -64,6 +64,7 @@ from .selection import (Choice, Selection, parse_selection,
                         selection_from_logs, selection_to_json)
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
+from .urls import repo_from_url
 from . import tra
 from .contract import SCHEMA_VERSION
 from .weidu import ParsedLog, parse_weidu_files, split_log_spec
@@ -98,6 +99,8 @@ class Settings:
     eet_sequence: Optional[str] = None     # BWS-NG games/eet.json
     releases: Optional[str] = None         # krion64 data/version_cache.json
     suppress: Optional[str] = None
+    sorting_order: Optional[str] = None    # a Project Infinity Sorting Order file
+    fetch_metadata: bool = False           # fetch planned mods' own metadata inis
     all_manifest_entries: bool = False
     only: List[str] = field(default_factory=list)
     # outputs
@@ -633,7 +636,9 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
                         labels: Optional[dict] = None, folder: Optional[str] = None,
                         target: Optional[str] = None, data_dir: Optional[str] = None,
                         rules: Sequence[str] = (), mod_db: Optional[str] = None,
-                        order_catalogue: Optional[str] = None) -> dict:
+                        order_catalogue: Optional[str] = None,
+                        fetch_metadata: bool = False,
+                        sorting_order: Optional[str] = None) -> dict:
     """
     What fights what in a selection, before anything is downloaded (M3 phase 2,
     ADR-0033): the findings a run with --selection --plan-order reports, each
@@ -651,8 +656,13 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
     Returns {"findings": [...], "stale": [decided ids no finding has],
     "rules_checked": n, "planned": bool, "problem": None or why decisions.json
     could not be read}.
+
+    Each mod's own metadata ini (Before/After) is used for the mods not staged
+    yet when it is in the data cache; `fetch_metadata` fetches the missing ones
+    first (network). `sorting_order` is a Project Infinity Sorting Order file.
     """
-    cached = datasync.data_paths(data_dir or datasync.default_data_dir())
+    data_dir = data_dir or datasync.default_data_dir()
+    cached = datasync.data_paths(data_dir)
     rules = list(rules) or list(cached.rules)
     mod_db = mod_db or cached.mod_db
     order_catalogue = order_catalogue or cached.order_catalogue
@@ -668,7 +678,10 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
             logs.append(f"{path}:{log.game}")
         settings = Settings(weidu_log=logs, rules=rules, mod_db=mod_db,
                             order_catalogue=order_catalogue, quiet=True,
-                            target=target or os.path.join(work, "Mods"))
+                            target=target or os.path.join(work, "Mods"),
+                            data_dir=data_dir, fetch_metadata=fetch_metadata,
+                            sorting_order=sorting_order,
+                            catalogue=[cached.catalogue] if cached.catalogue else [])
         installed = parse_weidu_files([split_log_spec(spec) for spec in logs])
         analysis = _check_rules(settings, installed, _Silent())
         ruleset = analysis.ruleset or RuleSet()
@@ -963,9 +976,23 @@ def _check_rules(settings, installed, stream) -> RuleAnalysis:
     # when no community rule set is given.
     constraints = _staged_constraints(
         settings, [(split_log_spec(spec)[0], None) for spec in settings.weidu_log])
-    if not settings.rules and not constraints.by_mod:
+    if settings.fetch_metadata:
+        _fetch_metadata(settings, installed, stream)
+    authors = _authors_order(settings, installed)
+    sorting = _sorting_rules(settings, installed)
+    if not settings.rules and not constraints.by_mod and not authors and not sorting:
         return RuleAnalysis(constraints=constraints)
     ruleset = RuleSet.load(settings.rules) if settings.rules else RuleSet()
+    # The author's own Before/After, fetched before download (ADR-0037); a staged
+    # mod's own ini is read in _rule_context instead, and wins.
+    for name, meta in authors.items():
+        ruleset.add_metadata_order(name, meta.before, meta.after,
+                                   origin=f"{name}'s own ini ({meta.source})")
+    ruleset.rules.extend(sorting)
+    if not settings.quiet and (authors or sorting):
+        print(f"  own inis    : {len(authors)} mod(s) not staged yet give their order"
+              + (f"; sorting order: {len(sorting)} rule(s)" if sorting else ""),
+              file=stream)
     if constraints.by_mod:
         ruleset.rules.extend(tp2_rules(constraints))
         if not settings.quiet:
@@ -1234,6 +1261,99 @@ def _judged_installs(settings, analysis: "RuleAnalysis", by_role: bool):
     roles = [role for _path, role in _log_roles(settings.weidu_log)]
     return [replace(install, label=role)
             for install, role in zip(analysis.installs, roles)]
+
+
+def _metadata_cache(settings) -> premeta.MetadataCache:
+    return premeta.MetadataCache(_data_dir(settings))
+
+
+def _authors_order(settings, installed) -> dict:
+    """
+    Fetched metadata inis with an order, for the planned mods NOT staged, by
+    tp2 name - what the plan's units and the rules are keyed by. Only an ini
+    from the repository the catalogue names today counts; with
+    --no-default-data, only when this run asked for them (--fetch-metadata).
+    """
+    if settings.no_default_data and not settings.fetch_metadata:
+        return {}
+    pairs = _not_staged(settings, installed)
+    cache = _metadata_cache(settings)
+    out = {}
+    for wanted in _metadata_wanted(settings, pairs):
+        meta = cache.get(wanted)
+        if meta is not None:
+            out[premeta.tp2_name(wanted.tp2_file)] = meta
+    return out
+
+
+def _not_staged(settings, installed) -> list:
+    """
+    (folder, tp2 path) of every tp2 planned from a mod not staged: its ini is
+    not here yet. Per tp2, not per mod - EET's folder holds EET.tp2 and
+    EET_end/EET_end.tp2, and each has its own ini.
+    """
+    target = os.path.abspath(settings.target)
+    out: list = []
+    seen: set = set()
+    for mod in installed.mods.values():
+        if os.path.isdir(os.path.join(target, mod.folder)):
+            continue
+        for component in mod.components:
+            path = (component.path or f"{mod.folder}/{component.tp2_file}").replace("\\", "/")
+            # Two logs may spell one tp2 differently (EET/EET.tp2, eet/EET.TP2).
+            if (mod.folder.lower(), path.lower()) not in seen:
+                seen.add((mod.folder.lower(), path.lower()))
+                out.append((mod.folder, path))
+    return out
+
+
+def _sorting_rules(settings, installed) -> list:
+    if not settings.sorting_order:
+        return []
+    chosen: dict = {}
+    for mod in installed.mods.values():
+        for component in mod.components:
+            chosen.setdefault(tp2_key(component.tp2_file), set()).add(component.index)
+    return sortorder.rules(sortorder.load(settings.sorting_order), chosen)
+
+
+def _metadata_wanted(settings, folders_tp2s) -> list:
+    """Where each mod's ini can be fetched: lcc-docs' repository, else krion64's."""
+    catalogue = CatalogueSet.load(settings.catalogue) if settings.catalogue else None
+    krion: dict = {}
+    if settings.order_catalogue:
+        mods_dir = os.path.join(settings.order_catalogue, "mods")
+        if os.path.isdir(mods_dir):
+            for record in _json_records(mods_dir):
+                gh = record.get("gh") if isinstance(record, dict) else None
+                if (isinstance(gh, dict) and isinstance(record.get("t"), str)
+                        and isinstance(gh.get("o"), str) and isinstance(gh.get("r"), str)):
+                    repo = repo_from_url(f"https://github.com/{gh['o']}/{gh['r']}")
+                    if repo:
+                        krion.setdefault(normalize_key(record["t"]), repo)
+    wanted = []
+    for folder, tp2_file in folders_tp2s:
+        entry = catalogue.find(folder=folder) if catalogue else None
+        repo = (entry.github if entry else None) or krion.get(normalize_key(folder))
+        if repo:
+            wanted.append(premeta.Wanted(folder, tp2_file, repo))
+    return wanted
+
+
+def _fetch_metadata(settings, installed, stream) -> dict:
+    cache = _metadata_cache(settings)
+    # One try, a short wait: an ini is a nicety, and the wizard checks after
+    # every change - offline must cost seconds, not minutes (premeta backs off).
+    quick = replace(settings, retries=1, timeout=min(settings.timeout, 15))
+    found, missing, problems = premeta.fetch(
+        _LazyClient(quick), cache, _metadata_wanted(settings, _not_staged(settings, installed)))
+    cache.save()
+    if not settings.quiet:
+        print(f"  mod inis    : fetched {found}, none for {missing}"
+              + (f", {len(problems)} not reachable" if problems else ""), file=stream)
+    for problem in problems[:5]:
+        print(f"[warning] metadata ini: {problem}", file=sys.stderr)
+    return {"found": found, "missing": missing, "problems": problems}
 
 
 def _rule_context(settings, installed, ruleset, stream):

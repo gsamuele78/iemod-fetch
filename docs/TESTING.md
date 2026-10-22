@@ -167,6 +167,16 @@ version is the same for 177 mods, older for 48 and newer for 3. `tools/krion_com
 BWS` adds BWS-NG's components: on the 67 mods all three know, krion64 has
 1,047 of WeiDU's 1,089, BWS-NG 1,023, their union 1,057.
 
+### The authors' own order: Project Infinity metadata inis
+
+`tools/pi_metadata_benchmark.py MODS_DIR KRION_DATA RULES...` reads every mod's
+metadata ini (from git, so sparse clones do) and compares its `Before`/`After`
+with krion64's order and the order rules (ADR-0037). On 103 real mods: 85 inis,
+314 order pairs; krion64's order agrees with 239, a rule covers 34 of the rest,
+22 span the two EET game phases, and 19 are known only to the author - 7
+contradicting krion64. Two of the 19 name a mod by its display name ("Coran in
+BG2"), which matches no tp2 and so orders nothing.
+
 ### Engine limits, measured as WeiDU measures them
 
 `tests/test_real_weidu_limits.py` checks the game-folder measurement of
@@ -308,10 +318,10 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,132 (7 run the real WeiDU, 39 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,144 collected (7 run the real WeiDU, 39 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
-| mypy | clean, 54 modules |
+| mypy | clean, 56 modules |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Runtime dependencies | 0 |

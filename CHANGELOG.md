@@ -47,6 +47,17 @@ Python API, which is internal.
   newer; `tools/krion_components_benchmark.py` takes BWS-NG's records as a
   third argument. ADR-0036 records which source is used for what.
 
+- **The authors' own install order before download** (ADR-0037).
+  `--fetch-metadata` fetches each planned mod's Project Infinity metadata ini
+  (`Before`/`After`) from the repository lcc-docs (else krion64) names, into the
+  data cache, and every later run uses it for the mods not staged yet; the
+  wizard's conflicts check fetches it for what is chosen. Of 314 order pairs in
+  85 real inis, 19 were known to no rule and no catalogue
+  (`tools/pi_metadata_benchmark.py`).
+- `--sorting-order FILE`: a Project Infinity Sorting Order file, read as order
+  rules between consecutive lines of what is chosen. It is the player's own:
+  a downloaded mod's ini never silences it.
+
 ### Fixed
 - `--conflict-report` with `--plan-order` gave findings ids that `--decisions`
   could not match whenever a log's file name was not the plan's role

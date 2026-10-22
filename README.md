@@ -548,6 +548,20 @@ rules decide must go, and `--emit-installer` for the install scripts (see
 logs when the catalogue says it belongs to the other install phase — off by
 default, because that changes which game the mod installs onto.
 
+**The authors' own order** (ADR-0037). Many mods ship Project Infinity's
+metadata ini, whose `Before`/`After` say what the author wants around it. The
+tool always read it from a downloaded mod; `--fetch-metadata` now fetches it
+for the planned mods not downloaded yet - one small text file per mod, from the
+repository the catalogue names, found whatever its case, cached for a week in
+the data cache; offline it backs off rather than slowing every check - and the
+wizard does so for what you choose. Measured on 85 real inis
+(`tools/pi_metadata_benchmark.py`): of the 314 order pairs they state, krion64's
+order agrees with 239 and a rule already covers 34 more, but 19 are known only
+to the author - 7 of them contradicting krion64 (Region of Terror after IWD1_EET
+and IWD2_EET, Kivan before Adrian, Deities of Faerun before Tome and Blood,
+...). `--sorting-order FILE` reads a Project Infinity "Sorting Order" file
+(`Ascension *`, `Ascension 101 102`) as order rules on top of the others.
+
 The same run prints a **component conflict report**: which component of which
 mod fights which component of which other mod (or of itself), with the upstream's
 own evidence grade and source, and the narrowest fix — "deselect stratagems

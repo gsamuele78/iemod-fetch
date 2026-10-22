@@ -79,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
                           "latest GitHub release; with its sibling mods/, the "
                           "versions krion64 records. Says which installed mods have "
                           "a newer version. Default: the data cache")
+    src.add_argument("--sorting-order", metavar="PATH",
+                     help="a Project Infinity 'Sorting Order' file (one 'tp2 *' or "
+                          "'tp2 N N' per line): what it names is installed in its "
+                          "order, as order rules on top of --rules (ADR-0037)")
+    src.add_argument("--fetch-metadata", action="store_true",
+                     help="fetch the author's own metadata ini (Before/After) of "
+                          "every planned mod not staged yet, from the repository "
+                          "the catalogue names, into the data cache (ADR-0037). "
+                          "Fetched ones are used by every later run")
     src.add_argument("--suppress", metavar="PATH",
                      help="JSON list of rules you have verified no longer apply")
     src.add_argument("--all-manifest-entries", action="store_true",

@@ -1752,3 +1752,98 @@ options and a default), for 4 components across its Enhanced Edition mods
 - BWS-NG's age (eight months at the time of writing) is reported by the data
   cache like any source's; it is a reason to prefer it for checksums of what it
   pins, not for what is newest.
+
+---
+
+## ADR-0037 — The authors' own install order is read before download
+
+**Status**: accepted
+**Date**: 2026-10-22
+
+### Context
+
+Project Infinity (PI, github.com/ALIENQuake/ProjectInfinity, 0.10.7; its wiki
+pages "Adding metadata for mod", "Sorting Order feature", "Install Order
+Groups") brings three ideas to install order:
+
+1. A **metadata ini** beside the tp2 (`<tp2 name>.ini`, `[Metadata]`): identity
+   and links, `LabelType`, and the author's own `Before`/`After` - other mods'
+   tp2 names. It has no field for component conflicts.
+2. A **Sorting Order** file the player writes: `Ascension *`, `Ascension 101
+   102` - it sorts only what is chosen, and a component named on its own line
+   leaves its mod's `*` line.
+3. **Install Order Groups** the player arranges by hand: krion64's categories
+   already play that part.
+
+The tool read the metadata ini only from a staged mod (modmeta.py, ADR-0016).
+But the order is planned, and the wizard judges conflicts, before anything is
+downloaded; then only the community rule sets speak. LABELs are already read
+(pi.py), so `LabelType` adds nothing.
+
+Measured with `tools/pi_metadata_benchmark.py` on the 103 mods of the real
+install (krion64 a8d17c4, BWS-NG f7befca): 85 ship a metadata ini; they state
+314 order pairs. krion64's order agrees with 239; a rule (BWS-NG or krion64)
+already covers 34 of the others; 22 span the two EET game phases; **19 are
+known only to the author**: 7 contradict krion64's order (Region of Terror
+after IWD1_EET and IWD2_EET; Kivan before Adrian; Deities of Faerun before
+Tome and Blood; Homeward Bound before Crossmod BG2; JA#BGT AdvPack and
+Transitions before Baldur's Seatower) and 12 name mods krion64 does not place.
+Two of those name a mod by its display name ("Coran in BG2") and order nothing.
+
+### Decision
+
+- `premeta.py` fetches a planned mod's metadata ini before download: from the
+  repository lcc-docs names (ADR-0036), else krion64's, at its default
+  branch: beside the tp2, named after it with or without `setup-`, ignoring
+  case. PI runs where case does not matter and GitHub does not: Region of
+  Terror ships `RoT/rot.ini` beside `setup-RoT.tp2`, Deities of Faerun
+  `Deitiesoffaerun.ini` beside `DeitiesOffaerun.tp2`, and a WeiDU log may spell
+  `ASCENSION/ASCENSION.TP2`. The likely spellings are tried on
+  raw.githubusercontent.com (no API quota); on a miss the folder is listed
+  once (GitHub's contents API) and matched ignoring case, and only a listing
+  records "no ini". At most 1 MiB, read as text with the same parser as a
+  staged ini, never executed. Found and not-found are cached in the data
+  cache, by mod and repository, for a week; an ini cached from another
+  repository than the catalogue names today is not used.
+- A network error is the network's, not the file's: nothing more is asked in
+  that run, every mod still to ask backs off for an hour, and what was found
+  before is kept. Requests are tried once with a short timeout, so the
+  wizard's check, which asks after every change, costs seconds offline.
+- `--fetch-metadata` asks for it in a run; the wizard's conflicts check asks
+  for what is chosen. A fetched ini is used by every run once cached - its
+  `Before`/`After` become order rules keyed by the tp2 name, with the
+  author's file named as their origin - for the mods not staged; a staged
+  mod's own ini wins. With `--no-default-data` the cache is used only when
+  the run asked for it.
+- `--sorting-order FILE` reads a PI Sorting Order file as order rules between
+  consecutive lines of what is chosen; what is not chosen is skipped, nothing
+  is added, and a component already placed by an earlier line stays there.
+  It is the player's own: a staged mod's ini replaces the community's order
+  rules about that mod, never these. A contradiction with another rule is
+  reported as any order conflict is, not silently won.
+- Install Order Groups and `LabelType` add nothing here and are not adopted.
+
+### Consequences
+
+- 19 order pairs per 314 (6%) reach the plan and the conflicts check before
+  download; the 7 that contradict krion64 move mods where their authors put
+  them.
+- Per planned tp2, once a week: up to 8 small requests to
+  raw.githubusercontent.com (the likely spellings; usually the first hits),
+  and when none hits - an ini spelled otherwise, or no ini at all, the common
+  case - a listing on GitHub's API of the root and of each level of the tp2's
+  folder (two or three for the usual paths). That
+  API allows 60 requests an hour without a credential (the tool's GitHub
+  credential is used when it has one), so a large selection without one fills
+  in over several hours: the quota is treated as the network being down, and
+  what is left backs off for an hour. Offline, the cache is used; without it,
+  the plan is what it was.
+- One folder can hold several tp2s (EET's holds EET.tp2 and
+  EET_end/EET_end.tp2); each has its own ini, wanted, cached and keyed by its
+  own tp2 name. An error of one repository (a 451, a file over the cap) backs
+  that tp2 off for an hour and keeps what it found before; it never stops the
+  others. A 401 (a credential GitHub refuses) and a 403 or 429 (GitHub's
+  quotas, the secondary one included) stop the run like a network failure.
+- An author's ini can be wrong or old, like any rule source; its order rules
+  carry the file as their origin, so a finding says whose claim it is.
+- Component conflicts get nothing from PI: its format has no such field.
