@@ -1911,4 +1911,6 @@ decisions.json holds (ADR-0033).
 - A finding's id names its install, so decisions saved by the unreleased
   phase-2 panel for mods of the BG:EE phase are reported stale once and must
   be made again. The panel offers to forget stale decisions (asked first;
-  amendment, 2026-10-22), so they do not stay in the file for ever.
+  amendment, 2026-10-22), so they do not stay in the file for ever - only
+  those the current, finished check calls stale, and none when no rule was
+  checked (with no community data every decision would look stale).

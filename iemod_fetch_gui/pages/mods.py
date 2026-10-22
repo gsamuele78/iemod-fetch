@@ -467,6 +467,17 @@ class ModsPage(QWidget):
                                                       accept.pop(finding, None)))
 
     def _forget(self, findings: list) -> None:
+        # Only what the current, settled check calls stale: the selection may
+        # have changed since the row was shown, or while the question was
+        # open, and a decision it names may be live again.
+        if self.timer.isActive() or self._checking is not None:
+            return                      # the check under way shows the row again if it holds
+        stale = set(self.conflicts.get("stale") or []) if \
+            self.conflicts.get("rules_checked") else set()
+        findings = [finding for finding in findings if finding in stale]
+        if not findings:
+            return
+
         def change(choose: dict, accept: dict) -> None:
             for finding in findings:
                 choose.pop(finding, None)

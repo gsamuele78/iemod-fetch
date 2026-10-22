@@ -689,7 +689,8 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
     `chosen`: the chosen (tp2, component) pairs it covers - what deselecting
     it removes.
 
-    Returns {"findings": [...], "stale": [decided ids no finding has],
+    Returns {"findings": [...], "stale": [decided ids no finding has; none
+    when no rule was checked],
     "rules_checked": n, "planned": bool, "problem": None or why decisions.json
     could not be read}.
 
@@ -724,7 +725,10 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
             if finding.id in decided["accept"] else None)
         findings.append(entry)
     known = {f["id"] for f in findings}
-    stale = sorted((set(decided["choose"]) | set(decided["accept"])) - known)
+    # With no rule to judge by there are no findings, and every decision
+    # would look stale: none is called so until something was judged.
+    stale = (sorted((set(decided["choose"]) | set(decided["accept"])) - known)
+             if report.rules_checked else [])
     return {"findings": findings, "stale": stale, "rules_checked": report.rules_checked,
             "planned": plan is not None, "problem": decided["problem"]}
 

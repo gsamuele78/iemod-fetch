@@ -347,3 +347,46 @@ def test_no_forget_button_while_decisions_json_cannot_be_read(qtbot, tmp_path):
     (tmp_path / api.DECISIONS_FILE).write_text("{ hand-edited")
     widget, _checker = page(qtbot, tmp_path)
     assert "forget:" not in widget.panel.buttons
+
+
+def yes(monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.Yes)
+
+
+def test_a_decision_live_again_is_not_forgotten_by_the_old_button(qtbot, tmp_path,
+                                                                  monkeypatch):
+    api.save_decisions(str(tmp_path), accept={"conflict-0000000000000002": "known"})
+    widget, _checker = page(qtbot, tmp_path)
+    assert widget.conflicts["stale"] == ["conflict-0000000000000002"]   # cdtweaks unticked
+    forget = widget.panel.buttons["forget:"]
+    yes(monkeypatch)
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.items[(TW, 100)].setCheckState(0, Qt.CheckState.Checked)  # live again
+        forget.click()                  # the old result's button, before the check
+    assert widget.conflicts["stale"] == []
+    assert api.load_decisions(str(tmp_path))["accept"] == {"conflict-0000000000000002": "known"}
+
+
+def test_a_check_ending_while_the_question_is_open_is_obeyed(qtbot, tmp_path, monkeypatch):
+    api.save_decisions(str(tmp_path), accept={"conflict-0000000000000002": "known"})
+    widget, _checker = page(qtbot, tmp_path)
+
+    def question(*_args, **_kwargs):
+        with qtbot.waitSignal(widget.checked, timeout=5000):
+            widget.items[(TW, 100)].setCheckState(0, Qt.CheckState.Checked)
+        return QMessageBox.StandardButton.Yes
+    monkeypatch.setattr(QMessageBox, "question", question)
+    widget.panel.buttons["forget:"].click()
+    assert api.load_decisions(str(tmp_path))["accept"] == {"conflict-0000000000000002": "known"}
+
+
+def test_with_no_rules_nothing_is_offered_to_forget(qtbot, tmp_path):
+    api.save_decisions(str(tmp_path), accept={"conflict-0000000000000002": "known"})
+
+    def no_rules(game, chosen, labels, project_dir):
+        decided = api.load_decisions(project_dir)     # as an older api might answer
+        return {"findings": [], "stale": sorted(decided["accept"]), "rules_checked": 0,
+                "planned": False, "problem": None}
+    widget, _checker = page(qtbot, tmp_path, checker=no_rules)
+    assert "forget:" not in widget.panel.buttons

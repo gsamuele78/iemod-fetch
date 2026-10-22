@@ -41,6 +41,12 @@ CASES = [
     # no metadata ini: only a listing may say so
     (premeta.Wanted("ToA", "ToA/setup-toa.TP2", "Gitjas/ToA"), None, True),
 ]
+# A file each repository must still have: a gone or private repository lists
+# as 404, which premeta reads as "no ini" - the check must not pass on that.
+PRESENT = {"raduziel/deities-of-faerun": "DeitiesOfFaerun/DeitiesOffaerun.tp2",
+           "spellhold-studios/region-of-terror": "RoT/setup-RoT.tp2",
+           "infinitymods/ascension": "ascension/Ascension.tp2",
+           "gitjas/toa": "ToA/setup-toa.TP2"}
 
 
 class Counting:
@@ -72,6 +78,12 @@ def main() -> int:
             got = entry.get("path")
             line = (f"{wanted.repo}: {wanted.tp2_file} -> {got} "
                     f"({counting.listings} listing(s))")
+            if entry.get("problem"):
+                # one repository's own error (a 451, a file over the cap):
+                # premeta behaved, but the case no longer holds
+                failures.append(f"{line}: {entry['problem']}")
+                print(f"FAIL {line}: {entry['problem']}")
+                continue
             if problems:
                 inconclusive.append(f"{line}: {'; '.join(problems)}")
                 print(f"?    {line}: {'; '.join(problems)}")
@@ -80,6 +92,10 @@ def main() -> int:
                 (counting.listings > 0) == listed
             if path is not None:
                 ok = ok and cache.get(wanted) is not None   # it parses, with an order
+            elif premeta._raw(client, wanted.repo.lower(),
+                              PRESENT[wanted.repo.lower()]) is None:
+                ok = False
+                line += "; the repository or its tp2 is gone"
             print(f"{'ok  ' if ok else 'FAIL'} {line}")
             if not ok:
                 failures.append(f"{line}; expected {path}, listing {'yes' if listed else 'no'}")

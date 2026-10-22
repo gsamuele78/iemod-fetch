@@ -148,6 +148,15 @@ def test_no_rules_no_findings(tmp_path):
     assert result["findings"] == [] and result["rules_checked"] == 0
 
 
+def test_with_nothing_judged_no_decision_is_called_stale(tmp_path):
+    # no community data yet: every decision would look stale, and a click on
+    # "Forget them" would wipe the player's answers
+    api.save_decisions(str(tmp_path), accept={"conflict-0000000000000000": "known"})
+    result = api.selection_conflicts("EET", CHOSEN, folder=str(tmp_path),
+                                     data_dir=str(tmp_path / "no-cache"))
+    assert result["rules_checked"] == 0 and result["stale"] == []
+
+
 # ------------------------------------------------------- decisions.json
 @pytest.mark.parametrize("text", ["{", '{"schema_version": 9, "decisions": []}',
                                   '{"schema_version": 1, "decisions": [{"finding": "x"}]}'])

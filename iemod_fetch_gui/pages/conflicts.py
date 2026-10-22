@@ -120,7 +120,7 @@ class ConflictsPanel(QWidget):
         if result.get("problem"):
             self.rows.insertWidget(self.rows.count() - 1, plain(
                 f"decisions.json could not be read, and is not used: {result['problem']}"))
-        elif result.get("stale"):
+        elif result.get("stale") and result.get("rules_checked"):
             self.rows.insertWidget(self.rows.count() - 1, self._stale(list(result["stale"])))
         order = sorted(waiting, key=lambda f: ("error", "warning", "note").index(
             f["severity"]) if f["severity"] in ("error", "warning", "note") else 3)
