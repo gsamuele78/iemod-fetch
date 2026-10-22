@@ -32,10 +32,12 @@ the evidence does not decide is reported to you, with the reason.
 
 Standard library only at runtime. One file, no dependencies.
 
-**Current release: 2.4.0** - component names as WeiDU prints them, update
-notices, conflicts with options you choose (`--decisions`), BIO share codes and
-Project Infinity lists in, and engine limits measured in your game folder. What
-changed in each release is in [`CHANGELOG.md`](CHANGELOG.md).
+**Current release: 2.5.0** - the desktop wizard's first three phases (game and
+folders, mod selection with a conflicts panel, install order), the mods'
+authors' own install order read before download, Project Infinity Sorting
+Order files (`--sorting-order`), and which community source is used for what,
+measured (ADR-0036). What changed in each release is in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 | Step | What happens | Flag |
 |---|---|---|
