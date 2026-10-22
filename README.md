@@ -290,8 +290,15 @@ archive (its page marks them with a padlock); those need no API call and leave
 no ambiguity about which release asset is meant.
 
 A catalogue hit is still only a candidate: it is installed only if the archive
-contains the right `.tp2`. The catalogue is never bundled and never fetched
-automatically — you pass the path.
+contains the right `.tp2`. The catalogue is never bundled: it comes from the
+data cache (or the path you pass).
+
+Why lcc-docs and not krion64's URLs: measured on 2026-10-22
+(`tools/download_sources_benchmark.py --probe`, ADR-0036), lcc-docs knows 1,148
+Enhanced Edition mods to krion64's 813. Where the two name different
+repositories, krion64's is gone in 28 of 114 and lcc-docs' in none, and of the
+63 different live ones lcc-docs' has the newer commit in 51. krion64 stays the
+source of components, conflicts and install order.
 
 ### Health warnings
 

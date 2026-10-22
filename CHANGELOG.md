@@ -28,6 +28,9 @@ Python API, which is internal.
   loads in a background thread; closing the window while it loads is safe.
 - `api.mod_choices` (mods with their components, for a game) and
   `api.save_selection`.
+- `tools/download_sources_benchmark.py`: lcc-docs' download URLs against
+  krion64's, with `--probe` asking GitHub (git, no token) which are live and
+  newer. ADR-0036 records the result: lcc-docs stays the download source.
 
 ### Fixed
 - **A `%` in `iemod-fetch.ini`** (a path like `C:/Games/100%BG`) stopped the

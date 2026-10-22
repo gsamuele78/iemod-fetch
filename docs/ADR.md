@@ -1650,3 +1650,59 @@ tp2, and 85 mods are identical. 14 of the mods have no krion64 record.
   against the tp2 once the mod is staged (the plan's own checks).
 - The selection screen works offline from the last good data, and needs no
   download to start.
+
+## ADR-0036 — Downloads come from lcc-docs' URLs; krion64's are not a second source yet
+
+**Status**: accepted
+**Date**: 2026-10-22
+
+### Context
+
+A mod not in the user's `mod_downloads.json` is looked for in the lcc-docs
+catalogue (`runner._probe_catalogue`: direct archive, then repository, then
+landing page). krion64's per-mod records name a repository too (`gh`, `dl`,
+`u`), and the wizard already reads them for components (ADR-0035). Should its
+URLs be added, or preferred, as a download source?
+
+Measured on 2026-10-22 with `tools/download_sources_benchmark.py --probe`
+(lcc-docs 6d73f777df, krion64 a8d17c4d5e), over the mods for BGEE, SoD,
+BG2EE or EET, hidden and absorbed ones left out:
+
+| | lcc-docs | krion64 |
+|---|---:|---:|
+| mods | 1,148 | 813 |
+| only in this source | 483 | 148 |
+| with a GitHub repository (lcc-docs: or a direct archive) | 863 | 651 |
+
+On the 665 mods both know, 427 name the same repository and 114 differ. Of
+those 114, asked with `git ls-remote`:
+
+- 28: krion64's repository is gone; lcc-docs' is never gone.
+- 23: one repository under two names (same HEAD, a rename GitHub redirects).
+- 63: two different live repositories. lcc-docs' has the newer last commit in
+  51, krion64's in 11, and they tie in 1. The usual pattern is SHS's move from
+  `SpellholdStudios` to `Spellhold-Studios`: krion64 still names the old
+  accounts.
+
+A newer last commit is evidence, not proof: a bulk migration commit is newer
+too. Neither source is checked against the mod's own content here; the tp2
+check at staging is.
+
+### Decision
+
+- lcc-docs stays the community download source, as it is today: it knows more
+  mods, has more usable URLs, and on disagreement is live and newer far more
+  often.
+- krion64's URLs are not added as a second source now. Its records stay the
+  source of components (ADR-0035), conflicts and install order.
+- The 148 mods only krion64 knows (95 with a repository) are the case for
+  using it later, as a third candidate after the manifest and lcc-docs, checked
+  the same way (the archive must contain the right tp2). That belongs to the
+  wizard's download phase, not here.
+
+### Consequences
+
+- No behaviour change; the measurement is reproducible with the tool and goes
+  stale with the data, so it is re-run before the download phase relies on it.
+- 28 mods would resolve to a dead repository if krion64's URL were preferred;
+  that is avoided.

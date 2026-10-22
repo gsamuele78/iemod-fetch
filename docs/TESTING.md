@@ -153,6 +153,16 @@ has them), 13 krion64 lists are not in the tp2, and 85 mods are identical.
 Hence each component says where it came from, and the staged tp2 replaces
 krion64 for its mod.
 
+### Download sources: lcc-docs against krion64
+
+`tools/download_sources_benchmark.py LCC_MODS_JSON KRION_DATA --probe`
+compares the repositories the two name for each Enhanced Edition mod (ADR-0036).
+On 2026-10-22: lcc-docs knows 1,148 mods, krion64 813, both 665. Of the 114
+mods for which they name different repositories, krion64's is gone in 28 and
+lcc-docs' in none; 23 are one repository under two names; of the 63 different
+live ones lcc-docs' has the newer last commit in 51, krion64's in 11. Hence
+lcc-docs stays the download source and krion64 the component source.
+
 ### Engine limits, measured as WeiDU measures them
 
 `tests/test_real_weidu_limits.py` checks the game-folder measurement of
