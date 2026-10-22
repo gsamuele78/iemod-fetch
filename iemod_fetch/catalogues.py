@@ -212,7 +212,9 @@ class SupplementaryCatalogue:
             # is findable by its own name (read as one, EET was never found).
             folders = [part.replace("\\", "/").split("/")[0].strip()
                        for part in tp2.split(";")]
-            folders = [f for f in folders if normalize_key(f)]
+            # a tp2 listed twice in one record is one entry
+            folders = list({normalize_key(f): f for f in reversed(folders)
+                            if normalize_key(f)}.values())[::-1]
             if not folders:
                 catalogue.skipped += 1
                 continue

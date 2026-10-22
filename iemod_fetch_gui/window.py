@@ -100,19 +100,22 @@ class MainWindow(QMainWindow):
                 return
             self.status.setText(f"saved {path}")
             self.order.start(self.mods.game, self.mods.chosen(), self.mods.labels())
+        elif self.current == 2:
+            self.download.prepare((self.mods.game, tuple(self.mods.chosen())))
         if self.current + 1 < len(self.pages):
             self.stack.setCurrentIndex(self.current + 1)
         self._refresh()
 
     def go_back(self) -> None:
-        if self.current > 0:
+        if self.current > 0 and not self.download.running():
             self.stack.setCurrentIndex(self.current - 1)
         self._refresh()
 
     def _refresh(self) -> None:
         page = self.pages[self.current]
         complete = getattr(page, "is_complete", lambda: True)()
-        self.back.setEnabled(self.current > 0)
+        # the selection must not change under a running download
+        self.back.setEnabled(self.current > 0 and not self.download.running())
         self.next.setEnabled(complete and self.current + 1 < len(self.pages))
         for row in range(self.phases.count()):
             item = self.phases.item(row)

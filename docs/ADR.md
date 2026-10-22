@@ -1967,8 +1967,19 @@ command line either.
   empty manifest, and every mod is found through lcc-docs from the data
   cache, then trusted-owner discovery. A candidate must still contain the
   right tp2. With neither a manifest nor a catalogue, the run stops with
-  "no download source". The command line's default (`mod_downloads.json`)
-  does not change.
+  "no download source". The command line's default `mod_downloads.json`
+  becomes optional in the same way: when that file is absent and a
+  catalogue is present, the catalogue is the source, so the wizard and the
+  command line agree in the same project. A manifest named on purpose
+  (`-m FILE`) must exist; a typo is an error, never a silent switch.
+- **What only a plan uses** (`language_preference`, `bgee_dir`,
+  `bg2ee_dir`, `decisions`, ...) is refused without `--plan-order` only when
+  given on the command line. The wizard's project ini holds the game folders
+  and languages for every run in the project, and a BG:EE or BG2:EE project
+  names one folder. Before this, every command-line run in a wizard project,
+  and the wizard's own download, stopped on them. The download clears them,
+  and the ini's `all_manifest_entries` and `only`: the selection is what is
+  fetched.
 - **A multi-tp2 catalogue record is found by each of its tp2s.** When several
   records share a tp2, the one whose repository is named after the mod wins
   (EET over EET_Android).
@@ -1978,6 +1989,9 @@ command line either.
   - **Running again resumes**: a mod already there and verified is skipped.
   - **"Retry the failed"** runs `only` those mods.
   - **Next** is enabled once every mod is done or already there.
+  - **Back** is locked while a download runs.
+  - A **new selection** starts the phase again; a mod added since was never
+    downloaded.
 - **The run's events** come from its worker threads. They reach the page
   through a queued Qt signal, and each mod's byte count at most ten times a
   second, so a fast network cannot flood the window. Quitting cancels a

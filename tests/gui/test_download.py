@@ -164,3 +164,48 @@ def test_the_wizard_goes_on_once_every_mod_is_there(qtbot, tmp_path):
     assert main.pages[3] is main.download and not main.next.isEnabled()
     run(qtbot, main.download)
     assert main.next.isEnabled()
+
+
+def test_a_new_selection_starts_the_phase_again(qtbot, tmp_path):
+    # Review of #39: a complete download of the old selection let Next through
+    # with a mod added since and never downloaded.
+    widget = page(qtbot, tmp_path, Fake())
+    widget.prepare(("EET", ("ub",)))
+    run(qtbot, widget)
+    assert widget.is_complete()
+    widget.prepare(("EET", ("ub",)))                    # same selection: kept
+    assert widget.is_complete()
+    widget.prepare(("EET", ("ub", "tweaks")))            # another: start again
+    assert not widget.is_complete() and widget.rows == {}
+    assert widget.summary.text() == "Nothing downloaded yet."
+
+
+def test_a_retried_mod_the_selection_no_longer_has_leaves_the_list(qtbot, tmp_path):
+    fake = Fake(failing=["tweaks"])
+    widget = page(qtbot, tmp_path, fake)
+    run(qtbot, widget)
+    fake.mods = ["ub"]                   # the run's plan no longer has tweaks
+    run(qtbot, widget, only=True)
+    assert fake.calls[-1] == ["tweaks"]
+    assert set(widget.rows) == {"ub"} and widget.is_complete()
+    assert not widget.retry_button.isEnabled()
+
+
+def test_back_waits_for_a_running_download(qtbot, tmp_path):
+    fake = Fake(hold=True)
+    main = MainWindow(str(tmp_path), load=lambda game, project: [],
+                      check=lambda *a: {"findings": [], "stale": [], "rules_checked": 0,
+                                        "planned": False, "problem": None},
+                      plan=lambda *a: {}, download=fake)
+    qtbot.addWidget(main)
+    main.stack.setCurrentIndex(3)
+    main._refresh()
+    assert main.back.isEnabled()
+    with qtbot.waitSignal(main.download.finished, timeout=5000):
+        main.download.start_button.click()
+        assert fake.started.wait(5)
+        assert not main.back.isEnabled() and not main.next.isEnabled()
+        main.go_back()                                   # refused while it runs
+        assert main.current == 3
+        main.download.stop()
+    assert main.back.isEnabled()

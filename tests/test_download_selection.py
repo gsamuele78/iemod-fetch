@@ -135,3 +135,68 @@ def test_without_a_manifest_or_catalogue_flag_the_project_has_none(tmp_path):
     settings = api.project_settings(str(tmp_path))       # no ini at all
     assert settings.manifest is None
     assert settings.target == str(tmp_path / "Mods")
+
+
+# ----------------------------------------- what the wizard's ini holds
+@pytest.mark.parametrize("game,folders", [
+    ("EET", {"bgee_dir": "BGEE_DIR", "bg2ee_dir": "BG2EE_DIR"}),
+    ("BGEE", {"bgee_dir": "BGEE_DIR"}),            # one game: one folder
+    ("BG2EE", {"bg2ee_dir": "BG2EE_DIR"})])
+def test_a_project_the_wizard_saved_downloads(project, game, folders):
+    # Review of #39: phase 1 saves the game folders and languages, which only
+    # a plan uses; the download refused every project the wizard made.
+    folder, _stub = project
+    paths = {key: str(folder / value) for key, value in folders.items()}
+    # saved over the fixture's ini, whose catalogue and offline settings stay
+    api.save_project(str(folder), game, language_preference=["it_IT", "en_US"], **paths)
+    assert "language_preference" in (folder / api.PROJECT_FILE).read_text()
+    result = api.download_selection(str(folder))
+    assert statuses(result) == {"DlcMerger": "ok", "eefixpack": "ok"}
+
+
+def test_the_command_line_in_a_wizard_project_fetches_the_same(project, monkeypatch):
+    from iemod_fetch import cli
+    folder, stub = project
+    api.save_project(str(folder), "EET", str(folder / "a"), str(folder / "b"), ["en_US"])
+    monkeypatch.chdir(folder)            # no mod_downloads.json here: the catalogue
+    code = cli.main(["--config", api.PROJECT_FILE, "--selection", api.SELECTION_FILE],
+                    stream=__import__("io").StringIO())
+    assert code == 0
+    assert sorted(stub.downloaded) == sorted([URL_A, URL_B])
+    assert (folder / "Mods" / "eefixpack").is_dir()
+
+
+def test_a_manifest_named_on_purpose_must_exist(project, monkeypatch):
+    from iemod_fetch import cli
+    folder, _stub = project
+    monkeypatch.chdir(folder)
+    code = cli.main(["--config", api.PROJECT_FILE, "--selection", api.SELECTION_FILE,
+                     "-m", "typo.json"], stream=__import__("io").StringIO())
+    assert code == 2                     # not silently the catalogue instead
+
+
+def test_the_selection_is_what_is_fetched_whatever_the_ini_says(project):
+    folder, stub = project
+    api.save_selection(str(folder), "BGEE", [(FIX, 0)], data_dir=str(folder / "no-cache"))
+    (folder / "mods.json").write_text(json.dumps({"mods": [
+        {"name": "DLC Merger", "tp2": "DlcMerger", "github": "Argent77/A7-DlcMerger"},
+        {"name": "EE Fixpack", "tp2": "eefixpack", "github": "o/eefixpack"}]}))
+    (folder / api.PROJECT_FILE).write_text(
+        "[iemod-fetch]\nmanifest = mods.json\nall_manifest_entries = true\n"
+        "only = DlcMerger\ncheck_only = true\nno_update_data = true\n"
+        "no_default_data = true\nno_discovery = true\n")
+    result = api.download_selection(str(folder))
+    assert statuses(result) == {"eefixpack": "ok"}
+    assert stub.downloaded == [URL_B]
+
+
+def test_a_mod_with_no_source_is_counted(project):
+    folder, _stub = project
+    (folder / "mods.json").write_text(json.dumps({"mods": [
+        {"name": "EE Fixpack", "tp2": "eefixpack", "github": "o/eefixpack"}]}))
+    (folder / api.PROJECT_FILE).write_text(
+        "[iemod-fetch]\nmanifest = mods.json\nno_update_data = true\n"
+        "no_default_data = true\nno_discovery = true\n")
+    result = api.download_selection(str(folder))
+    assert statuses(result) == {"eefixpack": "ok", "DlcMerger": "manual"}
+    assert result["counts"]["manual"] == 1 and result["counts"]["ok"] == 1

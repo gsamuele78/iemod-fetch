@@ -80,6 +80,11 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "INSTALL_ORDER_FILE", "project_settings", "download_selection"]
 
 
+# The command line's -m default. Unlike a manifest named on purpose, it may be
+# absent: then, as for the wizard, the community catalogue is the source.
+DEFAULT_MANIFEST = "mod_downloads.json"
+
+
 @dataclass
 class Settings:
     """
@@ -88,7 +93,7 @@ class Settings:
     the command line mean the same thing by the same word.
     """
     # inputs
-    manifest: Optional[str] = "mod_downloads.json"   # None: the catalogue only
+    manifest: Optional[str] = DEFAULT_MANIFEST       # None: the catalogue only
     weidu_log: List[str] = field(default_factory=list)     # "PATH" or "PATH:GAME"
     selection: Optional[str] = None
     bio_code: Optional[str] = None         # a file holding a BIO-MODLIST-V1 code
@@ -925,7 +930,12 @@ def download_selection(folder: str, on_event=None, cancel=None,
         # the selection is what is wanted, and this is a download
         weidu_log=[], pi_list=None, bio_code=None, only=list(only), quiet=True,
         check_only=False, dry_run=False, list_mods=None, describe_mods=None,
-        emit_selection=None, emit_bio_code=None, update_data=False)
+        emit_selection=None, emit_bio_code=None, update_data=False,
+        all_manifest_entries=False,
+        # what only a plan uses: the project's game folders and languages are
+        # in its ini for every run, and this run fetches, it does not plan
+        plan_order=None, language_preference=None, bgee_dir=None, bg2ee_dir=None,
+        decisions=None, resolve_conflicts=False, emit_installer=False, simulate=False)
     outcome = run(settings, on_event=on_event, cancel=cancel)
     report = outcome.report
     if report is None:                  # not reached: a download run always reports
@@ -937,8 +947,10 @@ def download_selection(folder: str, on_event=None, cancel=None,
     records += [{"folder": u["folder"], "status": "manual", "detail": u["detail"],
                  "url": None, "version": None, "bytes": 0, "error_code": "unresolved"}
                 for u in report.unresolved]
+    counts = report.counts()
+    counts["manual"] = counts.get("manual", 0) + len(report.unresolved)
     return {"records": records, "cancelled": report.cancelled,
-            "counts": report.counts(), "exit_code": outcome.exit_code}
+            "counts": counts, "exit_code": outcome.exit_code}
 
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
@@ -1364,7 +1376,7 @@ def _plan_order(settings, analysis: "RuleAnalysis", stream):
             constraints.by_mod, games=games, eet_rules=constraints.eet)
         if not settings.quiet:
             print("\n" + plan.simulation.render(), file=stream)
-    if settings.bgee_dir:
+    if settings.bgee_dir and settings.bg2ee_dir:      # an EET install's two games
         plan.game_report = verify_eet(
             settings.bgee_dir, settings.bg2ee_dir,
             plan_mods={unit.key for unit in plan.logs.get(PRE_EET_LOG, [])})
@@ -1637,11 +1649,17 @@ def _game_language(settings) -> str:
     return str(settings.language_preference[0]) if settings.language_preference else "en_US"
 
 
-def _require_plan(settings) -> None:
-    """Flags that act on an install plan are meaningless without one."""
+def _require_plan(settings, from_file: Sequence[str] = ()) -> None:
+    """
+    Flags that act on an install plan are meaningless without one. A value the
+    config file gives is not refused: the wizard's project ini holds the game
+    folders and languages for every run in the project, a download included
+    (ADR-0039), and a BG:EE or BG2:EE project names one folder.
+    """
     if settings.language_preference:
         settings.language_preference = parse_preferences(settings.language_preference)
-    if bool(settings.bgee_dir) != bool(settings.bg2ee_dir):
+    if bool(settings.bgee_dir) != bool(settings.bg2ee_dir) and \
+            not {"bgee_dir", "bg2ee_dir"} & set(from_file):
         raise ConfigError("--bgee-dir and --bg2ee-dir go together: an EET install "
                           "needs both games")
     if settings.plan_order:
@@ -1653,7 +1671,7 @@ def _require_plan(settings) -> None:
                         ("--bgee-dir", settings.bgee_dir),
                         ("--bg2ee-dir", settings.bg2ee_dir),
                         ("--language-preference", settings.language_preference)):
-        if given:
+        if given and flag[2:].replace("-", "_") not in from_file:
             raise ConfigError(f"{flag} works on an install plan: add "
                               f"--plan-order DIR (and --order-catalogue)")
 
@@ -1737,9 +1755,12 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome"
     if settings.describe_mods:
         _describe_mods(settings, stream)
         return Outcome(exit_code=0)
-    _require_plan(settings)
+    _require_plan(settings, config.values if config is not None else ())
     _emit_selection(settings, stream)
     target = os.path.abspath(settings.target)
+    if settings.manifest == DEFAULT_MANIFEST and not os.path.exists(DEFAULT_MANIFEST) \
+            and settings.catalogue:
+        settings.manifest = None        # the default is optional; a named file is not
     if settings.manifest:
         manifest = load_manifest(settings.manifest, allow_http=settings.allow_http)
     elif settings.catalogue:

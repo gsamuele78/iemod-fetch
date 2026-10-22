@@ -91,6 +91,12 @@ def test_each_tp2_of_a_multi_tp2_record_is_found_by_its_own_name():
     assert catalogue.lookup("eeteetendeetgui") is None
 
 
+def test_a_tp2_listed_twice_in_one_record_is_one_entry():
+    catalogue = SupplementaryCatalogue.from_entries([
+        {"tp2": "Contagion;contagion", "name": "Contagion", "urls": []}])
+    assert len(catalogue) == 1 and catalogue.lookup("contagion").tp2 == "Contagion"
+
+
 def test_a_repository_named_after_the_mod_wins_among_records_of_one_tp2():
     # real data: EET_Android ships the same tp2s as EET, and is listed after it
     catalogue = SupplementaryCatalogue.from_entries([

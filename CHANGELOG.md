@@ -34,6 +34,16 @@ Python API, which is internal.
   fails it; only a quota or network failure is inconclusive.
 
 ### Fixed
+- A command-line run in a project the wizard made (`--config
+  PROJECT/iemod-fetch.ini` without `--plan-order`) stopped on the
+  `language_preference`, `bgee_dir` and `bg2ee_dir` the wizard writes there:
+  "works on an install plan". A BG:EE or BG2:EE project, which names one
+  folder, stopped even with `--plan-order`: "go together". Values from the
+  config file are no longer refused; the same flags typed on the command
+  line still are.
+- The default `mod_downloads.json` is optional: absent, with the community
+  catalogue present, the catalogue is the source. A manifest named with
+  `-m` must still exist.
 - An lcc-docs record listing several tp2s (`EET;EET_end;EET_gui`) was read as
   one name, so EET, IWD1_EET and IWD2_EET were never found in the catalogue,
   by the command line's fallback either. Each tp2 is now found by its own

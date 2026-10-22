@@ -68,6 +68,8 @@ class DownloadPage(QWidget):
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._last: Dict[str, float] = {}
+        self._only: List[str] = []
+        self._selection: object = None
         self._bridge = _Bridge()
         self._bridge.event.connect(self._on_event)
 
@@ -108,6 +110,22 @@ class DownloadPage(QWidget):
         layout.addWidget(self.table, 1)
 
     # ------------------------------------------------------------ running
+    def prepare(self, selection: object) -> None:
+        """
+        Entered with `selection` (anything comparable): what an earlier run
+        showed of another selection no longer holds - a new mod was never
+        downloaded, a dropped one is no longer the player's to retry.
+        """
+        if selection == self._selection or self.running():
+            return
+        self._selection = selection
+        self.rows.clear()
+        self.table.clear()
+        self.result = {}
+        self.summary.setText("Nothing downloaded yet.")
+        self._buttons()
+        self.completeChanged.emit(False)
+
     def running(self) -> bool:
         return self._thread is not None
 
@@ -118,13 +136,12 @@ class DownloadPage(QWidget):
         self._cancel = threading.Event()
         self._last.clear()
         only = list(only or [])
+        self._only = only
         if not only:
             self.rows.clear()
             self.table.clear()
         self.result = {}
         self.summary.setText("Downloading...")
-        self._buttons()
-        self.completeChanged.emit(False)
         download, folder, cancel = self.download, self.project_dir, self._cancel
         forward = self._forward
 
@@ -135,6 +152,7 @@ class DownloadPage(QWidget):
                 return None, str(exc)
         self._thread = _in_thread(run, self._done, self._failed, self._finished)
         self._buttons()
+        self.completeChanged.emit(False)    # running now: the window locks Back
 
     def _start_all(self) -> None:
         self.start()                    # clicked() passes a bool: not an `only`
@@ -202,6 +220,12 @@ class DownloadPage(QWidget):
         if result is None:
             self.summary.setText(f"The download could not start: {problem}")
             return
+        reported = {record["folder"] for record in result["records"]}
+        for folder in self._only:
+            if folder not in reported and folder in self.rows:
+                # retried but not in the selection's plan any more: not the player's
+                self.table.takeTopLevelItem(self.table.indexOfTopLevelItem(self.rows[folder]))
+                del self.rows[folder]
         for record in result["records"]:            # the report is the authority
             item = self._row(record["folder"])
             self._finish_row(item, record["status"], record["detail"])

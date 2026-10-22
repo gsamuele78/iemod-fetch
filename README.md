@@ -189,7 +189,10 @@ in the project folder, so either can carry on from the other. With no
 in the data cache: on the supplied 145-mod EET log, 138 have a candidate there
 (114 a GitHub repository, 23 only a landing page, the weakest), and 7 do not,
 because lcc-docs names them otherwise. A `manifest` in the ini still comes
-first. Installing is phase 5, with M4.
+first. The command line does the same in the project when no
+`mod_downloads.json` is there (a manifest named with `-m` must exist).
+Back is locked while a download runs, and a changed selection starts the
+phase again. Installing is phase 5, with M4.
 
 ### Verifying a release download
 
@@ -454,7 +457,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,191 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,202 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
