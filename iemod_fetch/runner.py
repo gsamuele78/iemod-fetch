@@ -241,10 +241,19 @@ class Runner:
             return resolution, None
 
         # 1. a curated catalogue knows where this mod actually lives
+        empty = not (source.url or source.github)      # no manifest entry for it
         if entry:
-            probe = self._probe_catalogue(source, folder, entry)
+            tried: list = []
+            probe = self._probe_catalogue(source, folder, entry, tried)
             if probe:
                 return probe
+            if tried:
+                # what the catalogue's sources answered, not only that the
+                # (absent) manifest entry had none
+                said = f"{entry.origin}: " + "; ".join(tried)
+                resolution.reason = said if empty else f"{resolution.reason}; {said}"
+        elif empty and self.catalogue:
+            resolution.reason = "no manifest entry, and the catalogue does not list this mod"
         if not self.org_index:
             return resolution, None
 
@@ -299,20 +308,26 @@ class Runner:
         candidate = probe[0].candidate
         return candidate if candidate and candidate.url != used.url else None
 
-    def _probe_catalogue(self, source, folder, entry):
+    def _probe_catalogue(self, source, folder, entry, tried=None):
         """
         Try the sources a supplementary catalogue lists, best first.
 
         A URL that is itself the archive beats a repository (no guessing which
         release asset is meant), which beats a landing page (no scraping). All
         three still have to pass the .tp2 check before anything is installed.
+        Why each one failed is added to `tried`, when given.
         """
+        def failed(where, probe):
+            if tried is not None and probe.reason:
+                tried.append(f"{where}: {probe.reason}")
+
         for url in entry.direct_urls:
             probe = self.landing.resolve(_replace(source, url=url, github=None))
             if probe.ok:
                 probe.warnings.append(
                     f"{folder}: resolved via {entry.origin} direct download -> {url}")
                 return probe, None
+            failed(url, probe)
 
         if entry.github:
             probe = self.github.resolve(_replace(source, github=entry.github))
@@ -321,6 +336,7 @@ class Runner:
                     f"{folder}: resolved via {entry.origin} -> {entry.github}; it will "
                     f"only be installed if it contains {folder}.tp2 or setup-{folder}.tp2")
                 return probe, entry.github
+            failed(entry.github, probe)
 
         direct = set(entry.direct_urls)
         for url in entry.http_urls:
@@ -331,6 +347,7 @@ class Runner:
             if probe.ok:
                 probe.warnings.append(f"{folder}: resolved via {entry.origin} -> {url}")
                 return probe, None
+            failed(url, probe)
         return None
 
     def _collect(self, report: RunReport, item: WorkItem, future) -> None:

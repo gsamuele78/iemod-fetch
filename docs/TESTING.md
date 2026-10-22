@@ -137,6 +137,12 @@ as inconclusive, never as a pass. Writing the cases found a wrong belief of
 our own: Ascension's `ascension.ini` looks like the mod's settings file, but
 under the settings it carries a `[Metadata]` section that Project Infinity
 reads, and premeta was right to take it.
+`download-sources.yml` resolves the supplied 145-mod EET log with the
+community catalogue only and with the manifest (dry runs), then downloads 20
+of the mods the catalogue found, so the tp2 check of real archives is
+measured too; the numbers go to the job summary (`tools/download_measure.py`).
+A session sandbox cannot make this measurement: its proxy refuses
+third-party repositories and the mod sites.
 
 ## 8. The real WeiDU as oracle — no game data needed
 
@@ -332,7 +338,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,203 collected (7 run the real WeiDU, 63 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,208 collected (7 run the real WeiDU, 63 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 58 modules |

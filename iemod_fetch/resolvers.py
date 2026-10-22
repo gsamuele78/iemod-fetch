@@ -142,8 +142,15 @@ class GitHubResolver:
                 hint = (f" - {repo} has no published release"
                         f"{' tagged ' + source.release_tag if source.release_tag else 's'}"
                         f" (or the repository was renamed)")
-            elif status in (401, 403):
-                hint = " - rate limited or credential rejected; set GH_TOKEN"
+            elif status == 401:
+                hint = " - the credential was rejected; check GH_TOKEN"
+            elif status == 403 and "rate limit" not in str(exc):
+                # The primary quota is named by net.py from its headers; a bare
+                # 403 may be GitHub's secondary limit, or a refusal - a proxy,
+                # a blocked repository - which a token does not cure
+                hint = (" - refused with no quota header: GitHub's secondary rate "
+                        "limit (wait), or a proxy or policy blocking this "
+                        "repository")
             return Resolution(reason=f"GitHub API: {exc}{hint}")
 
         version = data.get("tag_name")

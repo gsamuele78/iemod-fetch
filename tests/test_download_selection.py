@@ -215,3 +215,17 @@ def test_a_plan_flag_typed_with_another_value_is_still_refused(project, monkeypa
                      "--check-only", "--language-preference", "fr_FR"],
                     stream=__import__("io").StringIO())
     assert code == 2 and "--language-preference works on an install plan" in err.getvalue()
+
+
+def test_with_no_manifest_a_failed_mod_says_what_the_catalogue_tried(project):
+    # Measured on the real catalogue: every miss read "entry has no url and no
+    # github repository", hiding the repository tried and its answer
+    folder, stub = project
+    del stub.releases["o/eefixpack"]
+    api.save_selection(str(folder), "BGEE", [(DLC, 0), (FIX, 0), ("ghost/ghost.tp2", 0)],
+                       data_dir=str(folder / "no-cache"))
+    result = api.download_selection(str(folder))
+    details = {r["folder"]: r["detail"] for r in result["records"]}
+    assert "o/eefixpack" in details["eefixpack"]
+    assert "no url and no github" not in details["eefixpack"]
+    assert details["ghost"] == "no manifest entry, and the catalogue does not list this mod"

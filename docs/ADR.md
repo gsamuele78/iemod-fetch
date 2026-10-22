@@ -2015,8 +2015,15 @@ command line either.
   - Before the multi-tp2 fix, EET was among the misses.
   - The supplied manifest covers 135.
   - How many candidates hold the right mod can only be measured by
-    downloading them. That needs the GitHub API, which this measurement's
-    sandbox could not reach; it is not claimed.
+    downloading them. That needs the GitHub API and the mod sites, which a
+    session sandbox cannot reach: its proxy refuses every repository the
+    session was not given, and the forum hosts. `download-sources.yml` makes
+    the measurement on GitHub's runners (dry runs, then 20 real downloads);
+    its numbers are not claimed until it has run.
+  - Measuring in the sandbox anyway found three defects, fixed here: a mod
+    the catalogue could not resolve said only "entry has no url and no
+    github repository"; a link typed with accents crashed the mod; a bare
+    403 was called a rate limit.
 - Landing pages are the weakest source: a scrape can find no archive. Those
   mods come back as "No download found", which the player can retry or fix
   with a manifest entry.

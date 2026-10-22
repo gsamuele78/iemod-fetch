@@ -252,14 +252,6 @@ def test_a_404_from_the_api_becomes_a_readable_manual_reason_not_a_crash():
     assert "no published release" in res.reason
 
 
-def test_a_403_explains_the_rate_limit():
-    from iemod_fetch.errors import HttpStatusError
-    client = StubClient({"releases/latest": HttpStatusError(
-        "https://api.github.com/repos/o/r/releases/latest", 403, "Forbidden")})
-    res = GitHubResolver(client).resolve(src(github="o/r"))
-    assert not res.ok and "GH_TOKEN" in res.reason
-
-
 # ================= regressions from the first real Windows run =================
 def weasel_page(slug="shades-of-the-sword-coast", extra=b""):
     """A WeaselMods download page: a sidebar listing every other mod on the site."""
@@ -364,3 +356,16 @@ def test_a_pinned_tag_never_falls_back_to_a_branch():
 def test_a_repository_that_does_not_exist_still_fails():
     res = GitHubResolver(StubClient({})).resolve(src(github="o/missing"))
     assert not res.ok and "no published release" in res.reason
+
+
+@pytest.mark.parametrize("status,headers,said", [
+    (403, {}, "refused with no quota header"),
+    (401, {}, "the credential was rejected"),
+])
+def test_a_refusal_is_not_called_a_rate_limit(status, headers, said):
+    # A proxy or a blocked repository answers a bare 403 too; it was reported
+    # as "rate limited or credential rejected; set GH_TOKEN", which no token cures
+    client = StubClient({"/repos/o/r/": HttpStatusError("https://api.github.com/repos/o/r",
+                                                        status, "Forbidden")})
+    res = GitHubResolver(client).resolve(src(github="o/r"))
+    assert not res.ok and said in res.reason and "set GH_TOKEN" not in res.reason
