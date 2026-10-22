@@ -53,7 +53,7 @@ from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
 from . import bio, choices, limits, pi
-from .decisions import parse_decisions
+from .decisions import Decisions, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
                          resolve_conflicts, resolve_refusals)
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
@@ -73,7 +73,8 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "selection_of_logs", "update_data", "data_status", "describe_mods",
            "load_bio_code", "bio_code_of", "check_game_folders", "languages",
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
-           "save_selection", "SELECTION_FILE"]
+           "save_selection", "SELECTION_FILE", "selection_conflicts",
+           "load_decisions", "save_decisions", "DECISIONS_FILE"]
 
 
 @dataclass
@@ -550,6 +551,7 @@ def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
             described = tp2.as_dict()
             # A path selection.json would refuse cannot be chosen: say why.
             described["refused"] = tp2_problem(tp2.tp2)
+            described["key"] = tp2_key(tp2.tp2)      # what rules and options name
             entry["tp2s"].append(described)
         out.append(entry)
     return out
@@ -562,15 +564,24 @@ def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
     install order, for one install of `game`. The CLI reads it with
     --selection; it goes through selection.json's own checks first.
     """
+    text = selection_to_json(_wizard_selection(game, chosen, labels))
+    parse_selection(text, source="the wizard's selection")      # refuse before writing
+    return _write_whole(folder, SELECTION_FILE, text)
+
+
+def _wizard_selection(game: str, chosen: Sequence[Tuple[str, int]],
+                      labels: Optional[dict] = None) -> Selection:
     labels = labels or {}
-    selection = Selection([SelectionInstall(game.upper(), [
+    return Selection([SelectionInstall(game.upper(), [
         Choice(tp2=tp2, component=number,
                label=one_line_label(labels.get((tp2, number), "")))
         for tp2, number in dict.fromkeys(chosen)])])
-    text = selection_to_json(selection)
-    parse_selection(text, source="the wizard's selection")      # refuse before writing
+
+
+def _write_whole(folder: str, name: str, text: str) -> str:
+    """Write `folder`/`name` whole or not at all: a half-written file is never read."""
     os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, SELECTION_FILE)
+    path = os.path.join(folder, name)
     temp = path + ".tmp"
     try:
         with open(temp, "w", encoding="utf-8") as fh:
@@ -581,6 +592,129 @@ def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
             os.unlink(temp)
         raise
     return path
+
+
+DECISIONS_FILE = "decisions.json"
+
+
+def load_decisions(folder: str) -> dict:
+    """
+    `folder`/decisions.json as {"choose": {finding: option}, "accept": {finding:
+    why}, "problem": None or why it could not be read}. A missing file is no
+    decisions; an unreadable one is reported, never silently replaced.
+    """
+    path = os.path.join(folder, DECISIONS_FILE)
+    out: dict = {"choose": {}, "accept": {}, "problem": None}
+    if not os.path.exists(path):
+        return out
+    try:
+        with open(path, encoding="utf-8") as fh:
+            decisions = parse_decisions(fh.read(), source=path)
+    except (OSError, UnicodeDecodeError, ConfigError) as exc:
+        out["problem"] = str(exc)
+        return out
+    out["choose"], out["accept"] = dict(decisions.choose), dict(decisions.accept)
+    return out
+
+
+def save_decisions(folder: str, choose: Optional[dict] = None,
+                   accept: Optional[dict] = None) -> str:
+    """
+    Write `folder`/decisions.json (ADR-0033): `choose` maps a finding id to the
+    option chosen, `accept` a finding id to why it is accepted. The CLI applies
+    it with --decisions; it goes through that reader's checks first.
+    """
+    text = decisions_to_json(Decisions(dict(choose or {}), dict(accept or {})))
+    parse_decisions(text, source="the wizard's decisions")    # refuse before writing
+    return _write_whole(folder, DECISIONS_FILE, text)
+
+
+def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
+                        labels: Optional[dict] = None, folder: Optional[str] = None,
+                        target: Optional[str] = None, data_dir: Optional[str] = None,
+                        rules: Sequence[str] = (), mod_db: Optional[str] = None,
+                        order_catalogue: Optional[str] = None) -> dict:
+    """
+    What fights what in a selection, before anything is downloaded (M3 phase 2,
+    ADR-0033): the findings a run with --selection --plan-order reports, each
+    with its options and the player's decision from `folder`/decisions.json.
+
+    They are the findings of the run's --conflict-report, with the same ids,
+    which are the ids --decisions matches; an order finding the planned order
+    settles is marked `fixed_by_plan`. Without an order catalogue there is no
+    plan, and the selection is judged as it is. Staged mods
+    under `target` add their own tp2's rules, as in a run. Beyond the
+    report's fields, each side and each option carries its rule `key` and
+    `chosen`: the chosen (tp2, component) pairs it covers - what deselecting
+    it removes.
+
+    Returns {"findings": [...], "stale": [decided ids no finding has],
+    "rules_checked": n, "planned": bool, "problem": None or why decisions.json
+    could not be read}.
+    """
+    cached = datasync.data_paths(data_dir or datasync.default_data_dir())
+    rules = list(rules) or list(cached.rules)
+    mod_db = mod_db or cached.mod_db
+    order_catalogue = order_catalogue or cached.order_catalogue
+    selection = _wizard_selection(game, chosen, labels)
+    decided = (load_decisions(folder) if folder
+               else {"choose": {}, "accept": {}, "problem": None})
+    with tempfile.TemporaryDirectory(prefix="iemod-conflicts-") as work:
+        logs = []
+        for log in selection.weidu_logs():
+            path = os.path.join(work, log.name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(log.text)
+            logs.append(f"{path}:{log.game}")
+        settings = Settings(weidu_log=logs, rules=rules, mod_db=mod_db,
+                            order_catalogue=order_catalogue, quiet=True,
+                            target=target or os.path.join(work, "Mods"))
+        installed = parse_weidu_files([split_log_spec(spec) for spec in logs])
+        analysis = _check_rules(settings, installed, _Silent())
+        ruleset = analysis.ruleset or RuleSet()
+        plan = None
+        if order_catalogue and logs:
+            plan = plan_order(_log_roles(logs), OrderIndex.load(order_catalogue),
+                              ruleset, analysis.context)
+        # Named by role even with no plan: the ids are then the ones a planned
+        # run gives, so a decision saved now still matches once there is one.
+        report = build_conflict_report(_judged_installs(settings, analysis, True),
+                                       ruleset, analysis.context, plan)
+    findings = []
+    for finding in report.findings:
+        entry = finding.as_dict()
+        for name, side in (("left", finding.left), ("right", finding.right)):
+            if side is not None:
+                entry[name]["key"] = side.key
+                entry[name]["chosen"] = _covered(side.key, side.numbers, side.whole_mod,
+                                                 chosen)
+        for described, option in zip(entry["options"], finding.options):
+            described["key"] = option.key
+            described["chosen"] = _covered(option.key, option.components,
+                                           option.whole_mod, chosen)
+        entry["decision"] = (
+            {"choose": decided["choose"][finding.id]} if finding.id in decided["choose"]
+            else {"accept": decided["accept"][finding.id]}
+            if finding.id in decided["accept"] else None)
+        findings.append(entry)
+    known = {f["id"] for f in findings}
+    stale = sorted((set(decided["choose"]) | set(decided["accept"])) - known)
+    return {"findings": findings, "stale": stale, "rules_checked": report.rules_checked,
+            "planned": plan is not None, "problem": decided["problem"]}
+
+
+def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
+             chosen: Sequence[Tuple[str, int]]) -> List[List[Any]]:
+    """
+    The chosen (tp2, number) pairs a side or an option names: the tp2 the key
+    names, as the plan keys its units - `eet` is EET.tp2, not EET_end.tp2 in
+    the same folder - and only when no tp2 has that key, the folder's.
+    """
+    chosen = list(dict.fromkeys(chosen))
+    named = [c for c in chosen if tp2_key(c[0]) == key]
+    if not named:
+        named = [c for c in chosen if choices.folder_key(c[0]) == key]
+    return [[tp2, number] for tp2, number in named if whole_mod or number in numbers]
 
 
 def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> List[dict]:
@@ -886,6 +1020,13 @@ def _log_roles(specs):
         raise ConfigError(
             "two logs both look like the EET install (" + ", ".join(eet_logs) +
             "). Name the pre-EET one explicitly, e.g. -w WeiDUBGEE.log:BGEE")
+    others = [path for path, role in roles if role == PRE_EET_LOG]
+    if len(others) > 1:
+        # The plan has one pre-EET install; two logs would be merged into it.
+        raise ConfigError(
+            "more than one log is not the EET install (" + ", ".join(others) +
+            "). An EET plan has one BG:EE phase: give one -w PATH:BGEE and one "
+            "-w PATH:EET")
     if not eet_logs and len(roles) > 1:
         raise ConfigError(
             "no log installs the EET core, so which one is the merged game is a "
@@ -1050,8 +1191,13 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
     """
     if analysis.ruleset is None or not analysis.installs:
         return None
-    report = build_conflict_report(analysis.installs, analysis.ruleset,
-                                   analysis.context, plan)
+    judged = _judged_installs(settings, analysis, plan is not None)
+    report = build_conflict_report(judged, analysis.ruleset, analysis.context, plan)
+    files = {install.label: original.label
+             for install, original in zip(judged, analysis.installs)}
+    for finding in report.findings:
+        if files.get(finding.log, finding.log) != finding.log:
+            finding.shown_log = files[finding.log]
     report.engine_limits = _engine_limits(settings)
     resolution = getattr(plan, "resolution", None)
     if resolution is not None:
@@ -1071,6 +1217,23 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
     if settings.conflict_report:
         report.write_json(settings.conflict_report)
     return report
+
+
+def _judged_installs(settings, analysis: "RuleAnalysis", by_role: bool):
+    """
+    The installs the conflict report judges, named as --decisions names them.
+
+    --decisions matches findings on the plan, whose installs are named by role
+    (WeiDU.log for the EET game, WeiDU-BGEE.log otherwise), and a finding's id
+    includes that name. A log named anything else - every log --selection
+    writes, a BG2EE `WeiDU.log` - gave the report ids no decision could match.
+    The report shows each log's own file name (Finding.shown_log).
+    """
+    if not by_role:
+        return analysis.installs
+    roles = [role for _path, role in _log_roles(settings.weidu_log)]
+    return [replace(install, label=role)
+            for install, role in zip(analysis.installs, roles)]
 
 
 def _rule_context(settings, installed, ruleset, stream):

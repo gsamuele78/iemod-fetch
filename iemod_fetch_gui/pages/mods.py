@@ -12,35 +12,55 @@ project's selection.json, which the CLI reads with --selection.
 A mod whose components are not known yet - not staged, and krion64 has no
 record of it - cannot be chosen here: a selection names components, and
 guessing them is what this tool does not do. It says so in its row.
+
+The conflicts tab checks the selection against the rules a run uses, shortly
+after each change and in a worker thread too (api.selection_conflicts, ADR-0033);
+its buttons change the tree or write decisions.json. "Conflicts only" shows the
+mods in a conflict still to decide.
 """
 import html
 import os
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QSplitter, QTextBrowser, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QListWidgetItem, QMessageBox, QSplitter, QTabWidget,
+                               QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from iemod_fetch import api
 
+from .conflicts import ConflictsPanel, open_findings
+
 Loader = Callable[[str, dict], List[dict]]
 Key = Tuple[str, int]                     # (tp2, component number)
+Checker = Callable[[str, List[Key], dict, str], dict]
 ROLE = Qt.ItemDataRole.UserRole
 ALL = "All categories"
-FILTERS = ["All mods", "Chosen only", "Updates available"]
+FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available"]
+CHECK_DELAY_MS = 700      # a burst of clicks is checked once, after it ends
 KRION_NOTE = ("Components from krion64's records: the mod is not downloaded yet. "
               "Its own tp2 decides once it is, and the choice is checked again then.")
+
+
+def _target(project: dict) -> str:
+    """The CLI's --target, resolved as the CLI resolves it when run in the project."""
+    folder = os.path.dirname(project["path"])
+    return os.path.join(folder, project.get("target") or "Mods")
+
+
+def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str) -> dict:
+    """The real checker: the selection's conflicts and the project's decisions."""
+    project = api.load_project(project_dir)
+    return api.selection_conflicts(game, chosen, labels, folder=project_dir,
+                                   target=_target(project))
 
 
 def load_choices(game: str, project: dict) -> List[dict]:
     """The real loader: refresh the community data (offline keeps the last good
     copy), then every mod for `game` with its components."""
     api.update_data(api.Settings(quiet=True))
-    # The CLI's --target, resolved as the CLI resolves it when run in the project.
-    folder = os.path.dirname(project["path"])
-    target = os.path.join(folder, project.get("target") or "Mods")
-    return api.mod_choices(game, target=target,
+    return api.mod_choices(game, target=_target(project),
                            preferences=project.get("language_preference") or ())
 
 
@@ -57,28 +77,58 @@ def wait_for_loaders(timeout_ms: int = 60000) -> None:
 
 
 class _Worker(QObject):
-    done = Signal(list)
+    done = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, load: Loader, game: str, project: dict) -> None:
+    def __init__(self, call: Callable[[], Any]) -> None:
         super().__init__()
-        self.load, self.game, self.project = load, game, project
+        self.call = call
 
     def run(self) -> None:
         try:
-            self.done.emit(self.load(self.game, self.project))
+            self.done.emit(self.call())
         except Exception as exc:          # shown on the page, never a crash
             self.failed.emit(str(exc))
+
+
+def _in_thread(call: Callable[[], Any], done: Callable, failed: Callable,
+               finished: Callable) -> QThread:
+    """Run `call` in a worker thread kept in _RUNNING until it ends."""
+    thread = QThread()                          # no parent: see _RUNNING
+    worker = _Worker(call)
+    worker.moveToThread(thread)
+    thread.started.connect(worker.run)
+    worker.done.connect(done)
+    worker.failed.connect(failed)
+    for signal in (worker.done, worker.failed):
+        signal.connect(thread.quit)
+    thread.finished.connect(finished)
+    def ended(held: _Worker = worker) -> None:     # holds the worker until the end
+        _RUNNING.discard(thread)
+        held.deleteLater()
+
+    thread.finished.connect(ended)
+    _RUNNING.add(thread)
+    thread.start()
+    return thread
 
 
 class ModsPage(QWidget):
     completeChanged = Signal(bool)
     loaded = Signal()
+    checked = Signal()
 
-    def __init__(self, project_dir: str, load: Loader = load_choices) -> None:
+    def __init__(self, project_dir: str, load: Loader = load_choices,
+                 check: Checker = find_conflicts) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.load = load
+        self.check = check
+        self.conflicts: dict = {}
+        self._checking: Optional[QThread] = None
+        self._recheck = False
+        self._generation = 0      # a check's result is shown only for the list it checked
+        self._loading = False     # a list is on its way: the one shown is not checked
         self.game = ""              # the game the shown list is for
         self.wanted = ""            # the game asked for last
         self.mods: List[dict] = []
@@ -103,6 +153,20 @@ class ModsPage(QWidget):
         self.tree.currentItemChanged.connect(lambda item, _old: self._show(item))
         self.details = QTextBrowser()
         self.details.setOpenLinks(False)          # catalogue text is third-party
+        self.panel = ConflictsPanel()
+        self.panel.can_choose = self._can_choose
+        self.panel.deselect.connect(self._deselect)
+        self.panel.choose.connect(self._choose_in)
+        self.panel.decide.connect(self._decide)
+        self.panel.undo.connect(self._undo)
+        self.panel.check.connect(self.check_conflicts)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.details, "Details")
+        self.tabs.addTab(self.panel, "Conflicts")
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(CHECK_DELAY_MS)
+        self.timer.timeout.connect(self.check_conflicts)
         self.status = QLabel("Loading the mod list...")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
 
@@ -117,8 +181,8 @@ class ModsPage(QWidget):
         split = QSplitter()
         split.addWidget(self.categories)
         split.addWidget(middle)
-        split.addWidget(self.details)
-        split.setSizes([160, 560, 260])
+        split.addWidget(self.tabs)
+        split.setSizes([160, 520, 320])
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>2. Mod selection</h2>"))
         layout.addWidget(split, 1)
@@ -132,24 +196,17 @@ class ModsPage(QWidget):
             return
         if game == self.game and self.mods:
             return
+        # What was checked was the old list: no result for it may land on the new one.
+        self.timer.stop()
+        self._generation += 1
+        self._loading = True
+        self._set_conflicts({})
         self.game = game
         self.status.setText(f"Loading the mods for {game}...")
         project = api.load_project(self.project_dir)
-        thread = QThread()                          # no parent: see _RUNNING
-        worker = _Worker(self.load, game, project)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.done.connect(self._fill)
-        worker.failed.connect(self._failed)
-        for signal in (worker.done, worker.failed):
-            signal.connect(thread.quit)
-        thread.finished.connect(self._finished)
-        thread.finished.connect(lambda: _RUNNING.discard(thread))
-        thread.finished.connect(worker.deleteLater)
-        _RUNNING.add(thread)
-        self._worker = worker
-        self._thread = thread
-        thread.start()
+        load = self.load
+        self._thread = _in_thread(lambda: load(game, project), self._fill, self._failed,
+                                  self._finished)
 
     def _finished(self) -> None:
         self._thread = None
@@ -159,9 +216,12 @@ class ModsPage(QWidget):
         self.loaded.emit()              # the thread has ended: safe to close the page
 
     def _failed(self, message: str) -> None:
+        self._loading = False
         self.status.setText(f"The mod list could not be loaded: {message}")
 
     def _fill(self, mods: list) -> None:
+        self._loading = False
+        self._generation += 1           # nothing checked before this list applies to it
         self._updating = True
         self.mods = mods
         self.tree.clear()
@@ -183,6 +243,7 @@ class ModsPage(QWidget):
         self._updating = False
         self.apply_filter()
         self._count()
+        self.check_conflicts()
 
     def _mod_item(self, mod: dict, saved: Set[Key]) -> QTreeWidgetItem:
         latest = mod.get("latest") or {}
@@ -285,13 +346,137 @@ class ModsPage(QWidget):
         self.status.setText(f"{len(chosen)} component(s) chosen in {len(mods)} mod(s), "
                             f"of {len(self.mods)} mods for {self.game}.")
         self.completeChanged.emit(self.is_complete())
+        if self.mods:
+            self.timer.start()                    # what was checked no longer holds
 
     def is_complete(self) -> bool:
         return bool(self.chosen())
 
+    def labels(self) -> Dict[Key, str]:
+        return {key: item.data(0, ROLE)[2]["name"] for key, item in self.items.items()}
+
     def save(self) -> str:
-        labels = {key: item.data(0, ROLE)[2]["name"] for key, item in self.items.items()}
-        return api.save_selection(self.project_dir, self.game, self.chosen(), labels)
+        return api.save_selection(self.project_dir, self.game, self.chosen(), self.labels())
+
+    # ---------------------------------------------------------- conflicts
+    def check_conflicts(self) -> None:
+        """Check the selection now, in a worker thread; a check asked for while
+        one runs is made once that one ends."""
+        self.timer.stop()
+        if self._loading:
+            return                      # the list arriving is checked when it is shown
+        if self._checking is not None:
+            self._recheck = True
+            return
+        self._recheck = False
+        self.panel.busy()
+        check, args = self.check, (self.game, self.chosen(), self.labels(),
+                                   self.project_dir)
+        generation = self._generation
+
+        def run() -> Tuple[int, Optional[dict], str]:
+            # The generation travels with the result: the slots below are the
+            # page's own methods, so Qt runs them on the window's thread (a
+            # lambda slot would run on the worker's).
+            try:
+                return generation, check(*args), ""
+            except Exception as exc:      # shown on the panel, never a crash
+                return generation, None, str(exc)
+        self._checking = _in_thread(run, self._check_done, self.panel.failed,
+                                    self._check_finished)
+
+    def _check_done(self, outcome: tuple) -> None:
+        generation, result, problem = outcome
+        if generation != self._generation:
+            return                      # checked a list this page no longer shows
+        if result is None:
+            self._set_conflicts({})
+            self.panel.failed(problem)
+            return
+        self._set_conflicts(result)
+
+    def _set_conflicts(self, result: dict) -> None:
+        """Show `result` ({} for none): the panel, the tab's count, the filter."""
+        self.conflicts = result
+        if result:
+            self.panel.show_result(result)
+        else:
+            self.panel.clear()
+        waiting = len(open_findings(result))
+        self.tabs.setTabText(1, f"Conflicts ({waiting})" if waiting else "Conflicts")
+        if self.filter.currentText() == "Conflicts only":
+            self.apply_filter()
+
+    def _check_finished(self) -> None:
+        self._checking = None
+        if self._recheck and not self._loading:
+            self.check_conflicts()
+            return
+        self.checked.emit()
+
+    def _deselect(self, pairs: list) -> None:
+        for tp2, number in pairs:
+            item = self.items.get((tp2, number))
+            if item is not None:
+                item.setCheckState(0, Qt.CheckState.Unchecked)
+
+    def _mod_items(self, key: str, numbers: List[int]) -> Dict[int, QTreeWidgetItem]:
+        """
+        The choosable components `numbers` of the tp2 an option's key names,
+        as the plan names it: `eet` is EET.tp2, not EET_end.tp2 in the same
+        folder; a mod's own key only when no tp2 has that key.
+        """
+        tp2s = [t for m in self.mods for t in m.get("tp2s") or [] if t.get("key") == key]
+        if not tp2s:
+            mod = next((m for m in self.mods if m["key"] == key), None)
+            tp2s = (mod or {}).get("tp2s") or []
+            if len(tp2s) != 1:
+                return {}               # which of its tp2s is meant is not known
+        found: Dict[int, QTreeWidgetItem] = {}
+        for tp2 in tp2s:
+            for number in numbers:
+                item = self.items.get((tp2["tp2"], number))
+                if item is not None and not item.isDisabled():
+                    found.setdefault(number, item)
+        return found
+
+    def _can_choose(self, key: str, numbers: List[int]) -> bool:
+        return bool(numbers) and set(numbers) <= set(self._mod_items(key, numbers))
+
+    def _choose_in(self, key: str, numbers: list) -> None:
+        for item in self._mod_items(key, numbers).values():
+            item.setCheckState(0, Qt.CheckState.Checked)
+
+    def _decide(self, finding: str, option: str, why: str) -> None:
+        self._write_decisions(lambda choose, accept: (
+            choose.__setitem__(finding, option) if option else accept.__setitem__(finding, why)))
+
+    def _undo(self, finding: str) -> None:
+        self._write_decisions(lambda choose, accept: (choose.pop(finding, None),
+                                                      accept.pop(finding, None)))
+
+    def _write_decisions(self, change: Callable[[dict, dict], Any]) -> None:
+        current = api.load_decisions(self.project_dir)
+        if current["problem"]:
+            # Never overwrite a file that could not be read: it may hold answers.
+            QMessageBox.critical(self, "decisions.json cannot be read",
+                                 f"{current['problem']}\n\nFix or remove it first.")
+            return
+        change(current["choose"], current["accept"])
+        try:
+            api.save_decisions(self.project_dir, current["choose"], current["accept"])
+        except Exception as exc:
+            QMessageBox.critical(self, "Cannot save the decision", str(exc))
+            return
+        self.check_conflicts()
+
+    def _in_conflict(self) -> Set[str]:
+        """Keys of the mods in a conflict still to decide."""
+        tp2s = {tp2 for finding in open_findings(self.conflicts)
+                for side in (finding["left"], finding.get("right")) if side
+                for tp2, _number in side.get("chosen") or []}
+        return {mod["key"] for mod in self.mods
+                if any(t["tp2"] in tp2s for t in mod.get("tp2s") or [])}
 
     # ---------------------------------------------------------- filtering
     def apply_filter(self) -> None:
@@ -300,6 +485,7 @@ class ModsPage(QWidget):
         words = self.search.text().strip().lower().split()
         mode = self.filter.currentText()
         by_key = {m["key"]: m for m in self.mods}
+        in_conflict = self._in_conflict() if mode == "Conflicts only" else set()
         for row in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(row)
             mod = by_key.get(item.data(0, ROLE)[1], {})
@@ -309,6 +495,8 @@ class ModsPage(QWidget):
             visible = visible and all(word in text for word in words)
             if mode == "Chosen only":
                 visible = visible and item.checkState(0) != Qt.CheckState.Unchecked
+            elif mode == "Conflicts only":
+                visible = visible and mod.get("key") in in_conflict
             elif mode == "Updates available":
                 visible = visible and bool(mod.get("update_available"))
             item.setHidden(not visible)

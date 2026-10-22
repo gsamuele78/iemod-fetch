@@ -141,7 +141,23 @@ components WeiDU lists for 105 real mods (ADR-0035) - and each mod says which.
 Choosing one of a SUBCOMPONENT's options clears the others, and a component
 brings the ones it needs. A mod whose components nobody describes cannot be
 chosen yet, and says so. Next writes `selection.json`, which the CLI reads
-with `--selection`. Install order, download and extraction follow.
+with `--selection`.
+
+The **Conflicts** tab checks the selection against the same rules a run uses,
+in the background, shortly after each change: every conflict with its options
+as buttons. *Deselect* unchooses that side in the tree (for EET, the tp2 the
+rule names, not every tp2 in the folder); *Choose* adds a missing prerequisite
+when the list knows its components; *Accept...* (you give the reason) is
+written to `decisions.json` in the project, which the CLI applies with
+`--decisions` - the ids are the ones a planned run reports, even before the
+order data is downloaded, so the wizard and the command line agree on what was
+decided. An order conflict the planned order could not settle is explained,
+not offered as a choice. A
+conflict the planned install order already settles is counted, not listed as
+work; the filter *Conflicts only* shows the mods still to decide. Install
+order, download and extraction follow. Answers to WeiDU prompts come with the
+install step (M4): only BWS-NG describes prompts as data, for 4 components
+(ADR-0036).
 
 ### Verifying a release download
 

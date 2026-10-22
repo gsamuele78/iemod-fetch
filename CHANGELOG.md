@@ -28,6 +28,19 @@ Python API, which is internal.
   loads in a background thread; closing the window while it loads is safe.
 - `api.mod_choices` (mods with their components, for a game) and
   `api.save_selection`.
+- **The wizard's conflicts panel** (phase 2, ADR-0033): the selection is
+  checked against the rules a run uses, in a worker thread after each change;
+  each conflict's options are buttons - deselect a side, choose a missing
+  prerequisite the list knows, or accept a conflict with its reason in
+  `decisions.json`, which `--decisions` applies. An order finding the plan
+  could not settle is explained, not offered as a choice: `--decisions`
+  applies a reorder only by sorting, which already failed for it. A filter
+  shows only the mods still in conflict. An unreadable `decisions.json` is
+  reported and never overwritten; a check of a list the page no longer shows
+  (another game) is dropped.
+- `api.selection_conflicts`, `api.load_decisions` and `api.save_decisions`:
+  the panel as functions; the findings and ids are those of a run with
+  `--selection --plan-order`.
 - `tools/download_sources_benchmark.py`: lcc-docs', krion64's and BWS-NG's
   download data against each other, with `--probe` asking GitHub (git, no
   token) which repositories and pinned release tags are live and which are
@@ -35,6 +48,16 @@ Python API, which is internal.
   third argument. ADR-0036 records which source is used for what.
 
 ### Fixed
+- `--conflict-report` with `--plan-order` gave findings ids that `--decisions`
+  could not match whenever a log's file name was not the plan's role
+  (`WeiDU.log` for EET, `WeiDU-BGEE.log` otherwise): every `--selection` run,
+  and a BG2EE `WeiDU.log`. The report now names the installs as the plan does,
+  so an accepted or chosen decision shows in it, with each log's own file
+  name.
+- The conflict report's schema did not allow the `known-issue` scope its
+  known-issue findings carry, so a report with one failed validation.
+- An EET plan given two non-EET logs merged them into one BG:EE phase, and
+  their findings shared ids; it is now refused with what to give instead.
 - **A `%` in `iemod-fetch.ini`** (a path like `C:/Games/100%BG`) stopped the
   CLI with a raw configparser traceback; it is now a ConfigError that says to
   write `%%`, and the wizard writes it that way.

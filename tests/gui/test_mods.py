@@ -20,6 +20,12 @@ from test_project import bg2ee, bgee  # noqa: E402
 TP2 = "bg1ub/setup-bg1ub.tp2"
 
 
+def no_check(*_args):
+    """No rules: these tests are about choosing (test_conflicts.py checks)."""
+    return {"findings": [], "stale": [], "rules_checked": 0, "planned": False,
+            "problem": None}
+
+
 def component(number, name, exclusive="", subgroup="", requires=()):
     return {"number": number, "name": name, "subgroup": subgroup, "exclusive": exclusive,
             "groups": [], "requires": list(requires), "forced": False}
@@ -40,7 +46,8 @@ MODS = [
 
 
 def page(qtbot, folder, mods=MODS):
-    widget = ModsPage(str(folder), load=lambda game, project: json.loads(json.dumps(mods)))
+    widget = ModsPage(str(folder), load=lambda game, project: json.loads(json.dumps(mods)),
+                      check=no_check)
     qtbot.addWidget(widget)
     with qtbot.waitSignal(widget.loaded, timeout=5000):
         widget.start("EET")
@@ -112,7 +119,7 @@ def test_the_choice_is_saved_as_the_selection_the_cli_reads_and_comes_back(qtbot
 def test_a_loader_that_fails_is_shown_not_raised(qtbot, tmp_path):
     def broken(game, project):
         raise OSError("no network")
-    widget = ModsPage(str(tmp_path), load=broken)
+    widget = ModsPage(str(tmp_path), load=broken, check=no_check)
     qtbot.addWidget(widget)
     with qtbot.waitSignal(widget.loaded, timeout=5000):
         widget.start("EET")
@@ -121,7 +128,8 @@ def test_a_loader_that_fails_is_shown_not_raised(qtbot, tmp_path):
 
 def test_the_wizard_goes_from_folders_to_mods_and_saves_both(qtbot, tmp_path):
     project = tmp_path / "project"
-    main = MainWindow(str(project), load=lambda game, proj: json.loads(json.dumps(MODS)))
+    main = MainWindow(str(project), load=lambda game, proj: json.loads(json.dumps(MODS)),
+                      check=no_check)
     qtbot.addWidget(main)
     main.game.bgee.edit.setText(bgee(tmp_path))
     main.game.bg2ee.edit.setText(bg2ee(tmp_path))
@@ -146,7 +154,7 @@ def test_closing_the_page_while_the_list_loads_does_not_crash(qtbot, tmp_path):
     def slow(game, project):
         release.wait(5)
         return []
-    widget = ModsPage(str(tmp_path), load=slow)
+    widget = ModsPage(str(tmp_path), load=slow, check=no_check)
     widget.start("EET")
     widget.close()
     widget.deleteLater()
@@ -196,7 +204,7 @@ def test_changing_the_game_while_the_list_loads_loads_the_new_game(qtbot, tmp_pa
         if game == "EET":
             gate.wait(5)
         return [dict(MODS[0], name=f"for {game}")]
-    widget = ModsPage(str(tmp_path), load=load)
+    widget = ModsPage(str(tmp_path), load=load, check=no_check)
     qtbot.addWidget(widget)
     widget.start("EET")
     widget.start("BGEE")                       # Back, another game, Next

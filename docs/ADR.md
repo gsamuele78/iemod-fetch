@@ -1510,6 +1510,23 @@ that, and neither can a player who wants the same choice next time.
 - A player can accept a conflict the rules grade `error`. The report keeps it
   visible as accepted, with the reason they gave, rather than hiding it.
 
+**Amended 2026-10-22 (M3 phase 2, the wizard's conflicts panel).**
+`api.selection_conflicts` judges a selection before anything is downloaded,
+with the rules, the staged tp2s and the planned order a run uses, and returns
+the run's findings with their ids; the panel turns each option into a button
+(deselect a side, choose a missing prerequisite the list knows, or write an
+install-order choice or an acceptance to `decisions.json`). Building it found
+that the run's own `--conflict-report` named each install by its log's file
+name while `--decisions` names it by the plan's role, so any log not already
+named `WeiDU.log` (EET) or `WeiDU-BGEE.log` - every `--selection` run - got
+report ids no decision could match. The report now uses the plan's names when
+there is a plan, and shows each log's own file name. Ids of a plain
+`-w WeiDU.log:EET` run are unchanged. The panel always names installs by role,
+so a decision saved before the order data arrives still matches a planned
+run. A reorder is not offered as a decision on a finding the plan could not
+settle: `--decisions` applies a reorder only by sorting, which already failed
+for it, so recording it would mark the finding settled and change nothing.
+
 ---
 
 ## ADR-0034 — Engine limits are checked against primary sources, and warned on, never blocked

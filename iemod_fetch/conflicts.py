@@ -88,6 +88,9 @@ class Finding:
     stale_risk: str = ""
     suppressed: str = ""
     first: str = ""                   # ORDER: the key of the mod that goes first
+    # The log's own file name, when `log` is the plan's role for it: the id
+    # keeps the role (what --decisions matches), the reader sees the file.
+    shown_log: str = ""
 
     @property
     def rank(self) -> int:
@@ -115,7 +118,7 @@ class Finding:
         return {
             "id": self.id,
             "kind": self.kind, "severity": self.severity,
-            "raw_severity": self.raw_severity, "log": self.log,
+            "raw_severity": self.raw_severity, "log": self.shown_log or self.log,
             "scope": self.scope,
             "left": {"mod": self.left.mod, "components": list(self.left.numbers),
                      "whole_mod": self.left.whole_mod},
@@ -530,7 +533,8 @@ def render_conflict_report(report: ConflictReport, stream, limit: int = 40,
 
 def _render_one(finding: Finding, stream) -> None:
     mark = {"error": "!!", "warning": " !", "note": " ~"}.get(finding.severity, "  ")
-    where = f"[{finding.log}] " if finding.log else ""
+    shown = finding.shown_log or finding.log
+    where = f"[{shown}] " if shown else ""
     print(f"    {mark} {where}{finding.left.describe()}", file=stream)
     if finding.right is not None:
         joiner = {"same-mod": "vs (same mod)", "missing": "needs"}.get(
