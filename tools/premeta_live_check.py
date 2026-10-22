@@ -21,6 +21,7 @@ if ROOT not in sys.path:
 
 from iemod_fetch import premeta  # noqa: E402
 from iemod_fetch.auth import resolve_credential  # noqa: E402
+from iemod_fetch.errors import ModFetchError  # noqa: E402
 from iemod_fetch.net import HttpClient  # noqa: E402
 
 # (what is wanted, the ini's path in the repository or None, whether only a
@@ -92,10 +93,20 @@ def main() -> int:
                 (counting.listings > 0) == listed
             if path is not None:
                 ok = ok and cache.get(wanted) is not None   # it parses, with an order
-            elif premeta._raw(client, wanted.repo.lower(),
-                              PRESENT[wanted.repo.lower()]) is None:
-                ok = False
-                line += "; the repository or its tp2 is gone"
+            else:
+                try:
+                    present = premeta._raw(client, wanted.repo.lower(),
+                                           PRESENT[wanted.repo.lower()]) is not None
+                except ModFetchError as exc:
+                    if premeta._network_down(exc):
+                        inconclusive.append(f"{line}: {exc}")
+                        print(f"?    {line}: {exc}")
+                        continue
+                    present = False
+                    line += f"; {exc}"
+                if not present:
+                    ok = False
+                    line += "; the repository or its tp2 is gone"
             print(f"{'ok  ' if ok else 'FAIL'} {line}")
             if not ok:
                 failures.append(f"{line}; expected {path}, listing {'yes' if listed else 'no'}")
