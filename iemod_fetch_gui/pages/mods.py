@@ -302,8 +302,13 @@ class ModsPage(QWidget):
             selection = api.load_selection(path)
         except Exception:        # a hand-edited file the CLI would refuse: start empty
             return set()
+        # An EET build is saved as two installs, the BG:EE phase and EET; a
+        # BG:EE install alone is a BG:EE build, not EET's first phase.
+        saved = {install.game.upper() for install in selection.installs}
+        games = ({"EET", "BGEE"} if self.game.upper() == "EET" and "EET" in saved
+                 else {self.game.upper()})
         return {(c.tp2, c.component) for install in selection.installs
-                if install.game.upper() == self.game.upper() for c in install.components}
+                if install.game.upper() in games for c in install.components}
 
     # ---------------------------------------------------------- choosing
     def _changed(self, item: QTreeWidgetItem, column: int) -> None:

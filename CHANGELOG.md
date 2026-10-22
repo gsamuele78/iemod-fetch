@@ -58,6 +58,14 @@ Python API, which is internal.
   rules between consecutive lines of what is chosen. It is the player's own:
   a downloaded mod's ini never silences it.
 
+- **The wizard's install order** (phase 3, ADR-0038): one tab per install,
+  in the order the run will use; bold where a rule places a mod, red where an
+  order rule objects; drag to reorder, saved as `install-order.txt` (a
+  Project Infinity Sorting Order file) that the project's ini hands to the
+  CLI as `--sorting-order`. An EET selection is saved as two installs, the
+  BG:EE phase and EET, as krion64's categories place each component.
+- `api.selection_plan`, `api.save_install_order`, `api.reset_install_order`.
+
 ### Fixed
 - `--conflict-report` with `--plan-order` gave findings ids that `--decisions`
   could not match whenever a log's file name was not the plan's role

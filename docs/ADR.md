@@ -1847,3 +1847,56 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.
+
+---
+
+## ADR-0038 — The wizard's install order is the run's plan, and the player's order is a Sorting Order file
+
+**Status**: accepted
+**Date**: 2026-10-22
+
+### Context
+
+Phase 3 of the wizard (GUI-AUDIT item 17) shows the install order and lets
+the player change it. Two things had to hold: what the page shows is what the
+run will install, and a change the player makes reaches the command line too.
+
+An EET build is two installs: mods for BG1 go on BG:EE before the conversion,
+the rest on the EET game. The wizard saved one EET install, so the plan could
+only report the BG1 mods as "in the wrong log", and splitting them later
+would have renamed every finding's install - and with it every id a
+decisions.json holds (ADR-0033).
+
+### Decision
+
+- **The selection is split where it is made.** For EET, `save_selection`,
+  the conflicts check and the plan all build two installs - BGEE with the
+  components krion64 files under a pre-EET category (per component where it
+  places one apart), EET with the rest. Without krion64's data, one install,
+  as before. The same selection is judged the same way everywhere.
+- **The page is the plan.** `api.selection_plan` runs the planner a run with
+  `--selection --plan-order` runs, on the same data, and returns each
+  install's units in order: rule-placed ones marked (`constrained`), those an
+  order rule still objects to marked (`flagged`), cycles and violations as
+  text. A cycle names every unit left when it was broken, so it is reported,
+  not marked.
+- **The player's order is a Sorting Order file.** Dragging writes the whole
+  order shown as `install-order.txt` in Project Infinity's format (ADR-0037)
+  - `tp2 *`, or `tp2 N N` for a mod split across the order - and names it in
+  the project's ini as `sorting_order`, so `iemod-fetch` run in the project
+  plans the same order. A test checks the page's order against the run's
+  written logs. It goes on top of the rules; a contradiction is shown as a
+  violation or a cycle. "Use the computed order" deletes the file and the
+  ini entry.
+- Moving a mod between installs is not offered: which game it goes on is
+  krion64's category, not a preference.
+
+### Consequences
+
+- The order the player sees, the order the CLI writes and the order PI would
+  apply from the same file are one order.
+- A hand order fixes every unit's place relative to its neighbours, so later
+  rule changes show up as contradictions rather than silent moves; using the
+  computed order again is one click.
+- An EET selection.json now holds two installs; the selection page reads both
+  back (a BGEE install alone is a BG:EE build, not EET's first phase).

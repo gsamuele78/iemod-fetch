@@ -308,6 +308,9 @@ class OrderPlan:
     residual: List = field(default_factory=list)           # rules.Violation
     warnings: List[str] = field(default_factory=list)
     edges: int = 0
+    # Units (`Unit.node`) a rule ties to another: where the rules, not the
+    # catalogue's category, decide their place.
+    constrained: Set[str] = field(default_factory=set)
     simulation: Optional[object] = None    # simulate.SimulationResult, if run
     game_report: Optional[object] = None   # gamedir.GameReport, if folders given
     resolution: Optional[object] = None    # resolution.ResolutionResult, if any
@@ -598,6 +601,7 @@ def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
     rules = _order_rules(ruleset, include_optional)
     units = _split(units, rules, index)
     edges, plan.edges = _edges(units, rules)
+    plan.constrained = set(edges).union(*edges.values()) if edges else set()
     priorities = _priorities(units)
 
     for role in (PRE_EET_LOG, EET_LOG):

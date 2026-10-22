@@ -154,8 +154,19 @@ order data is downloaded, so the wizard and the command line agree on what was
 decided. An order conflict the planned order could not settle is explained,
 not offered as a choice. A
 conflict the planned install order already settles is counted, not listed as
-work; the filter *Conflicts only* shows the mods still to decide. Install
-order, download and extraction follow. Answers to WeiDU prompts come with the
+work; the filter *Conflicts only* shows the mods still to decide.
+
+**Phase 3, install order**: the chosen components in the order the run will
+install them, planned by the same planner as `--plan-order`, one tab per
+install - for EET, *BG:EE before the conversion* and *EET*, as krion64's
+categories place each component (the selection is saved as those two
+installs). A mod a rule places is shown in bold; one an order rule still finds
+in the wrong place is red, with the rule below. Drag a mod to move it: the
+whole order is saved as `install-order.txt`, a Project Infinity Sorting Order
+file, and the project's ini names it, so the command line run in the project
+plans the same order (`--sorting-order`). Your order goes on top of the rules;
+where it contradicts one, that is shown, not silently won. *Use the computed
+order* forgets it. Download and extraction follow. Answers to WeiDU prompts come with the
 install step (M4): only BWS-NG describes prompts as data, for 4 components
 (ADR-0036).
 

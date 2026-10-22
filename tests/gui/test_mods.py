@@ -4,6 +4,7 @@ The catalogue comes from a fixed loader - the page's loader is injected - so
 the tests need no network and no community data.
 """
 import json
+import os
 
 import pytest
 
@@ -18,6 +19,10 @@ from iemod_fetch_gui.window import MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
 
 TP2 = "bg1ub/setup-bg1ub.tp2"
+
+
+def no_plan(*_args):
+    return {"phases": [], "cycles": [], "violations": [], "planned": False, "custom": False}
 
 
 def no_check(*_args):
@@ -129,7 +134,7 @@ def test_a_loader_that_fails_is_shown_not_raised(qtbot, tmp_path):
 def test_the_wizard_goes_from_folders_to_mods_and_saves_both(qtbot, tmp_path):
     project = tmp_path / "project"
     main = MainWindow(str(project), load=lambda game, proj: json.loads(json.dumps(MODS)),
-                      check=no_check)
+                      check=no_check, plan=no_plan)
     qtbot.addWidget(main)
     main.game.bgee.edit.setText(bgee(tmp_path))
     main.game.bg2ee.edit.setText(bg2ee(tmp_path))
@@ -226,3 +231,15 @@ def test_a_selection_for_another_game_is_not_carried_over(qtbot, tmp_path):
     api.save_selection(str(tmp_path), "BGEE", [(TP2, 0)])
     widget = page(qtbot, tmp_path)                     # loads for EET
     assert widget.chosen() == []
+
+
+def test_an_eet_build_saved_in_two_phases_is_chosen_again(qtbot, tmp_path):
+    # bg1ub belongs to the BG:EE phase (krion64): selection.json holds it in a
+    # BGEE install beside the EET one, and the EET page must find it there.
+    krion = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "krion")
+    api.save_selection(str(tmp_path), "EET", [(TP2, 0), ("eet/EET.tp2", 0)],
+                       order_catalogue=krion)
+    saved = api.load_selection(str(tmp_path / api.SELECTION_FILE))
+    assert [i.game for i in saved.installs] == ["BGEE", "EET"]
+    widget = page(qtbot, tmp_path)
+    assert widget.chosen() == [(TP2, 0)]
