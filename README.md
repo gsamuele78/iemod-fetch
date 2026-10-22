@@ -290,8 +290,21 @@ archive (its page marks them with a padlock); those need no API call and leave
 no ambiguity about which release asset is meant.
 
 A catalogue hit is still only a candidate: it is installed only if the archive
-contains the right `.tp2`. The catalogue is never bundled and never fetched
-automatically — you pass the path.
+contains the right `.tp2`. The catalogue is never bundled: it comes from the
+data cache (or the path you pass).
+
+Each community source is used for what it measures best (ADR-0036, measured on
+2026-10-22 with `tools/download_sources_benchmark.py --bws ... --probe`):
+
+| What | From | Why |
+|---|---|---|
+| where a mod lives | lcc-docs | 1,148 EE mods; where it and krion64 disagree, krion64's repository is gone in 27 of 113, lcc-docs' in none |
+| the exact file and its sha256 | BWS-NG | 409 exact files, 335 with their sha256; 279 of 280 pinned release tags still exist - but the pinned version is older than the newest in 48 of 228 comparable mods |
+| components before download | krion64 | 1,047 of 1,089 WeiDU components on the 67 mods all three know, BWS-NG 1,023 |
+| conflicts and install order | krion64 and BWS-NG | as before |
+
+BWS-NG is also the only source that describes WeiDU prompts as data, for 4
+components; prompt answers arrive with the install step (M4).
 
 ### Health warnings
 

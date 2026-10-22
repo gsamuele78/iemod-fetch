@@ -1650,3 +1650,88 @@ tp2, and 85 mods are identical. 14 of the mods have no krion64 record.
   against the tp2 once the mod is staged (the plan's own checks).
 - The selection screen works offline from the last good data, and needs no
   download to start.
+
+## ADR-0036 — Each community source is used for what it measures best
+
+**Status**: accepted
+**Date**: 2026-10-22
+
+### Context
+
+Three community projects describe the same mods, and the tool already reads
+all three (ADR-0032): lcc-docs (the mod list, every known URL, a status and a
+rating), krion64 (components, conflicts, install order, a scan of each
+repository's latest release) and BigWorldSetup-NG (rules, and per mod an exact
+file with size, platform and often a sha256, components, and the answers to
+some WeiDU prompts). The question was whether downloads, and the wizard's
+choices, should come from more than one of them, and from which for what.
+
+Measured on 2026-10-22 over the mods for BGEE, SoD, BG2EE or EET (hidden and
+absorbed ones left out), with `tools/download_sources_benchmark.py --bws ...
+--probe` and `tools/krion_components_benchmark.py ORACLE KRION BWS`. Data:
+lcc-docs 6d73f777df (last commit 2026-10-17), krion64 a8d17c4d5e
+(2026-10-19), BWS-NG f7befca607 (2026-02-24, eight months old).
+
+| | lcc-docs | krion64 | BWS-NG |
+|---|---:|---:|---:|
+| mods | 1,148 | 813 | 412 |
+| with a GitHub repository | 852 | 651 | - |
+| an exact file, and its sha256 | 11 direct archives without a repository | - | 409, 335 |
+
+**Repositories** (lcc-docs and krion64, 665 mods both know): 428 name the
+same one, 113 differ. Of those, krion64's is gone in 27 and lcc-docs' in
+none; 23 are one repository under two names (a rename GitHub redirects); of
+the 63 different live ones lcc-docs' has the newer last commit in 51,
+krion64's in 11, one ties. The usual pattern is SHS's move from
+`SpellholdStudios` to `Spellhold-Studios`. 148 mods only krion64 knows, 95 of
+them with a repository. One krion64 record names a repository that cannot exist
+(`...Lanthornhttps:`) while its URLs name the live one, so a record's `gh` is
+read through the same URL check as any other URL.
+
+**Exact files** (BWS-NG; tools with no tp2, such as WeiDU itself, left out):
+279 of the 280 GitHub release tags it pins still exist (one repository is
+gone). Against krion64's latest scanned release, the version it pins is the
+same for 177 mods, older for 48 and newer for 3; 7 are spelled so they cannot
+be compared ("8" against "v8_EE"), 35 are branch archives (always the newest)
+and 142 have no scanned release.
+
+**Components**, against WeiDU 251's own `--list-components` (ADR-0035): on
+the 67 mods all three know (1,089 components), krion64 has 1,047 and BWS-NG
+1,023; their union has 1,057 and brings 8 the tp2 does not have. Over every mod
+it has a record for, krion64 has 1,471 of 1,529 (105 mods).
+
+**Prompts**: only BWS-NG describes WeiDU prompts as data (`sub` components with
+options and a default), for 4 components across its Enhanced Edition mods
+(printed by the download tool).
+
+### Decision
+
+- **Where a mod is found** (repository, landing page): the manifest, then
+  lcc-docs, as today. krion64's URLs are not added: on disagreement they are
+  dead or older far more often.
+- **Which file, and its checksum**: BWS-NG's exact file and sha256 verify the
+  version they pin (as today). In the wizard's download phase BWS-NG's file
+  becomes a candidate only when its version is the newest known; otherwise
+  the repository's newest release wins and the BWS-NG checksum does not apply.
+- **Components before download**: krion64, as ADR-0035. BWS-NG is not merged
+  in: the union would add 10 of 1,089 components (0.9%) and 8 the mod does not
+  offer.
+- **Prompts**: BWS-NG is the only structured source, and covers 4 components.
+  Drop-downs for prompts are built with M4, where recorded answers are used
+  to install; a selection does not carry answers yet.
+- **Rules and order**: BWS-NG's rules, krion64's records and order, as today.
+- The 148 mods only krion64 knows are the case for using its repository as a
+  third download candidate later, checked as any other (the archive must
+  contain the right tp2).
+
+### Consequences
+
+- No behaviour change now. The measurements are reproducible with the two
+  tools and go stale with the data; they are re-run before the download phase
+  relies on them.
+- 27 mods would resolve to a dead repository if krion64's URL were preferred,
+  and 48 of the 228 comparable BWS-NG pins (one in five) would install an
+  older release than the newest; both are avoided.
+- BWS-NG's age (eight months at the time of writing) is reported by the data
+  cache like any source's; it is a reason to prefer it for checksums of what it
+  pins, not for what is newest.

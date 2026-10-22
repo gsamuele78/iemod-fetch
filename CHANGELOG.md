@@ -28,6 +28,11 @@ Python API, which is internal.
   loads in a background thread; closing the window while it loads is safe.
 - `api.mod_choices` (mods with their components, for a game) and
   `api.save_selection`.
+- `tools/download_sources_benchmark.py`: lcc-docs', krion64's and BWS-NG's
+  download data against each other, with `--probe` asking GitHub (git, no
+  token) which repositories and pinned release tags are live and which are
+  newer; `tools/krion_components_benchmark.py` takes BWS-NG's records as a
+  third argument. ADR-0036 records which source is used for what.
 
 ### Fixed
 - **A `%` in `iemod-fetch.ini`** (a path like `C:/Games/100%BG`) stopped the
