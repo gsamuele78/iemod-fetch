@@ -19,9 +19,14 @@ from iemod_fetch_gui.window import PHASES, MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
 
 
+def no_check(*_args):
+    return {"findings": [], "stale": [], "rules_checked": 0, "planned": False,
+            "problem": None}
+
+
 def window(qtbot, folder):
     # No test reaches the network: the catalogue comes from an empty loader.
-    main = MainWindow(str(folder), load=lambda game, project: [])
+    main = MainWindow(str(folder), load=lambda game, project: [], check=no_check)
     qtbot.addWidget(main)
     return main
 

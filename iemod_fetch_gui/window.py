@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem
 from iemod_fetch import api
 
 from .pages.game import GamePage
-from .pages.mods import Loader, ModsPage, load_choices
+from .pages.mods import Checker, Loader, ModsPage, find_conflicts, load_choices
 from .pages.pending import PendingPage
 
 # BWS-NG's order (ADR-0031). Pages arrive phase by phase during M3.
@@ -22,7 +22,8 @@ PHASES = ["Game and folders", "Mod selection", "Install order", "Download",
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, project_dir: str, load: Loader = load_choices) -> None:
+    def __init__(self, project_dir: str, load: Loader = load_choices,
+                 check: Checker = find_conflicts) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.setWindowTitle(f"iemod-fetch {api.__version__} - {project_dir}")
@@ -36,7 +37,7 @@ class MainWindow(QMainWindow):
         self.phases.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self.game = GamePage(project_dir)
-        self.mods = ModsPage(project_dir, load)
+        self.mods = ModsPage(project_dir, load, check)
         self.pages: List[QWidget] = [self.game, self.mods] + [
             PendingPage(name, self.game) for name in PHASES[2:]]
         self.stack = QStackedWidget()
