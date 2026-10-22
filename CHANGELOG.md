@@ -6,7 +6,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html), where
 the public surface is the CLI's flags and the JSON report schema — not the
 Python API, which is internal.
 
-## [Unreleased]
+## [2.5.0] - 2026-10-22
 
 ### Added
 - **The wizard's first phase** (M3, ADR-0031). `iemod_fetch_gui`, a PySide6
