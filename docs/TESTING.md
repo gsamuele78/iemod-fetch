@@ -153,15 +153,19 @@ has them), 13 krion64 lists are not in the tp2, and 85 mods are identical.
 Hence each component says where it came from, and the staged tp2 replaces
 krion64 for its mod.
 
-### Download sources: lcc-docs against krion64
+### Community sources: lcc-docs, krion64 and BWS-NG against each other
 
-`tools/download_sources_benchmark.py LCC_MODS_JSON KRION_DATA --probe`
-compares the repositories the two name for each Enhanced Edition mod (ADR-0036).
-On 2026-10-22: lcc-docs knows 1,148 mods, krion64 813, both 665. Of the 114
-mods for which they name different repositories, krion64's is gone in 28 and
-lcc-docs' in none; 23 are one repository under two names; of the 63 different
-live ones lcc-docs' has the newer last commit in 51, krion64's in 11. Hence
-lcc-docs stays the download source and krion64 the component source.
+`tools/download_sources_benchmark.py LCC_MODS_JSON KRION_DATA --bws
+BWS_MODS --probe` measures where a mod is downloaded from (ADR-0036). On
+2026-10-22 over the Enhanced Edition mods: lcc-docs knows 1,148, krion64 813,
+BWS-NG 413. Of the 113 mods for which lcc-docs and krion64 name different
+repositories, krion64's is gone in 27 and lcc-docs' in none; 23 are one
+repository under two names; of the 63 different live ones lcc-docs' has the
+newer last commit in 51. BWS-NG pins exact files: 279 of its 280 pinned GitHub
+release tags still exist, and its version is the newest scanned release for
+158 mods and not for 56. `tools/krion_components_benchmark.py ORACLE KRION
+BWS` adds BWS-NG's components: on the 67 mods all three know, krion64 has
+1,047 of WeiDU's 1,089, BWS-NG 1,023, their union 1,057.
 
 ### Engine limits, measured as WeiDU measures them
 

@@ -293,12 +293,18 @@ A catalogue hit is still only a candidate: it is installed only if the archive
 contains the right `.tp2`. The catalogue is never bundled: it comes from the
 data cache (or the path you pass).
 
-Why lcc-docs and not krion64's URLs: measured on 2026-10-22
-(`tools/download_sources_benchmark.py --probe`, ADR-0036), lcc-docs knows 1,148
-Enhanced Edition mods to krion64's 813. Where the two name different
-repositories, krion64's is gone in 28 of 114 and lcc-docs' in none, and of the
-63 different live ones lcc-docs' has the newer commit in 51. krion64 stays the
-source of components, conflicts and install order.
+Each community source is used for what it measures best (ADR-0036, measured on
+2026-10-22 with `tools/download_sources_benchmark.py --bws ... --probe`):
+
+| What | From | Why |
+|---|---|---|
+| where a mod lives | lcc-docs | 1,148 EE mods; where it and krion64 disagree, krion64's repository is gone in 27 of 113, lcc-docs' in none |
+| the exact file and its sha256 | BWS-NG | 410 exact files, 382 with a sha256; 279 of 280 pinned release tags still exist - but its version is not the newest in 56 of 214 comparable mods |
+| components before download | krion64 | 1,047 of 1,089 WeiDU components on the 67 mods all three know, BWS-NG 1,023 |
+| conflicts and install order | krion64 and BWS-NG | as before |
+
+BWS-NG is also the only source that describes WeiDU prompts as data, for 4
+components; prompt answers arrive with the install step (M4).
 
 ### Health warnings
 
