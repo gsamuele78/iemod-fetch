@@ -1674,9 +1674,9 @@ lcc-docs 6d73f777df (last commit 2026-10-17), krion64 a8d17c4d5e
 
 | | lcc-docs | krion64 | BWS-NG |
 |---|---:|---:|---:|
-| mods | 1,148 | 813 | 413 |
+| mods | 1,148 | 813 | 412 |
 | with a GitHub repository | 852 | 651 | - |
-| with an exact file (sha256) | 11 direct archives without a repository | - | 410 (382) |
+| an exact file, and its sha256 | 11 direct archives without a repository | - | 409, 335 |
 
 **Repositories** (lcc-docs and krion64, 665 mods both know): 428 name the
 same one, 113 differ. Of those, krion64's is gone in 27 and lcc-docs' in
@@ -1688,9 +1688,12 @@ them with a repository. One krion64 record names a repository that cannot exist
 (`...Lanthornhttps:`) while its URLs name the live one, so a record's `gh` is
 read through the same URL check as any other URL.
 
-**Exact files** (BWS-NG): 279 of the 280 GitHub release tags it pins still
-exist (one repository is gone). The version it pins is krion64's latest scanned
-release for 158 mods and not for 56; 199 have no scanned release to compare.
+**Exact files** (BWS-NG; tools with no tp2, such as WeiDU itself, left out):
+279 of the 280 GitHub release tags it pins still exist (one repository is
+gone). Against krion64's latest scanned release, the version it pins is the
+same for 177 mods, older for 48 and newer for 3; 7 are spelled so they cannot
+be compared ("8" against "v8_EE"), 35 are branch archives (always the newest)
+and 142 have no scanned release.
 
 **Components**, against WeiDU 251's own `--list-components` (ADR-0035): on
 the 67 mods all three know (1,089 components), krion64 has 1,047 and BWS-NG
@@ -1698,7 +1701,8 @@ the 67 mods all three know (1,089 components), krion64 has 1,047 and BWS-NG
 it has a record for, krion64 has 1,471 of 1,529 (105 mods).
 
 **Prompts**: only BWS-NG describes WeiDU prompts as data (`sub` components with
-options and a default), for 4 components across its Enhanced Edition mods.
+options and a default), for 4 components across its Enhanced Edition mods
+(printed by the download tool).
 
 ### Decision
 
@@ -1726,8 +1730,8 @@ options and a default), for 4 components across its Enhanced Edition mods.
   tools and go stale with the data; they are re-run before the download phase
   relies on them.
 - 27 mods would resolve to a dead repository if krion64's URL were preferred,
-  and about a quarter of BWS-NG's pinned versions would install an older
-  release than the newest; both are avoided.
+  and 48 of the 228 comparable BWS-NG pins (one in five) would install an
+  older release than the newest; both are avoided.
 - BWS-NG's age (eight months at the time of writing) is reported by the data
   cache like any source's; it is a reason to prefer it for checksums of what it
   pins, not for what is newest.

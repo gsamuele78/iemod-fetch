@@ -23,6 +23,7 @@ an exact file (and a sha256), whether the version it pins is krion64's latest
 scanned release, and - with --probe - whether each GitHub release tag it pins
 still exists.
 """
+import argparse
 import collections
 import json
 import os
@@ -38,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from iemod_fetch.catalogues import SupplementaryCatalogue  # noqa: E402
 from iemod_fetch.naming import normalize_key  # noqa: E402
+from iemod_fetch.ordering import tp2_key  # noqa: E402
 from iemod_fetch.urls import repo_from_url  # noqa: E402
 
 EE = {"BGEE", "SOD", "BG2EE", "EET"}
@@ -88,6 +90,7 @@ def krion_repo(record):
 
 
 def bws_mods(directory):
+    """BWS-NG's Enhanced Edition mods by tp2 key; tools with no tp2 (WeiDU itself) are not mods."""
     out = {}
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".json"):
@@ -97,39 +100,64 @@ def bws_mods(directory):
                 record = json.load(fh)
         except (OSError, ValueError):
             continue
-        if (isinstance(record, dict) and isinstance(record.get("tp2"), str)
-                and {str(g).lower() for g in record.get("games") or []}
-                & {g.lower() for g in EE}):
-            out.setdefault(normalize_key(record["tp2"]), record)
+        games = record.get("games") if isinstance(record, dict) else None
+        if (isinstance(record.get("tp2") if isinstance(record, dict) else None, str)
+                and tp2_key(record["tp2"]) and isinstance(games, list)
+                and {str(g).lower() for g in games} & {g.lower() for g in EE}):
+            out.setdefault(tp2_key(record["tp2"]), record)
     return out
 
 
 RELEASE_ASSET = re.compile(r"https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/")
+BRANCH_ARCHIVE = re.compile(r"https://github\.com/[^/]+/[^/]+/archive/refs/heads/")
 
 
-def _version(text):
-    return re.sub(r"^v(ersion)?[-_ ]?", "", str(text or "").strip().lower())
+def _numbers(text):
+    """A version as numbers, when it is only numbers: "v1.7" -> (1, 7); "v8_EE" -> None."""
+    found = re.fullmatch(r"v?(?:ersion)?[-_ ]?(\d+(?:\.\d+)*)", str(text or "").strip().lower())
+    return tuple(int(n) for n in found.group(1).split(".")) if found else None
+
+
+def _pinned(record):
+    """The file BWS-NG pins (its first), when it is one."""
+    files = record.get("files")
+    first = files[0] if isinstance(files, list) and files else None
+    return first if isinstance(first, dict) else {}
 
 
 def bws_report(bws, releases_path, probe_tags):
-    files = [(r.get("files") or [{}])[0] for r in bws.values()]
-    print(f"BWS-NG: mods {len(bws)}, with an exact file {sum(bool(f.get('download')) for f in files)}"
-          f", with a sha256 {sum(any(isinstance(f, dict) and f.get('sha256') for f in r.get('files') or []) for r in bws.values())}")
+    pinned_files = [_pinned(r) for r in bws.values()]
+    prompts = sum(1 for r in bws.values() if isinstance(r.get("components"), dict)
+                  for c in r["components"].values()
+                  if isinstance(c, dict) and c.get("type") == "sub")
+    print(f"BWS-NG: mods {len(bws)}, with an exact file "
+          f"{sum(bool(f.get('download')) for f in pinned_files)}, its sha256 "
+          f"{sum(bool(f.get('sha256')) for f in pinned_files)}; components with "
+          f"described prompts {prompts}")
     with open(releases_path, encoding="utf-8") as fh:
         releases = {k.lower(): v for k, v in json.load(fh).items() if isinstance(v, dict)}
     tally, pinned = collections.Counter(), []
-    for record, first in zip(bws.values(), files):
-        match = RELEASE_ASSET.match(first.get("download") or "")
-        repo = (match.group(1) if match else
-                repo_from_url((record.get("links") or {}).get("homepage") or ""))
+    for record, first in zip(bws.values(), pinned_files):
+        url = first.get("download") if isinstance(first.get("download"), str) else ""
+        match = RELEASE_ASSET.match(url)
+        links = record.get("links") if isinstance(record.get("links"), dict) else {}
+        homepage = links.get("homepage") if isinstance(links.get("homepage"), str) else ""
+        repo = match.group(1) if match else repo_from_url(url) or repo_from_url(homepage)
         if match:
             pinned.append((match.group(1), urllib.parse.unquote(match.group(2))))
         latest = releases.get((repo or "").lower(), {}).get("tag")
-        if not latest:
+        if BRANCH_ARCHIVE.match(url):
+            tally["a branch archive (always the newest)"] += 1
+        elif not latest:
             tally["no scanned release"] += 1
         else:
-            tally["latest release" if _version(latest) == _version(record.get("version"))
-                  else "not the latest release"] += 1
+            mine, newest = _numbers(record.get("version")), _numbers(latest)
+            if mine is None or newest is None:
+                tally["same" if str(record.get("version")).lower().lstrip("v")
+                      == str(latest).lower().lstrip("v") else "not comparable"] += 1
+            else:
+                tally["same" if mine == newest else
+                      "older than the newest" if mine < newest else "newer"] += 1
     print("  pinned version against krion64's scanned release: "
           + ", ".join(f"{k} {v}" for k, v in sorted(tally.items())))
     if probe_tags:
@@ -194,10 +222,13 @@ def probe(differ):
 
 
 def main(argv) -> int:
-    if len(argv) < 3:
-        print(__doc__)
-        return 2
-    lcc, krion = lcc_mods(argv[1]), krion_mods(argv[2])
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("lcc_mods_json")
+    parser.add_argument("krion_data_dir")
+    parser.add_argument("--bws", metavar="BWS_NG_MODS_DIR")
+    parser.add_argument("--probe", action="store_true")
+    args = parser.parse_args(argv[1:])
+    lcc, krion = lcc_mods(args.lcc_mods_json), krion_mods(args.krion_data_dir)
     unreadable = krion.pop(None, 0)
     if unreadable:
         print(f"krion64 records skipped as unreadable: {unreadable}")
@@ -225,11 +256,11 @@ def main(argv) -> int:
                   "only krion64 names one" if b else "neither names one"] += 1
     print("repository, on the mods both know: "
           + ", ".join(f"{k} {v}" for k, v in sorted(tally.items())))
-    if "--probe" in argv[3:]:
+    if args.probe:
         probe(differ)
-    if "--bws" in argv[3:]:
-        bws_report(bws_mods(argv[argv.index("--bws") + 1]),
-                   os.path.join(argv[2], "version_cache.json"), "--probe" in argv[3:])
+    if args.bws:
+        bws_report(bws_mods(args.bws), os.path.join(args.krion_data_dir,
+                                                     "version_cache.json"), args.probe)
     return 0
 
 

@@ -299,7 +299,7 @@ Each community source is used for what it measures best (ADR-0036, measured on
 | What | From | Why |
 |---|---|---|
 | where a mod lives | lcc-docs | 1,148 EE mods; where it and krion64 disagree, krion64's repository is gone in 27 of 113, lcc-docs' in none |
-| the exact file and its sha256 | BWS-NG | 410 exact files, 382 with a sha256; 279 of 280 pinned release tags still exist - but its version is not the newest in 56 of 214 comparable mods |
+| the exact file and its sha256 | BWS-NG | 409 exact files, 335 with their sha256; 279 of 280 pinned release tags still exist - but the pinned version is older than the newest in 48 of 228 comparable mods |
 | components before download | krion64 | 1,047 of 1,089 WeiDU components on the 67 mods all three know, BWS-NG 1,023 |
 | conflicts and install order | krion64 and BWS-NG | as before |
 

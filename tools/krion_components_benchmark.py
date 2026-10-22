@@ -67,12 +67,17 @@ def bws_numbers(directory) -> dict:
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".json"):
             continue
-        with open(os.path.join(directory, name), encoding="utf-8-sig") as fh:
-            record = json.load(fh)
-        if not isinstance(record, dict) or not isinstance(record.get("tp2"), str):
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8-sig") as fh:
+                record = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if (not isinstance(record, dict) or not isinstance(record.get("tp2"), str)
+                or not tp2_key(record["tp2"])
+                or not isinstance(record.get("components"), dict)):
             continue
         numbers = set()
-        for key, value in (record.get("components") or {}).items():
+        for key, value in record["components"].items():
             if isinstance(value, dict) and value.get("type") == "muc":
                 numbers.update(int(n) for n in value.get("components") or []
                                if str(n).isdigit())
