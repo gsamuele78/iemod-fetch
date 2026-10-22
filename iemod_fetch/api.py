@@ -1376,6 +1376,9 @@ def _plan_order(settings, analysis: "RuleAnalysis", stream):
             constraints.by_mod, games=games, eet_rules=constraints.eet)
         if not settings.quiet:
             print("\n" + plan.simulation.render(), file=stream)
+    if bool(settings.bgee_dir) != bool(settings.bg2ee_dir) and PRE_EET_LOG in plan.logs:
+        print("[warning] the game folders are not checked: an EET install needs "
+              "both bgee_dir and bg2ee_dir", file=sys.stderr)
     if settings.bgee_dir and settings.bg2ee_dir:      # an EET install's two games
         plan.game_report = verify_eet(
             settings.bgee_dir, settings.bg2ee_dir,
@@ -1649,29 +1652,32 @@ def _game_language(settings) -> str:
     return str(settings.language_preference[0]) if settings.language_preference else "en_US"
 
 
-def _require_plan(settings, from_file: Sequence[str] = ()) -> None:
+def _require_plan(settings, from_file: Optional[dict] = None) -> None:
     """
     Flags that act on an install plan are meaningless without one. A value the
     config file gives is not refused: the wizard's project ini holds the game
     folders and languages for every run in the project, a download included
-    (ADR-0039), and a BG:EE or BG2:EE project names one folder.
+    (ADR-0039), and a BG:EE or BG2:EE project names one folder. The same flag
+    typed with another value still is.
     """
+    ini = from_file or {}
+    given = {name: getattr(settings, name) for name in (
+        "resolve_conflicts", "decisions", "emit_installer", "simulate", "bgee_dir",
+        "bg2ee_dir", "language_preference")}             # as typed, before parsing
+
+    def typed(name: str) -> bool:
+        return bool(given[name]) and ini.get(name) != given[name]
     if settings.language_preference:
         settings.language_preference = parse_preferences(settings.language_preference)
     if bool(settings.bgee_dir) != bool(settings.bg2ee_dir) and \
-            not {"bgee_dir", "bg2ee_dir"} & set(from_file):
+            (typed("bgee_dir") or typed("bg2ee_dir")):
         raise ConfigError("--bgee-dir and --bg2ee-dir go together: an EET install "
                           "needs both games")
     if settings.plan_order:
         return
-    for flag, given in (("--resolve-conflicts", settings.resolve_conflicts),
-                        ("--decisions", settings.decisions),
-                        ("--emit-installer", settings.emit_installer),
-                        ("--simulate", settings.simulate),
-                        ("--bgee-dir", settings.bgee_dir),
-                        ("--bg2ee-dir", settings.bg2ee_dir),
-                        ("--language-preference", settings.language_preference)):
-        if given and flag[2:].replace("-", "_") not in from_file:
+    for name in given:
+        if typed(name):
+            flag = "--" + name.replace("_", "-")
             raise ConfigError(f"{flag} works on an install plan: add "
                               f"--plan-order DIR (and --order-catalogue)")
 
@@ -1755,7 +1761,7 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome"
     if settings.describe_mods:
         _describe_mods(settings, stream)
         return Outcome(exit_code=0)
-    _require_plan(settings, config.values if config is not None else ())
+    _require_plan(settings, config.values if config is not None else {})
     _emit_selection(settings, stream)
     target = os.path.abspath(settings.target)
     if settings.manifest == DEFAULT_MANIFEST and not os.path.exists(DEFAULT_MANIFEST) \

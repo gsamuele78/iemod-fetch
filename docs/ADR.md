@@ -1971,10 +1971,13 @@ command line either.
   becomes optional in the same way: when that file is absent and a
   catalogue is present, the catalogue is the source, so the wizard and the
   command line agree in the same project. A manifest named on purpose
-  (`-m FILE`) must exist; a typo is an error, never a silent switch.
+  (`-m FILE`) must exist; a typo is an error, never a silent switch. (Typing
+  `-m mod_downloads.json` is the default itself, and is read the same way.)
 - **What only a plan uses** (`language_preference`, `bgee_dir`,
   `bg2ee_dir`, `decisions`, ...) is refused without `--plan-order` only when
-  given on the command line. The wizard's project ini holds the game folders
+  given on the command line with a value the config file does not hold. An
+  EET plan given one game folder warns that the folders were not checked.
+  The wizard's project ini holds the game folders
   and languages for every run in the project, and a BG:EE or BG2:EE project
   names one folder. Before this, every command-line run in a wizard project,
   and the wizard's own download, stopped on them. The download clears them,

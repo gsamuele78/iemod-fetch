@@ -200,3 +200,18 @@ def test_a_mod_with_no_source_is_counted(project):
     result = api.download_selection(str(folder))
     assert statuses(result) == {"eefixpack": "ok", "DlcMerger": "manual"}
     assert result["counts"]["manual"] == 1 and result["counts"]["ok"] == 1
+
+
+def test_a_plan_flag_typed_with_another_value_is_still_refused(project, monkeypatch):
+    # the ini's own value passes; a different one typed without --plan-order
+    # would do nothing, and says so
+    from iemod_fetch import cli
+    folder, _stub = project
+    api.save_project(str(folder), "BGEE", str(folder / "a"), None, ["en_US"])
+    monkeypatch.chdir(folder)
+    err = __import__("io").StringIO()
+    monkeypatch.setattr("sys.stderr", err)
+    code = cli.main(["--config", api.PROJECT_FILE, "--selection", api.SELECTION_FILE,
+                     "--check-only", "--language-preference", "fr_FR"],
+                    stream=__import__("io").StringIO())
+    assert code == 2 and "--language-preference works on an install plan" in err.getvalue()
