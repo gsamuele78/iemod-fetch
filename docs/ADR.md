@@ -1752,3 +1752,71 @@ options and a default), for 4 components across its Enhanced Edition mods
 - BWS-NG's age (eight months at the time of writing) is reported by the data
   cache like any source's; it is a reason to prefer it for checksums of what it
   pins, not for what is newest.
+
+---
+
+## ADR-0037 — The authors' own install order is read before download
+
+**Status**: accepted
+**Date**: 2026-10-22
+
+### Context
+
+Project Infinity (PI, github.com/ALIENQuake/ProjectInfinity, 0.10.7; its wiki
+pages "Adding metadata for mod", "Sorting Order feature", "Install Order
+Groups") brings three ideas to install order:
+
+1. A **metadata ini** beside the tp2 (`<tp2 name>.ini`, `[Metadata]`): identity
+   and links, `LabelType`, and the author's own `Before`/`After` - other mods'
+   tp2 names. It has no field for component conflicts.
+2. A **Sorting Order** file the player writes: `Ascension *`, `Ascension 101
+   102` - it sorts only what is chosen, and a component named on its own line
+   leaves its mod's `*` line.
+3. **Install Order Groups** the player arranges by hand: krion64's categories
+   already play that part.
+
+The tool read the metadata ini only from a staged mod (modmeta.py, ADR-0016).
+But the order is planned, and the wizard judges conflicts, before anything is
+downloaded; then only the community rule sets speak. LABELs are already read
+(pi.py), so `LabelType` adds nothing.
+
+Measured with `tools/pi_metadata_benchmark.py` on the 103 mods of the real
+install (krion64 a8d17c4, BWS-NG f7befca): 85 ship a metadata ini; they state
+314 order pairs. krion64's order agrees with 239; a rule (BWS-NG or krion64)
+already covers 34 of the others; 22 span the two EET game phases; **19 are
+known only to the author**: 7 contradict krion64's order (Region of Terror
+after IWD1_EET and IWD2_EET; Kivan before Adrian; Deities of Faerun before
+Tome and Blood; Homeward Bound before Crossmod BG2; JA#BGT AdvPack and
+Transitions before Baldur's Seatower) and 12 name mods krion64 does not place.
+Two of those name a mod by its display name ("Coran in BG2") and order nothing.
+
+### Decision
+
+- `premeta.py` fetches a planned mod's metadata ini before download: from the
+  repository lcc-docs names (ADR-0036), else krion64's, at its default
+  branch, on raw.githubusercontent.com; beside the tp2, named after it with or
+  without `setup-`, in its own case and in lower case (Region of Terror ships
+  `RoT/rot.ini` beside `setup-RoT.tp2`; PI runs where case does not matter). At
+  most 1 MiB, read as text with the same parser as a staged ini, never
+  executed. Found and not-found are both cached in the data cache, by mod,
+  with the date, for a week; a network error keeps the last entry.
+- `--fetch-metadata` asks for it in a run; the wizard's conflicts check asks
+  for what is chosen. A fetched ini is used by every run once cached - its
+  `Before`/`After` become order rules with the author's file named as their
+  origin - for the mods not staged; a staged mod's own ini wins.
+- `--sorting-order FILE` reads a PI Sorting Order file as order rules between
+  consecutive lines of what is chosen; what is not chosen is skipped, nothing
+  is added. A contradiction with another rule is reported as any order
+  conflict is, not silently won.
+- Install Order Groups and `LabelType` add nothing here and are not adopted.
+
+### Consequences
+
+- 19 order pairs per 314 (6%) reach the plan and the conflicts check before
+  download; the 7 that contradict krion64 move mods where their authors put
+  them.
+- One small request per chosen mod per week, to raw.githubusercontent.com (no
+  API quota). Offline, the cache is used; without it, the plan is what it was.
+- An author's ini can be wrong or old, like any rule source; its order rules
+  carry the file as their origin, so a finding says whose claim it is.
+- Component conflicts get nothing from PI: its format has no such field.

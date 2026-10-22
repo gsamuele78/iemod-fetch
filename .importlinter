@@ -64,6 +64,8 @@ source_modules =
     iemod_fetch.pi
     iemod_fetch.limits
     iemod_fetch.choices
+    iemod_fetch.premeta
+    iemod_fetch.sortorder
 forbidden_modules =
     iemod_fetch.net
     iemod_fetch.auth
@@ -148,11 +150,11 @@ layers =
     iemod_fetch.installer | iemod_fetch.tra
     iemod_fetch.resolution | iemod_fetch.languages
     iemod_fetch.simulate | iemod_fetch.constraints | iemod_fetch.gamedir
-    iemod_fetch.conflicts
+    iemod_fetch.conflicts | iemod_fetch.sortorder
     iemod_fetch.limits
     iemod_fetch.ordering
     iemod_fetch.rules
-    iemod_fetch.available | iemod_fetch.bio | iemod_fetch.pi | iemod_fetch.choices
+    iemod_fetch.available | iemod_fetch.bio | iemod_fetch.pi | iemod_fetch.choices | iemod_fetch.premeta
     iemod_fetch.manifest | iemod_fetch.catalogues | iemod_fetch.moddb | iemod_fetch.selection | iemod_fetch.freshness | iemod_fetch.decisions
     iemod_fetch.weidu | iemod_fetch.tp2 | iemod_fetch.modmeta | iemod_fetch.versions
     iemod_fetch.urls
@@ -202,6 +204,7 @@ forbidden_modules =
     iemod_fetch.orgindex
     iemod_fetch.pi
     iemod_fetch.pinning
+    iemod_fetch.premeta
     iemod_fetch.plan
     iemod_fetch.report
     iemod_fetch.resolution
@@ -210,6 +213,7 @@ forbidden_modules =
     iemod_fetch.runner
     iemod_fetch.selection
     iemod_fetch.simulate
+    iemod_fetch.sortorder
     iemod_fetch.tp2
     iemod_fetch.tra
     iemod_fetch.urls
