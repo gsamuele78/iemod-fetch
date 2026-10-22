@@ -54,8 +54,11 @@ def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str)
     project = api.load_project(project_dir)
     # The authors' own install order is fetched for what is chosen (ADR-0037):
     # one small file per mod, once a week at most, kept in the data cache.
+    # The order set by hand in phase 3 is part of what the run judges too.
+    order = os.path.join(project_dir, api.INSTALL_ORDER_FILE)
     return api.selection_conflicts(game, chosen, labels, folder=project_dir,
-                                   target=_target(project), fetch_metadata=True)
+                                   target=_target(project), fetch_metadata=True,
+                                   sorting_order=order if os.path.isfile(order) else None)
 
 
 def load_choices(game: str, project: dict) -> List[dict]:

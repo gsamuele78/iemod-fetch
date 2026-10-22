@@ -31,7 +31,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from .errors import ConfigError
 from .naming import normalize_key
-from .rules import Install, RuleSet, check_all
+from .rules import SORTING_ORDER, Install, RuleSet, check_all
 
 # The two logs an EET install is described by.
 EET_LOG = "WeiDU.log"
@@ -601,7 +601,10 @@ def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
     rules = _order_rules(ruleset, include_optional)
     units = _split(units, rules, index)
     edges, plan.edges = _edges(units, rules)
-    plan.constrained = set(edges).union(*edges.values()) if edges else set()
+    # What a rule places - not the player's own sorting order, which ties every
+    # unit to the next and would mark them all.
+    placed, _count = _edges(units, [r for r in rules if r.origin != SORTING_ORDER])
+    plan.constrained = set(placed).union(*placed.values()) if placed else set()
     priorities = _priorities(units)
 
     for role in (PRE_EET_LOG, EET_LOG):

@@ -97,6 +97,7 @@ class OrderPage(QWidget):
             return
         self._again = False
         self.summary.setText("Planning the install order...")
+        self.completeChanged.emit(False)        # Next waits for this plan
         plan, (game, chosen, labels) = self.plan, self.wanted
         generation, folder = self._generation, self.project_dir
 
@@ -127,6 +128,7 @@ class OrderPage(QWidget):
         if self._again:
             self._plan()
             return
+        self.completeChanged.emit(self.is_complete())   # the window refreshes Next
         self.planned.emit()
 
     def show_result(self, result: dict) -> None:
@@ -197,7 +199,8 @@ class OrderPage(QWidget):
             api.save_install_order(self.project_dir, self.phases())
         except Exception as exc:
             QMessageBox.critical(self, "Cannot save the install order", str(exc))
-            return
+        # Planned again either way: the list must show what is saved, not
+        # the drag that could not be.
         self._generation += 1
         self._plan()
 
@@ -206,7 +209,6 @@ class OrderPage(QWidget):
             api.reset_install_order(self.project_dir)
         except Exception as exc:
             QMessageBox.critical(self, "Cannot reset the install order", str(exc))
-            return
         self._generation += 1
         self._plan()
 

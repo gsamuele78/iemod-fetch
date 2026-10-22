@@ -63,7 +63,8 @@ Python API, which is internal.
   order rule objects; drag to reorder, saved as `install-order.txt` (a
   Project Infinity Sorting Order file) that the project's ini hands to the
   CLI as `--sorting-order`. An EET selection is saved as two installs, the
-  BG:EE phase and EET, as krion64's categories place each component.
+  BG:EE phase and EET, as krion64's categories place each component. The
+  ini's `sorting_order` is read relative to the ini.
 - `api.selection_plan`, `api.save_install_order`, `api.reset_install_order`.
 
 ### Fixed

@@ -138,11 +138,44 @@ def test_a_split_mod_names_its_components(tmp_path):
     assert "ub *\nstratagems 4100\n" in text
 
 
+def test_a_tp2_name_with_spaces_is_written_as_its_key_reads_it(tmp_path):
+    # krion64 lists `Setup-Unofficial Item Pack.tp2`; one such mod must not
+    # stop every drag.
+    unit = {"tp2": "Setup-Unofficial Item Pack.tp2", "split": False, "components": []}
+    with open(api.save_install_order(str(tmp_path), [[unit]]), encoding="utf-8") as fh:
+        assert "UnofficialItemPack *" in fh.read()
+
+
 def test_a_name_that_cannot_be_a_sorting_line_is_refused(tmp_path):
     with pytest.raises(ConfigError):
-        api.save_install_order(str(tmp_path), [[{"tp2": "my mod/my mod.tp2",
-                                                 "split": False, "components": []}]])
+        api.save_install_order(str(tmp_path), [[{"tp2": "--.tp2", "split": False,
+                                                 "components": []}]])
     assert not (tmp_path / api.INSTALL_ORDER_FILE).exists()
+
+
+def test_an_unwritable_project_ini_leaves_no_order_file(tmp_path):
+    (tmp_path / api.PROJECT_FILE).write_text("not an ini [[[\n")
+    phases = [p["units"] for p in plan(tmp_path)["phases"]]
+    with pytest.raises(ConfigError):
+        api.save_install_order(str(tmp_path), phases)
+    assert not (tmp_path / api.INSTALL_ORDER_FILE).exists()
+
+
+def test_your_own_order_does_not_mark_every_mod_as_placed_by_a_rule(tmp_path):
+    def constrained(result):
+        return sorted(u["name"] for p in result["phases"] for u in p["units"]
+                      if u["constrained"])
+    before = constrained(plan(tmp_path))
+    api.save_install_order(str(tmp_path), [p["units"] for p in plan(tmp_path)["phases"]])
+    assert constrained(plan(tmp_path)) == before
+
+
+def test_the_cli_finds_the_order_file_beside_the_ini_from_anywhere(tmp_path, monkeypatch):
+    from iemod_fetch.config import load_config
+    api.save_install_order(str(tmp_path), [p["units"] for p in plan(tmp_path)["phases"]])
+    monkeypatch.chdir(tmp_path.parent)
+    config = load_config(str(tmp_path / api.PROJECT_FILE))
+    assert config.values["sorting_order"] == str(tmp_path / api.INSTALL_ORDER_FILE)
 
 
 def collapsed(folders):

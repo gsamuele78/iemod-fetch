@@ -833,28 +833,34 @@ def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
              "// Sorting Order format). Delete this file to use the computed order."]
     for units in phases:
         for unit in units:
-            name = premeta.tp2_name(unit["tp2"])
-            if not normalize_key(name) or any(c.isspace() for c in name):
+            # A tp2 name may hold spaces (`Setup-Unofficial Item Pack.tp2`); its
+            # key ignores them, so the line drops them.
+            name = "".join(premeta.tp2_name(unit["tp2"]).split())
+            if not normalize_key(name):
                 raise ConfigError(f"cannot write {unit['tp2']!r} as a sorting order line")
             numbers = " ".join(str(c[1]) for c in unit["components"])
             lines.append(f"{name} {numbers}" if unit.get("split") else f"{name} *")
     text = "\n".join(lines) + "\n"
     sortorder.parse(text, source="the wizard's install order")   # refuse before writing
-    path = _write_whole(folder, INSTALL_ORDER_FILE, text)
-    # The command line run in the project uses it too.
-    _config.write_values(os.path.join(folder, PROJECT_FILE),
-                         {"sorting_order": INSTALL_ORDER_FILE})
-    return path
+    # The project's ini names it first, so the command line uses it too: if
+    # the ini cannot be written, no order file is left for the wizard alone.
+    project = os.path.join(folder, PROJECT_FILE)
+    _config.write_values(project, {"sorting_order": INSTALL_ORDER_FILE})
+    try:
+        return _write_whole(folder, INSTALL_ORDER_FILE, text)
+    except BaseException:
+        _config.write_values(project, {"sorting_order": None})
+        raise
 
 
 def reset_install_order(folder: str) -> None:
     """Forget the order set by hand: the computed one applies again."""
+    project = os.path.join(folder, PROJECT_FILE)
+    if os.path.isfile(project):
+        _config.write_values(project, {"sorting_order": None})   # first: see above
     path = os.path.join(folder, INSTALL_ORDER_FILE)
     if os.path.isfile(path):
         os.unlink(path)
-    project = os.path.join(folder, PROJECT_FILE)
-    if os.path.isfile(project):
-        _config.write_values(project, {"sorting_order": None})
 
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,

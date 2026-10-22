@@ -163,8 +163,9 @@ categories place each component (the selection is saved as those two
 installs). A mod a rule places is shown in bold; one an order rule still finds
 in the wrong place is red, with the rule below. Drag a mod to move it: the
 whole order is saved as `install-order.txt`, a Project Infinity Sorting Order
-file, and the project's ini names it, so the command line run in the project
-plans the same order (`--sorting-order`). Your order goes on top of the rules;
+file, and the project's ini names it (read relative to the ini), so
+`iemod-fetch --config PROJECT/iemod-fetch.ini --selection PROJECT/selection.json
+--plan-order PLAN` plans the same order. Your order goes on top of the rules;
 where it contradicts one, that is shown, not silently won. *Use the computed
 order* forgets it. Download and extraction follow. Answers to WeiDU prompts come with the
 install step (M4): only BWS-NG describes prompts as data, for 4 components

@@ -1883,9 +1883,13 @@ decisions.json holds (ADR-0033).
 - **The player's order is a Sorting Order file.** Dragging writes the whole
   order shown as `install-order.txt` in Project Infinity's format (ADR-0037)
   - `tp2 *`, or `tp2 N N` for a mod split across the order - and names it in
-  the project's ini as `sorting_order`, so `iemod-fetch` run in the project
-  plans the same order. A test checks the page's order against the run's
-  written logs. It goes on top of the rules; a contradiction is shown as a
+  the project's ini as `sorting_order` (read relative to the ini), so a run
+  with that ini, `--selection selection.json` and `--plan-order` plans the
+  same order. A test checks the page's order against the run's written logs.
+  The ini is written first, so a project whose ini cannot be written keeps
+  no order the command line would not see. The conflicts check of phase 2
+  judges the same order. A rule-placed unit is one an order rule other than
+  the player's own places: the hand order ties every unit to the next. It goes on top of the rules; a contradiction is shown as a
   violation or a cycle. "Use the computed order" deletes the file and the
   ini entry.
 - Moving a mod between installs is not offered: which game it goes on is
@@ -1900,3 +1904,6 @@ decisions.json holds (ADR-0033).
   computed order again is one click.
 - An EET selection.json now holds two installs; the selection page reads both
   back (a BGEE install alone is a BG:EE build, not EET's first phase).
+- A finding's id names its install, so decisions saved by the unreleased
+  phase-2 panel for mods of the BG:EE phase are reported stale once and must
+  be made again.
