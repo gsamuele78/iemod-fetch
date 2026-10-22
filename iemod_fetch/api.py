@@ -845,19 +845,24 @@ def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
     # The project's ini names it first, so the command line uses it too: if
     # the ini cannot be written, no order file is left for the wizard alone.
     project = os.path.join(folder, PROJECT_FILE)
-    _config.write_values(project, {"sorting_order": INSTALL_ORDER_FILE})
+    before = _config.read_section(project, _config.SECTION).get("sorting_order")
+    if before != INSTALL_ORDER_FILE:
+        _config.write_values(project, {"sorting_order": INSTALL_ORDER_FILE})
     try:
         return _write_whole(folder, INSTALL_ORDER_FILE, text)
     except BaseException:
-        _config.write_values(project, {"sorting_order": None})
+        if before != INSTALL_ORDER_FILE:     # put back what was there, if anything
+            _config.write_values(project, {"sorting_order": before})
         raise
 
 
 def reset_install_order(folder: str) -> None:
     """Forget the order set by hand: the computed one applies again."""
     project = os.path.join(folder, PROJECT_FILE)
-    if os.path.isfile(project):
-        _config.write_values(project, {"sorting_order": None})   # first: see above
+    # First, as above; and only the wizard's own file - a path the player
+    # wrote there by hand is theirs.
+    if _config.read_section(project, _config.SECTION).get("sorting_order") == INSTALL_ORDER_FILE:
+        _config.write_values(project, {"sorting_order": None})
     path = os.path.join(folder, INSTALL_ORDER_FILE)
     if os.path.isfile(path):
         os.unlink(path)

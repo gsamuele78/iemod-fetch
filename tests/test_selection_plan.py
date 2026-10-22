@@ -212,3 +212,29 @@ def test_the_wizards_order_is_the_order_the_command_line_writes(tmp_path):
                           for u in next(p for p in shown["phases"]
                                         if p["title"] == title)["units"]])
         assert written == page, title
+
+
+def test_a_failed_second_save_keeps_the_ini_naming_the_file_still_there(tmp_path, monkeypatch):
+    phases = [p["units"] for p in plan(tmp_path)["phases"]]
+    api.save_install_order(str(tmp_path), phases)
+
+    def full(*_args):
+        raise OSError("disk full")
+    monkeypatch.setattr(api, "_write_whole", full)
+    with pytest.raises(OSError):
+        api.save_install_order(str(tmp_path), phases)
+    assert (tmp_path / api.INSTALL_ORDER_FILE).exists()
+    assert "sorting_order = install-order.txt" in (tmp_path / api.PROJECT_FILE).read_text()
+
+
+def test_a_path_the_player_wrote_is_put_back_and_never_reset(tmp_path, monkeypatch):
+    (tmp_path / api.PROJECT_FILE).write_text("[iemod-fetch]\nsorting_order = my-order.txt\n")
+    api.reset_install_order(str(tmp_path))
+    assert "my-order.txt" in (tmp_path / api.PROJECT_FILE).read_text()
+
+    def full(*_args):
+        raise OSError("disk full")
+    monkeypatch.setattr(api, "_write_whole", full)
+    with pytest.raises(OSError):
+        api.save_install_order(str(tmp_path), [p["units"] for p in plan(tmp_path)["phases"]])
+    assert "sorting_order = my-order.txt" in (tmp_path / api.PROJECT_FILE).read_text()
