@@ -118,12 +118,16 @@ def test_the_archive_carries_its_runtime_libraries_and_uses_them(pyz, tmp_path):
             "from iemod_fetch.net import same_site; "
             "print(same_site('https://a.github.io/', 'https://b.github.io/')); "
             "from iemod_fetch.datasync import refresh; "
-            "print(refresh(None, sys.argv[2], ())) ")
+            "print(refresh(None, sys.argv[2], ())); "
+            "print(sys.modules['filelock'].__file__)")
     out = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(pyz),
                           str(tmp_path / "data")],
                          capture_output=True, text=True, check=True, cwd=tmp_path)
-    assert out.stdout.split() == ["False", "[]"]     # and the data folder's lock is taken
-    assert (tmp_path / "data" / ".lock").exists()
+    same_site, results, lock_from = out.stdout.splitlines()
+    assert (same_site, results) == ("False", "[]")
+    # the refresh took the data folder's lock with the filelock inside the zip
+    # (on Windows filelock deletes .lock on release, so its file proves nothing)
+    assert lock_from.startswith(str(pyz))
 
 
 def test_a_build_with_another_version_than_the_pin_stops(monkeypatch, tmp_path):
