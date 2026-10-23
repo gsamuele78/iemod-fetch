@@ -2047,14 +2047,15 @@ command line either.
     403 was called a rate limit.
   - *Amendment (2026-10-23, the owner's decision) - a forum's file comes
     last.* Real downloads of all 145 mods, with 7-Zip and unar installed,
-    found lcc-docs' Beamdog links to be the weakest source of all: 8 were
-    not the mod (a save game, `.debug` logs, a sound file, a patch, another
-    mod), and with GitHub out of reach the two that were came from a thread
-    years behind their authors - Ascension v1.5 BETA for 2.1.0, Finch v4.0
+    with GitHub out of reach, found the Beamdog threads lcc-docs lists to be
+    the weakest source of all: the files scraped from them were not the mod
+    for 8 mods (a save game, `.debug` logs, a sound file, a patch, another
+    mod), and the two that were came years behind their authors - Ascension v1.5 BETA for 2.1.0, Finch v4.0
     for v6.0 - with nothing to say so; the tp2 check cannot tell an old
     copy from a new one. A forum thread or a file attached to one
-    (`urls.is_forum_post`: a `forums.` host, `/topic/`, `/discussion/`,
-    `viewtopic.php`) is now tried after the entry's own direct links, its
+    (`urls.is_forum_post`: a `forums.` host, a `topic`, `discussion` or
+    `threads` path segment, `viewtopic.php`, XenForo's `index.php?threads/`)
+    is now tried after the entry's own direct links, its
     repository and its other pages, and a mod installed from one carries an
     advisory naming the post and the version the mod declares. It is not
     refused: for some mods a forum post is the only copy left, and the same

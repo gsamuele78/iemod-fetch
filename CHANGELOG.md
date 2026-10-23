@@ -74,6 +74,16 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A download link that ends on a GitHub repository's page takes that
+  repository's release** (GUI-AUDIT M7 item 55). baldurs-gate.de's resource
+  `/download` answers 301 to `github.com/<owner>/<repo>/releases`, an HTML
+  page: AC_QUEST, bgqe, c#solaufein, JA#BGT_AdvPack and c#brage failed "did not
+  return an archive". The repository the author's site names is now resolved as
+  any GitHub source - once, with the same tp2 check - whether the redirect
+  shows when the link is opened as a page (a manifest naming `/download`) or
+  when it is downloaded (a resource page's link). A XenForo thread
+  (`index.php?threads/...`) and a `/forums/topic/` page are now told as forum
+  posts, so they come last; the dead Dark Tidings `.rar` came from one.
 - **Every saved file goes through one atomic write** (GUI-AUDIT M7 item 46).
   Eight places wrote `<file>.tmp` and renamed it over the file: one temp
   name for every writer, so two runs saving the same state, report or cache
@@ -86,12 +96,11 @@ Python API, which is internal.
   missing parent folder of the report, the config or the data manifest is
   now created, as it already was for the others.
 - **A wrong catalogue download no longer hides the catalogue's other sources**
-  (GUI-AUDIT M7 item 54). With the catalogue alone (`-m ''`), lcc-docs' direct
-  links go first, and for 8 of the 145 mods of an EET log that link is a
-  Beamdog forum attachment which is not the mod - a save game, `.debug` logs,
-  a compatibility patch, another mod. The .tp2 check refused it and the retry
-  asked the catalogue again, getting the same attachment, so the repository or
-  page the entry also lists was never tried. Each of the entry's sources now
+  (GUI-AUDIT M7 item 54). With GitHub out of reach, a Beamdog thread lcc-docs
+  lists gave 8 of the 145 mods of an EET log a file that is not the mod - a
+  save game, `.debug` logs, a compatibility patch, another mod, a sound. The
+  .tp2 check refused it, and the retry asked the catalogue again and got the
+  same file, so the author's page the entry also lists was never tried. Each of the entry's sources now
   gets its turn - one turn per source, not per URL, so a link that redirects
   to a new signed URL each time cannot loop - each held to the same check;
   the warning names what was refused, and when every source is refused the

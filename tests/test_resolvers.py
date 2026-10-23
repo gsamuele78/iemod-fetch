@@ -172,6 +172,10 @@ def test_repo_extraction_is_exact(url, expected):
     ("https://forums.pocketplane.net/index.php?topic=1", True),
     ("https://www.shsforums.net/topic/57927-mod-the-picture-standard/", True),
     ("https://www.baldursgateworld.fr/viewtopic.php?t=28812", True),
+    ("https://baldurs-gate.de/index.php?threads/45508/", True),          # XenForo
+    ("https://www.gibberlings3.net/forums/topic/30786-kit-pack/", True),
+    ("https://baldurs-gate.de/index.php?resources/ascalons-questpack.4/", False),
+    ("https://www.gibberlings3.net/files/file/702-a-mod-for-the-orderly/", False),
     # an author's own download pages are not threads
     ("https://www.shsforums.net/files/file/1084-fishing-for-trouble/", False),
     ("https://downloads.weaselmods.net/download/alabaster-sands/?wpdmdl=593", False),

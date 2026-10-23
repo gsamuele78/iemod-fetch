@@ -46,15 +46,23 @@ def unwrap_redirect(url: str) -> str:
 def is_forum_post(url: str) -> bool:
     """
     A forum thread, or a file attached to one: anyone in the thread may have
-    posted it. Measured on 2026-10-23 (GUI-AUDIT M7 item 58): of lcc-docs'
-    Beamdog links for one EET log, 8 were not the mod (a save game, debug logs,
-    a patch, another mod) and the two that were - Ascension v1.5 BETA, Finch
-    v4.0 - were years behind their authors' releases (2.1.0, v6.0).
+    posted it. Measured on 2026-10-23 (GUI-AUDIT M7 item 58), with GitHub out
+    of reach: from the Beamdog threads lcc-docs lists, 8 mods of one EET log
+    got a file that was not the mod (a save game, debug logs, a patch, another
+    mod, a sound) and two got one years behind their authors' releases
+    (Ascension v1.5 BETA for 2.1.0, Finch v4.0 for v6.0).
     """
     parts = urllib.parse.urlsplit(url or "")
     host, path = (parts.hostname or "").lower(), parts.path.lower()
-    return host.startswith("forums.") or path.startswith(
-        ("/topic/", "/discussion/", "/viewtopic.php"))
+    segments = set(path.split("/"))
+    # XenForo keeps the route in the query: `index.php?threads/45508/` is a
+    # thread (baldurs-gate.de's link to a dead Dark Tidings .rar), while
+    # `index.php?resources/...` is the author's own release page.
+    route = parts.query.lower() if path.endswith("/index.php") else ""
+    return (host.startswith("forums.")
+            or bool(segments & {"topic", "discussion", "threads"})   # G3: /forums/topic/
+            or path.endswith("/viewtopic.php")
+            or route.startswith("threads/"))
 
 
 def repo_from_url(url: str) -> str | None:
