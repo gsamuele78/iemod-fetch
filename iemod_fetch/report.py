@@ -42,6 +42,9 @@ class Record:
     # ok/skipped/planned. Besides the error classes' codes: "filesystem",
     # "internal".
     error_code: str | None = None
+    # A newer GitHub release than the copy installed, offered for --take-newer:
+    # version, installed, repo, date, url (ADR-0039 amendment). None otherwise.
+    newer: dict | None = None
 
     def to_json(self) -> dict:
         data = asdict(self)

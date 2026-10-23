@@ -28,6 +28,7 @@ PINNED = {
     "Unresolved": "unresolved",
     "InstallConflict": "install_conflict",
     "VerificationFailed": "verification_failed",
+    "NotThisMod": "verification_failed",     # a kind of it; the contract keeps one code
 }
 
 

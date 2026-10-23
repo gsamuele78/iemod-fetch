@@ -117,6 +117,7 @@ class Settings:
     fetch_metadata: bool = False           # fetch planned mods' own metadata inis
     all_manifest_entries: bool = False
     only: list[str] = field(default_factory=list)
+    take_newer: list[str] = field(default_factory=list)
     # outputs
     target: str = "./Mods"
     json_report: str | None = None
@@ -371,6 +372,32 @@ def list_mods(manifest: str | None = None, catalogues: Sequence[str] = (),
                           ModDatabase.load(mod_db) if mod_db else None,
                           releases=release_cache, versions=versions,
                           installed=_installed_versions(weidu_logs))
+
+
+def _github_releases(settings) -> dict:
+    """
+    Mod key -> (owner/repo, its latest release) from krion64's daily scan, for
+    the repository named like the mod: what a copy from elsewhere is compared
+    with (ADR-0039 amendment). Only a repository whose name is the mod's, or
+    holds it: "the newest any repository of the mod names" would offer
+    RoxanneSHS/Finch v53 for Pocket Plane's finchnpc. The repository is
+    read from the release's own URL, so a renamed one (InfinityMods/Ascension,
+    now Gibberlings3's) is downloaded from where it lives.
+    """
+    if not settings.releases:
+        return {}
+    cache, _ = _releases(settings.releases)
+    out = {}
+    for mod in list_mods(settings.manifest, settings.catalogue, settings.mod_db,
+                         settings.allow_http, settings.releases):
+        for repo in mod.repos:
+            name = normalize_key(repo.split("/", 1)[1])
+            release = cache.get(repo)
+            if (release and not release.archived and mod.key
+                    and (name == mod.key or mod.key in name)):
+                out[mod.key] = (repo_from_url(release.url or "") or repo, release)
+                break
+    return out
 
 
 def _releases(path: str | None):
@@ -2066,7 +2093,8 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
     options = Options(target_dir=target, workers=settings.workers, dry_run=settings.dry_run,
                       force=settings.force, allow_exe=settings.allow_exe,
                       accept_offsite=settings.accept_offsite, refresh=settings.refresh,
-                      discovery_attempts=settings.discovery_attempts)
+                      discovery_attempts=settings.discovery_attempts,
+                      take_newer=frozenset(n.lower() for n in settings.take_newer))
 
     catalogue = CatalogueSet.load(settings.catalogue)
     if catalogue and not settings.quiet:
@@ -2086,7 +2114,8 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
     with _event_sink(settings.events, stream, on_event) as sink:
         runner = Runner(client, options, stream=None if settings.quiet else stream,
                         org_index=org_index, catalogue=catalogue or None,
-                        on_event=sink, cancel=cancel)
+                        on_event=sink, cancel=cancel,
+                        releases=_github_releases(settings))
         report = runner.run(plan)
     # Checked and planned AFTER the fetch, so the mods' own tp2s are read from
     # what this run just staged: one run takes a selection from nothing to a

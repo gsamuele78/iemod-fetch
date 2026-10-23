@@ -98,3 +98,7 @@ class InstallConflict(ModFetchError):
 class VerificationFailed(ModFetchError):
     """Extracted tree does not contain the .tp2 the mod is supposed to provide."""
     code = "verification_failed"
+
+
+class NotThisMod(VerificationFailed):
+    """The archive holds no .tp2, or another mod's: the artefact, not the install, is wrong."""
