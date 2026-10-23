@@ -51,7 +51,7 @@ from .moddb import ModDatabase
 from .modmeta import find_metadata
 from .naming import normalize_key
 from .net import DEFAULT_MAX_BYTES, HttpClient
-from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, plan_order, tp2_key,
+from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, bws_sequence, plan_order, tp2_key,
                        render_plan_summary)
 from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
@@ -313,11 +313,18 @@ def _use_data(settings: Settings, stream, on_event) -> None:
 
 def _before_eet_core(settings: Settings):
     """What may precede the EET core: BWS-NG's sequence if given, else EET's rule."""
+    return before_eet_core(_eet_sequences(settings))
+
+
+def _eet_sequences(settings) -> dict | None:
+    """BWS-NG's games/eet.json (--eet-sequence); None when not given, or not
+    in the shape expected (the readers then stand on EET's own rule)."""
     if not settings.eet_sequence:
-        return before_eet_core(None)
+        return None
     try:
         with open(settings.eet_sequence, encoding="utf-8") as fh:
-            return before_eet_core(json.load(fh))
+            data = json.load(fh)
+            return data if isinstance(data, dict) else None
     except (OSError, ValueError) as exc:
         raise ConfigError(f"cannot read --eet-sequence {settings.eet_sequence}: "
                           f"{exc}") from exc
@@ -917,14 +924,16 @@ def _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
                             target=target or os.path.join(work, "Mods"),
                             data_dir=data_dir, fetch_metadata=fetch_metadata,
                             sorting_order=sorting_order,
-                            catalogue=[cached.catalogue] if cached.catalogue else [])
+                            catalogue=[cached.catalogue] if cached.catalogue else [],
+                            eet_sequence=cached.eet_sequence)
         installed = parse_weidu_files([split_log_spec(spec) for spec in logs])
         analysis = _check_rules(settings, installed, _Silent())
         ruleset = analysis.ruleset or RuleSet()
         plan = None
         if index is not None and logs:
             plan = plan_order(_log_roles(logs), index, ruleset, analysis.context,
-                              kinds=_kind_hints(settings))
+                              kinds=_kind_hints(settings),
+                              sequence=bws_sequence(_eet_sequences(settings)))
         yield settings, analysis, ruleset, plan
 
 
@@ -974,7 +983,8 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
                 "components": [[path.replace("\\", "/"), number, comment]
                                for path, _lang, number, comment in unit.lines],
                 "constrained": unit.node in plan.constrained,
-                # its kind placed it, krion64 having no place for it (item 27)
+                # BWS-NG's sequence or its kind placed it, krion64 having
+                # no place for it (items 27, 27a)
                 "placed_by": unit.placed_by,
                 "no_place": unit.no_place,
                 "moved": unit.key in moved,
@@ -1613,7 +1623,8 @@ def _plan_order(settings, analysis: RuleAnalysis, stream):
     plan = plan_order(specs, index, ruleset, context,
                       include_optional=settings.include_optional,
                       reassign_phase=settings.reassign_phase,
-                      kinds=_kind_hints(settings))
+                      kinds=_kind_hints(settings),
+                      sequence=bws_sequence(_eet_sequences(settings)))
     games = _phase_games(settings, specs)
     resolution = None
     if settings.decisions or settings.resolve_conflicts:

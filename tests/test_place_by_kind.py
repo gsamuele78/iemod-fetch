@@ -194,3 +194,58 @@ def test_a_folders_kind_is_not_given_to_a_second_tp2_in_it(tmp_path):
     alone.write_text(HEADER + "~pack\\setup-other.tp2~ #0 #0 // one\n", encoding="utf-8")
     plan = plan_order([(str(alone), EET_LOG)], index, kinds={"pack": UI})
     assert [name for name, _c, _w in plan.by_kind] == ["pack/other"]
+
+
+# ------------------------------------- BWS-NG's sequence first (decision 2a)
+from iemod_fetch.ordering import bws_sequence  # noqa: E402
+
+SEQUENCE = [("eet", 0), ("leui", 10), ("seqone", 0), ("seqtwo", 5), ("stratagems", 10),
+            ("newui", 0)]
+
+
+def test_bws_ngs_sequence_places_a_mod_right_after_the_one_before_it(tmp_path):
+    index = krion(tmp_path)
+    eet = log(tmp_path, "EET", "stratagems", "seqtwo", "LeUI", "seqone")
+    plan = plan_order([(eet, EET_LOG)], index, sequence=SEQUENCE)
+    # after LeUI, in BWS-NG's order between themselves, before stratagems
+    assert order(plan) == ["eet", "leui", "seqone", "seqtwo", "stratagems"]
+    assert [entry[0] for entry in plan.by_sequence] == ["seqtwo", "seqone"]
+    assert plan.by_sequence[0][2] == "placed by BWS-NG's EET sequence: after leui #10"
+
+
+def test_the_sequence_comes_before_the_kind(tmp_path):
+    index = krion(tmp_path)
+    eet = log(tmp_path, "EET", "LeUI", "stratagems", "newui")
+    plan = plan_order([(eet, EET_LOG)], index, kinds={"newui": UI}, sequence=SEQUENCE)
+    assert order(plan) == ["eet", "leui", "stratagems", "newui"]   # not INTERFACE
+    assert plan.by_kind == [] and [e[0] for e in plan.by_sequence] == ["newui"]
+
+
+def test_the_sequence_places_nothing_before_the_eet_core(tmp_path):
+    index = krion(tmp_path)
+    plan = plan_order([(log(tmp_path, "bg1ub", "seqone", name="WeiDU-BGEE.log"), PRE_EET_LOG),
+                       (log(tmp_path, "EET"), EET_LOG)], index, sequence=SEQUENCE)
+    assert order(plan, PRE_EET_LOG) == ["bg1ub", "seqone"] and plan.by_sequence == []
+
+
+def test_a_mod_with_no_place_stays_behind_one_the_sequence_moved(tmp_path):
+    index = krion(tmp_path)
+    eet = log(tmp_path, "EET", "stratagems", "seqone", "tweak")
+    plan = plan_order([(eet, EET_LOG)], index, kinds={"tweak": TWEAK}, sequence=SEQUENCE)
+    assert order(plan) == ["eet", "seqone", "stratagems", "tweak"]
+
+
+def test_the_summary_names_what_the_sequence_placed(tmp_path):
+    index = krion(tmp_path)
+    plan = plan_order([(log(tmp_path, "EET", "seqone"), EET_LOG)], index, sequence=SEQUENCE)
+    out = io.StringIO()
+    render_plan_summary(plan, str(tmp_path), out)
+    assert "placed by BWS-NG's EET sequence (1)" in out.getvalue()
+
+
+def test_bws_ngs_eet_json_is_read_as_its_bg2ee_order():
+    eet = {"sequences": [{"game": "sod", "order": ["bg1ub:0"]},
+                         {"game": "bg2ee", "order": ["weidu:0", "EET:0", "A7-Recolor:10",
+                                                     "broken", "x:y"]}]}
+    assert bws_sequence(eet) == [("weidu", 0), ("eet", 0), ("a7recolor", 10)]
+    assert bws_sequence(None) == [] and bws_sequence({"sequences": "no"}) == []

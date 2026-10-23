@@ -2266,8 +2266,11 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
    above re-measured on the 2026-10-23 data; a quest split by its games is
    right for 97 of 132 (73%). Of 1,071 classified mods krion64 does not
    place, 445 are placed and 626 are not; on the 397 krion64 places, the
-   kind names krion64's own category for 351 (88%). *Not yet:* BWS-NG's
-   sequence carried onto krion64's order, which comes first.
+   kind names krion64's own category for 351 (88%). *BWS-NG's sequence,
+   first, done too:* the 26 mods it places that krion64 does not (30 in
+   the bg2ee sequence, 4 of them WeiDU and its tools) are placed after the
+   nearest component before them that krion64 places; where a kind would
+   also place one (12), the two agree on 8.
 3. **The 21% disagreement is shown, not settled**: where the plan orders two
    chosen components the other way round from BWS-NG's sequence, and no rule
    decides, the order page marks the pair "BWS-NG installs these the other

@@ -6,8 +6,9 @@ planner as --plan-order (krion64's categories, then every order rule, the
 authors' own inis included), one tab per install - for EET, BG:EE before the
 conversion and EET itself. A mod a rule places is marked; one an order rule
 still finds wrong is marked in red, with the rule. A mod krion64 does not
-place takes the place its kind decides, marked "by kind" with its source, or
-says why it has none (item 27, ADR-0041).
+place takes its place in BWS-NG's EET sequence, marked "by BWS-NG", else the
+place its kind decides, marked "by kind" with its source, or says why it has
+none (items 27 and 27a, ADR-0041).
 
 Dragging a mod writes the whole order shown as `install-order.txt` in the
 project - a Project Infinity Sorting Order file, which the command line reads
@@ -152,11 +153,15 @@ class OrderPage(QWidget):
                  f"{sum(u['constrained'] for u in units)} placed by a rule",
                  f"{sum(u['moved'] for u in units)} moved from where they were chosen"]
         # a split mod is one mod placed by its kind, not one per part
-        by_kind = len({u["key"] for u in units if u.get("placed_by")})
+        placed = {u["key"]: u["placed_by"] for u in units if u.get("placed_by")}
+        by_bws = sum(why.startswith("placed by BWS-NG") for why in placed.values())
         if result.get("custom"):
             parts.append("your own order applies")    # over every kind's place
-        elif by_kind:
-            parts.insert(2, f"{by_kind} placed by kind")
+        else:
+            if len(placed) - by_bws:
+                parts.insert(2, f"{len(placed) - by_bws} placed by kind")
+            if by_bws:
+                parts.insert(2, f"{by_bws} placed by BWS-NG's sequence")
         self.summary.setText("; ".join(parts) + ".")
         self.reset.setEnabled(bool(result.get("custom")))
         lines = list(result.get("violations") or [])
@@ -174,7 +179,8 @@ class OrderPage(QWidget):
         for unit in phase["units"]:
             text = unit["name"] + (f"  -  {unit['category']}" if unit["category"] else "")
             if unit.get("placed_by") and not custom:
-                text += "  (by kind)"
+                text += ("  (by BWS-NG)" if unit["placed_by"].startswith("placed by BWS-NG")
+                         else "  (by kind)")
             item = QListWidgetItem(text)
             item.setData(ROLE, unit)
             components = ", ".join(f"#{c[1]}" for c in unit["components"][:12])

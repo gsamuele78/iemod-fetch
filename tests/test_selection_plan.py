@@ -272,3 +272,19 @@ def test_what_krion64_does_not_place_takes_the_place_its_kind_decides(tmp_path):
     order = names(result, "EET")
     first_tweak = next(n for n, name in enumerate(order) if name.startswith("cdtweaks"))
     assert order.index("ub") < first_tweak          # QUEST MODS BG1 before PRE-TACTICAL
+
+
+def test_bws_ngs_sequence_in_the_data_cache_places_first(tmp_path):
+    """Decision 2a: games/eet.json, cached, places ascension right after the
+    EET core, before any kind would."""
+    games = tmp_path / "no-cache" / "bws-ng" / "data" / "games"
+    games.mkdir(parents=True)
+    (games / "eet.json").write_text(json.dumps({"sequences": [
+        {"game": "bg2ee", "order": ["eet:0", "ascension:0"]}]}), encoding="utf-8")
+
+    result = plan(tmp_path)
+
+    eet = {u["name"].lower(): u for u in
+           next(p for p in result["phases"] if p["title"] == "EET")["units"]}
+    assert eet["ascension"]["placed_by"] == "placed by BWS-NG's EET sequence: after eet #0"
+    assert eet["ub"]["placed_by"] == ""

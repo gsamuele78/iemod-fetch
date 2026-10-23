@@ -47,6 +47,18 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **BWS-NG's EET sequence places a mod krion64 does not, before any kind**
+  (ADR-0041 decision 2a, the rest of GUI-AUDIT item 27). In the install after
+  the EET core, such a mod goes right after the nearest component before it
+  in BWS-NG's `games/eet.json` (bg2ee sequence, `--eet-sequence`, cached by
+  default) that krion64 places; several after one component keep BWS-NG's
+  order. Only then does its kind decide. A preference like the rest: rules
+  and the player's Sorting Order still win. The plan summary lists them under
+  "placed by BWS-NG's EET sequence", the order page marks "(by BWS-NG)".
+  Measured on the 2026-10-23 data: the sequence names 364 mods, 30 of which
+  krion64 does not place; it places the 26 that are mods (the other 4 are
+  WeiDU and its tools, before the EET core). Of the 12 a kind would also
+  place, the two agree on 8.
 - **A mod krion64 does not place takes the place its kind decides**
   (GUI-AUDIT M5 item 27, ADR-0041 decision 2). Interface, cosmetic, kit,
   recruitable and one-day NPC, smith and merchant mods go after krion64's own
