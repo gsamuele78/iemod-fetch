@@ -16,6 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+from .atomic import write_text
 from .archives import safe_extract
 from .errors import InstallConflict, VerificationFailed
 from .naming import matches_tp2, safe_component
@@ -207,10 +208,5 @@ class State:
         return self.mods.get(folder.lower())
 
     def save(self) -> None:
-        tmp = self.path + ".tmp"
-        os.makedirs(os.path.dirname(os.path.abspath(self.path)) or ".", exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"version": 1, "mods": self.mods}, fh, indent=2, sort_keys=True)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, self.path)
+        write_text(self.path, json.dumps({"version": 1, "mods": self.mods}, indent=2,
+                                         sort_keys=True), durable=True)

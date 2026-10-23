@@ -60,6 +60,13 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **Every saved file goes through one atomic write** (GUI-AUDIT M7 item 46).
+  Eight places wrote `<file>.tmp` and renamed it over the file: one temp
+  name for every writer, so two runs saving the same state, report or cache
+  wrote into the same temp, and five of them left it behind when the write
+  failed. `iemod_fetch.atomic.write_text` gives each write a temp of its own,
+  removes it on failure and keeps the file's permissions; the install state
+  is still flushed to disk, now its folder too on Linux and macOS.
 - **A contradiction in the order rules no longer breaks rules outside it**
   (GUI-AUDIT M7 item 42). When the sort got stuck it reported every unit left
   as the cycle and released the first in priority even if it was not in the

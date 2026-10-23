@@ -29,6 +29,7 @@ from dataclasses import dataclass, field, fields, replace
 from typing import Any
 from collections.abc import Sequence
 
+from .atomic import write_text
 from .auth import resolve_credential
 from . import backup
 from .available import AvailableMod, available_mods, mods_document
@@ -733,17 +734,8 @@ def _wizard_selection(game: str, chosen: Sequence[tuple[str, int]],
 
 def _write_whole(folder: str, name: str, text: str) -> str:
     """Write `folder`/`name` whole or not at all: a half-written file is never read."""
-    os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, name)
-    temp = path + ".tmp"
-    try:
-        with open(temp, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(temp, path)
-    except BaseException:
-        if os.path.exists(temp):
-            os.unlink(temp)
-        raise
+    write_text(path, text)
     return path
 
 

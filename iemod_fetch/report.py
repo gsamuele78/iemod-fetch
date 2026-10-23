@@ -6,6 +6,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 
+from .atomic import write_text
 from .contract import SCHEMA_VERSION
 
 
@@ -125,10 +126,7 @@ class RunReport:
         }
 
     def write_json(self, path: str) -> None:
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(self.to_json(), fh, indent=2)
-        os.replace(tmp, path)
+        write_text(path, json.dumps(self.to_json(), indent=2))
 
 
 def render_summary(report: RunReport, target_dir: str, stream=sys.stdout) -> None:

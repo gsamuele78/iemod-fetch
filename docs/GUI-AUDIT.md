@@ -280,7 +280,7 @@ keyring, py7zr (LGPL, compiled dependencies, no RAR).
 | 43 | **tp2**: `~Use "smart" AI~` is read as `Use `; `~~~~~` strings are not read. | reuse `tra.py`'s scanner; real WeiDU as the oracle |
 | 44 | **.tra**: non-UTF-8 Russian, Polish, Japanese and Chinese text decoded as cp1252 (or latin-1), silently. | after UTF-8, the code page of the language folder |
 | 45 | **GitHub**: a 403 secondary limit is not retried; an HTTP-date `Retry-After` is ignored; no ETag, so repeat runs spend the rate limit. | `email.utils`, an ETag store |
-| 46 | Nine hand-written atomic writes: seven with one fixed temp name, two with an fsync. | one helper |
+| 46 | **Done**. Nine hand-written atomic writes: seven with one fixed temp name, two with an fsync. Counted again: eight file writes (seven `<file>.tmp`, the config with `mkstemp`) and one fsync, the install state's; the ninth was the download's `.part`, which streams, resumes and fsyncs on its own and stays. | one helper, `iemod_fetch/atomic.py`: a temp of its own per write, removed on failure, mode kept; 6 tests |
 
 ### M8 — What the other projects do and this tool does not (feature audit)
 

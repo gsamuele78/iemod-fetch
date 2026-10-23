@@ -27,6 +27,7 @@ import urllib.parse
 from dataclasses import dataclass
 from collections.abc import Iterable
 
+from .atomic import write_text
 from .errors import HttpStatusError, ModFetchError, NetworkError
 from .modmeta import ModMetadata, parse_metadata_ini
 from .naming import normalize_key
@@ -139,16 +140,7 @@ class MetadataCache:
         self.entries[key] = entry
 
     def save(self) -> None:
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        temp = self.path + ".tmp"
-        try:
-            with open(temp, "w", encoding="utf-8") as fh:
-                json.dump(self.entries, fh, indent=1, sort_keys=True)
-            os.replace(temp, self.path)
-        except BaseException:
-            if os.path.exists(temp):
-                os.unlink(temp)
-            raise
+        write_text(self.path, json.dumps(self.entries, indent=1, sort_keys=True))
 
 
 def _names(tp2_file: str) -> list[str]:

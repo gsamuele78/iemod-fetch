@@ -13,11 +13,11 @@ definition of each default and no per-flag plumbing to drift.
 import configparser
 import os
 import re
-import stat
-import tempfile
+import io
 from dataclasses import dataclass, field
 from typing import Any
 
+from .atomic import write_text
 from .errors import ConfigError
 
 SECTION = "iemod-fetch"
@@ -204,21 +204,11 @@ def write_values(path: str, values: dict[str, Any],
                 text = str(value)
             # Read back with interpolation: a literal % is written %% (C:/100%BG).
             parser.set(section, key, text.replace("%", "%%"))
-    folder = os.path.dirname(os.path.abspath(path))
-    # An existing file keeps the permissions its owner gave it; a new one stays
-    # as mkstemp makes it, readable by its owner only.
-    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.isfile(path) else None
-    fd, temp = tempfile.mkstemp(prefix=".iemod-fetch-", suffix=".ini", dir=folder)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            parser.write(fh)
-        if mode is not None:
-            os.chmod(temp, mode)
-        os.replace(temp, path)
-    except BaseException:
-        if os.path.exists(temp):
-            os.unlink(temp)
-        raise
+    # An existing file keeps the permissions its owner gave it; a new one is
+    # readable by its owner only (it may hold a token).
+    buf = io.StringIO()
+    parser.write(buf)
+    write_text(path, buf.getvalue(), private=True)
 
 
 def read_section(path: str, section: str) -> dict[str, str]:
