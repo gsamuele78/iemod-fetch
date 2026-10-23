@@ -2131,7 +2131,10 @@ or PySide6. Three constraints shaped it.
     group and never run at once, and the upload asks again for a macOS
     bundle first: a published one is never replaced (review of #46: two
     runs could each build and upload, leaving a zip and a `.sha256` from
-    different builds).
+    different builds). Only a zip counts as attached, and it is uploaded
+    before its `.sha256`; a zip whose `.sha256` failed to upload gets it back
+    at the next check from the digest GitHub records for the asset, without
+    a rebuild or a download.
 - The bundles carry no publisher signature and the macOS app is not
   notarized: Windows SmartScreen warns, and macOS refuses the downloaded app
   until the player allows it (System Settings, Privacy & Security, Open

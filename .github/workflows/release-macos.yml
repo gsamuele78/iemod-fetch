@@ -43,6 +43,7 @@ jobs:
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
       build: ${{ steps.pick.outputs.build }}
+      repair: ${{ steps.pick.outputs.repair }}
     steps:
       - id: pick
         env:
@@ -60,9 +61,16 @@ jobs:
           # a release made before ADR-0040 has nothing to build it with
           if gh api "repos/$REPOSITORY/contents/packaging/gui_bundle.py?ref=$tag" --silent 2>/dev/null; then
             buildable=yes; else buildable=no; fi
+          # a zip whose .sha256 did not get up (a failed second upload) is
+          # repaired from the digest GitHub keeps for it, never rebuilt
+          bare=$(gh release view "$tag" --repo "$REPOSITORY" --json assets -q '
+                 [.assets[].name] as $n
+                 | [$n[] | select(startswith("iemod-fetch-gui-macos") and endswith(".zip"))
+                         | select((. + ".sha256") as $s | any($n[]; . == $s) | not)] | length')
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [ "$has" = 0 ] && [ "$buildable" = yes ]; then echo "build=true"; else echo "build=false"; fi >> "$GITHUB_OUTPUT"
-          echo "release $tag: macOS bundles attached $has, packaging script present: $buildable"
+          if [ "$bare" != 0 ]; then echo "repair=true"; else echo "repair=false"; fi >> "$GITHUB_OUTPUT"
+          echo "release $tag: macOS zips $has (without .sha256: $bare), packaging script present: $buildable"
 
   build:
     name: Wizard bundle (macos-latest)
@@ -117,7 +125,38 @@ jobs:
           cd dist
           for zip in iemod-fetch-gui-*.zip; do sha256sum "$zip" > "$zip.sha256"; done
           # The zip first, its .sha256 after: a .sha256 never stands without
-          # its zip, and only a zip counts as "attached", so a failed upload
-          # is retried by a re-run or the next check (review of #46).
+          # its zip. A failed zip upload leaves no zip, so the next check
+          # builds again; a failed .sha256 upload is repaired by `digest` at
+          # the next check (review of #46).
           gh release upload "$TAG" iemod-fetch-gui-*.zip --repo "$REPOSITORY"
           gh release upload "$TAG" iemod-fetch-gui-*.zip.sha256 --repo "$REPOSITORY" --clobber
+
+  digest:
+    name: Put back a missing .sha256 from the published zip's digest
+    needs: target
+    if: needs.target.outputs.repair == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # uploads the .sha256 to the release
+    steps:
+      - name: Write each missing .sha256 from GitHub's digest of its zip
+        env:
+          TAG: ${{ needs.target.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir sums && cd sums
+          gh api "repos/$REPOSITORY/releases/tags/$TAG" --jq '
+            [.assets[].name] as $n
+            | .assets[]
+            | select(.name | startswith("iemod-fetch-gui-macos") and endswith(".zip"))
+            | select((.name + ".sha256") as $s | any($n[]; . == $s) | not)
+            | "\(.name) \(.digest)"' |
+          while read -r name digest; do
+            case "$digest" in
+              sha256:????????????????????????????????????????????????????????????????) ;;
+              *) echo "no sha256 digest for $name: $digest"; exit 1 ;;
+            esac
+            printf '%s  %s\n' "${digest#sha256:}" "$name" > "$name.sha256"
+            gh release upload "$TAG" "$name.sha256" --repo "$REPOSITORY" --clobber
+          done
