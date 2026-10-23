@@ -367,6 +367,70 @@ def test_a_finding_decided_twice_is_refused():
         parse_decisions(json.dumps({"schema_version": 1, "decisions": [entry, entry]}))
 
 
+# ------------------------------------- ignored order rows (M5b item 33)
+IGNORED = {"unit": "WeiDU.log|stratagems|0", "after": "WeiDU.log|eet|0",
+           "rules": ["[WeiDU.log] stratagems should be installed before eet"],
+           "why": "tested, works for me"}
+
+
+def test_an_ignored_row_round_trips_and_matches_the_schema():
+    text = json.dumps({"schema_version": 1, "decisions": [], "ignored_order": [IGNORED]})
+    decisions = parse_decisions(text)
+    assert decisions_to_json(decisions) == json.dumps(json.loads(text), indent=2) + "\n"
+    ignored = decisions.ignored_order["WeiDU.log|stratagems|0"]
+    assert ignored.rules == tuple(IGNORED["rules"]) and ignored.why == IGNORED["why"]
+    # a file without one is written as before
+    assert "ignored_order" not in decisions_to_json(Decisions())
+    jsonschema = pytest.importorskip("jsonschema")
+    with open(os.path.join(HERE, os.pardir, "schemas", "decisions-v1.schema.json"),
+              encoding="utf-8") as fh:
+        jsonschema.validate(json.loads(text), json.load(fh))
+
+
+def test_an_ignore_holds_only_in_its_place_and_for_its_rules():
+    ignored = parse_decisions(json.dumps({"schema_version": 1, "decisions": [],
+                                          "ignored_order": [IGNORED]})
+                              ).ignored_order["WeiDU.log|stratagems|0"]
+    rule = set(IGNORED["rules"])
+    assert ignored.holds("WeiDU.log|eet|0", rule)
+    assert not ignored.holds("WeiDU.log|ub|0", rule)                       # moved
+    assert not ignored.holds("WeiDU.log|eet|0", rule | {"a new rule"})    # a new break
+    assert not ignored.holds("WeiDU.log|eet|0", set())                    # nothing broken
+
+
+@pytest.mark.parametrize("change,message", [
+    ({"why": " "}, "must say why"),
+    ({"rules": []}, "must list the broken rules"),
+    ({"unit": ""}, "must name a row"),
+    ({"after": None}, "must be a string"),
+    ({"extra": 1}, "exactly the keys"),
+])
+def test_a_wrong_ignored_row_is_refused(change, message):
+    entry = dict(IGNORED, **change)
+    with pytest.raises(ConfigError, match=message):
+        parse_decisions(json.dumps({"schema_version": 1, "decisions": [],
+                                    "ignored_order": [entry]}))
+
+
+def test_a_row_ignored_twice_is_refused():
+    with pytest.raises(ConfigError, match="ignored twice"):
+        parse_decisions(json.dumps({"schema_version": 1, "decisions": [],
+                                    "ignored_order": [IGNORED, IGNORED]}))
+
+
+def test_saving_the_conflicts_decisions_keeps_the_ignored_rows(tmp_path):
+    api.ignore_order(str(tmp_path), IGNORED["unit"], IGNORED["after"], IGNORED["rules"],
+                     IGNORED["why"])
+    current = api.load_decisions(str(tmp_path))
+    api.save_decisions(str(tmp_path), {"conflict-1": "option-2"}, current["accept"])
+    again = api.load_decisions(str(tmp_path))
+    assert again["choose"] == {"conflict-1": "option-2"}
+    assert list(again["ignored_order"]) == [IGNORED["unit"]]
+    api.unignore_order(str(tmp_path), IGNORED["unit"])
+    again = api.load_decisions(str(tmp_path))
+    assert again["ignored_order"] == {} and again["choose"] == {"conflict-1": "option-2"}
+
+
 def test_the_report_and_resolution_match_their_schemas(tmp_path):
     jsonschema = pytest.importorskip("jsonschema")
     _outcome, findings = report(tmp_path)

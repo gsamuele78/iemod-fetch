@@ -48,6 +48,41 @@
           }
         ]
       }
+    },
+    "ignored_order": {
+      "description": "Rows of the wizard's install order whose broken order rules the player ignores (ADR-0033, GUI-AUDIT M5b item 33). The command line only checks it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "unit",
+          "after",
+          "rules",
+          "why"
+        ],
+        "properties": {
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "after": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   }
 }

@@ -4,6 +4,7 @@ Phase 3, install order, driven like a player drives it (M3, GUI-AUDIT item
 and reads the order the page saved (test_selection_plan.py checks the real
 one against the run's planner).
 """
+import json
 import os
 
 import pytest
@@ -15,7 +16,7 @@ from PySide6.QtCore import QModelIndex, Qt  # noqa: E402
 from PySide6.QtWidgets import QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
-from iemod_fetch_gui.pages.order import RED, ROLE, OrderPage  # noqa: E402
+from iemod_fetch_gui.pages.order import GREY, RED, ROLE, OrderPage  # noqa: E402
 
 PHASES = {"BG:EE before the conversion": ["bg1ub"],
           "EET": ["eet", "ub", "ascension", "EET_end"]}
@@ -648,3 +649,110 @@ def test_a_fix_on_the_real_planner_mends_what_a_hand_order_broke(qtbot, tmp_path
     # its line is gone, every other row keeps the order the player set
     assert "stratagems 5900" not in lines_of(tmp_path)
     assert "stratagems 4100" in lines_of(tmp_path)
+
+
+# --------------------------------------------- the row's panel (item 33)
+def real_page(qtbot, folder, extra_rules=()):
+    """The order page on the run's own planner and the mock EET install."""
+    here = os.path.join(os.path.dirname(__file__), os.pardir)
+    mock = os.path.join(here, "data", "eetmock")
+    common = {"order_catalogue": os.path.join(here, "data", "krion"),
+              "rules": [os.path.join(mock, "rules"), *extra_rules],
+              "target": os.path.join(mock, "Mods")}
+    from test_selection_plan import CHOSEN
+
+    def real(game, chosen, labels, project):
+        return api.selection_plan(game, chosen, labels, folder=project,
+                                  data_dir=os.path.join(project, "no-cache"), **common)
+    widget = OrderPage(str(folder), plan=real)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.start("EET", CHOSEN, {})
+    widget.tabs.setCurrentIndex(1)
+    return widget
+
+
+def at(widget, name):
+    view = widget.tabs.widget(1)
+    return next(r for r in range(view.count()) if view.item(r).data(ROLE)["name"] == name)
+
+
+def test_the_panel_shows_each_rule_on_the_row_and_dims_a_whole_mod_one(qtbot, tmp_path):
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "order.json").write_text(json.dumps({"rules": [
+        {"rule": "ub(-):ascension(-)", "direction": "before", "severity": "warning"}]}))
+    widget = real_page(qtbot, tmp_path / "project", [str(rules)])
+    widget.tabs.widget(1).setCurrentRow(at(widget, "ascension"))
+    text = widget.panel.text()
+    assert "Must come after ub: ub before ascension" in text
+    assert f'color: {GREY.name()}">Must come after ub' in text and "whole mod" in text
+    assert "Must come before stratagems #5900: ascension(0) before stratagems(5900)" in text
+    assert "broken" not in text
+    widget.tabs.widget(1).setCurrentRow(at(widget, "DlcMerger"))
+    assert "No order rule names it." in widget.panel.text()
+    assert not widget.ignore.isEnabled()
+
+
+def broken_page(qtbot, folder):
+    """stratagems #5900 dragged above the EET core: the plan reports it."""
+    folder.mkdir()
+    widget = real_page(qtbot, folder)
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.tabs.widget(1).model().moveRow(QModelIndex(), at(widget, "stratagems #5900"),
+                                              QModelIndex(), 1)
+    return widget
+
+
+def test_an_ignored_row_is_grey_kept_in_decisions_and_red_again_once_dragged(
+        qtbot, tmp_path, monkeypatch):
+    widget = broken_page(qtbot, tmp_path / "project")
+    view = widget.tabs.widget(1)
+    row = at(widget, "stratagems #5900")
+    assert view.item(row).foreground().color() == RED
+    view.setCurrentRow(row)
+    assert "Broken: [WeiDU.log] stratagems should be installed before eet" in widget.panel.text()
+    assert widget.ignore.text() == "Ignore..." and widget.ignore.isEnabled()
+    monkeypatch.setattr("iemod_fetch_gui.pages.order.QInputDialog.getText",
+                        lambda *_args: ("tested, works for me", True))
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.ignore.click()
+    view = widget.tabs.widget(1)
+    row = at(widget, "stratagems #5900")
+    item = view.item(row)
+    assert item.foreground().color() == GREY and item.text().endswith("(ignored)")
+    saved = api.load_decisions(str(tmp_path / "project"))["ignored_order"]
+    assert saved["WeiDU.log|stratagems|0"]["why"] == "tested, works for me"
+    view.setCurrentRow(row)
+    assert widget.ignore.text() == "Stop ignoring"
+    assert "Ignored, while it stays where it is: tested, works for me" in widget.panel.text()
+
+    with qtbot.waitSignal(widget.planned, timeout=10000):     # dragged: shown again
+        view.model().moveRow(QModelIndex(), row, QModelIndex(), 0)
+    assert api.load_decisions(str(tmp_path / "project"))["ignored_order"] == {}
+    view = widget.tabs.widget(1)
+    assert view.item(at(widget, "stratagems #5900")).foreground().color() == RED
+
+
+def test_stop_ignoring_shows_the_row_red_again(qtbot, tmp_path, monkeypatch):
+    widget = broken_page(qtbot, tmp_path / "project")
+    monkeypatch.setattr("iemod_fetch_gui.pages.order.QInputDialog.getText",
+                        lambda *_args: ("fine", True))
+    widget.tabs.widget(1).setCurrentRow(at(widget, "stratagems #5900"))
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.ignore.click()
+    widget.tabs.widget(1).setCurrentRow(at(widget, "stratagems #5900"))
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.ignore.click()                                    # Stop ignoring
+    view = widget.tabs.widget(1)
+    assert view.item(at(widget, "stratagems #5900")).foreground().color() == RED
+    assert api.load_decisions(str(tmp_path / "project"))["ignored_order"] == {}
+
+
+def test_ignoring_without_a_reason_saves_nothing(qtbot, tmp_path, monkeypatch):
+    widget = broken_page(qtbot, tmp_path / "project")
+    monkeypatch.setattr("iemod_fetch_gui.pages.order.QInputDialog.getText",
+                        lambda *_args: ("  ", True))
+    widget.tabs.widget(1).setCurrentRow(at(widget, "stratagems #5900"))
+    widget.ignore.click()
+    assert not (tmp_path / "project" / api.DECISIONS_FILE).exists()

@@ -59,7 +59,7 @@ from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
 from . import bio, choices, limits, pi, premeta, sortorder
-from .decisions import Decisions, decisions_to_json, parse_decisions
+from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
 from .rules import ORDER, Context, Install, RuleSet, check_all, load_suppressions
@@ -86,6 +86,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
+           "ignore_order", "unignore_order",
            "selection_plan", "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
@@ -821,7 +822,7 @@ def load_decisions(folder: str) -> dict:
     decisions; an unreadable one is reported, never silently replaced.
     """
     path = os.path.join(folder, DECISIONS_FILE)
-    out: dict = {"choose": {}, "accept": {}, "problem": None}
+    out: dict = {"choose": {}, "accept": {}, "ignored_order": {}, "problem": None}
     if not os.path.exists(path):
         return out
     try:
@@ -831,19 +832,54 @@ def load_decisions(folder: str) -> dict:
         out["problem"] = str(exc)
         return out
     out["choose"], out["accept"] = dict(decisions.choose), dict(decisions.accept)
+    out["ignored_order"] = {unit: {"after": i.after, "rules": list(i.rules), "why": i.why}
+                            for unit, i in decisions.ignored_order.items()}
     return out
 
 
 def save_decisions(folder: str, choose: dict | None = None,
-                   accept: dict | None = None) -> str:
+                   accept: dict | None = None,
+                   ignored_order: dict | None = None) -> str:
     """
     Write `folder`/decisions.json (ADR-0033): `choose` maps a finding id to the
     option chosen, `accept` a finding id to why it is accepted. The CLI applies
     it with --decisions; it goes through that reader's checks first.
+    `ignored_order` (load_decisions' shape) is the install order's ignored
+    rows; None keeps those the file has, so the conflicts page, which never
+    shows them, does not drop them.
     """
-    text = decisions_to_json(Decisions(dict(choose or {}), dict(accept or {})))
+    if ignored_order is None:
+        ignored_order = load_decisions(folder)["ignored_order"]
+    text = decisions_to_json(Decisions(
+        dict(choose or {}), dict(accept or {}),
+        {unit: IgnoredOrder(unit, i["after"], tuple(i["rules"]), i["why"])
+         for unit, i in ignored_order.items()}))
     parse_decisions(text, source="the wizard's decisions")    # refuse before writing
     return _write_whole(folder, DECISIONS_FILE, text)
+
+
+def ignore_order(folder: str, unit: str, after: str, rules: Sequence[str],
+                 why: str) -> str:
+    """
+    Ignore the order rules `rules` that the row `unit` of the install order
+    breaks, while it stays just after the row `after` ("" for the first):
+    kept in `folder`/decisions.json (M5b item 33, ADR-0033).
+    """
+    current = load_decisions(folder)
+    if current["problem"]:
+        raise ConfigError(current["problem"])
+    ignored = dict(current["ignored_order"])
+    ignored[unit] = {"after": after, "rules": list(rules), "why": why}
+    return save_decisions(folder, current["choose"], current["accept"], ignored)
+
+
+def unignore_order(folder: str, unit: str) -> str:
+    """Show the row `unit` as broken again: its ignore is forgotten."""
+    current = load_decisions(folder)
+    if current["problem"]:
+        raise ConfigError(current["problem"])
+    ignored = {u: i for u, i in current["ignored_order"].items() if u != unit}
+    return save_decisions(folder, current["choose"], current["accept"], ignored)
 
 
 def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
@@ -1034,7 +1070,8 @@ def _selection_plan(game, chosen, labels, folder, order_file, target, data_dir, 
         # per unit, not per mod: a split mod's other parts are neither moved
         # nor wrong because one part is (review of #74)
         moved = {(move.key, move.display) for move in plan.moved}
-        phases = []
+        names = {u.node: u.display for units in plan.logs.values() for u in units}
+        phases: list[dict] = []
         for role in (PRE_EET_LOG, EET_LOG):
             units = plan.logs.get(role)
             if not units:
@@ -1059,25 +1096,68 @@ def _selection_plan(game, chosen, labels, folder, order_file, target, data_dir, 
                 "moved": (unit.key, unit.display) in moved,
                 # what an order rule still finds wrong; a cycle names every
                 # unit left when it was broken, so it is reported, not marked
-                "flagged": _flagged(unit, plan.residual),
+                "flagged": bool(_broken(unit, plan.residual)),
+                # the rules it breaks, as the plan words them, and every
+                # order rule on it - the page's panel (item 33)
+                "broken": _broken(unit, plan.residual),
+                "rules": _rules_on(unit, plan, names),
             } for unit in units]})
+        ignored = decided["ignored_order"] if decided else {}
+        for phase in phases:
+            above = ""
+            for entry in phase["units"]:
+                held = ignored.get(entry["node"])
+                # an ignore holds while the row stays where it was and breaks
+                # nothing new (item 33)
+                entry["ignored"] = (
+                    {"why": held["why"], "after": held["after"]}
+                    if held and IgnoredOrder(entry["node"], held["after"],
+                                             tuple(held["rules"]), held["why"]).holds(
+                                                 above, set(entry["broken"]))
+                    else None)
+                above = entry["node"]
         return {"phases": phases, "cycles": [list(c) for c in plan.cycles],
                 "violations": [v.summary for v in plan.residual],
                 "planned": True, "custom": custom}, analysis.findings
 
 
-def _flagged(unit, violations) -> bool:
-    """Whether an order rule the plan could not keep names this unit: its
-    mod, and - where the violation says which - one of its components."""
+def _broken(unit, violations) -> list[str]:
+    """The order rules the plan could not keep that name this unit - its
+    mod, and where the violation says which, one of its components - as the
+    plan words them."""
     numbers = {line[2] for line in unit.lines}
+    out = []
     for violation in violations:
         for at, key in enumerate(violation.mods[:2]):
             if key != unit.key:
                 continue
             named = violation.left_components if at == 0 else violation.right_components
-            if not named or numbers & set(named):
-                return True
-    return False
+            if (not named or numbers & set(named)) and violation.summary not in out:
+                out.append(violation.summary)
+    return out
+
+
+def _rules_on(unit, plan, names: dict) -> list[dict]:
+    """
+    The order rules on `unit` (not the player's own order): each with the
+    unit it must come after or before, the rule as written, where it comes
+    from, and whether it names a whole mod rather than components - the
+    order page's panel (M5b item 33).
+    """
+    out = []
+    for (second, first), rules in sorted(plan.edge_rules.items()):
+        if unit.node not in (second, first):
+            continue
+        other, must = (first, "after") if second == unit.node else (second, "before")
+        for rule in rules:
+            out.append({
+                "node": other, "name": names.get(other, other), "must": must,
+                "rule": f"{rule.left} {rule.direction} "
+                        + ", ".join(str(spec) for spec in rule.right),
+                "source": rule.source or rule.origin, "severity": rule.severity,
+                "whole": rule.left.components is None
+                or any(spec.components is None for spec in rule.right)})
+    return out
 
 
 def order_breaks(order: Sequence[str], before: dict) -> set[tuple[str, str]]:

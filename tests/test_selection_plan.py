@@ -392,10 +392,10 @@ def test_a_rule_broken_by_one_part_marks_that_part_not_the_mod():
     part = lambda n: SimpleNamespace(key="eefixpack", lines=[("p", 0, n, "")])  # noqa: E731
     wrong = Violation("order", "error", "eefixpack #1 must go after eet",
                       mods=("eefixpack", "eet"), left_components=(1,))
-    assert api._flagged(part(1), [wrong])
-    assert not api._flagged(part(0), [wrong])
+    assert api._broken(part(1), [wrong]) == [wrong.summary]
+    assert not api._broken(part(0), [wrong])
     whole = Violation("order", "error", "eefixpack after eet", mods=("eet", "eefixpack"))
-    assert api._flagged(part(0), [whole])
+    assert api._broken(part(0), [whole])
 
 
 def test_a_tp2_in_both_installs_is_written_with_its_numbers(tmp_path):
@@ -472,3 +472,64 @@ def test_moved_and_flagged_are_marked_per_part_through_the_real_plan(tmp_path):
         p for p in shown["phases"] if p["title"] == "EET")["units"] if u["key"] == "eefixpack"}
     assert shown["violations"]
     assert flagged == {"eefixpack #1": True, "eefixpack #0": False, "eefixpack #2": False}
+
+
+# ------------------------------------------ the row's panel (M5b item 33)
+def test_each_row_carries_the_order_rules_on_it_for_the_panel(tmp_path):
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "order.json").write_text(json.dumps({"rules": [
+        {"rule": "ub(-):ascension(-)", "direction": "before", "severity": "warning"}]}))
+    eet = plan(tmp_path, rules=[os.path.join(MOCK, "rules"), str(rules)])["phases"][1]["units"]
+    by_name = {u["name"]: u for u in eet}
+    on = {(r["must"], r["name"], r["whole"]) for r in by_name["ascension"]["rules"]}
+    # a rule naming whole mods (shown dimmed) and one naming components
+    assert on == {("after", "ub", True), ("before", "stratagems #5900", False)}
+    rule = next(r for r in by_name["ub"]["rules"])
+    assert (rule["must"], rule["name"], rule["severity"]) == ("before", "ascension", "warning")
+    assert rule["rule"] == "ub before ascension" and rule["source"]
+    assert by_name["DlcMerger"]["rules"] == [] and by_name["DlcMerger"]["broken"] == []
+
+
+def broken_by_hand(folder, rules=None):
+    """stratagems #5900 dragged above the EET core: a rule the plan reports."""
+    extra = {"rules": rules} if rules else {}
+    phases = [p["units"] for p in plan(folder, **extra)["phases"]]
+    eet = phases[1]
+    moved = next(u for u in eet if u["name"] == "stratagems #5900")
+    eet.remove(moved)
+    eet.insert(1, moved)
+    api.save_install_order(str(folder), phases)
+    return plan(folder, **extra)
+
+
+def row(result, node):
+    units = result["phases"][1]["units"]
+    at = next(n for n, u in enumerate(units) if u["node"] == node)
+    return units[at], (units[at - 1]["node"] if at else "")
+
+
+def test_an_ignored_row_stays_ignored_in_its_place_and_for_its_rules(tmp_path):
+    node = "WeiDU.log|stratagems|0"
+    unit, above = row(broken_by_hand(tmp_path), node)
+    assert unit["flagged"] and unit["broken"] and unit["ignored"] is None
+    api.ignore_order(str(tmp_path), node, above, unit["broken"], "tested, works for me")
+    unit, _above = row(plan(tmp_path), node)
+    assert unit["ignored"] == {"why": "tested, works for me", "after": above}
+    assert unit["flagged"]                       # still broken; the page shows it ignored
+    # an ignore made in another place does not hold here
+    api.ignore_order(str(tmp_path), node, "WeiDU.log|ub|0", unit["broken"], "elsewhere")
+    assert row(plan(tmp_path), node)[0]["ignored"] is None
+
+
+def test_a_new_rule_the_row_breaks_shows_it_again(tmp_path):
+    node = "WeiDU.log|stratagems|0"
+    unit, above = row(broken_by_hand(tmp_path), node)
+    api.ignore_order(str(tmp_path), node, above, unit["broken"], "fine")
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "order.json").write_text(json.dumps({"rules": [
+        {"rule": "stratagems(5900):dlcmerger(-)", "direction": "before",
+         "severity": "warning"}]}))           # DlcMerger stays first: a new break
+    again, _above = row(plan(tmp_path, rules=[os.path.join(MOCK, "rules"), str(rules)]), node)
+    assert len(again["broken"]) > len(unit["broken"]) and again["ignored"] is None

@@ -47,6 +47,14 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The order page's row panel, and "Ignore..."** (GUI-AUDIT M5b item 33).
+  Under the list, every order rule on the selected row: what it must come
+  after or before, the rule as written, its source - red where broken,
+  dimmed where it names a whole mod. A red row's broken rules can be ignored,
+  with why, in `decisions.json` (`ignored_order`, ADR-0033 amendment): the row
+  is then grey while it stays where it is and breaks no other rule; dragging
+  it or a new broken rule shows it red again. The command line accepts and
+  checks the new key; an older iemod-fetch refuses a file that has it.
 - **Fixes on each red row of the order page** (GUI-AUDIT M5b item 32).
   "Fix..." offers what mends the selected row, each previewed before it is
   applied: just after the mod a rule puts before it, or just before the one a

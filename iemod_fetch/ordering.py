@@ -337,6 +337,8 @@ class OrderPlan:
     # Those rules' edges, unit -> the units they put before it: what the page
     # re-checks at once after a drop (M5b item 31).
     rule_edges: dict[str, set[str]] = field(default_factory=dict)
+    # the rules behind each of those edges, by (unit, the unit it must follow)
+    edge_rules: dict[tuple[str, str], list] = field(default_factory=dict)
     simulation: object | None = None    # simulate.SimulationResult, if run
     game_report: object | None = None   # gamedir.GameReport, if folders given
     resolution: object | None = None    # resolution.ResolutionResult, if any
@@ -449,9 +451,13 @@ def _split(units: list[Unit], rules: list, index: OrderIndex) -> list[Unit]:
     return out
 
 
-def _edges(units: list[Unit], rules: list) -> tuple[dict[str, set[str]], int]:
+def _edges(units: list[Unit], rules: list,
+           why: dict[tuple[str, str], list] | None = None
+           ) -> tuple[dict[str, set[str]], int]:
     """
     Hard ordering constraints, between parts: `after -> before`, per log.
+    `why`, when given, collects the rules behind each edge, by (unit, the
+    unit it must follow): what the order page shows per row (item 33).
 
     A rule constrains the parts holding the components it names (all parts for
     a whole-mod side). Only parts in the SAME log are constrained: a mod in the
@@ -482,6 +488,10 @@ def _edges(units: list[Unit], rules: list) -> tuple[dict[str, set[str]], int]:
                         first, second = ((left, right) if rule.direction == "before"
                                          else (right, left))
                         bucket = edges.setdefault(second.node, set())
+                        if why is not None:
+                            behind = why.setdefault((second.node, first.node), [])
+                            if rule not in behind:
+                                behind.append(rule)
                         if first.node not in bucket:
                             bucket.add(first.node)
                             count += 1
@@ -819,7 +829,8 @@ def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
     edges, plan.edges = _edges(units, rules)
     # What a rule places - not the player's own sorting order, which ties every
     # unit to the next and would mark them all.
-    placed, _count = _edges(units, [r for r in rules if r.origin != SORTING_ORDER])
+    placed, _count = _edges(units, [r for r in rules if r.origin != SORTING_ORDER],
+                            plan.edge_rules)
     plan.constrained = set(placed).union(*placed.values()) if placed else set()
     plan.rule_edges = placed
     priorities = _priorities(units)

@@ -17,6 +17,21 @@ the finding as accepted, with the reason, instead of outstanding. Ids are
 stable while the selection is the same; a decision whose finding no longer
 exists is reported as stale and otherwise ignored - never applied to
 something else.
+
+`ignored_order` (optional, GUI-AUDIT M5b item 33, ADR-0033) holds the rows
+of the wizard's install order whose broken order rules the player chose to
+ignore - rules the player's own order breaks, which no finding of the
+report names:
+
+     "ignored_order": [
+       {"unit": "WeiDU.log|stratagems|0", "after": "WeiDU.log|eet|0",
+        "rules": ["[WeiDU.log] stratagems should be installed before eet"],
+        "why": "tested, works for me"}]
+
+An entry holds while the row stays just after `after` ("" for the first row)
+and breaks no rule but `rules`; the wizard shows the row as broken again
+otherwise. The command line reads and checks it, and does nothing else
+with it.
 """
 import json
 from dataclasses import dataclass, field
@@ -24,14 +39,29 @@ from dataclasses import dataclass, field
 from .contract import SCHEMA_VERSION
 from .errors import ConfigError
 
-_TOP = {"schema_version", "decisions"}
+_TOP = {"schema_version", "decisions", "ignored_order"}
 _ENTRY = {"finding", "choose", "accept"}
+_IGNORED = {"unit", "after", "rules", "why"}
+
+
+@dataclass(frozen=True)
+class IgnoredOrder:
+    """A row of the install order whose broken rules the player ignores."""
+    unit: str                     # the planner's node: log|key|part
+    after: str                    # the row just above it when ignored; "" if first
+    rules: tuple[str, ...]        # the broken rules ignored, as the plan words them
+    why: str
+
+    def holds(self, after: str, broken: set[str] | frozenset[str]) -> bool:
+        """Still ignored: in the same place, breaking nothing new."""
+        return bool(broken) and after == self.after and set(broken) <= set(self.rules)
 
 
 @dataclass
 class Decisions:
     choose: dict[str, str] = field(default_factory=dict)    # finding id -> option id
     accept: dict[str, str] = field(default_factory=dict)    # finding id -> why
+    ignored_order: dict[str, IgnoredOrder] = field(default_factory=dict)  # by unit
 
     def __len__(self) -> int:
         return len(self.choose) + len(self.accept)
@@ -84,11 +114,37 @@ def parse_decisions(text: str, source: str = "decisions.json") -> Decisions:
             if not isinstance(why, str) or not why.strip():
                 raise ConfigError(f"{where}: 'accept' must say why, as a non-empty string")
             out.accept[finding] = why.strip()
+    ignored = data.get("ignored_order", [])
+    if not isinstance(ignored, list):
+        raise ConfigError(f"{source}: 'ignored_order' must be an array")
+    for n, entry in enumerate(ignored):
+        where = f"{source}: ignored_order[{n}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{where}: expected an object")
+        if set(entry) != _IGNORED:
+            raise ConfigError(f"{where}: expected exactly the keys {sorted(_IGNORED)}")
+        unit, after, rules, why = (entry[k] for k in ("unit", "after", "rules", "why"))
+        if not isinstance(unit, str) or not unit.strip():
+            raise ConfigError(f"{where}: 'unit' must name a row of the order")
+        if not isinstance(after, str):
+            raise ConfigError(f"{where}: 'after' must be a string (\"\" for the first row)")
+        if (not isinstance(rules, list) or not rules
+                or not all(isinstance(r, str) and r.strip() for r in rules)):
+            raise ConfigError(f"{where}: 'rules' must list the broken rules ignored")
+        if not isinstance(why, str) or not why.strip():
+            raise ConfigError(f"{where}: 'why' must say why, as a non-empty string")
+        if unit in out.ignored_order:
+            raise ConfigError(f"{where}: {unit} is ignored twice")
+        out.ignored_order[unit] = IgnoredOrder(unit, after, tuple(rules), why.strip())
     return out
 
 
 def decisions_to_json(decisions: Decisions) -> str:
     entries = ([{"finding": f, "choose": o} for f, o in sorted(decisions.choose.items())]
                + [{"finding": f, "accept": w} for f, w in sorted(decisions.accept.items())])
-    return json.dumps({"schema_version": SCHEMA_VERSION, "decisions": entries},
-                      indent=2) + "\n"
+    data: dict = {"schema_version": SCHEMA_VERSION, "decisions": entries}
+    if decisions.ignored_order:
+        data["ignored_order"] = [
+            {"unit": i.unit, "after": i.after, "rules": list(i.rules), "why": i.why}
+            for _unit, i in sorted(decisions.ignored_order.items())]
+    return json.dumps(data, indent=2) + "\n"
