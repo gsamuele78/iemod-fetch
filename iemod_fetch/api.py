@@ -59,7 +59,7 @@ from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
 from . import bio, choices, limits, pi, premeta, sortorder
 from .decisions import Decisions, decisions_to_json, parse_decisions
-from .resolution import (ResolutionResult, apply_decisions, before_eet_core,
+from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
 from .rules import Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
@@ -876,8 +876,8 @@ def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
     decided = (load_decisions(folder) if folder
                else {"choose": {}, "accept": {}, "problem": None})
     with _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
-                             order_catalogue, fetch_metadata, sorting_order) as (
-                                 settings, analysis, ruleset, plan):
+                             order_catalogue, fetch_metadata, sorting_order,
+                             decided) as (settings, analysis, ruleset, plan):
         # Named by role even with no plan: the ids are then the ones a planned
         # run gives, so a decision saved now still matches once there is one.
         report = build_conflict_report(_judged_installs(settings, analysis, True),
@@ -910,11 +910,12 @@ def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
 
 @contextlib.contextmanager
 def _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
-                        order_catalogue, fetch_metadata, sorting_order):
+                        order_catalogue, fetch_metadata, sorting_order, decided=None):
     """
     A wizard selection judged as a run judges it: its logs written as
     --selection writes them, the rules checked, and the order planned when
-    krion64's data is there. Yields (settings, analysis, ruleset, plan).
+    krion64's data is there - with the "keep both" order the player chose in
+    `decided` (load_decisions' dict). Yields (settings, analysis, ruleset, plan).
     """
     data_dir = data_dir or datasync.default_data_dir()
     cached = datasync.data_paths(data_dir)
@@ -944,8 +945,13 @@ def _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
         if index is not None and logs:
             unread: list[str] = []
             sequence = bws_sequence(_eet_sequences(settings, unread))
-            plan = plan_order(_log_roles(logs), index, ruleset, analysis.context,
-                              kinds=_kind_hints(settings), sequence=sequence)
+            kinds, roles = _kind_hints(settings), _log_roles(logs)
+            decisions = (Decisions(dict(decided["choose"]), dict(decided["accept"]))
+                         if decided else None)
+            plan, ruleset = _plan_with_decided_order(
+                lambda rule_set: plan_order(roles, index, rule_set, analysis.context,
+                                            kinds=kinds, sequence=sequence),
+                ruleset, analysis.context, decisions)
             plan.warnings.extend(unread)
         yield settings, analysis, ruleset, plan
 
@@ -974,9 +980,10 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
     """
     order_file = os.path.join(folder, INSTALL_ORDER_FILE) if folder else None
     custom = bool(order_file and os.path.isfile(order_file))
+    decided = load_decisions(folder) if folder else None   # "keep both" orders
     with _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
                              order_catalogue, fetch_metadata,
-                             order_file if custom else None) as (
+                             order_file if custom else None, decided) as (
                                  _settings, _analysis, _ruleset, plan):
         if plan is None:
             return {"phases": [], "cycles": [], "violations": [], "planned": False,
@@ -1633,6 +1640,25 @@ def _kind_hints(settings) -> dict[str, KindHint]:
             for mod in mods if mod.kinds}
 
 
+def _plan_with_decided_order(plan_once, ruleset: RuleSet, context,
+                             decisions: Decisions | None):
+    """
+    The plan, and the rule set it was planned with: where the player chose to
+    keep both sides of a conflict, one installed last (decisions.json, item
+    28), that order becomes a rule and the plan is made again with it - the
+    conflict ids do not depend on the order, so they still match.
+    """
+    plan = plan_once(ruleset)
+    if decisions is None or not decisions.choose:
+        return plan, ruleset
+    extra = keep_both_rules(build_conflict_report(plan.installs(), ruleset, context, plan),
+                            decisions)
+    if not extra:
+        return plan, ruleset
+    ruleset = replace(ruleset, rules=[*ruleset.rules, *extra])
+    return plan_once(ruleset), ruleset
+
+
 def _plan_order(settings, analysis: RuleAnalysis, stream):
     """Build the rule-compliant install order, if asked for."""
     if not getattr(settings, "plan_order", None):
@@ -1659,10 +1685,17 @@ def _plan_order(settings, analysis: RuleAnalysis, stream):
     constraints = analysis.constraints or _staged_constraints(settings, specs)
     unread: list[str] = []
     sequence = bws_sequence(_eet_sequences(settings, unread))
-    plan = plan_order(specs, index, ruleset, context,
-                      include_optional=settings.include_optional,
-                      reassign_phase=settings.reassign_phase,
-                      kinds=_kind_hints(settings), sequence=sequence)
+    kinds = _kind_hints(settings)
+    decisions = None
+    if settings.decisions:
+        with open(settings.decisions, encoding="utf-8") as fh:
+            decisions = parse_decisions(fh.read(), source=settings.decisions)
+    plan, ruleset = _plan_with_decided_order(
+        lambda rules: plan_order(specs, index, rules, context,
+                                 include_optional=settings.include_optional,
+                                 reassign_phase=settings.reassign_phase,
+                                 kinds=kinds, sequence=sequence),
+        ruleset, context, decisions)
     plan.warnings.extend(unread)
     for warning in unread:
         print(f"warning: {warning}", file=stream)
@@ -1671,11 +1704,9 @@ def _plan_order(settings, analysis: RuleAnalysis, stream):
     if settings.decisions or settings.resolve_conflicts:
         resolution = ResolutionResult()
         decided: set = set()
-        if settings.decisions:
+        if decisions is not None:
             # The player's answers first: a choice they made is never second-
             # guessed by the automatic resolution that follows.
-            with open(settings.decisions, encoding="utf-8") as fh:
-                decisions = parse_decisions(fh.read(), source=settings.decisions)
             report = build_conflict_report(plan.installs(), ruleset or RuleSet(),
                                            context, plan)
             resolution.extend(apply_decisions(plan, report, decisions, ruleset, context))

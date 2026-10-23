@@ -55,6 +55,22 @@ Python API, which is internal.
   page and `--plan-order` give the same order, component for component. A
   split part is marked moved or wrong on its own, and a tp2 in both installs
   is saved with its numbers in each.
+- **Keep both, one installed last** (GUI-AUDIT M5 item 28, ADR-0033
+  amended). Two components that touch the same thing, where no rule says they
+  must not coexist - an incompatibility graded below `error`, as krion64's
+  partial and soft conflicts and overlap advisories are - now offer, each way
+  round, "keep both, X installed last (its changes win)" besides deselecting
+  a side. Chosen in `decisions.json` (by hand, or the wizard's new button),
+  it becomes an order rule: the plan is made again with it, and the finding
+  is recorded as accepted with that reason. A choice that contradicts
+  another rule is reported by the plan, never hidden. A hard (`error`)
+  incompatibility does not offer it, nor does a pair an error also covers, and
+  where a tp2's FORBID_COMPONENT already orders the pair only that way round
+  is offered; a kept order the plan could not keep goes back to the player.
+  The conflict report's option `action` gains `keep-both`, and a
+  decisions.json naming one is refused by an older iemod-fetch. Measured first: the rest of item 28 was already there
+  (krion64's per-component categories split 242 components) or has no data
+  (BWS-NG classifies no component on its own).
 - **The command line as a program that needs no Python** (GUI-AUDIT M6 item
   36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
   macOS's own `python3` are older. Each release now carries

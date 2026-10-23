@@ -165,6 +165,34 @@ def test_an_order_the_plan_could_not_settle_is_not_offered_as_a_choice(qtbot, tm
     assert not button.isEnabled() and "could not" in button.toolTip()
 
 
+class Overlap(Checker):
+    """Finding 1 as a warning - two components touching one thing - with
+    the "keep both" options a run gives such a finding (item 28)."""
+
+    def __call__(self, *args):
+        result = super().__call__(*args)
+        for finding in result["findings"]:
+            if finding["id"] == "conflict-0000000000000001":
+                finding["severity"] = "warning"
+                finding["options"].append(
+                    option("option-00000000000000f1", "keep-both", "cdtweaks", [200],
+                           text="keep both, cdtweaks installed last (its changes win)"))
+        return result
+
+
+def test_keeping_both_records_which_is_installed_last(qtbot, tmp_path):
+    widget, _checker = page(qtbot, tmp_path, Overlap())
+    choose(qtbot, widget, (UB, 10), (TW, 200))
+    button = widget.panel.buttons["option-00000000000000f1"]
+    assert "installed after the other" in button.toolTip()
+    click(qtbot, widget, "option-00000000000000f1")
+    assert api.load_decisions(str(tmp_path))["choose"] == {
+        "conflict-0000000000000001": "option-00000000000000f1"}
+    assert open_ids(widget) == []
+    assert all(widget.items[key].checkState(0) == Qt.CheckState.Checked
+               for key in ((UB, 10), (TW, 200)))          # both kept
+
+
 def test_an_acceptance_is_shown_as_decided_and_can_be_undone(qtbot, tmp_path, monkeypatch):
     widget, _checker = page(qtbot, tmp_path)
     choose(qtbot, widget, (TW, 100))

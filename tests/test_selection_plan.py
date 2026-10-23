@@ -374,3 +374,34 @@ def test_a_tp2_in_both_installs_is_written_with_its_numbers(tmp_path):
     lines = [line for line in (tmp_path / api.INSTALL_ORDER_FILE).read_text().splitlines()
              if not line.startswith("//")]
     assert lines == ["eefixpack 0", "bg1ub *", "EET *", "eefixpack 1 2"]
+
+
+def test_a_keep_both_decision_in_the_project_orders_the_wizards_plan(tmp_path):
+    """Item 28: the project's decisions.json "keep both, X last" is an order
+    rule of the wizard's plan - here on ub and cdtweaks #2370, which nothing
+    else orders, so the decision alone moves them (review of #72, H3)."""
+    overlap = tmp_path / "overlap"
+    overlap.mkdir()
+    (overlap / "incompatibilities.json").write_text(json.dumps({"rules": [
+        {"rule": "ub(0):cdtweaks(2370)", "severity": "warning", "description": "same file"}]}))
+    rules = [os.path.join(MOCK, "rules"), str(overlap)]
+
+    def order():
+        units = next(p for p in plan(tmp_path, rules=rules)["phases"]
+                     if p["title"] == "EET")["units"]
+        return [(c[0].split("/")[0].lower(), c[1]) for u in units for c in u["components"]]
+    before = order()
+    ub_first = before.index(("ub", 0)) < before.index(("cdtweaks", 2370))
+    found = api.selection_conflicts("EET", CHOSEN, folder=str(tmp_path),
+                                    order_catalogue=KRION, rules=rules,
+                                    target=os.path.join(MOCK, "Mods"),
+                                    data_dir=str(tmp_path / "no-cache"))
+    pair = next(f for f in found["findings"] if f["kind"] == "incompatible"
+                and {f["left"]["mod"], f["right"]["mod"]} == {"ub", "cdtweaks"})
+    last = next(o for o in pair["options"] if o["action"] == "keep-both"
+                and o["mod"] == ("ub" if ub_first else "cdtweaks"))
+    api.save_decisions(str(tmp_path), choose={pair["id"]: last["id"]})
+
+    after = order()
+
+    assert (after.index(("ub", 0)) < after.index(("cdtweaks", 2370))) is not ub_first

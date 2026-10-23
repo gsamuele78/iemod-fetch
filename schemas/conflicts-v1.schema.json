@@ -245,8 +245,10 @@
           "enum": [
             "deselect",
             "reorder",
-            "install"
-          ]
+            "install",
+            "keep-both"
+          ],
+          "description": "keep-both: keep both sides, the option's mod installed last (GUI-AUDIT item 28)"
         },
         "mod": {
           "type": "string"
