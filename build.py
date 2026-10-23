@@ -82,7 +82,7 @@ def _vendor(staging: str) -> None:
         for entry in dist.files or ():
             rel = str(entry).replace("\\", "/")
             parts = rel.split("/")
-            if ".." in parts or os.path.isabs(rel) or ":" in parts[0]:
+            if ".." in parts or rel.startswith("/") or os.path.isabs(rel) or ":" in parts[0]:
                 continue                       # outside the package: a script, never copied
             if "__pycache__" in parts or rel.endswith(".pyc"):
                 continue
