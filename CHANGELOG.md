@@ -85,6 +85,15 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A Russian, Polish or Chinese mod's component names read in its own
+  script** (GUI-AUDIT M7 item 44). A .tra file that is not UTF-8 was read as
+  Windows-1252 whatever its language: on 103 real mods, 2,286 Russian and
+  721 Chinese .tra files came out as Latin letters, and Polish and Czech
+  ones lost their `ł`, `ś`, `ź`. The code page now follows the language
+  folder, by WeiDU 251's own table for HANDLE_CHARSETS (Russian cp1251,
+  Polish and Czech cp1250, Simplified Chinese cp936, Traditional cp950,
+  Japanese cp932, Korean cp949); measured, every one of those files then
+  decodes to its own script. UTF-8 is still tried first.
 - **`--language-preference` picks the language WeiDU means** (GUI-AUDIT M7
   item 43). The tp2 reader took a string from `~` or `"` to the next `~` or
   `"`, and any `LANGUAGE` word as a declaration: `~Use "smart" AI~` read as

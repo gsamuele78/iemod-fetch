@@ -68,6 +68,7 @@ from .selection import (Choice, Selection, parse_selection,
                         selection_from_logs, selection_to_json)
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
+from .weidu_lex import legacy_charset
 from .urls import repo_from_url
 from . import tra
 from .contract import SCHEMA_VERSION
@@ -489,20 +490,27 @@ def _text_under(root: str, relative: str) -> str | None:
             data = fh.read(_MAX_TEXT_BYTES + 1)
     except OSError:
         return None
-    return _decode_text(data)
+    return _decode_text(data, relative)
 
 
-def _decode_text(data: bytes) -> str:
-    """UTF-8 (EE mods), else Windows-1252 (pre-EE ones: 0x92 is an apostrophe,
-    not a control character), else Latin-1 for the five bytes 1252 leaves out."""
+def _decode_text(data: bytes, path: str = "") -> str:
+    """
+    UTF-8 (EE mods), else the code page of the language folder in `path` as
+    WeiDU infers it (Russian cp1251, Polish and Czech cp1250, Chinese cp936,
+    ...; GUI-AUDIT item 44), else Windows-1252 (pre-EE: 0x92
+    is an apostrophe, not a control character), else Latin-1 for the five
+    bytes 1252 leaves out.
+    """
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         pass
-    try:
-        return data.decode("cp1252")
-    except UnicodeDecodeError:
-        return data.decode("latin-1")
+    for charset in dict.fromkeys((legacy_charset(path), "cp1252")):
+        try:
+            return data.decode(charset)
+        except UnicodeDecodeError:
+            pass
+    return data.decode("latin-1")
 
 
 # The wizard's project: one folder, one iemod-fetch.ini the CLI reads too
