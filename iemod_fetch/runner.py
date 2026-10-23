@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from dataclasses import replace as _replace
 
 from .contract import SCHEMA_VERSION
-from .errors import (Cancelled, InstallConflict, ModFetchError, Unresolved,
+from .errors import (Cancelled, InstallConflict, ModFetchError, NotThisMod, Unresolved,
                      VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
@@ -167,6 +167,7 @@ class Runner:
 
         try:
             refused = [candidate.url]
+            other = []                  # refusals for another reason than "not this mod"
             skip = {candidate.url}      # what was refused, and each source used
             while True:
                 try:
@@ -182,19 +183,23 @@ class Runner:
                     # forever - and the same strict check gates every one.
                     if self.cancel.is_set():
                         raise Cancelled("cancelled") from exc
+                    if not isinstance(exc, NotThisMod):
+                        other.append(f"{candidate.url}: {exc}")
                     alternate = self._catalogue_alternate(source, folder, entry, skip)
                     if alternate is None:
                         if len(refused) > 1:
                             raise VerificationFailed(
                                 f"none of the {len(refused)} sources tried contained this "
-                                f"mod: {', '.join(refused)}") from exc
+                                f"mod: {', '.join(refused)}"
+                                + "".join(f"; {why}" for why in other)) from exc
                         raise
                     candidate = alternate
                     refused.append(candidate.url)
             if len(refused) > 1:
                 resolution.warnings.append(
                     f"{folder}: {', '.join(refused[:-1])} did not contain this mod; "
-                    f"installed from {entry.origin} instead ({candidate.url})")
+                    f"installed from {entry.origin} instead ({candidate.url})"
+                    + "".join(f"; {why}" for why in other))
         except Cancelled as exc:
             return Record(folder, Status.CANCELLED, "stopped during the download",
                           source_key=source.key, url=candidate.url, error_code=exc.code)

@@ -544,3 +544,37 @@ def test_the_catalogue_supplies_the_renamed_tp2_automatically(tmp_path, monkeypa
     assert (tmp_path / "Mods" / "Reflections_of_Destiny" /
             "Reflections_of_Destiny.tp2").exists()
     assert "now ships as" in out
+
+
+def test_a_refusal_for_another_reason_keeps_that_reason(tmp_path, monkeypatch):
+    """Review of #52: the combined failure said every source "did not contain
+    this mod", hiding a refusal such as a path escaping the target folder."""
+    from iemod_fetch import runner
+    from iemod_fetch.errors import VerificationFailed
+    attachment = "https://forums.beamdog.com/uploads/editor/gk/qg6zo9o3fqho.zip"
+    asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
+    stub = DiscoveryStub(
+        owners={},
+        releases={"Gibberlings3/EndlessBG1": {"tag_name": "v1", "assets": [
+            {"name": "m.zip", "browser_download_url": asset}]}},
+        blobs={attachment: zip_bytes("EndlessBG1"), asset: zip_bytes("SomeOtherMod")})
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+    attempt = runner.Runner._attempt
+
+    def escaping(self, source, folder, candidate, expect_tp2):
+        if candidate.url == attachment:
+            raise VerificationFailed(f"{folder}: destination escapes the target directory")
+        return attempt(self, source, folder, candidate, expect_tp2)
+    monkeypatch.setattr(runner.Runner, "_attempt", escaping)
+
+    code, _out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json", "--no-discovery",
+                      "--json-report", "r.json"])
+
+    assert code == 1
+    report = json.loads((tmp_path / "r.json").read_text())
+    [record] = [r for r in report["records"] if r["folder"] == "EndlessBG1"]
+    assert f"{attachment}: EndlessBG1: destination escapes" in record["detail"]
+    assert asset in record["detail"] and "expect_tp2" not in record["detail"]

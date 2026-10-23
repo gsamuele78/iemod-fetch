@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .archives import safe_extract
-from .errors import InstallConflict, VerificationFailed
+from .errors import InstallConflict, NotThisMod, VerificationFailed
 from .naming import matches_tp2, safe_component
 from .tp2 import Tp2Info, read_mod_tp2
 
@@ -81,7 +81,7 @@ def locate_mod_root(staging: str, folder: str,
     """
     candidates = find_tp2_files(staging)
     if not candidates:
-        raise VerificationFailed(
+        raise NotThisMod(
             f"{folder}: the archive contains no .tp2 file at all - it is not a "
             f"WeiDU mod package")
     for wanted in [n for n in (folder, expect_tp2) if n]:
@@ -90,7 +90,7 @@ def locate_mod_root(staging: str, folder: str,
                 return os.path.dirname(path), os.path.basename(path), wanted
     present = sorted({os.path.basename(p) for p in candidates})[:8]
     stem = os.path.splitext(present[0])[0] if present else folder
-    raise VerificationFailed(
+    raise NotThisMod(
         f"{folder}: archive contains .tp2 files {present} but none of them is "
         f"'{folder}.tp2' or 'setup-{folder}.tp2' - this is not the mod that was "
         f"asked for. If this archive is right and the mod simply renamed itself, "

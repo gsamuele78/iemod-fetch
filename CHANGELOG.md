@@ -70,7 +70,8 @@ Python API, which is internal.
   gets its turn - one turn per source, not per URL, so a link that redirects
   to a new signed URL each time cannot loop - each held to the same check;
   the warning names what was refused, and when every source is refused the
-  failure names each one.
+  failure names each one, with the reason of any refused for something other
+  than not being the mod (a path escaping the target folder, say).
 - **A forum's file comes last, and says so** (GUI-AUDIT M7 item 58, ADR-0039
   amendment). With GitHub out of reach - no token and 115 GitHub mods is
   enough - Ascension came from a Beamdog thread as v1.5 BETA (its repository:
