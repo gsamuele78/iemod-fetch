@@ -93,6 +93,14 @@ Python API, which is internal.
   forum thread or a file attached to one is now tried after the entry's own
   direct links, its repository and its other pages, and a mod installed from
   one carries an advisory naming the post and the version the mod declares.
+- **A contradiction in the order rules no longer breaks rules outside it**
+  (GUI-AUDIT M7 item 42). When the sort got stuck it reported every unit left
+  as the cycle and released the first in priority even if it was not in the
+  cycle: with A and B ordered after each other and "C after A", C was placed
+  before A (D too), and two cycles were reported: all four units, then A
+  and B. Now the real cycle is
+  found (the strongly connected part nothing else holds back), reported once,
+  and the unit released is one of its own.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
   by its first word (`www`): krion64's place for it was never found, and a
   Sorting Order line naming it ordered nothing.

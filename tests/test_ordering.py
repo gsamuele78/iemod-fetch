@@ -423,3 +423,40 @@ def test_a_tp2_name_with_dots_keeps_them(tmp_path):
     key = tp2_key("www.urstuff2athkatla\\www.urstuff2athkatla.tp2")
     assert index.get(key) is not None and index.get(key).ord == 3
     assert index.get("www") is None and index.get(name_key("www.urstuff2athkatla")) is not None
+
+
+# ------------------------------------------------- cycles (GUI-AUDIT item 42)
+def _units(*keys):
+    from types import SimpleNamespace
+    return [SimpleNamespace(node=k, key=k, display=k, split=False) for k in keys]
+
+
+def test_a_cycle_breaks_no_rule_outside_it_and_is_reported_once():
+    """Audit 2026-10-23: with A<->B and "C after A", "D after C", the stuck sort
+    reported every unit left as the cycle, twice, and forced C - outside the
+    cycle - ahead of A, breaking a rule that held."""
+    from iemod_fetch.ordering import _toposort
+    units = _units("C", "D", "A", "B")                     # C, D preferred first
+    edges = {"A": {"B"}, "B": {"A"}, "C": {"A"}, "D": {"C"}}  # key: what comes before it
+    priorities = {"C": 0, "D": 1, "A": 2, "B": 3}
+    order, cycles = _toposort(units, edges, priorities)
+    keys = [u.key for u in order]
+    assert keys.index("A") < keys.index("C") < keys.index("D")
+    assert cycles == [["A", "B"]]
+
+
+def test_two_separate_cycles_are_each_reported():
+    from iemod_fetch.ordering import _toposort
+    units = _units("A", "B", "X", "Y", "Z")
+    edges = {"A": {"B"}, "B": {"A"}, "X": {"Y"}, "Y": {"X"}, "Z": {"X"}}
+    priorities = {k: i for i, k in enumerate(["A", "B", "X", "Y", "Z"])}
+    order, cycles = _toposort(units, edges, priorities)
+    keys = [u.key for u in order]
+    assert sorted(map(sorted, cycles)) == [["A", "B"], ["X", "Y"]]
+    assert keys.index("X") < keys.index("Z") and len(keys) == 5
+
+
+def test_a_self_rule_is_a_cycle_of_one():
+    from iemod_fetch.ordering import _toposort
+    order, cycles = _toposort(_units("A", "B"), {"A": {"A"}, "B": {"A"}}, {"A": 0, "B": 1})
+    assert [u.key for u in order] == ["A", "B"] and cycles == [["A"]]
