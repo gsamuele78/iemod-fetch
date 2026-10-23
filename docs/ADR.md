@@ -2623,7 +2623,7 @@ when pip-audit failed on 2026-10-23) is in filelock 3.20.4-4.2.0: `ReadWriteLock
 who can create or rename entries in the lock's directory make SQLite write into, create
 or unlink the lock user's files. iemod-fetch uses only `FileLock`, so the path
 is not reached; but the .pyz and the bundles carry the vulnerable module, and
-pip-audit turned every pull request red. No release carried 3.32.7: it came
+pip-audit failed every pull request that still pinned 3.32.7 (#77). No release carried 3.32.7: it came
 in after 3.0.0.
 
 **Decision**: filelock 4.2.4 (the latest, 2026-10-19), `>=4.2.1,<5` in
