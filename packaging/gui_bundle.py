@@ -13,8 +13,11 @@ Qt (LGPL-3.0 section 4). The folder carries this project's licence, the LGPL
 and GPL texts and NOTICE-Qt.txt, which says where Qt's and PySide6's source
 is. The command-line `.pyz` stays standard-library only; this is the wizard.
 
-The program is started with --check (offscreen) before it is zipped: a build
-that cannot open its window fails here, not on a player's machine.
+The zip is unpacked again and the program in it started with --check
+(offscreen): a build, or a zip, that cannot open its window fails here, not on
+a player's machine. On macOS the .app is signed again, ad hoc, once the licence
+files are in it, and its framework links stay links in the zip; elsewhere the
+zip holds no links, which not every unzip tool restores.
 """
 import argparse
 import os
@@ -48,8 +51,8 @@ Qt {versions['qt']} and PySide6 {versions['pyside6']} (with shiboken6) are used
 under the GNU Lesser General Public License v3.0 (LGPL-3.0-only); its text is
 licenses/LGPL-3.0-only.txt, and the GPL it extends is licenses/GPL-3.0-only.txt.
 They are dynamically linked: Qt's and PySide6's libraries are separate files in
-this folder (_internal/PySide6), and you may replace them with your own builds
-of the same versions.
+this folder (under _internal, or Contents/Frameworks in the macOS app), and you
+may replace them with your own builds of the same versions.
 
 Source code:
   Qt       https://download.qt.io/official_releases/qt/
@@ -110,6 +113,14 @@ def add_licences(folder: str) -> None:
         fh.write(notice(versions()))
 
 
+def sign(folder: str) -> None:
+    """Re-sign a macOS .app ad hoc: the licence files added after PyInstaller
+    signed it would otherwise break its signature, and macOS refuses it."""
+    if folder.endswith(".app"):
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", folder], check=True)
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", folder], check=True)
+
+
 def check(folder: str, work: str) -> None:
     """Start the built program once, offscreen, as a player would."""
     project = os.path.join(work, "project")
@@ -123,20 +134,39 @@ def check(folder: str, work: str) -> None:
                          f"{done.stdout}\n{done.stderr}")
 
 
+def unpack(path: str, into: str) -> None:
+    """Unzip as a player would: ditto for a .app (links kept), otherwise a plain
+    unzip that restores the files' modes, so the program stays executable."""
+    os.makedirs(into, exist_ok=True)
+    if platform.system() == "Darwin":
+        subprocess.run(["ditto", "-x", "-k", path, into], check=True)
+        return
+    with zipfile.ZipFile(path) as zf:
+        for info in zf.infolist():
+            zf.extract(info, into)
+            mode = (info.external_attr >> 16) & 0o777
+            if mode:
+                os.chmod(os.path.join(into, info.filename), mode)
+
+
 def pack(folder: str, dist: str) -> str:
     os.makedirs(dist, exist_ok=True)
     path = os.path.join(dist, f"{NAME}-{tag()}.zip")
     base = os.path.dirname(folder)
+    # A macOS .app's Qt frameworks are links (Versions/Current): kept as links,
+    # or its layout and signature break. Elsewhere a link is stored as the file
+    # it leads to: Python's zipfile, Windows and some unzip tools make a link a
+    # small text file, and the program then fails to load Qt.
+    keep_links = folder.endswith(".app")
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for here, dirs, files in os.walk(folder):
+        for here, dirs, files in os.walk(folder, followlinks=not keep_links):
             dirs.sort()
-            # A macOS .app's Qt frameworks are links (Versions/Current): kept as
-            # links, not copies, or the bundle's layout and signature break.
-            for name in [d for d in dirs if os.path.islink(os.path.join(here, d))]:
-                link(zf, os.path.join(here, name), base)
+            if keep_links:
+                for name in [d for d in dirs if os.path.islink(os.path.join(here, d))]:
+                    link(zf, os.path.join(here, name), base)
             for name in sorted(files):
                 full = os.path.join(here, name)
-                if os.path.islink(full):
+                if keep_links and os.path.islink(full):
                     link(zf, full, base)
                     continue
                 info = zipfile.ZipInfo.from_file(full, os.path.relpath(full, base))
@@ -160,8 +190,11 @@ def main(argv=None) -> int:
     with tempfile.TemporaryDirectory(prefix="iemod-gui-") as work:
         folder = build(work)
         add_licences(folder)
-        check(folder, work)
+        sign(folder)
         path = pack(folder, os.path.abspath(args.dist))
+        unpacked = os.path.join(work, "unpacked")
+        unpack(path, unpacked)
+        check(os.path.join(unpacked, os.path.basename(folder)), work)
     sys.stdout.write(f"{path} ({os.path.getsize(path):,} bytes)\n")
     return 0
 

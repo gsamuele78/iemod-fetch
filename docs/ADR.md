@@ -2082,20 +2082,28 @@ or PySide6. Three constraints shaped it.
   `licenses/GPL-3.0-only.txt` (the SPDX texts), and `NOTICE-Qt.txt`, written
   at build time with the Qt, PySide6, PyInstaller and Python versions really
   bundled and where their source is.
-- Before zipping, the built program is started once with `--check`,
-  offscreen: it opens the main window, quits through the normal shutdown
-  path and prints `ok`. A build that cannot start fails the release, not a
-  player's machine.
+- The zip is unpacked again, as a player would, and the program in it is
+  started once with `--check`, offscreen: it opens the main window, quits
+  through the normal shutdown path and prints `ok`. A build or a zip that
+  cannot start fails the release, not a player's machine.
 - The zip, `iemod-fetch-gui-<os>-<arch>.zip`, is deterministic (sorted
-  entries, fixed timestamps): the same folder gives the same bytes.
-- The release workflow builds it in a `gui` job, PyInstaller pinned, on
-  **ubuntu-latest and windows-latest**, which a release needs, and on
-  **macos-latest as informational** (`continue-on-error`): a macOS bundle is
-  attached when its runner built it, and its absence never stops a release. The zips are attested with the other
+  entries, fixed timestamps): the same folder gives the same bytes. Outside
+  a macOS `.app` it holds no symbolic links: a link is stored as the file it
+  leads to, because Python's `zipfile`, Windows and some unzip tools turn a
+  link into a small text file and Qt then fails to load.
+- The release workflow builds it, PyInstaller pinned, in a `gui` job on
+  **ubuntu-latest and windows-latest**, which the release needs, and in a
+  separate **`gui-macos`** job that nothing the release needs waits on. A
+  runner that never starts leaves a job queued, not failed, so
+  `continue-on-error` would not be enough. When it did build, `publish-macos`
+  attests the macOS zip and attaches it, with its own `.sha256`, to the
+  release already published. The zips are attested with the other
   assets (build provenance), listed in `SHA256SUMS` and attached to the
   GitHub release. They are not uploaded to PyPI.
 - On macOS the build is a `.app`; its Qt frameworks hold symbolic links
-  (`Versions/Current`), which the zip keeps as links, not copies. The M3
+  (`Versions/Current`), which the zip keeps as links, not copies. The licence
+  files go into `Contents/Resources` after PyInstaller signed the app, so it
+  is signed again, ad hoc, and the signature verified. The M3
   criterion "the PyInstaller build starts on all three OSes" is met where
   the runners run; a release with no macOS bundle says so by its absence,
   and macOS players can always `pip install "iemod-fetch[gui]"`.
@@ -2104,9 +2112,10 @@ or PySide6. Three constraints shaped it.
 
 - The Linux zip measured 89 MB; Qt modules the wizard does not use are
   excluded to keep it there.
-- The bundles are not code-signed or notarized: Windows SmartScreen warns,
-  and macOS Gatekeeper refuses the app until the player allows it
-  (right-click, Open). Signing needs certificates the project does not have.
+- The bundles carry no publisher signature and the macOS app is not
+  notarized: Windows SmartScreen warns, and macOS refuses the downloaded app
+  until the player allows it (System Settings, Privacy & Security, Open
+  Anyway). Signing needs certificates the project does not have.
 - The Linux bundle needs the system's X11/Wayland and font libraries that
   any desktop has; it is built on the runner's Ubuntu, so a much older
   distribution may lack a newer glibc.

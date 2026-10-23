@@ -71,10 +71,9 @@ def test_the_same_folder_zips_to_the_same_bytes(tmp_path, monkeypatch):
                                  f"{bundle.NAME}/_internal/PySide6/libQt6Core.so.6"]
 
 
-def test_links_in_a_bundle_stay_links(tmp_path, monkeypatch):
-    monkeypatch.setattr(bundle, "tag", lambda: "macos-arm64")
-    folder = program(tmp_path)
-    versions = folder / "_internal" / "QtCore.framework" / "Versions"
+def links(base):
+    """Qt's framework links as a macOS .app holds them; skip where none can be made."""
+    versions = base / "QtCore.framework" / "Versions"
     (versions / "A").mkdir(parents=True)
     (versions / "A" / "QtCore").write_bytes(b"qt")
     try:
@@ -82,12 +81,49 @@ def test_links_in_a_bundle_stay_links(tmp_path, monkeypatch):
         os.symlink("Versions/Current/QtCore", versions.parent / "QtCore")
     except OSError:                 # Windows without the privilege to make links
         pytest.skip("cannot make a symbolic link here")
-    path = bundle.pack(str(folder), str(tmp_path / "dist"))
+
+
+def test_links_in_a_macos_app_stay_links(tmp_path, monkeypatch):
+    monkeypatch.setattr(bundle, "tag", lambda: "macos-arm64")
+    app = tmp_path / "out" / f"{bundle.NAME}.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    (app / "Contents" / "MacOS" / bundle.NAME).write_bytes(b"program")
+    links(app / "Contents" / "Frameworks")
+    path = bundle.pack(str(app), str(tmp_path / "dist"))
     with zipfile.ZipFile(path) as zf:
         entries = {i.filename: i for i in zf.infolist()}
-        prefix = f"{bundle.NAME}/_internal/QtCore.framework/"
+        prefix = f"{bundle.NAME}.app/Contents/Frameworks/QtCore.framework/"
         for name, target in ((prefix + "Versions/Current", b"A"),
                              (prefix + "QtCore", b"Versions/Current/QtCore")):
             assert stat.S_ISLNK(entries[name].external_attr >> 16)
             assert zf.read(name) == target
         assert prefix + "Versions/Current/QtCore" not in entries     # not a copy
+
+
+def test_elsewhere_a_link_is_zipped_as_its_file(tmp_path, monkeypatch):
+    # Review of #42: Linux's _internal holds links to Qt's libraries; Python's
+    # zipfile and Windows unzip a link as a small text file, and Qt then fails
+    # to load ("file too short")
+    monkeypatch.setattr(bundle, "tag", lambda: "linux-x86_64")
+    folder = program(tmp_path)
+    links(folder / "_internal")
+    path = bundle.pack(str(folder), str(tmp_path / "dist"))
+    with zipfile.ZipFile(path) as zf:
+        prefix = f"{bundle.NAME}/_internal/QtCore.framework/"
+        for info in zf.infolist():
+            assert not stat.S_ISLNK(info.external_attr >> 16), info.filename
+        assert zf.read(prefix + "QtCore") == b"qt"
+        assert zf.read(prefix + "Versions/Current/QtCore") == b"qt"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="file modes are POSIX")
+def test_the_unpacked_program_is_still_executable(tmp_path, monkeypatch):
+    monkeypatch.setattr(bundle, "tag", lambda: "linux-x86_64")
+    monkeypatch.setattr(bundle.platform, "system", lambda: "Linux")
+    folder = program(tmp_path)
+    os.chmod(folder / bundle.NAME, 0o755)
+    path = bundle.pack(str(folder), str(tmp_path / "dist"))
+    bundle.unpack(path, str(tmp_path / "unpacked"))
+    unpacked = tmp_path / "unpacked" / bundle.NAME / bundle.NAME
+    assert unpacked.read_bytes() == b"\x7fELF program"
+    assert os.stat(unpacked).st_mode & 0o111

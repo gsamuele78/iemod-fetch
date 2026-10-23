@@ -44,7 +44,8 @@ review fixes are in and nothing merged later is. Then, in order:
 2. builds that commit: sdist, wheel and `.pyz`, after checking that its
    `__version__` matches the tag; records `SHA256SUMS`; writes a CycloneDX SBOM;
    and builds the wizard without Python (ADR-0040): a PyInstaller folder on
-   Linux and Windows (macOS informational), started once with `--check`,
+   Linux and Windows (macOS apart, attached when built), started once
+   unzipped with `--check`,
    zipped as `iemod-fetch-gui-<os>-<arch>.zip` and added to `SHA256SUMS`;
 3. attests build provenance through Sigstore keyless signing;
 4. **creates the tag `vX.Y.Z` and publishes the GitHub release**. The notes are
