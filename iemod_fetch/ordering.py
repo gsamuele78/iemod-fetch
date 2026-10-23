@@ -503,7 +503,7 @@ def _toposort(units: list[Unit], edges: dict[str, set[str]],
     what makes the result "as close to the reference order as the rules allow"
     rather than "the reference order, rules permitting".
 
-    A cycle is never fatal: the lowest-priority member is released and the cycle
+    A cycle is never fatal: the cycle's first member in priority is released and the cycle
     is reported, so the operator always gets a complete plan plus the exact list
     of rules that contradict each other.
     """
