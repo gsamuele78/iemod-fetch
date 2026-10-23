@@ -22,10 +22,10 @@ report:
   fix is at component granularity, and the smaller side is the cheaper fix.
 """
 import json
-import os
 from dataclasses import dataclass, field
 from collections.abc import Sequence
 
+from .atomic import write_text
 from .contract import SCHEMA_VERSION, stable_id
 from .rules import (DEPENDS, INCOMPATIBLE, ORDER, Context, Install, RuleSet,
                     check_all)
@@ -248,12 +248,7 @@ class ConflictReport:
         }
 
     def write_json(self, path: str) -> None:
-        directory = os.path.dirname(os.path.abspath(path))
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self.as_dict(), fh, indent=2, sort_keys=True)
-            fh.write("\n")
+        write_text(path, json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n")
 
 
 # ------------------------------------------------------------------- building
