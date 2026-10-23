@@ -281,7 +281,7 @@ class _LinkExtractor(HTMLParser):
 
 def _same_page(link: str, page_url: str) -> bool:
     """The link is the page it is on (fragment and trailing slash aside)."""
-    def key(url):
+    def key(url: str) -> tuple:
         parts = urllib.parse.urlsplit(url)
         return (parts.scheme.lower(), (parts.hostname or "").lower(),
                 parts.path.rstrip("/") or "/", parts.query)
