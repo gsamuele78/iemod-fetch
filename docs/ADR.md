@@ -2620,7 +2620,7 @@ another machine leaves behind.
 **Context**: CVE-2026-112940 (CVSS 3.1 7.1, published the same evening; fixed
 in 4.2.1) is in filelock 3.20.4-4.2.0: `ReadWriteLock` and
 `AsyncReadWriteLock`, the SQLite reader/writer locks, let another local user
-who can rename entries in the lock's directory make SQLite write into, create
+who can create or rename entries in the lock's directory make SQLite write into, create
 or unlink the lock user's files. iemod-fetch uses only `FileLock`, so the path
 is not reached; but the .pyz and the bundles carry the vulnerable module, and
 pip-audit turned every pull request red. No release carried 3.32.7: it came
@@ -2636,7 +2636,9 @@ on-disk protocol, also unused here. Measured on 3.14: the suite and
 `tests/test_datalock.py` (two refreshes on one folder; a second process
 holding the lock) pass unchanged; `import filelock` takes 37 ms instead of
 79 ms, since 4.2 loads the lock types other than `FileLock` on first use.
-Dependabot still holds the next major version for a move by hand.
+Dependabot holds the next major version for a move by hand, in both of
+its pip entries: the root one reads pyproject's dependencies too, and it is
+the one that opened the 3 -> 4 pull request (#76) the hold was meant to stop.
 
 **Consequences**: Python 3.11 or newer for filelock, below the 3.14 the
 project requires. A later 4.x is a Dependabot pull request like any other
