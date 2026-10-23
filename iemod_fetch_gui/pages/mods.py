@@ -23,10 +23,10 @@ import os
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QSplitter, QTabWidget,
-                               QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+                               QSplitter, QTabWidget, QTextBrowser, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
 
@@ -47,6 +47,17 @@ def _target(project: dict) -> str:
     """The CLI's --target, resolved as the CLI resolves it when run in the project."""
     folder = os.path.dirname(project["path"])
     return os.path.join(folder, project.get("target") or "Mods")
+
+
+def preset_size(preset: dict) -> int:
+    """The components a preset names, each once: a log or an EET code may repeat one."""
+    return (len({(tp2.lower(), number) for tp2, number in preset["chosen"]})
+            + len({name.lower() for name in preset["unmatched"]}))
+
+
+def same_folder(a: str, b: str) -> bool:
+    """Whether two paths are one folder: on Windows case differs, and links lead there too."""
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
 def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str) -> dict:
@@ -118,6 +129,12 @@ def _in_thread(call: Callable[[], Any], done: Callable, failed: Callable,
     return thread
 
 
+# The project's own files: a preset saved under one of these names would
+# replace it (decisions.json holds the player's answers).
+PROJECT_FILES = {name.lower() for name in (api.SELECTION_FILE, api.DECISIONS_FILE,
+                                           api.INSTALL_ORDER_FILE, api.PROJECT_FILE)}
+
+
 class ModsPage(QWidget):
     completeChanged = Signal(bool)
     loaded = Signal()
@@ -176,9 +193,20 @@ class ModsPage(QWidget):
         self.status = QLabel("Loading the mod list...")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
 
+        self.load_preset = QPushButton("Load preset...")
+        self.load_preset.setToolTip("Choose what a saved selection, a WeiDU.log, a BIO "
+                                    "share code or a Project Infinity list chooses")
+        self.load_preset.clicked.connect(self._load_preset)
+        self.save_preset = QPushButton("Save preset...")
+        self.save_preset.setToolTip("Save this choice as a selection.json, to load "
+                                    "again or give to the command line (--selection)")
+        self.save_preset.clicked.connect(self._save_preset)
+        self._presets(False)                # until a list is shown
         bar = QHBoxLayout()
         bar.addWidget(self.search, 1)
         bar.addWidget(self.filter)
+        bar.addWidget(self.load_preset)
+        bar.addWidget(self.save_preset)
         middle = QWidget()
         middle_layout = QVBoxLayout(middle)
         middle_layout.setContentsMargins(0, 0, 0, 0)
@@ -206,6 +234,7 @@ class ModsPage(QWidget):
         self.timer.stop()
         self._generation += 1
         self._loading = True
+        self._presets(False)            # the tree shown is not the new game's yet
         self._set_conflicts({})
         self.game = game
         self.status.setText(f"Loading the mods for {game}...")
@@ -223,10 +252,15 @@ class ModsPage(QWidget):
 
     def _failed(self, message: str) -> None:
         self._loading = False
+        # The tree shown is the old game's: drop it, so choosing this game again
+        # loads its list instead of finding one already there (review of #41).
+        self.mods = []
+        self.tree.clear()
         self.status.setText(f"The mod list could not be loaded: {message}")
 
     def _fill(self, mods: list) -> None:
         self._loading = False
+        self._presets(True)
         self._generation += 1           # nothing checked before this list applies to it
         self._updating = True
         self.mods = mods
@@ -345,6 +379,96 @@ class ModsPage(QWidget):
             needed_item = self.items.get((tp2, needed))
             if needed_item is not None and not needed_item.isDisabled():
                 self._choose(needed_item, seen)
+
+    # ------------------------------------------------------------ presets
+    def _presets(self, enabled: bool) -> None:
+        self.load_preset.setEnabled(enabled)
+        self.save_preset.setEnabled(enabled)
+
+    def _load_preset(self) -> None:
+        path, _kind = QFileDialog.getOpenFileName(
+            self, "Load a preset", self.project_dir,
+            "Presets (*.json *.log *.txt *.csv *.bio);;All files (*)")
+        if not path:
+            return
+        try:
+            project = api.load_project(self.project_dir)
+            preset = api.import_selection(path, self.game, sorted({k[0] for k in self.items}),
+                                          target=_target(project))
+        except Exception as exc:        # not a preset, unreadable: say so, change nothing
+            QMessageBox.critical(self, "Cannot load the preset", str(exc))
+            return
+        if self.chosen() and QMessageBox.question(
+                self, "Load the preset",
+                f"Replace the {len(self.chosen())} component(s) chosen now with the "
+                f"preset's {preset_size(preset)}?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        wanted = [tuple(pair) for pair in preset["chosen"]]
+        skipped = self.apply_preset(wanted)
+        lines = list(preset["notes"])
+        missing = preset["unmatched"] + [f"{tp2} #{number}" for tp2, number in skipped]
+        if missing:
+            lines.append(f"{len(missing)} component(s) are not in the list for "
+                         f"{self.game} and were left out: " + ", ".join(missing[:10])
+                         + (", ..." if len(missing) > 10 else ""))
+        chosen = set(self.chosen())
+        lost = [f"{tp2} #{number}" for tp2, number in wanted
+                if (tp2, number) not in chosen and (tp2, number) not in skipped]
+        if lost:
+            lines.append(f"{len(lost)} component(s) were replaced by another option of "
+                         f"the same group, which the preset also chose: "
+                         + ", ".join(lost[:10]) + (", ..." if len(lost) > 10 else ""))
+        if lines:
+            QMessageBox.information(self, "Preset loaded", "\n\n".join(lines))
+
+    def apply_preset(self, chosen: List[Key]) -> List[Key]:
+        """Choose exactly `chosen` (each as a click would: its SUBCOMPONENT
+        cleared, what it needs chosen too); returns what the list cannot."""
+        skipped = []
+        self._updating = True
+        try:
+            for item in self.items.values():
+                item.setCheckState(0, Qt.CheckState.Unchecked)
+            seen: Set[Key] = set()
+            for key in chosen:
+                item = self.items.get(key)
+                if item is None or item.isDisabled():
+                    skipped.append(key)
+                    continue
+                self._choose(item, seen)
+        finally:
+            self._updating = False
+        self._count()
+        return skipped
+
+    def _save_preset(self) -> None:
+        path, _kind = QFileDialog.getSaveFileName(
+            self, "Save the choice as a preset", self.project_dir, "Selection (*.json)")
+        if not path:
+            return
+        if not path.lower().endswith(".json"):
+            path += ".json"
+            # the dialog asked about the name typed, not this one
+            if os.path.exists(path) and QMessageBox.question(
+                    self, "Save the preset", f"{path} exists. Replace it?") \
+                    != QMessageBox.StandardButton.Yes:
+                return
+        if same_folder(os.path.dirname(os.path.abspath(path)), self.project_dir) \
+                and os.path.basename(path).lower() in PROJECT_FILES:
+            QMessageBox.critical(self, "Cannot save the preset",
+                                 f"{os.path.basename(path)} is the project's own file; "
+                                 f"give the preset another name.")
+            return
+        if not self.chosen():
+            QMessageBox.critical(self, "Cannot save the preset", "Nothing is chosen.")
+            return
+        try:
+            saved = api.export_selection(path, self.game, self.chosen(), self.labels())
+        except Exception as exc:
+            QMessageBox.critical(self, "Cannot save the preset", str(exc))
+            return
+        self.status.setText(f"Preset saved: {saved}")
 
     def chosen(self) -> List[Key]:
         """(tp2, number) of every chosen component, in catalogue order."""

@@ -145,6 +145,12 @@ brings the ones it needs. A mod whose components nobody describes cannot be
 chosen yet, and says so. Next writes `selection.json`, which the CLI reads
 with `--selection`.
 
+**Presets**: *Save preset...* keeps the choice as a selection.json, the
+same file the project keeps (`--selection` reads it); *Load preset...*
+chooses what a selection.json, a WeiDU.log, a BIO share code or a Project
+Infinity list chooses, matched to the list whatever its case or `setup-`
+spelling. Components the list does not have are named, not guessed.
+
 The **Conflicts** tab checks the selection against the same rules a run uses,
 in the background, shortly after each change: every conflict with its options
 as buttons. *Deselect* unchooses that side in the tree (for EET, the tp2 the
@@ -457,7 +463,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,211 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,243 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
