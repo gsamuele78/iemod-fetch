@@ -45,6 +45,11 @@ class ModRecord:
     games: list[str] = field(default_factory=list)
     homepage: str | None = None
     origin: str = "mod database"
+    # how the source classifies the mod (GUI-AUDIT M5 item 26): BWS-NG's
+    # categories; krion64's install category and free tags
+    categories: list[str] = field(default_factory=list)
+    install_category: str | None = None
+    tags: list[str] = field(default_factory=list)
 
     @property
     def best_file(self) -> ModFile | None:
@@ -129,7 +134,9 @@ def _read(path: str, origin: str) -> ModRecord | None:
             version=raw.get("v") or None,
             files=[ModFile(download=download)] if download else [],
             games=[g for g in (raw.get("ph") or []) if isinstance(g, str)],
-            homepage=raw.get("u"), origin=origin)
+            homepage=raw.get("u"), origin=origin,
+            install_category=raw.get("c") if isinstance(raw.get("c"), str) else None,
+            tags=_strings(raw.get("tags")))
 
     files = []
     for entry in raw.get("files") or []:
@@ -147,4 +154,8 @@ def _read(path: str, origin: str) -> ModRecord | None:
         files=files,
         games=[g for g in (raw.get("games") or []) if isinstance(g, str)],
         homepage=links.get("homepage") if isinstance(links, dict) else None,
-        origin=origin)
+        origin=origin, categories=_strings(raw.get("categories")))
+
+
+def _strings(value) -> list[str]:
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []

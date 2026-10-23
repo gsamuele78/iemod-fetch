@@ -2260,6 +2260,11 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
 4. **The selection** gets a kind filter: lcc-docs' and BWS-NG's categories,
    with krion64's install category and tags beside them; a disagreement
    between sources is shown.
+   *Done (GUI-AUDIT item 26):* `iemod_fetch/kinds.py` maps both spellings
+   onto one vocabulary (all 15 BWS-NG codes on 430 records, lcc-docs' 17
+   labels); a label it does not know is shown as it is. On the 2026-10-23
+   data, 1,843 mods have a kind and one disagrees (turnabout: lcc-docs
+   quest, BWS-NG gameplay).
 5. **M5's validation** is restated: the plan's places are compared with
    BWS-NG's sequence (independent of krion64), not with a Forge-written log;
    and a plan placed by kind installs with the real WeiDU in the mock EET job.

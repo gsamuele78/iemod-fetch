@@ -66,8 +66,9 @@ def check(widget, key, on=True):
 def test_the_catalogue_loads_off_the_window_thread_with_its_categories(qtbot, tmp_path):
     widget = page(qtbot, tmp_path)
     assert widget.tree.topLevelItemCount() == 2
+    # A list from before item 26 has no kinds: its categories stand in.
     assert [widget.categories.item(i).text() for i in range(widget.categories.count())] == [
-        "All categories (2)", "Quests (1)", "Tweaks (1)"]
+        "All kinds (2)", "Quests (1)", "Tweaks (1)"]
     assert not widget.is_complete()
 
 
@@ -199,6 +200,42 @@ def test_closing_the_page_while_the_list_loads_does_not_crash(qtbot, tmp_path):
     qtbot.wait(50)                     # the page is gone; its thread is not
     release.set()
     wait_for_loaders(5000)
+
+
+# ------------------------------------------- selection by kind (item 26)
+KINDS = [
+    dict(MODS[1], key="turnabout", name="Turnabout", kinds=["gameplay", "quest"],
+         kinds_by_source={"lcc-docs": ["quest"], "BWS-NG": ["gameplay"]},
+         kind_disagreement=True),
+    dict(MODS[1], key="ascension", name="Ascension", kinds=["quest"],
+         kinds_by_source={"lcc-docs": ["quest"], "BWS-NG": ["quest"]},
+         kind_disagreement=False, install_category="QUEST MODS BG2", tags=["tob"]),
+]
+
+
+def test_the_list_is_chosen_by_kind_and_a_disagreement_is_shown(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, KINDS)
+    visible = lambda: [widget.tree.topLevelItem(i).text(0)  # noqa: E731
+                       for i in range(widget.tree.topLevelItemCount())
+                       if not widget.tree.topLevelItem(i).isHidden()]
+    assert [widget.categories.item(i).text() for i in range(widget.categories.count())] == [
+        "All kinds (2)", "gameplay (1)", "quest (2)"]
+    turnabout, ascension = (widget.tree.topLevelItem(i) for i in range(2))
+    assert ascension.text(3) == "quest"
+    assert turnabout.text(3).startswith("\u26a0") and "gameplay, quest" in turnabout.text(3)
+    assert turnabout.toolTip(3) == "lcc-docs: quest; BWS-NG: gameplay"
+    widget.categories.setCurrentRow(1)
+    assert visible() == ["Turnabout"]
+    widget.categories.setCurrentRow(0)
+    widget.filter.setCurrentText("Kinds disagree")
+    assert visible() == ["Turnabout"]
+
+    widget._show(turnabout)               # disabled rows: nothing to choose yet
+    text = widget.details.toPlainText()
+    assert "lcc-docs: quest; BWS-NG: gameplay" in text
+    assert "disagree" in text
+    widget._show(ascension)
+    assert "krion64 install category: QUEST MODS BG2 (tags: tob)" in widget.details.toPlainText()
 
 
 # --------------------------------------------- review follow-ups (#32)

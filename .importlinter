@@ -197,6 +197,7 @@ forbidden_modules =
     iemod_fetch.backup
     iemod_fetch.install
     iemod_fetch.installer
+    iemod_fetch.kinds
     iemod_fetch.languages
     iemod_fetch.limits
     iemod_fetch.manifest
