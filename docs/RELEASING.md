@@ -131,6 +131,18 @@ zip yourself and compute its `sha256sum`. For mod_installer, pick the commit
 whose Cargo.toml has the new version and read its changes. Then update the
 pins and let CI prove the mock EET plan still installs.
 
+**Python itself** (ADR-0043) is pinned in `.python-version`, which every
+workflow reads. The same Monday run compares it with the newest stable Python
+setup-python can install (actions/python-versions' manifest) and opens "Python
+3.15 is available (pinned 3.14)"; it also opens an issue when any place that
+names the version - requires-python, ruff, mypy, the classifiers,
+`iemod_fetch.PYTHON`, a literal `python-version:` in a workflow - disagrees
+with `.python-version` (`tests/test_upstream_versions.py` fails on it too).
+To move: change them together, CI green on Linux and Windows, the wizard's
+bundle built and started, PySide6 and PyInstaller wheels for the new version,
+and its What's New read for changed defaults. Dependabot never touches
+`python-version`.
+
 Everything else (the developer tools in `pyproject.toml`, the pinned actions)
 is Dependabot's: one grouped pull request per week for each.
 

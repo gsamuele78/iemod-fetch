@@ -1,10 +1,11 @@
 # Packaging and tool configuration.
 #
-# One rule governs this file: the RUNTIME has no third-party dependency and
-# never will (ADR-0002). `dependencies` is empty and must stay empty — an
-# operator downloads one `.pyz` and runs it against the Python their game
-# machine already has. Everything under `optional-dependencies` is developer
-# tooling that CI installs and the shipped artifact never sees.
+# One Python version for everything (ADR-0043): the one in .python-version,
+# which requires-python, ruff, mypy and the classifiers below follow, and which
+# tools/upstream_versions.py checks every week. The runtime takes a library
+# only when it fixes a measured defect (ADR-0043, superseding ADR-0001/0002's
+# "none, ever"); `dependencies` is empty until the first such library lands.
+# Everything under `optional-dependencies` is developer tooling.
 
 [build-system]
 requires = ["hatchling>=1.24"]
@@ -17,7 +18,7 @@ description = "Resolve, verify and stage Infinity Engine mods from a WeiDU log, 
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.14"
 authors = [{ name = "gsamuele78" }]
 keywords = ["infinity-engine", "weidu", "baldurs-gate", "eet", "modding",
             "project-infinity", "install-order"]
@@ -28,17 +29,12 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Topic :: Games/Entertainment",
   "Topic :: System :: Archiving :: Packaging",
   "Typing :: Typed",
 ]
-dependencies = []          # deliberately empty — see the note above
+dependencies = []          # see the note above (ADR-0043)
 
 [project.urls]
 Homepage = "https://github.com/gsamuele78/iemod-fetch"
@@ -64,7 +60,7 @@ arch = ["import-linter>=2.0"]
 mutation = ["mutmut>=3.0"]
 # The desktop wizard, iemod_fetch_gui (ADR-0031). PySide6 is LGPL-3.0, used
 # unmodified and dynamically linked. Never needed by the CLI or the .pyz.
-gui = ["PySide6>=6.5"]
+gui = ["PySide6>=6.11"]
 guitest = ["iemod-fetch[gui,test]", "pytest-qt>=4.4"]
 dev = [
   "iemod-fetch[test,lint,typing,security,arch]",
@@ -124,7 +120,7 @@ exclude_lines = [
 # -------------------------------------------------------------------- ruff
 [tool.ruff]
 line-length = 92
-target-version = "py39"
+target-version = "py314"
 src = ["iemod_fetch", "iemod_fetch_gui", "tests", "tools"]
 
 [tool.ruff.lint]
@@ -150,7 +146,7 @@ select = [
   "S",      # bandit rules that are cheap to check at lint time
   "PLE",    # pylint errors only
   "PLW",    # pylint warnings
-  "FURB",   # modernisation that does not break 3.9
+  "FURB",   # modernisation
   "T20",    # print() outside the renderers
 ]
 ignore = [
@@ -207,10 +203,8 @@ quote-style = "preserve"
 
 # -------------------------------------------------------------------- mypy
 [tool.mypy]
-# mypy 2.x no longer type-checks for a 3.9 target. 3.10 is the oldest it
-# accepts; 3.9 syntax compatibility is enforced by ruff's target-version and by
-# the py3.9 test job, which actually imports every module.
-python_version = "3.10"
+# The one Python of .python-version (ADR-0043).
+python_version = "3.14"
 files = ["iemod_fetch", "iemod_fetch_gui"]
 # Not `strict = true`: `disallow_untyped_defs` across 26 modules at once is a
 # 130-signature change with no behavioural benefit, and a big mechanical diff

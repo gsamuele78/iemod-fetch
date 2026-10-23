@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -52,7 +52,7 @@ jobs:
         run: lint-imports
 
   test:
-    name: py${{ matrix.python }} on ${{ matrix.os }}
+    name: tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -63,13 +63,10 @@ jobs:
         # macOS runner that never starts cannot hold up a pull request or a
         # release (the owner's decision, 2026-10-21).
         os: [ubuntu-latest, windows-latest]
-        # Oldest supported and newest released. 3.14 is not optional: it
-        # changed tarfile's default filter and started reporting leaked
-        # HTTPError responses, and both surfaced defects on 3.14 alone.
-        python: ["3.9", "3.14"]
+        # One Python, the one in .python-version (ADR-0043): what the tool
+        # supports is what it is tested on. Coverage is measured on Linux.
         include:
           - os: ubuntu-latest
-            python: "3.12"
             coverage: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,7 +74,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ matrix.python }}
+          python-version-file: .python-version
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -124,7 +121,7 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Qt's system libraries (EGL, xkbcommon, fontconfig)
@@ -143,7 +140,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with: { python-version-file: .python-version }
 
       # ADR-0002 is a promise to the operator, so it is checked the way the
       # operator experiences it: a bare interpreter, no pip install, no venv.
@@ -173,7 +170,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with: { python-version-file: .python-version }
       - name: WeiDU, verified against its pinned digest
         run: |
           mkdir -p "$RUNNER_TEMP/weidu"
@@ -202,7 +199,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with: { python-version-file: .python-version }
 
       - name: Build
         run: python build.py

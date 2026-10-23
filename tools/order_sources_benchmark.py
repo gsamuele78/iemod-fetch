@@ -138,7 +138,7 @@ def disagreement(order_a: List[int], order_b: List[int]) -> Tuple[int, int]:
     A pair order_b ties (krion64 gives every component of a mod one place) is
     counted, and never as reversed: see `ties` for the share without them."""
     assert len(order_a) == len(order_b)
-    pairs = sorted(zip(order_a, order_b))
+    pairs = sorted(zip(order_a, order_b, strict=True))
     values = [b for _, b in pairs]
     return _inversions(values), len(values) * (len(values) - 1) // 2
 

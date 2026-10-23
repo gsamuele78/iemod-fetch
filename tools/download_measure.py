@@ -67,7 +67,7 @@ def main(argv=None) -> int:
         return 0
     titles = ["Catalogue only (no manifest, dry run)", "With the manifest (dry run)"]
     out = ["## Download sources, measured", ""]
-    for title, path in zip(titles, args.reports):
+    for title, path in zip(titles, args.reports, strict=False):
         out += summary(title, load(path))
     if args.real:
         out += summary("Real download of a sample (archive must hold the tp2)",

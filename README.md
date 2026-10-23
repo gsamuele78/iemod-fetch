@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/gsamuele78/iemod-fetch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gsamuele78/iemod-fetch/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/gsamuele78/iemod-fetch/actions/workflows/security.yml"><img alt="Security" src="https://github.com/gsamuele78/iemod-fetch/actions/workflows/security.yml/badge.svg"></a>
-  <a href="https://www.python.org/downloads/"><img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-blue"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python 3.14" src="https://img.shields.io/badge/python-3.14-blue"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
   <a href="docs/ARCHITECTURE.md"><img alt="Runtime dependencies: 0" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-informational">
@@ -117,8 +117,12 @@ for why, `docs/ADR.md` for the design decisions, `docs/GUIDE.md` to use it.
 
 ## Install
 
+Python **3.14** (ADR-0043: one version, the one in `.python-version`; an
+older Python is told so and stops). The wizard's release bundle carries its own
+Python; a command-line bundle is planned for 4.0.0 (GUI-AUDIT item 36).
+
 ```bash
-# One file, no dependencies — the way most people should use it.
+# One file, no dependencies — on Python 3.14.
 python3 build.py            # -> ./iemod-fetch.pyz
 ./iemod-fetch.pyz --help    # POSIX;  py iemod-fetch.pyz --help  on Windows
 
@@ -500,11 +504,11 @@ docs/            INDEX.md, GUIDE.md, ARCHITECTURE.md, TESTING.md,
 ## Tests
 
 The CI gate - what a pull request and a release must pass - runs on Linux and
-Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
+Windows, on the one Python of `.python-version` (3.14). macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,301 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,325 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -703,7 +707,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,301, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,325, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |
