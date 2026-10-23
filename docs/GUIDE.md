@@ -475,7 +475,7 @@ it for every source flag you did not give:
 | BWS-NG `data/rules`, krion64 `data/mods` | `--rules` |
 | BWS-NG `data/mods` | `--mod-db` |
 | krion64 `data/` | `--order-catalogue` |
-| BWS-NG `data/games/eet.json` | `--eet-sequence` (what may precede the EET core) |
+| BWS-NG `data/games/eet.json` | `--eet-sequence` (what may precede the EET core; with `--plan-order`, the place of a mod krion64 does not place) |
 
 ```bash
 python3 iemod-fetch.pyz --update-data        # refresh now and stop; shows each commit
@@ -534,6 +534,7 @@ INSTALL ORDER PLAN
 | `reordering CANNOT fix these` | an incompatibility | drop one of the two mods |
 | `missing prerequisites` | a required mod is simply absent | add it, or drop the dependent |
 | `not in the catalogue` | neither database knows this mod | it kept its current place; verify by hand |
+| `placed by BWS-NG's EET sequence` | krion64 does not place the mod; BWS-NG's EET order does - right after the component before it there that krion64 places | check it; a rule or your Sorting Order still wins |
 | `placed by kind` | krion64 does not place the mod; lcc-docs' or BWS-NG's kind decides its category (interface, cosmetic, kit, NPC, smith, a quest by its games), after krion64's own mods there | check it; a rule or your Sorting Order still wins |
 | `no place: ...` (under `not in the catalogue`) | its kind decides nothing (gameplay, tactics, ...) or its kinds disagree | it kept its current place; verify by hand |
 
