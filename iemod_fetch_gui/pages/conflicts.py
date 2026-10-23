@@ -2,11 +2,14 @@
 The conflicts panel of phase 2 (GUI-AUDIT item 16, ADR-0033).
 
 What fights what in the current selection, each with the ways to clear it as
-buttons. A button does one of three things, never more:
+buttons. A button does one of four things, never more:
 
 * **deselect** - unchoose the components of that side in the tree;
 * **install** - choose the missing prerequisite's components, when the
   catalogue knows them;
+* **keep both** - for two components that touch the same thing, where no
+  rule says they must not coexist: write to decisions.json which one is
+  installed last; the planned order then puts it after the other (item 28);
 * **accept** - write the player's answer, with the reason, to decisions.json,
   which the command line applies with --decisions.
 
@@ -177,7 +180,7 @@ class ConflictsPanel(QWidget):
             buttons.addWidget(undo)
         else:
             for option in finding["options"]:
-                buttons.addWidget(self._option(option))
+                buttons.addWidget(self._option(option, finding["id"]))
             accept = QPushButton("Accept...")
             accept.setToolTip("Keep both sides; you give the reason, and the report "
                               "keeps it visible as accepted.")
@@ -188,7 +191,7 @@ class ConflictsPanel(QWidget):
         layout.addLayout(buttons)
         return box
 
-    def _option(self, option: dict) -> QPushButton:
+    def _option(self, option: dict, finding: str) -> QPushButton:
         label = option["description"]
         if option.get("recommended"):
             label += "  (recommended)"
@@ -199,6 +202,13 @@ class ConflictsPanel(QWidget):
             pairs = option.get("chosen") or []
             button.setEnabled(bool(pairs))
             button.clicked.connect(lambda _c=False, p=pairs: self.deselect.emit(p))
+        elif action == "keep-both":
+            button.setToolTip("Keep both; this one is installed after the other, so "
+                              "what they both change is left as it makes it. Saved in "
+                              "decisions.json: the wizard's install order follows it, "
+                              "and a command-line run with --decisions.")
+            button.clicked.connect(lambda _c=False, f=finding, o=option["id"]:
+                                   self.decide.emit(f, o, ""))
         elif action == "install":
             key = option.get("key", "")
             numbers = list(option["components"])
