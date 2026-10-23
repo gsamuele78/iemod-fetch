@@ -73,7 +73,8 @@ def test_a_kind_that_decides_nothing_leaves_it_and_says_why(tmp_path):
     plan = plan_order([(log(tmp_path, "EET", "stratagems", "tweak"), EET_LOG)], index,
                       kinds={"tweak": tweak})
     assert order(plan) == ["eet", "stratagems", "tweak"]
-    assert plan.no_place == {"tweak": "no place: its kind does not decide one (gameplay)"}
+    assert plan.no_place == [(EET_LOG, "tweak",
+                              "no place: its kind does not decide one (gameplay)")]
     out = io.StringIO()
     render_plan_summary(plan, str(tmp_path), out)
     assert "does not decide one (gameplay)" in out.getvalue()
@@ -104,7 +105,8 @@ def test_a_quest_for_bg1_alone_goes_with_bg1s_quests(tmp_path):
 def test_the_install_before_the_eet_core_is_not_placed_by_kind(tmp_path):
     index = krion(tmp_path)
     plan = plan_order([(log(tmp_path, "bg1ub", "newui", name="WeiDU-BGEE.log"),
-                        PRE_EET_LOG)], index, kinds={"newui": UI})
+                        PRE_EET_LOG), (log(tmp_path, "EET"), EET_LOG)], index,
+                      kinds={"newui": UI})
     assert order(plan, PRE_EET_LOG) == ["bg1ub", "newui"]
     assert plan.by_kind == [] and plan.phase_notes == []
 
@@ -126,3 +128,69 @@ def test_every_kind_must_decide_the_same_place():
     assert place(KindHint(()))[0] is None
     # a label no table knows decides nothing
     assert place(KindHint(("Catégorie nouvelle",)))[0] is None
+
+
+TWEAK = KindHint(("gameplay",), (), ("lcc-docs",))
+
+
+def test_a_mod_with_no_place_is_not_dragged_behind_one_its_kind_moved(tmp_path):
+    """Review of #67 (B1): tweak inherited newui's place by kind and moved
+    with it, while the plan said it stayed where it was chosen."""
+    index = krion(tmp_path)
+    eet = log(tmp_path, "EET", "stratagems", "newui", "tweak")
+    plan = plan_order([(eet, EET_LOG)], index, kinds={"newui": UI, "tweak": TWEAK})
+    assert order(plan) == ["eet", "newui", "stratagems", "tweak"]
+    assert "tweak" not in {move.key for move in plan.moved}
+
+
+def test_a_single_games_log_is_placed_by_kind_too(tmp_path):
+    """Review of #67 (H1): a BG2:EE log has the pre-EET role, but is not the
+    phase before an EET conversion."""
+    index = krion(tmp_path)
+    alone = log(tmp_path, "stratagems", "newui", name="WeiDU-BG2.log")
+    plan = plan_order([(alone, PRE_EET_LOG)], index, kinds={"newui": UI})
+    assert order(plan, PRE_EET_LOG) == ["newui", "stratagems"]
+    assert [name for name, _category, _why in plan.by_kind] == ["newui"]
+
+
+def test_a_split_mod_keeps_its_reason_in_every_part(tmp_path):
+    """Review of #67 (M1): parts of a split mod lost the reason."""
+    index = krion(tmp_path)
+    rules = tmp_path / "order.json"
+    rules.write_text(json.dumps([{"rule": "tweak(1):stratagems", "direction": "after"}]),
+                     encoding="utf-8")
+    eet = tmp_path / "WeiDU.log"
+    eet.write_text(HEADER + "~EET\\EET.tp2~ #0 #0 // EET\n"
+                   "~tweak\\tweak.tp2~ #0 #0 // a\n~tweak\\tweak.tp2~ #0 #1 // b\n"
+                   "~stratagems\\stratagems.tp2~ #0 #0 // s\n", encoding="utf-8")
+    plan = plan_order([(str(eet), EET_LOG)], index, RuleSet.load([str(rules)]),
+                      kinds={"tweak": TWEAK})
+    parts = [u for u in plan.logs[EET_LOG] if u.key == "tweak"]
+    assert len(parts) == 2
+    assert all(u.no_place.startswith("no place: its kind does not decide") for u in parts)
+
+
+def test_a_mod_in_both_installs_has_the_reason_only_where_it_was_asked(tmp_path):
+    """Review of #67 (M2): one display name, two logs."""
+    index = krion(tmp_path)
+    plan = plan_order([(log(tmp_path, "bg1ub", "tweak", name="WeiDU-BGEE.log"), PRE_EET_LOG),
+                       (log(tmp_path, "EET", "tweak"), EET_LOG)], index,
+                      kinds={"tweak": TWEAK})
+    before = next(u for u in plan.logs[PRE_EET_LOG] if u.key == "tweak")
+    after = next(u for u in plan.logs[EET_LOG] if u.key == "tweak")
+    assert before.no_place == "" and after.no_place
+    assert [entry[0] for entry in plan.no_place] == [EET_LOG]
+
+
+def test_a_folders_kind_is_not_given_to_a_second_tp2_in_it(tmp_path):
+    """Review of #67 (L2): EET_end lives in EET's folder."""
+    index = krion(tmp_path)
+    eet = tmp_path / "WeiDU.log"
+    eet.write_text(HEADER + "~pack\\one.tp2~ #0 #0 // one\n~pack\\two.tp2~ #0 #0 // two\n",
+                   encoding="utf-8")
+    plan = plan_order([(str(eet), EET_LOG)], index, kinds={"pack": UI})
+    assert plan.by_kind == []
+    alone = tmp_path / "solo.log"
+    alone.write_text(HEADER + "~pack\\setup-other.tp2~ #0 #0 // one\n", encoding="utf-8")
+    plan = plan_order([(str(alone), EET_LOG)], index, kinds={"pack": UI})
+    assert [name for name, _c, _w in plan.by_kind] == ["pack/other"]

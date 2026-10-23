@@ -976,7 +976,7 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
                 "constrained": unit.node in plan.constrained,
                 # its kind placed it, krion64 having no place for it (item 27)
                 "placed_by": unit.placed_by,
-                "no_place": plan.no_place.get(unit.display, ""),
+                "no_place": unit.no_place,
                 "moved": unit.key in moved,
                 # what an order rule still finds wrong; a cycle names every
                 # unit left when it was broken, so it is reported, not marked

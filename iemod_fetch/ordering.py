@@ -216,6 +216,7 @@ class Unit:
     split: bool = False        # whether this mod was split at all
     parts: int = 1             # how many parts the mod was split into
     placed_by: str = ""        # why its kind placed it, where krion64 does not
+    no_place: str = ""         # why its kind could not, where it was asked
 
     @property
     def node(self) -> str:
@@ -319,7 +320,7 @@ class OrderPlan:
     unranked: list[str] = field(default_factory=list)
     # ADR-0041 decision 2: what its kind placed, and why the rest has no place
     by_kind: list[tuple[str, str, str]] = field(default_factory=list)  # name, category, why
-    no_place: dict[str, str] = field(default_factory=dict)            # name -> why not
+    no_place: list[tuple[str, str, str]] = field(default_factory=list)  # log, name, why not
     blockers: list = field(default_factory=list)           # rules.Violation
     residual: list = field(default_factory=list)           # rules.Violation
     warnings: list[str] = field(default_factory=list)
@@ -434,7 +435,8 @@ def _split(units: list[Unit], rules: list, index: OrderIndex) -> list[Unit]:
                             lines=list(run),
                             slot=index.component(unit.key, first) or unit.slot,
                             target_log=unit.target_log, part=n, split=True,
-                            parts=len(runs), placed_by=unit.placed_by))
+                            parts=len(runs), placed_by=unit.placed_by,
+                            no_place=unit.no_place))
     return out
 
 
@@ -491,7 +493,10 @@ def _priorities(units: list[Unit]) -> dict[str, tuple[int, int, int]]:
     for unit in units:
         if unit.slot is not None:
             base = (unit.slot.rank, unit.slot.ord)
-            inherited[unit.target_log] = base
+            if not unit.placed_by:
+                # what follows a mod its kind moved stays where it was: it
+                # inherits krion64's last place, not the kind's (review of #67)
+                inherited[unit.target_log] = base
         else:
             base = inherited.get(unit.target_log, (-1, -1))
         priorities[unit.node] = (base[0], base[1], unit.seq)
@@ -657,12 +662,22 @@ def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
     units, warnings = collect_units(specs)
     plan = OrderPlan(warnings=warnings)
 
+    # Before the conversion EET's install is krion64's one category: no kind
+    # places there. A single game's log is not that phase (review of #67).
+    eet_build = any(role == EET_LOG for _path, role in specs)
+    hints = kinds or {}
+    in_folder: dict[tuple[str, str], int] = {}
+    for unit in units:
+        folder = (unit.source_log, normalize_key(unit.folder))
+        in_folder[folder] = in_folder.get(folder, 0) + 1
     for unit in units:
         unit.slot = index.get(unit.key)
         unit.target_log = unit.source_log
-        if unit.slot is None:
-            hints = kinds or {}
-            hint = hints.get(unit.key) or hints.get(normalize_key(unit.folder))
+        if unit.slot is None and not (eet_build and unit.source_log == PRE_EET_LOG):
+            hint = hints.get(unit.key)
+            if hint is None and in_folder[(unit.source_log, normalize_key(unit.folder))] == 1:
+                # a catalogue names the folder; only its one tp2 may take it
+                hint = hints.get(normalize_key(unit.folder))
             _place_by_kind(unit, index, hint, plan)
         if unit.slot is None:
             plan.unranked.append(unit.display)
@@ -712,15 +727,15 @@ def _place_by_kind(unit: Unit, index: OrderIndex, hint: KindHint | None,
     """
     A slot from the mod's kind, after every mod krion64 places in that
     category - a preference, like krion64's own: the player's Sorting Order,
-    the authors' inis and BWS-NG's rules still decide over it. Only in the
-    install after the EET core: what goes before it is krion64's one category.
+    the authors' inis and BWS-NG's rules still decide over it.
     """
-    if hint is None or unit.source_log == PRE_EET_LOG:
+    if hint is None:
         return
     category, why = place(hint)
     if category is None or category not in index.categories:
-        plan.no_place[unit.display] = (why if category is None else
-                                       f"no place: krion64 has no {category!r}")
+        unit.no_place = (why if category is None else
+                         f"no place: krion64 has no {category!r}")
+        plan.no_place.append((unit.source_log, unit.display, unit.no_place))
         return
     unit.slot = Slot(category=category, rank=index.categories.index(category),
                      ord=_AFTER_THE_CATEGORY, pre_eet=False)
@@ -840,6 +855,5 @@ def render_plan_summary(plan: OrderPlan, directory: str, stream) -> None:
         more = f" (+{len(plan.unranked) - 8} more)" if len(plan.unranked) > 8 else ""
         print(f"\n  not in the catalogue ({len(plan.unranked)}) — left where you "
               f"put them: {shown}{more}", file=stream)
-        for name in plan.unranked:
-            if name in plan.no_place:
-                print(f"    {name:<32} {plan.no_place[name]}", file=stream)
+        for _log, name, why in plan.no_place:
+            print(f"    {name:<32} {why}", file=stream)

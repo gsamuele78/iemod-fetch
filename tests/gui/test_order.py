@@ -106,6 +106,20 @@ def test_a_mod_its_kind_placed_says_so_and_one_it_could_not_says_why(qtbot, tmp_
     assert "1 placed by kind" in widget.summary.text()
 
 
+def test_the_players_own_order_supersedes_a_place_by_kind(qtbot, tmp_path):
+    """Review of #67 (L1): with install-order.txt the kind places nothing."""
+    def planner(game, chosen, labels, folder):
+        units = [unit("eet"), dict(unit("newui"), category="INTERFACE",
+                                   placed_by="placed by kind: interface, 92% / 100%")]
+        return {"phases": [{"role": "EET", "title": "EET", "units": units}],
+                "cycles": [], "violations": [], "planned": True, "custom": True}
+    widget, _planner = page(qtbot, tmp_path, planner)
+    item = widget.tabs.widget(0).item(1)
+    assert "(by kind)" not in item.text()
+    assert "your own order applies" in item.toolTip()
+    assert "placed by kind" not in widget.summary.text()
+
+
 def test_dragging_saves_the_order_the_cli_reads_and_plans_again(qtbot, tmp_path):
     widget, planner = page(qtbot, tmp_path)
     calls = planner.calls

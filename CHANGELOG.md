@@ -56,9 +56,11 @@ Python API, which is internal.
   Gameplay, tactics, patches, utilities, conversions and spell-and-item mods
   decide nothing: such a mod stays where it was chosen, and the plan says why.
   A placement is a preference, as krion64's is - the player's Sorting Order,
-  the authors' inis and BWS-NG's rules still decide over it - and only after
-  the EET core. The plan summary lists what its kind placed and why the rest
-  has no place; the wizard's order page marks "(by kind)" with the source,
+  the authors' inis and BWS-NG's rules still decide over it - and never in
+  the BG:EE phase before an EET conversion (a single game's install is placed
+  too). A mod with no place keeps where it was chosen, also behind one its
+  kind moved (review of #67). The plan summary lists what its kind placed and
+  why a mod with a kind has no place; the wizard's order page marks "(by kind)" with the source,
   and `api.selection_plan` gives `placed_by` and `no_place`. Measured on the
   2026-10-23 data: of 1,071 mods with a kind that krion64 does not place, 445
   are placed (139 kits, 121 NPCs, 72 quests, 48 smiths, 38 cosmetic, 27
