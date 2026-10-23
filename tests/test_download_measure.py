@@ -1,6 +1,8 @@
 """tools/download_measure.py: the summary of a download-sources run (ADR-0039)."""
 import json
 
+import pytest
+
 from tools import download_measure
 
 
@@ -67,3 +69,13 @@ def test_the_real_run_says_what_the_player_was_told(tmp_path, capsys):
     assert "a newer GitHub release offered: 1" in out
     assert "ascension: v1.5 BETA -> 2.1.0 (Gibberlings3/Ascension)" in out
     assert "a link that led to a GitHub repository: 1" in out
+
+
+def test_pick_is_a_number_or_all(tmp_path, capsys):
+    """Review of #60: `--pick x` was a traceback; `--pick 0` picks none."""
+    dry = report(tmp_path / "dry.json", [{"folder": "aa", "status": "planned",
+                                          "detail": ""}])
+    with pytest.raises(SystemExit):
+        download_measure.main([dry, "--pick", "x"])
+    download_measure.main([dry, "--pick", "0"])
+    assert capsys.readouterr().out == ""              # not even an empty line

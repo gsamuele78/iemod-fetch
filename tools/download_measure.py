@@ -76,19 +76,29 @@ def signals(report):
     return lines
 
 
+def pick_count(value):
+    """`--pick`: 'all', or how many (0 or more)."""
+    if value == "all":
+        return value
+    if value.isdigit():
+        return int(value)
+    raise argparse.ArgumentTypeError(f"a number or 'all', not {value!r}")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("reports", nargs="+")
     parser.add_argument("--real")
-    parser.add_argument("--pick", metavar="N|all")
+    parser.add_argument("--pick", type=pick_count, metavar="N|all")
     args = parser.parse_args(argv)
     first = load(args.reports[0])
-    if args.pick:
+    if args.pick is not None:
         planned = sorted(r["folder"] for r in first.get("records") or []
                          if r["status"] == "planned")
         if args.pick != "all":
-            planned = planned[:int(args.pick)]
-        print("\n".join(planned))
+            planned = planned[:args.pick]
+        if planned:                     # no line at all for none: a shell reads ""
+            print("\n".join(planned))
         return 0
     titles = ["Catalogue only (no manifest, dry run)", "With the manifest (dry run)"]
     out = ["## Download sources, measured", ""]

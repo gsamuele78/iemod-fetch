@@ -54,7 +54,9 @@ Python API, which is internal.
   offered, links that led to a GitHub repository. `tools/measure_workstation.py`
   runs the same steps from a player's own connection, where Gibberlings3, SHS
   and Nexus do not answer with Cloudflare's 403 as they do to GitHub's
-  runners, and writes one folder with `summary.md` to paste back.
+  runners, and writes one new folder with `summary.md` to paste back - the
+  community data fetched into it, the player's own cache left alone; a step
+  that leaves no report stops it with a non-zero exit.
 - **A newer GitHub release is offered for a copy from elsewhere, and taken on
   request** (GUI-AUDIT M7 item 59, ADR-0039 amendment). When a mod comes from
   an author's site or a forum post and krion64's release scan names a newer

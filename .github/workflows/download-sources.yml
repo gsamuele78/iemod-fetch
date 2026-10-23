@@ -53,12 +53,16 @@ jobs:
         env:
           REAL: ${{ inputs.real || '20' }}
         run: |
-          if ! printf '%s' "$REAL" | grep -Eqx '[0-9]+|all'; then
-            echo "::error::real is a number or all"; exit 1
+          if ! printf '%s' "$REAL" | grep -Eqx '[1-9][0-9]*|all'; then
+            echo "::error::real is a positive number or all"; exit 1
           fi
-          picks=$(python tools/download_measure.py dry-catalogue.json --pick "$REAL")
-          only=$(printf -- '--only %s ' $picks)
-          python -m iemod_fetch -w tests/data/WeiDU.log -m '' -t mods-real $only \
+          mapfile -t picks < <(python tools/download_measure.py dry-catalogue.json --pick "$REAL")
+          if [ "${#picks[@]}" -eq 0 ]; then
+            echo "::warning::the dry run planned no mod: nothing to download"; exit 0
+          fi
+          only=()
+          for folder in "${picks[@]}"; do only+=(--only "$folder"); done
+          python -m iemod_fetch -w tests/data/WeiDU.log -m '' -t mods-real "${only[@]}" \
             --no-discovery --no-update-data --no-gh-cli --no-git-credential -q \
             --max-bytes 314572800 --json-report real.json || true
       - name: What the landing pages give (diagnosis)
@@ -70,8 +74,10 @@ jobs:
             https://www.gibberlings3.net/files/file/702-a-mod-for-the-orderly/ || true
       - name: Summary
         run: |
+          real=()
+          if [ -f real.json ]; then real=(--real real.json); fi
           python tools/download_measure.py dry-catalogue.json dry-manifest.json \
-            --real real.json | tee -a "$GITHUB_STEP_SUMMARY"
+            "${real[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
