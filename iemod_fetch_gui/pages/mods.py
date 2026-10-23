@@ -1,9 +1,12 @@
 """
 Phase 2 - mod selection (GUI-AUDIT item 16, ADR-0031/0035).
 
-BWS-NG's screen as an idea: categories down the left, a search box and a
-filter above a mod -> component tree, details on the right. A mod's box is
-tri-state; components that share a SUBCOMPONENT exclude each other (choosing
+BWS-NG's screen as an idea: kinds down the left, a search box and a
+filter above a mod -> component tree, details on the right. A mod's kind is
+what lcc-docs and BWS-NG say, mapped onto one vocabulary (iemod_fetch/kinds.py,
+item 26): the details say which source says what, and where two disagree the
+row is marked and "Kinds disagree" lists it - never settled for the player.
+A mod's box is tri-state; components that share a SUBCOMPONENT exclude each other (choosing
 one clears the others), and choosing a component also chooses the same-mod
 components it needs. The catalogue loads in a worker thread, so the window
 never waits on the network or the disk. Leaving the phase writes the
@@ -37,8 +40,11 @@ Loader = Callable[[str, dict], list[dict]]
 Key = tuple[str, int]                     # (tp2, component number)
 Checker = Callable[[str, list[Key], dict, str], dict]
 ROLE = Qt.ItemDataRole.UserRole
-ALL = "All categories"
-FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available"]
+ALL = "All kinds"
+FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available",
+           "Kinds disagree"]
+KIND_COLUMN = 3
+DISAGREE = "\u26a0 "        # the mark on a row whose sources disagree on its kind
 CHECK_DELAY_MS = 700      # a burst of clicks is checked once, after it ends
 KRION_NOTE = ("Components from krion64's records: the mod is not downloaded yet. "
               "Its own tp2 decides once it is, and the choice is checked again then.")
@@ -48,6 +54,17 @@ def _target(project: dict) -> str:
     """The CLI's --target, resolved as the CLI resolves it when run in the project."""
     folder = os.path.dirname(project["path"])
     return os.path.join(folder, project.get("target") or "Mods")
+
+
+def kinds_of(mod: dict) -> list[str]:
+    """A mod's kinds; a list from before item 26 has only its catalogue categories."""
+    return mod.get("kinds") or mod.get("categories") or ["(none)"]
+
+
+def _said(mod: dict) -> str:
+    """Which source says what: "lcc-docs: quest; BWS-NG: gameplay"."""
+    return "; ".join(f"{origin}: {', '.join(found)}"
+                     for origin, found in (mod.get("kinds_by_source") or {}).items())
 
 
 def preset_size(preset: dict) -> int:
@@ -170,7 +187,7 @@ class ModsPage(QWidget):
         self.filter.currentIndexChanged.connect(lambda _index: self.apply_filter())
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Mod / component", "Version", "Components from"])
+        self.tree.setHeaderLabels(["Mod / component", "Version", "Components from", "Kind"])
         self.tree.setColumnWidth(0, 420)
         self.tree.itemChanged.connect(self._changed)
         self.tree.currentItemChanged.connect(lambda item, _old: self._show(item))
@@ -271,8 +288,8 @@ class ModsPage(QWidget):
         saved = self._saved_selection()
         counts: dict[str, int] = {}
         for mod in mods:
-            for category in mod.get("categories") or ["(none)"]:
-                counts[category] = counts.get(category, 0) + 1
+            for kind in kinds_of(mod):
+                counts[kind] = counts.get(kind, 0) + 1
             self.tree.addTopLevelItem(self._mod_item(mod, saved))
         self.categories.clear()
         self.categories.addItem(QListWidgetItem(f"{ALL} ({len(mods)})"))
@@ -293,8 +310,12 @@ class ModsPage(QWidget):
             version = f"{mod.get('installed') or version} -> {latest.get('version', '?')}"
         tp2s = mod.get("tp2s") or []
         origin = ", ".join(sorted({t["origin"] for t in tp2s})) or "not known yet"
-        item = QTreeWidgetItem([mod.get("name") or mod["key"], version, origin])
+        kind = ", ".join(kinds_of(mod))
+        if mod.get("kind_disagreement"):
+            kind = DISAGREE + kind
+        item = QTreeWidgetItem([mod.get("name") or mod["key"], version, origin, kind])
         item.setData(0, ROLE, ("mod", mod["key"]))
+        item.setToolTip(KIND_COLUMN, _said(mod) or kind)
         if not any(t["components"] and not t.get("refused") for t in tp2s):
             item.setDisabled(True)
             item.setToolTip(0, "Its components are not known until it is downloaded: "
@@ -645,7 +666,7 @@ class ModsPage(QWidget):
             mod = by_key.get(item.data(0, ROLE)[1], {})
             text = " ".join([item.text(0), *(item.child(i).text(0)
                                               for i in range(item.childCount()))]).lower()
-            visible = (not category or category in (mod.get("categories") or ["(none)"]))
+            visible = not category or category in kinds_of(mod)
             visible = visible and all(word in text for word in words)
             if mode == "Chosen only":
                 visible = visible and item.checkState(0) != Qt.CheckState.Unchecked
@@ -653,6 +674,8 @@ class ModsPage(QWidget):
                 visible = visible and mod.get("key") in in_conflict
             elif mode == "Updates available":
                 visible = visible and bool(mod.get("update_available"))
+            elif mode == "Kinds disagree":
+                visible = visible and bool(mod.get("kind_disagreement"))
             item.setHidden(not visible)
 
     def _show(self, item: QTreeWidgetItem | None) -> None:
@@ -666,8 +689,15 @@ class ModsPage(QWidget):
         e = html.escape                       # every value here is catalogue text
         lines = [f"<h3>{e(str(mod.get('name') or mod['key']))}</h3>",
                  f"<b>Games:</b> {e(', '.join(mod.get('games') or []) or 'not stated')}",
-                 f"<b>Categories:</b> {e(', '.join(mod.get('categories') or []) or '-')}",
-                 f"<b>Status:</b> {e(', '.join(mod.get('status') or []) or '-')}"]
+                 f"<b>Kind:</b> {e(_said(mod) or ', '.join(mod.get('categories') or []) or '-')}"]
+        if mod.get("kind_disagreement"):
+            lines.append("<b>The sources disagree on its kind:</b> each is shown, "
+                         "none is chosen for you.")
+        if mod.get("install_category"):
+            tags = ", ".join(mod.get("tags") or [])
+            lines.append(f"<b>krion64 install category:</b> {e(mod['install_category'])}"
+                         + (f" (tags: {e(tags)})" if tags else ""))
+        lines.append(f"<b>Status:</b> {e(', '.join(mod.get('status') or []) or '-')}")
         latest = mod.get("latest") or {}
         if latest:
             lines.append(f"<b>Newest version:</b> {e(str(latest.get('version')))} "

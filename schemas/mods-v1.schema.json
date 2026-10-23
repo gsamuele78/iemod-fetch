@@ -45,6 +45,16 @@
               }
             }
           },
+          "kinds": {"type": "array", "items": {"type": "string"},
+                    "description": "every kind any source gives (iemod_fetch/kinds.py); absent before M5 item 26"},
+          "kinds_by_source": {"type": "object",
+                              "additionalProperties": {"type": "array", "items": {"type": "string"}},
+                              "description": "what each source says the mod is: lcc-docs' and BWS-NG's categories as kinds"},
+          "kind_disagreement": {"type": "boolean",
+                                "description": "two sources both classify the mod with no kind in common; shown, never settled"},
+          "install_category": {"type": ["string", "null"],
+                               "description": "krion64's install category, beside the kinds, never mapped into one"},
+          "tags": {"type": "array", "items": {"type": "string"}, "description": "krion64's tags"},
           "installed": {"type": ["string", "null"],
                         "description": "the version the given WeiDU.log records; null without one"},
           "latest": {
