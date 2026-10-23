@@ -120,6 +120,40 @@ def test_an_order_that_breaks_a_rule_is_reported_not_silently_won(tmp_path):
     assert result["cycles"] or result["violations"]
 
 
+def test_the_plan_hands_the_order_page_its_rule_edges(tmp_path):
+    """M5b item 31 (review of #75): the check after a drop uses each unit's
+    `after` - the real planner's, not a test's - and on the plan's own order
+    finds what the plan reports: nothing, then what a hand order breaks."""
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "order.json").write_text(json.dumps({"rules": [
+        {"rule": "ub(-):ascension(-)", "direction": "before", "severity": "warning"}]}))
+
+    def eet_of(result):
+        return next(p for p in result["phases"] if p["title"] == "EET")["units"]
+    units = eet_of(plan(tmp_path, rules=[str(rules)]))
+    node = {u["name"].lower(): u["node"] for u in units}
+    after = {u["node"]: u["after"] for u in units}
+    assert node["ub"] in after[node["ascension"]]
+    assert api.order_breaks([u["node"] for u in units], after) == set()
+
+    ub = next(u for u in units if u["node"] == node["ub"])
+    units.remove(ub)
+    units.append(ub)                                         # ub after ascension
+    phases = [p["units"] for p in plan(tmp_path, rules=[str(rules)])["phases"]]
+    phases[1] = units
+    api.save_install_order(str(tmp_path), phases)
+    result = plan(tmp_path, rules=[str(rules)])
+    assert result["violations"]
+    again = eet_of(result)
+    breaks = api.order_breaks([u["node"] for u in again],
+                              {u["node"]: u["after"] for u in again})
+    # the hand order meets the rules in a cycle; what the plan then flags is
+    # what the check finds broken, pair for pair
+    assert breaks and len(breaks) == len(result["violations"])
+    assert {n for pair in breaks for n in pair} == {u["node"] for u in again if u["flagged"]}
+
+
 def test_using_the_computed_order_again_forgets_the_file(tmp_path):
     phases = [p["units"] for p in plan(tmp_path)["phases"]]
     api.save_install_order(str(tmp_path), phases)

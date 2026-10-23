@@ -369,3 +369,47 @@ def test_a_drop_is_checked_at_once_before_the_plan_comes_back(qtbot, tmp_path):
     assert widget.last_check_ms < 100
     with qtbot.waitSignal(widget.planned, timeout=5000):
         gate.set()
+
+
+def test_a_drop_downward_marks_the_row_it_moved(qtbot, tmp_path):
+    """Review of #75: a row dropped lower lands one above the row Qt names,
+    and that is the row checked - cdtweaks below stratagems breaks the rule."""
+    import threading
+    gate = threading.Event()
+    calls = []
+
+    def planner(game, chosen, labels, folder):
+        if calls:
+            gate.wait(5)
+        calls.append(1)
+        units = [unit("eet"), unit("cdtweaks"),
+                 dict(unit("stratagems"), after=["x|cdtweaks|0"]), unit("eet_end")]
+        return {"phases": [{"role": "EET", "title": "EET", "units": units}],
+                "cycles": [], "violations": [], "planned": True, "custom": False}
+    widget, _planner = page(qtbot, tmp_path, planner)
+    view = widget.tabs.widget(0)
+    view.model().moveRow(QModelIndex(), 1, QModelIndex(), 3)      # cdtweaks down one
+    assert [view.item(r).data(ROLE)["name"] for r in range(4)] == [
+        "eet", "stratagems", "cdtweaks", "eet_end"]
+    assert [view.item(r).foreground().color() == RED for r in range(4)] == [
+        False, True, True, False]
+    assert "1 rule(s) broken" in widget.problems.text()
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        gate.set()
+
+
+def test_a_drag_after_a_split_leaves_the_marks_to_the_plan(qtbot, tmp_path):
+    """Review of #75: until the plan comes back, a split mod's parts share
+    its node, so a drop is not checked at once - no row is marked by a
+    guess, and the plan that follows marks them."""
+    planner = Slow()
+    widget, _planner = page(qtbot, tmp_path, planner)
+    planner.gate = planner.event()
+    view = widget.tabs.widget(0)
+    view.setCurrentRow(1)
+    widget.split.click()
+    view.model().moveRow(QModelIndex(), 1, QModelIndex(), 5)       # a part to the end
+    assert widget.problems.text() == "Checked when the plan comes back."
+    assert not any(view.item(r).foreground().color() == RED for r in range(view.count()))
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        planner.gate.set()

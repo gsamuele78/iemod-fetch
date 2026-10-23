@@ -262,6 +262,13 @@ class OrderPage(QWidget):
         started = time.perf_counter()
         items = [widget.item(r) for r in range(widget.count())]
         order = [item.data(NODE) for item in items]
+        if len(set(order)) < len(order):
+            # A split or a join not yet planned: its parts still share the
+            # mod's node and the rules are the old plan's, so which row moved
+            # and what it breaks cannot be told - the plan's marks follow
+            # (review of #75).
+            self.problems.setText("Checked when the plan comes back.")
+            return
         moved = order[row] if 0 <= row < len(order) else ""
         previous = set(widget.property("breaks") or ())
         breaks = api.order_breaks_after_move(previous, order, before, moved, followers)
