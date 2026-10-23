@@ -143,3 +143,23 @@ def languages(tp2: str) -> list[Language]:
             continue
         found.append(Language(name, directory, _strings_after(clean, i, stop)))
     return found
+
+
+# The code page of a legacy (pre-UTF-8) .tra file, by its language folder:
+# WeiDU 251's own table for HANDLE_CHARSETS' infer_charsets (README-WeiDU,
+# "Compatibility matrix"), the code page of BG2's localised edition. Every
+# other language is Windows-1252.
+_CHARSETS = (("schinese", "cp936"), ("zh_cn", "cp936"), ("tchinese", "cp950"),
+             ("czech", "cp1250"), ("cs_cz", "cp1250"), ("japanese", "cp932"),
+             ("ja_jp", "cp932"), ("korean", "cp949"), ("ko_kr", "cp949"),
+             ("polish", "cp1250"), ("polski", "cp1250"), ("pl_pl", "cp1250"),
+             ("russian", "cp1251"), ("ru_ru", "cp1251"))
+
+
+def legacy_charset(path: str) -> str:
+    """`mod/russian/setup.tra` -> cp1251: the first folder naming a language."""
+    for folder in path.lower().replace("\\", "/").split("/")[:-1]:
+        for name, charset in _CHARSETS:
+            if name in folder:
+                return charset
+    return "cp1252"

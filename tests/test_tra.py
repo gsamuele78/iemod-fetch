@@ -305,3 +305,35 @@ def test_text_outside_the_mod_folder_is_never_read(tmp_path):
 def test_a_fifo_is_not_opened(tmp_path):
     os.mkfifo(tmp_path / "x.tra")
     assert api._text_under(str(tmp_path), "x.tra") is None
+
+
+# --------------------------------------- legacy code pages (GUI-AUDIT item 44)
+@pytest.mark.parametrize("path,charset", [
+    # WeiDU 251's README, HANDLE_CHARSETS' infer_charsets matrix
+    ("m/schinese/a.tra", "cp936"), ("m/zh_CN/a.tra", "cp936"), ("m/tchinese/a.tra", "cp950"),
+    ("m/czech/a.tra", "cp1250"), ("m/cs_CZ/a.tra", "cp1250"), ("m/japanese/a.tra", "cp932"),
+    ("m/korean/a.tra", "cp949"), ("m/Polski/a.tra", "cp1250"), ("m/pl_PL/a.tra", "cp1250"),
+    ("m\\RUSSIAN\\a.tra", "cp1251"), ("m/ru_RU/a.tra", "cp1251"),
+    ("m/english/a.tra", "cp1252"), ("m/castilian/a.tra", "cp1252"), ("russian.tra", "cp1252")])
+def test_the_code_page_is_the_language_folders(path, charset):
+    from iemod_fetch.weidu_lex import legacy_charset
+    assert legacy_charset(path) == charset
+
+
+def test_a_legacy_russian_tra_reads_as_cyrillic(tmp_path):
+    """Measured on 103 real mods: 2,286 Russian and 721 Chinese .tra files are
+    not UTF-8, and cp1252 turned every one into Latin letters."""
+    mod = tmp_path / "mymod"
+    for lang, text, page in (("russian", "Умные маги", "cp1251"),
+                             ("polish", "Mądrzy magowie", "cp1250"),
+                             ("schinese", "聪明的法师", "cp936"),
+                             ("english", "Café", "cp1252")):
+        (mod / lang).mkdir(parents=True)
+        (mod / lang / "setup.tra").write_bytes(f"@1 = ~{text}~".encode(page))
+        assert api._text_under(str(tmp_path), f"mymod/{lang}/setup.tra") == f"@1 = ~{text}~"
+
+
+def test_utf8_still_comes_first(tmp_path):
+    (tmp_path / "russian").mkdir()
+    (tmp_path / "russian" / "a.tra").write_bytes("@1 = ~Умные~".encode("utf-8"))
+    assert api._text_under(str(tmp_path), "russian/a.tra") == "@1 = ~Умные~"
