@@ -414,7 +414,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,652 collected (8 run the real WeiDU, 113 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,654 collected (8 run the real WeiDU, 115 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

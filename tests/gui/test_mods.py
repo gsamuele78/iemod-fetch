@@ -344,9 +344,9 @@ def needing(*needs):
     return check
 
 
-def guarded(qtbot, folder, check, chosen, answer):
+def guarded(qtbot, folder, check, chosen, answer, mods=WITH_ADDONS):
     widget = ModsPage(str(folder), load=lambda game, project: json.loads(json.dumps(
-        WITH_ADDONS)), check=check)
+        mods)), check=check)
     qtbot.addWidget(widget)
     with qtbot.waitSignal(widget.loaded, timeout=5000):
         widget.start("EET")
@@ -476,3 +476,45 @@ def test_resolve_is_off_where_there_is_nothing_to_resolve(qtbot, tmp_path):
     widget, _asked = guarded(qtbot, tmp_path, resolving("error"), [(TP2, 10)], "only")
     widget.tree.setCurrentItem(widget.items[(TP2, 10)])
     assert not widget.resolve.isEnabled()
+
+
+def test_a_cycle_of_requires_ends_and_unticks_both(qtbot, tmp_path):
+    """Review of #81: two components that require each other, and a third
+    that needs one of them - the walk ends, every one is named once."""
+    cyclic = [dict(MODS[0], tp2s=[{"tp2": TP2, "origin": "krion64", "components": [
+        component(0, "Restoration"), component(30, "One", requires=[31]),
+        component(31, "Two", requires=[30]), component(32, "Three", requires=[31])]}])]
+    widget, asked = guarded(qtbot, tmp_path, no_check, [(TP2, 30), (TP2, 32)], "all",
+                            mods=cyclic)
+    assert widget.chosen() == [(TP2, 30), (TP2, 31), (TP2, 32)]
+    check_(widget, (TP2, 31), on=False)
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    assert sorted(name.split("#")[1].split()[0] for name in asked[0][1]) == ["30", "32"]
+    assert widget.chosen() == []
+
+
+def test_the_real_check_names_what_a_mods_own_tp2_needs(qtbot, tmp_path):
+    """Review of #81 (the real path): api.selection_conflicts on the mock EET
+    install - EET_end's own tp2 requires the EET core - and the page asks
+    before the core is unticked."""
+    here = os.path.join(os.path.dirname(__file__), os.pardir)
+    mock = os.path.join(here, "data", "eetmock")
+    core, end = "eet/EET.tp2", "EET_end/EET_end.tp2"
+    mods = [{"key": key, "name": name, "games": ["EET"], "categories": ["Core"],
+             "status": [], "advisories": [],
+             "tp2s": [{"tp2": tp2, "origin": "tp2", "components": [component(0, name)]}]}
+            for key, name, tp2 in (("eet", "EET", core), ("eet_end", "EET end", end))]
+
+    def real(game, chosen, labels, folder):
+        return api.selection_conflicts(game, chosen, labels, folder=folder,
+                                       rules=[os.path.join(mock, "rules")],
+                                       target=os.path.join(mock, "Mods"),
+                                       order_catalogue=os.path.join(here, "data", "krion"),
+                                       data_dir=os.path.join(folder, "no-cache"))
+    widget, asked = guarded(qtbot, tmp_path, real, [(core, 0), (end, 0)], "keep", mods=mods)
+    assert {"chosen": [[end, 0]], "on": [[[core, 0]]],
+            "rule": "eetend(0) needs eet(0)"} in widget.conflicts["needs"]
+    check_(widget, (core, 0), on=False)
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    assert asked[0][1] == ["EET end #0  EET end"]
+    assert widget.chosen() == [(core, 0), (end, 0)]                  # kept
