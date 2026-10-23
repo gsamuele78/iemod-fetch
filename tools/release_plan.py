@@ -30,7 +30,6 @@ import os
 import re
 import subprocess
 import sys
-from typing import Dict, List, Optional
 
 VERSION_FILE = "iemod_fetch/__init__.py"
 SHIPPED = ("iemod_fetch", "pyproject.toml", "build.py", "README.md", "LICENSE")
@@ -39,7 +38,7 @@ _SECTION = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 
-def newest_release(changelog: str) -> Optional[str]:
+def newest_release(changelog: str) -> str | None:
     """The first versioned section; `[Unreleased]` is not a release."""
     match = _SECTION.search(changelog)
     return match.group(1) if match else None
@@ -50,7 +49,7 @@ def _git(repo: str, *args: str) -> str:
                           capture_output=True, text=True).stdout.strip()
 
 
-def release_commit(repo: str, version: str) -> Optional[str]:
+def release_commit(repo: str, version: str) -> str | None:
     """The oldest first-parent commit whose version file says `version`."""
     wanted = f'__version__ = "{version}"'
     commits = _git(repo, "rev-list", "--first-parent", "--reverse", "HEAD",
@@ -68,7 +67,7 @@ def _same(repo: str, left: str, right: str, *paths: str) -> bool:
                            "--", *paths], check=False).returncode == 0
 
 
-def plan(repo: str, version: str, explicit: bool = False) -> Dict[str, str]:
+def plan(repo: str, version: str, explicit: bool = False) -> dict[str, str]:
     """`explicit`: asked for by version, so an existing tag is released as is."""
     tag = f"v{version}"
     found = subprocess.run(["git", "-C", repo, "rev-parse", "-q", "--verify",
@@ -91,7 +90,7 @@ def plan(repo: str, version: str, explicit: bool = False) -> Dict[str, str]:
             "workflows_differ": "true" if differ else "false"}
 
 
-def automatic(repo: str, newest: str, backfill: List[str]) -> Dict[str, str]:
+def automatic(repo: str, newest: str, backfill: list[str]) -> dict[str, str]:
     """The newest changelog version; once tagged, the first untagged back-fill."""
     planned = plan(repo, newest)
     for version in backfill:
@@ -101,7 +100,7 @@ def automatic(repo: str, newest: str, backfill: List[str]) -> Dict[str, str]:
     return planned
 
 
-def pull_request(repo: str) -> Dict[str, str]:
+def pull_request(repo: str) -> dict[str, str]:
     """A rehearsal on a pull request: its own commit, tagged by its version.
 
     Build and attestation run, publishing never does. So a change to the

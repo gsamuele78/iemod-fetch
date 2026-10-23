@@ -5,7 +5,6 @@ import os
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from typing import List, Optional
 
 from .contract import SCHEMA_VERSION
 
@@ -28,20 +27,20 @@ class Record:
     folder: str
     status: Status
     detail: str = ""
-    source_key: Optional[str] = None
-    url: Optional[str] = None
-    sha256: Optional[str] = None
-    version: Optional[str] = None
-    tp2_file: Optional[str] = None
-    advisories: List[str] = field(default_factory=list)
-    origin: Optional[str] = None
-    discovered_github: Optional[str] = None
+    source_key: str | None = None
+    url: str | None = None
+    sha256: str | None = None
+    version: str | None = None
+    tp2_file: str | None = None
+    advisories: list[str] = field(default_factory=list)
+    origin: str | None = None
+    discovered_github: str | None = None
     bytes: int = 0
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     # Why it did not succeed, as a stable code (errors.py; ADR-0030). None for
     # ok/skipped/planned. Besides the error classes' codes: "filesystem",
     # "internal".
-    error_code: Optional[str] = None
+    error_code: str | None = None
 
     def to_json(self) -> dict:
         data = asdict(self)
@@ -76,11 +75,11 @@ def line_for(record: Record, stream=sys.stdout) -> str:
 @dataclass
 class RunReport:
     started_at: float = field(default_factory=time.time)
-    records: List[Record] = field(default_factory=list)
-    unresolved: List[dict] = field(default_factory=list)
-    findings: List[dict] = field(default_factory=list)   # order / compatibility
-    suggestions: List[dict] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    records: list[Record] = field(default_factory=list)
+    unresolved: list[dict] = field(default_factory=list)
+    findings: list[dict] = field(default_factory=list)   # order / compatibility
+    suggestions: list[dict] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     cancelled: bool = False       # stopped on request; what finished is kept
 
     def counts(self) -> dict:
@@ -90,11 +89,11 @@ class RunReport:
         return out
 
     @property
-    def failed(self) -> List[Record]:
+    def failed(self) -> list[Record]:
         return [r for r in self.records if r.status in TERMINAL_BAD]
 
     @property
-    def blocking_findings(self) -> List[dict]:
+    def blocking_findings(self) -> list[dict]:
         """Errors, minus any withheld as stale or explicitly suppressed."""
         return [f for f in self.findings
                 if f.get("severity") == "error"

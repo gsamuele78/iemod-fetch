@@ -16,7 +16,7 @@ import re
 import stat
 import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .errors import ConfigError
 
@@ -72,7 +72,7 @@ def parse_size(value, key: str = "value") -> int:
     return result
 
 
-def _split_list(raw: str) -> List[str]:
+def _split_list(raw: str) -> list[str]:
     parts = []
     for line in raw.splitlines():
         for raw_item in line.split(","):
@@ -87,16 +87,16 @@ class FileConfig:
     # str | int | bool | list[str], decided per key by LIST_KEYS / BOOL_KEYS /
     # INT_KEYS / SIZE_KEYS. Any, not object: `object` forces every reader to
     # cast, which is noise around a value that has already been coerced.
-    values: Dict[str, Any] = field(default_factory=dict)
-    path: Optional[str] = None
-    warnings: List[str] = field(default_factory=list)
+    values: dict[str, Any] = field(default_factory=dict)
+    path: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return bool(self.values)
 
 
-def candidate_paths(explicit: Optional[str] = None,
-                    target: Optional[str] = None) -> List[str]:
+def candidate_paths(explicit: str | None = None,
+                    target: str | None = None) -> list[str]:
     """Where a config file may live, most specific first."""
     if explicit:
         return [explicit]
@@ -111,8 +111,8 @@ def candidate_paths(explicit: Optional[str] = None,
     return paths
 
 
-def load_config(explicit: Optional[str] = None,
-                target: Optional[str] = None) -> FileConfig:
+def load_config(explicit: str | None = None,
+                target: str | None = None) -> FileConfig:
     """
     Read the first config file that exists. A missing file is not an error
     unless it was named explicitly with --config.
@@ -128,7 +128,7 @@ def load_config(explicit: Optional[str] = None,
 def _read(path: str) -> FileConfig:
     parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             parser.read_file(fh)
     except OSError as exc:
         raise ConfigError(f"cannot read config {path}: {exc}") from exc
@@ -168,8 +168,8 @@ def _read(path: str) -> FileConfig:
     return config
 
 
-def write_values(path: str, values: Dict[str, Any],
-                 extra: Optional[Dict[str, Dict[str, str]]] = None) -> None:
+def write_values(path: str, values: dict[str, Any],
+                 extra: dict[str, dict[str, str]] | None = None) -> None:
     """
     Set `values` in the [iemod-fetch] section of `path`, keeping every other
     option and section; `extra` sets options of other sections (the GUI keeps
@@ -183,7 +183,7 @@ def write_values(path: str, values: Dict[str, Any],
     parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
     if os.path.isfile(path):
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 parser.read_file(fh)
         except (OSError, configparser.Error) as exc:
             raise ConfigError(f"cannot update {path}: {exc}") from exc
@@ -221,11 +221,11 @@ def write_values(path: str, values: Dict[str, Any],
         raise
 
 
-def read_section(path: str, section: str) -> Dict[str, str]:
+def read_section(path: str, section: str) -> dict[str, str]:
     """The raw options of one section of `path` ({} when absent or unreadable)."""
     parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             parser.read_file(fh)
         return dict(parser.items(section)) if parser.has_section(section) else {}
     except (OSError, configparser.Error):

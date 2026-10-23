@@ -347,37 +347,35 @@ def test_the_retry_does_not_lower_the_bar(tmp_path, monkeypatch):
     assert not (tmp_path / "Mods" / "EndlessBG1").exists()
 
 
-def test_a_wrong_forum_attachment_gives_way_to_the_catalogues_repository(
+def test_a_wrong_catalogue_download_gives_way_to_the_entrys_repository(
         tmp_path, monkeypatch):
     """
-    Measured on 2026-10-23 with the catalogue alone: lcc-docs links Beamdog
-    forum attachments that are a save game (Foundling), two .debug logs
-    (ntotsc), a compatibility patch (IHateUndead) or another mod (A7's
-    GolemConstruction -> SoDGolemFix). As a direct link each one went first,
-    failed the .tp2 check, and the repository the same entry lists was never
-    tried: the retry probed the catalogue again and got the same attachment.
+    Measured on 2026-10-23 with the catalogue alone (GUI-AUDIT M7 item 54): a
+    direct link went first, failed the .tp2 check, and the repository the same
+    entry lists was never tried - the retry probed the catalogue again and got
+    the same link back.
     """
-    attachment = "https://forums.beamdog.com/uploads/editor/nd/82qpx7xj78an.zip"
+    wrong = "https://host.example/mods/EndlessBG1-patch.zip"
     asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
     stub = DiscoveryStub(
         owners={},
         releases={"Gibberlings3/EndlessBG1": {"tag_name": "v1", "assets": [
             {"name": "m.zip", "browser_download_url": asset}]}},
-        blobs={attachment: zip_bytes("FnP_kit_compatibility"),
+        blobs={wrong: zip_bytes("FnP_kit_compatibility"),
                asset: zip_bytes("EndlessBG1")})
     make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
     (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
         {"tp2": "EndlessBG1", "name": "Endless BG1",
-         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+         "urls": [wrong, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
 
     code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json",
                      "--no-discovery", "--json-report", "r.json"])
 
     assert code == 0, out
     assert (tmp_path / "Mods" / "EndlessBG1" / "EndlessBG1.tp2").exists()
-    assert stub.downloaded == [attachment, asset]
+    assert stub.downloaded == [wrong, asset]
     warnings = json.loads((tmp_path / "r.json").read_text())["warnings"]
-    assert any(attachment in w and "did not contain this mod" in w for w in warnings)
+    assert any(wrong in w and "did not contain this mod" in w for w in warnings)
 
 
 def test_every_catalogue_source_is_tried_once_and_the_bar_stays(tmp_path, monkeypatch):
@@ -398,7 +396,7 @@ def test_every_catalogue_source_is_tried_once_and_the_bar_stays(tmp_path, monkey
     code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json", "--no-discovery"])
 
     assert code == 1
-    assert stub.downloaded == [attachment, asset]
+    assert stub.downloaded == [asset, attachment]      # the forum's file comes last
     assert not (tmp_path / "Mods" / "EndlessBG1").exists()
 
 
@@ -463,6 +461,62 @@ def test_when_every_source_is_refused_the_failure_names_each(tmp_path, monkeypat
     [record] = [r for r in report["records"] if r["folder"] == "EndlessBG1"]
     assert attachment in record["detail"] and asset in record["detail"]
     assert "expect_tp2" not in record["detail"]       # no advice from the last one alone
+
+
+def test_a_forum_attachment_waits_for_the_repository(tmp_path, monkeypatch):
+    """
+    Measured on 2026-10-23: lcc-docs' Beamdog attachments were a save game,
+    .debug logs, a patch or another mod for 8 mods of one EET log. Listed first
+    by the catalogue, a forum's file is still tried after the repository; when
+    the repository is right it is never downloaded.
+    """
+    attachment = "https://forums.beamdog.com/uploads/editor/nd/82qpx7xj78an.zip"
+    asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
+    stub = DiscoveryStub(
+        owners={},
+        releases={"Gibberlings3/EndlessBG1": {"tag_name": "v1", "assets": [
+            {"name": "m.zip", "browser_download_url": asset}]}},
+        blobs={attachment: zip_bytes("FnP_kit_compatibility"),
+               asset: zip_bytes("EndlessBG1")})
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json",
+                     "--no-discovery", "--json-report", "r.json"])
+
+    assert code == 0, out
+    assert stub.downloaded == [asset]
+    record = json.loads((tmp_path / "r.json").read_text())["records"][0]
+    assert not any("forum post" in a for a in record["advisories"])
+
+
+def test_a_forum_copy_is_the_last_resort_and_says_so(tmp_path, monkeypatch):
+    """
+    Measured on 2026-10-23 with GitHub unreachable: Ascension came from a
+    Beamdog thread as v1.5 BETA (its repository: 2.1.0), Finch as v4.0 (v6.0).
+    It has the right tp2, so it installs - with an advisory naming the forum
+    post and the version the mod declares, for the player to compare.
+    """
+    attachment = "https://forums.beamdog.com/uploads/FileUpload/2c/93c3.zip"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("EndlessBG1/EndlessBG1.tp2", "BACKUP ~x~\nVERSION ~v1.5 BETA~\n")
+    stub = DiscoveryStub(owners={}, releases={}, blobs={attachment: buf.getvalue()})
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json",
+                     "--no-discovery", "--json-report", "r.json"])
+
+    assert code == 0, out
+    assert stub.downloaded == [attachment]
+    record = json.loads((tmp_path / "r.json").read_text())["records"][0]
+    assert any("forum post" in a and attachment in a and "v1.5 BETA" in a
+               for a in record["advisories"])
 
 
 def test_the_catalogue_supplies_the_renamed_tp2_automatically(tmp_path, monkeypatch):

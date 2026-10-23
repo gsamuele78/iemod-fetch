@@ -17,6 +17,12 @@ Python API, which is internal.
   `python_version` and the classifiers follow it; the wizard extra needs
   PySide6 6.11 or newer. A release tag older than `.python-version` (3.0.0) is
   rebuilt on the 3.12 it was built with.
+- The code is written for 3.14 (item 38), one mechanical change: ruff's
+  pyupgrade rewrote about 1,080 annotations and imports (`Optional[X]` ->
+  `X | None`, `List` -> `list`, `typing` -> `collections.abc`), and `UP` is now
+  part of the lint; `hashlib.file_digest` hashes backups; tarfile's `data`
+  filter is used without the fallback for runtimes that lacked it. No
+  behaviour changes: the same 1,317 tests pass.
 - The weekly upstream check also watches Python (item 37): an issue when a
   newer stable Python is available, or when a place names another version than
   `.python-version`; a test holds them together.
@@ -54,6 +60,13 @@ Python API, which is internal.
   to a new signed URL each time cannot loop - each held to the same check;
   the warning names what was refused, and when every source is refused the
   failure names each one.
+- **A forum's file comes last, and says so** (GUI-AUDIT M7 item 58, ADR-0039
+  amendment). With GitHub out of reach - no token and 115 GitHub mods is
+  enough - Ascension came from a Beamdog thread as v1.5 BETA (its repository:
+  2.1.0) and Finch as v4.0 (v6.0), silently: the right tp2, years old. A
+  forum thread or a file attached to one is now tried after the entry's own
+  direct links, its repository and its other pages, and a mod installed from
+  one carries an advisory naming the post and the version the mod declares.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
   by its first word (`www`): krion64's place for it was never found, and a
   Sorting Order line naming it ordered nothing.

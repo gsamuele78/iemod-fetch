@@ -24,7 +24,7 @@ report:
 import json
 import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 from .contract import SCHEMA_VERSION, stable_id
 from .rules import (DEPENDS, INCOMPATIBLE, ORDER, Context, Install, RuleSet,
@@ -51,7 +51,7 @@ class Side:
     """One end of a conflict, narrowed to what is actually installed."""
     key: str
     mod: str
-    components: Tuple[Tuple[int, str], ...] = ()
+    components: tuple[tuple[int, str], ...] = ()
     whole_mod: bool = False       # the rule named no components: any will do
 
     def describe(self, limit: int = 6) -> str:
@@ -64,7 +64,7 @@ class Side:
         return f"{self.mod}: {parts}" + (f", +{rest} more" if rest else "")
 
     @property
-    def numbers(self) -> Tuple[int, ...]:
+    def numbers(self) -> tuple[int, ...]:
         return tuple(n for n, _label in self.components)
 
 
@@ -74,7 +74,7 @@ class Finding:
     severity: str
     log: str
     left: Side
-    right: Optional[Side] = None
+    right: Side | None = None
     scope: str = "cross-mod"          # cross-mod | same-mod | missing
     reason: str = ""
     evidence: str = ""
@@ -84,7 +84,7 @@ class Finding:
     raw_severity: str = ""
     remedy: str = ""
     order_fixable: bool = False
-    fixed_by_plan: Optional[bool] = None
+    fixed_by_plan: bool | None = None
     stale_risk: str = ""
     suppressed: str = ""
     first: str = ""                   # ORDER: the key of the mod that goes first
@@ -111,7 +111,7 @@ class Finding:
         return not (self.suppressed or self.fixed_by_plan)
 
     @property
-    def options(self) -> List["Option"]:
+    def options(self) -> list[Option]:
         return finding_options(self)
 
     def as_dict(self) -> dict:
@@ -154,7 +154,7 @@ class Option:
     action: str
     mod: str
     key: str
-    components: Tuple[int, ...]
+    components: tuple[int, ...]
     whole_mod: bool
     cost: int
     applicable: bool
@@ -183,7 +183,7 @@ def _deselect(side: Side, recommended: bool, verb: str = "deselect") -> Option:
                   len(side.components), True, recommended, what)
 
 
-def finding_options(finding: Finding) -> List[Option]:
+def finding_options(finding: Finding) -> list[Option]:
     """Every way to clear `finding`, cheapest first."""
     left, right = finding.left, finding.right
     if finding.kind == ORDER and right is not None:
@@ -216,22 +216,22 @@ def finding_options(finding: Finding) -> List[Option]:
 
 @dataclass
 class ConflictReport:
-    findings: List[Finding] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
     rules_checked: int = 0
     notes_checked: int = 0
     pairs_with_both_mods: int = 0
     pairs_cleared_by_components: int = 0
     undirected: int = 0
-    engine_limits: List = field(default_factory=list)    # limits.LimitsReport per install
+    engine_limits: list = field(default_factory=list)    # limits.LimitsReport per install
 
     def __len__(self) -> int:
         return len(self.findings)
 
     @property
-    def actionable(self) -> List[Finding]:
+    def actionable(self) -> list[Finding]:
         return [f for f in self.findings if f.actionable]
 
-    def of(self, *kinds: str) -> List[Finding]:
+    def of(self, *kinds: str) -> list[Finding]:
         return [f for f in self.findings if f.kind in kinds]
 
     def as_dict(self) -> dict:
@@ -264,7 +264,7 @@ def _side(install: Install, key: str, display: str,
                 components=labelled, whole_mod=spec_components is None)
 
 
-def _coverage(installs: Sequence[Install], ruleset: RuleSet) -> Tuple[int, int]:
+def _coverage(installs: Sequence[Install], ruleset: RuleSet) -> tuple[int, int]:
     """
     How much of the rule set was genuinely examined.
 
@@ -286,8 +286,8 @@ def _coverage(installs: Sequence[Install], ruleset: RuleSet) -> Tuple[int, int]:
     return both, cleared
 
 
-def _remedy(kind: str, scope: str, left: Side, right: Optional[Side],
-            direction: Optional[str]) -> Tuple[str, bool]:
+def _remedy(kind: str, scope: str, left: Side, right: Side | None,
+            direction: str | None) -> tuple[str, bool]:
     """The smallest change that clears this finding, and whether order does it."""
     if kind == ORDER and right is not None:
         first, second = (left, right) if direction == "before" else (right, left)
@@ -327,7 +327,7 @@ def _remedy(kind: str, scope: str, left: Side, right: Optional[Side],
 
 
 def build_conflict_report(installs: Sequence[Install], ruleset: RuleSet,
-                          context: Optional[Context] = None,
+                          context: Context | None = None,
                           plan=None) -> ConflictReport:
     """
     Turn rule violations into component-level findings.
@@ -403,7 +403,7 @@ def build_conflict_report(installs: Sequence[Install], ruleset: RuleSet,
     return report
 
 
-def _subcomponent_clashes(installs: Sequence[Install]) -> List[Finding]:
+def _subcomponent_clashes(installs: Sequence[Install]) -> list[Finding]:
     """
     Two options of one WeiDU SUBCOMPONENT group in the same install.
 
@@ -413,7 +413,7 @@ def _subcomponent_clashes(installs: Sequence[Install]) -> List[Finding]:
     and the outcome is not a judgement call - the last one wins. The finding
     names it so the plan can skip the install-then-uninstall round trip.
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     for install in installs:
         seen = set()
         for key, labels in install.labels.items():
@@ -449,7 +449,7 @@ def _subcomponent_clashes(installs: Sequence[Install]) -> List[Finding]:
     return findings
 
 
-def _known_issues(installs: Sequence[Install], ruleset: RuleSet) -> List[Finding]:
+def _known_issues(installs: Sequence[Install], ruleset: RuleSet) -> list[Finding]:
     """
     Per-mod known issues, narrowed to the components actually installed.
 

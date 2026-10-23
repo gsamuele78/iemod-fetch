@@ -22,7 +22,6 @@ the game data is intact.
 import os
 import struct
 from dataclasses import dataclass, field
-from typing import List, Optional, Set, Tuple
 
 _MAX_KEY_BYTES = 64 * 1024 * 1024
 _MAX_RESOURCE_BYTES = 16 * 1024 * 1024
@@ -32,7 +31,7 @@ SOD_MOVIE = os.path.join("movies", "sodcin05.wbm")
 SOD_ARCHIVES = (("sod-dlc.zip",), ("dlc", "sod-dlc.zip"), ("workshop", "sod-dlc.mod"))
 
 
-def _find(root: str, *parts: str) -> Optional[str]:
+def _find(root: str, *parts: str) -> str | None:
     """A path under `root`, each part matched case-insensitively (Linux)."""
     current = root
     for part in parts:
@@ -51,7 +50,7 @@ def _find(root: str, *parts: str) -> Optional[str]:
     return current
 
 
-def key_resources(game_dir: str) -> Set[Tuple[str, int]]:
+def key_resources(game_dir: str) -> set[tuple[str, int]]:
     """(resref, type) of every resource chitin.key lists; empty if unreadable."""
     path = _find(game_dir, "chitin.key")
     if path is None or os.path.getsize(path) > _MAX_KEY_BYTES:
@@ -61,7 +60,7 @@ def key_resources(game_dir: str) -> Set[Tuple[str, int]]:
     if len(data) < 24 or data[:8] != b"KEY V1  ":
         return set()
     _bifs, count, _bif_offset, offset = struct.unpack_from("<IIII", data, 8)
-    out: Set[Tuple[str, int]] = set()
+    out: set[tuple[str, int]] = set()
     for i in range(count):
         start = offset + 14 * i
         if start + 14 > len(data):
@@ -72,7 +71,7 @@ def key_resources(game_dir: str) -> Set[Tuple[str, int]]:
     return out
 
 
-def _key(game_dir: str) -> Optional[bytes]:
+def _key(game_dir: str) -> bytes | None:
     path = _find(game_dir, "chitin.key")
     if path is None or os.path.getsize(path) > _MAX_KEY_BYTES:
         return None
@@ -81,7 +80,7 @@ def _key(game_dir: str) -> Optional[bytes]:
     return data if len(data) >= 24 and data[:8] == b"KEY V1  " else None
 
 
-def read_resource(game_dir: str, resource: str) -> Optional[bytes]:
+def read_resource(game_dir: str, resource: str) -> bytes | None:
     """
     A resource as the game sees it: override/ first, else the BIFF that
     chitin.key points to - the lookup WeiDU's load_resource makes. None when
@@ -112,14 +111,14 @@ def read_resource(game_dir: str, resource: str) -> Optional[bytes]:
     return None
 
 
-def _plain(data: Optional[bytes]) -> Optional[bytes]:
+def _plain(data: bytes | None) -> bytes | None:
     """None for an XOR-encrypted 2DA/IDS (classic games: it starts FF FF):
     WeiDU decrypts those; read as text, one would look nearly empty."""
     return None if data is None or data[:2] == b"\xff\xff" else data
 
 
 def _from_bif(game_dir: str, key: bytes, bifs: int, bif_offset: int,
-              locator: int) -> Optional[bytes]:
+              locator: int) -> bytes | None:
     index, file_index = locator >> 20, locator & 0x3FFF
     entry = bif_offset + 12 * index
     if index >= bifs or entry + 12 > len(key):
@@ -154,7 +153,7 @@ def _from_bif(game_dir: str, key: bytes, bifs: int, bif_offset: int,
     return None
 
 
-def spell_files(game_dir: str) -> Set[str]:
+def spell_files(game_dir: str) -> set[str]:
     """Every SPL resref the game has, in override/ or chitin.key, lower case."""
     names = {name for name, kind in key_resources(game_dir) if kind == _TYPES["spl"]}
     override = _find(game_dir, "override")
@@ -164,14 +163,14 @@ def spell_files(game_dir: str) -> Set[str]:
     return names
 
 
-def _exists(game_dir: str, resource: str, keys: Set[Tuple[str, int]]) -> bool:
+def _exists(game_dir: str, resource: str, keys: set[tuple[str, int]]) -> bool:
     if _find(game_dir, "override", resource):
         return True
     name, _dot, ext = resource.lower().rpartition(".")
     return ext in _TYPES and (name, _TYPES[ext]) in keys
 
 
-def identify(game_dir: str) -> Optional[str]:
+def identify(game_dir: str) -> str | None:
     """BGEE, BG2EE, EET, or None - WeiDU's GAME_IS rules, nothing else."""
     if not os.path.isdir(game_dir) or _find(game_dir, "chitin.key") is None:
         return None
@@ -207,10 +206,10 @@ def sod_state(bgee_dir: str) -> str:
 class GameReport:
     bgee: str
     bg2ee: str
-    games: Tuple[Optional[str], Optional[str]] = (None, None)
+    games: tuple[str | None, str | None] = (None, None)
     sod: str = "none"
-    problems: List[str] = field(default_factory=list)
-    notes: List[str] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     def render(self) -> str:
         lines = [("GAME FOLDERS (identified as WeiDU's GAME_IS does; EET's readme "
@@ -225,7 +224,7 @@ class GameReport:
         return "\n".join(lines)
 
 
-def verify_eet(bgee_dir: str, bg2ee_dir: str, plan_mods: Set[str]) -> GameReport:
+def verify_eet(bgee_dir: str, bg2ee_dir: str, plan_mods: set[str]) -> GameReport:
     """The two folders an EET plan installs onto, against EET's requirements."""
     report = GameReport(bgee_dir, bg2ee_dir,
                         games=(identify(bgee_dir), identify(bg2ee_dir)))
@@ -263,8 +262,8 @@ def verify_eet(bgee_dir: str, bg2ee_dir: str, plan_mods: Set[str]) -> GameReport
     return report
 
 
-def check_folders(game: str, bgee_dir: Optional[str],
-                  bg2ee_dir: Optional[str]) -> GameReport:
+def check_folders(game: str, bgee_dir: str | None,
+                  bg2ee_dir: str | None) -> GameReport:
     """
     The folders a game needs, before anything is chosen (the wizard's first
     phase): EET needs a BG:EE and a clean BG2:EE (verify_eet), BGEE and BG2EE
