@@ -47,6 +47,13 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **A drop on the order page is checked at once** (GUI-AUDIT M5b item 31).
+  Only the rules the moved row is in are checked again - BWS-NG's technique -
+  and only the rows whose mark changes are painted, so the red marks come at
+  once while the full plan is made in the background. A property test holds
+  the incremental check equal to the full one; measured on 3,000 rows, the
+  page shows its marks in 3.7 ms (p50), 7.1 ms (p95). `api.selection_plan`
+  gives each unit `after`, the units a rule puts before it.
 - **Split a mod on the order page and move one component** (GUI-AUDIT M5b
   item 30). *Split into components* turns the selected mod into one row per
   component, so a single component can be dragged on its own; *Join the

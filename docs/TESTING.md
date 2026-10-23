@@ -360,6 +360,24 @@ stratagems and cdtweaks, and WeiDU installs every component. BWS-NG's files
 are GPL and never bundled: the fixtures written in its shape are made up
 (`tests/test_places_check.py`, `tests/test_place_by_kind.py`).
 
+### The check after a drop, timed (GUI-AUDIT item 31)
+
+`tools/order_check_benchmark.py [--data DATA_DIR --log WeiDU.log] [--gui]`
+drops random rows and times the order page's check after each, limited to
+the moved row, against the full check - and counts where they disagree,
+which `tests/test_order_check.py` proves never happens (a hypothesis
+property over random orders, rules and moves). On 2026-10-23, p50/p95:
+
+| Order | After a drop | Full check |
+|---|---|---|
+| 146-mod log, EET install (152 units, 157 rule edges) | 0.015 / 0.026 ms | 0.025 / 0.045 ms |
+| Synthetic, 3,000 units, 4,507 rule edges | 0.26 / 0.45 ms | 0.8 / 1.4 ms |
+
+`--gui` times the page itself, offscreen, to its marks on 3,000 rows: 3.7 /
+7.1 ms (reading the rows dominated it, 39 ms at p50, until the node was
+stored on each row as a string and only the rows whose mark changes were
+painted again). No test asserts a time: a shared runner would make it flaky.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
@@ -396,7 +414,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,598 collected (8 run the real WeiDU, 88 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,602 collected (8 run the real WeiDU, 89 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

@@ -27,7 +27,7 @@ import heapq
 import json
 import os
 from dataclasses import dataclass, field
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from .errors import ConfigError
 from .kinds import KindHint, place
@@ -334,6 +334,9 @@ class OrderPlan:
     # Units (`Unit.node`) a rule ties to another: where the rules, not the
     # catalogue's category, decide their place.
     constrained: set[str] = field(default_factory=set)
+    # Those rules' edges, unit -> the units they put before it: what the page
+    # re-checks at once after a drop (M5b item 31).
+    rule_edges: dict[str, set[str]] = field(default_factory=dict)
     simulation: object | None = None    # simulate.SimulationResult, if run
     game_report: object | None = None   # gamedir.GameReport, if folders given
     resolution: object | None = None    # resolution.ResolutionResult, if any
@@ -507,6 +510,51 @@ def _priorities(units: list[Unit]) -> dict[str, tuple[int, int, int, int]]:
             base = inherited.get(unit.target_log, (-1, -1, 0))
         priorities[unit.node] = (base[0], base[1], base[2], unit.seq)
     return priorities
+
+
+def broken_pairs(order: Sequence[str],
+                 before: Mapping[str, Iterable[str]]) -> set[tuple[str, str]]:
+    """
+    The rule pairs `order` breaks: (unit, one a rule puts before it, found
+    after it). `before` maps a unit to the units that must come first; a unit
+    not in `order` breaks nothing. The full check after a drop (item 31).
+    """
+    at = {node: n for n, node in enumerate(order)}
+    return {(node, first) for node, firsts in before.items() if node in at
+            for first in firsts if first in at and at[first] > at[node]}
+
+
+def broken_after_move(previous: set[tuple[str, str]], order: Sequence[str],
+                      before: Mapping[str, Iterable[str]], moved: str,
+                      after: Mapping[str, Iterable[str]] | None = None
+                      ) -> set[tuple[str, str]]:
+    """
+    `broken_pairs` after one unit moved, from what was broken before it did:
+    a move changes only the pairs the moved unit is in, so only those are
+    looked at again - BWS-NG's technique (M5b item 31). Equal to the full
+    check, by a property test. `after`, the reverse of `before` (`reverse`),
+    saves reading every edge to find who waits on the moved unit.
+    """
+    at = {node: n for n, node in enumerate(order)}
+    kept = {pair for pair in previous if moved not in pair}
+    if moved not in at:
+        return kept
+    mine = {(moved, first) for first in before.get(moved, ()) if first in at
+            and at[first] > at[moved]}
+    if after is None:
+        after = reverse(before)
+    theirs = {(node, moved) for node in after.get(moved, ())
+              if node in at and at[moved] > at[node]}
+    return kept | mine | theirs
+
+
+def reverse(before: Mapping[str, Iterable[str]]) -> dict[str, set[str]]:
+    """unit -> the units a rule puts after it."""
+    out: dict[str, set[str]] = {}
+    for node, firsts in before.items():
+        for first in firsts:
+            out.setdefault(first, set()).add(node)
+    return out
 
 
 def _toposort(units: list[Unit], edges: dict[str, set[str]],
@@ -728,6 +776,7 @@ def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
     # unit to the next and would mark them all.
     placed, _count = _edges(units, [r for r in rules if r.origin != SORTING_ORDER])
     plan.constrained = set(placed).union(*placed.values()) if placed else set()
+    plan.rule_edges = placed
     priorities = _priorities(units)
 
     for role in (PRE_EET_LOG, EET_LOG):

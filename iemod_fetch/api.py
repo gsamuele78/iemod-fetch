@@ -51,8 +51,8 @@ from .moddb import ModDatabase
 from .modmeta import find_metadata
 from .naming import normalize_key
 from .net import DEFAULT_MAX_BYTES, HttpClient
-from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, bws_sequence, plan_order, tp2_key,
-                       render_plan_summary)
+from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, broken_after_move, broken_pairs,
+                       bws_sequence, plan_order, render_plan_summary, reverse, tp2_key)
 from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
@@ -86,6 +86,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "selection_plan", "save_install_order", "reset_install_order",
+           "order_breaks", "order_breaks_after_move", "order_followers",
            "INSTALL_ORDER_FILE", "project_settings", "download_selection",
            "import_selection", "export_selection"]
 
@@ -973,7 +974,8 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
     (ADR-0037): on top of the rules, and a contradiction is reported.
 
     Returns {"phases": [{"role", "title", "units": [{"node", "name", "tp2",
-    "category", "components": [[tp2, number, label]], "constrained", "placed_by",
+    "category", "components": [[tp2, number, label]], "constrained", "after",
+    "placed_by",
     "placed_from",
     "no_place", "moved", "flagged"}]}], "cycles": [[names]], "violations": [text], "planned",
     "custom": whether install-order.txt is in use}.
@@ -1005,6 +1007,9 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
                 "components": [[path.replace("\\", "/"), number, comment]
                                for path, _lang, number, comment in unit.lines],
                 "constrained": unit.node in plan.constrained,
+                # the units a rule puts before it, by node: what the page
+                # re-checks at once after a drop (item 31)
+                "after": sorted(plan.rule_edges.get(unit.node, ())),
                 # BWS-NG's sequence or its kind placed it, krion64 having
                 # no place for it (items 27, 27a)
                 "placed_by": unit.placed_by,
@@ -1032,6 +1037,25 @@ def _flagged(unit, violations) -> bool:
             if not named or numbers & set(named):
                 return True
     return False
+
+
+def order_breaks(order: Sequence[str], before: dict) -> set[tuple[str, str]]:
+    """The rule pairs an order of a phase's units breaks: (unit, the one a
+    rule puts before it). `before` is each unit's `after` from selection_plan,
+    by node. The order page's full check after a drop (M5b item 31)."""
+    return broken_pairs(order, before)
+
+
+def order_breaks_after_move(previous: set, order: Sequence[str], before: dict,
+                            moved: str, followers: dict | None = None) -> set:
+    """`order_breaks` after one unit moved, looking only at its own pairs;
+    `followers` is order_followers(before), made once per plan."""
+    return broken_after_move(previous, order, before, moved, followers)
+
+
+def order_followers(before: dict) -> dict:
+    """unit -> the units a rule puts after it (the reverse of `before`)."""
+    return reverse(before)
 
 
 def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:

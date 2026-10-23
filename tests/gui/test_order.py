@@ -338,3 +338,34 @@ def test_split_and_drag_on_the_real_planner_agree_with_the_command_line(qtbot, t
                for line in (tmp_path / "plan" / "WeiDU.log").read_text().splitlines()
                if line.startswith("~")]
     assert written == page_order
+
+
+# ---------------------------------------- the check after a drop (item 31)
+def test_a_drop_is_checked_at_once_before_the_plan_comes_back(qtbot, tmp_path):
+    """M5b item 31: dragging stratagems above cdtweaks, which a rule puts
+    first, marks both red at once - the plan is still being made."""
+    import threading
+    gate = threading.Event()
+    calls = []
+
+    def planner(game, chosen, labels, folder):
+        if calls:
+            gate.wait(5)
+        calls.append(1)
+        units = [unit("eet"), unit("cdtweaks"),
+                 dict(unit("stratagems"), after=["x|cdtweaks|0"])]
+        return {"phases": [{"role": "EET", "title": "EET", "units": units}],
+                "cycles": [], "violations": [], "planned": True, "custom": False}
+    widget, _planner = page(qtbot, tmp_path, planner)
+    view = widget.tabs.widget(0)
+    assert view.item(2).foreground().color() != RED
+    view.model().moveRow(QModelIndex(), 2, QModelIndex(), 1)      # stratagems up one
+    assert [view.item(r).data(ROLE)["name"] for r in range(3)] == [
+        "eet", "stratagems", "cdtweaks"]
+    assert view.item(1).foreground().color() == RED
+    assert view.item(2).foreground().color() == RED
+    assert view.item(0).foreground().color() != RED
+    assert "1 rule(s) broken" in widget.problems.text()
+    assert widget.last_check_ms < 100
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        gate.set()
