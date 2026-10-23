@@ -121,6 +121,13 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A GitHub App installation token in the new stateless format is no longer
+  dropped** when it comes from git's credential helper. GitHub's `ghs_` tokens
+  became JWTs in 2026 (about 520 characters, with dots); the shape check that
+  keeps a stored password from being sent as a bearer refused them, and the
+  run went anonymous (60 requests an hour) without a word. `ghs_` followed by
+  three base64url segments is now a token. `$GH_TOKEN`, `--token-file` and
+  `gh` were never checked this way and were not affected (ADR-0005a note).
 - **Two refreshes of the community data at once no longer break each other**
   (GUI-AUDIT M6 item 39). The wizard refreshing at start and `--update-data`
   shared one staging folder: one failed with `No such file or directory`, and

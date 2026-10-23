@@ -22,8 +22,13 @@ from .errors import ConfigError, ModFetchError
 
 # Shapes GitHub issues: classic PAT, OAuth app, user-to-server, server-to-server,
 # refresh, and fine-grained PAT. Anything else from a credential helper is not a
-# token and must not be sent as a bearer.
-_TOKEN_SHAPE = re.compile(r"^(gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,})$")
+# token and must not be sent as a bearer. Since 2026 a GitHub App installation
+# token (ghs_) is stateless: a JWT after the prefix, about 520 characters with
+# two dots and base64url's '-' and '_' (GitHub's changelog, 2026-04-24 and
+# 2026-05-15). It is matched as three non-empty segments, not as GitHub's looser
+# `ghs_[A-Za-z0-9.\-_]{36,}`, which would also take a run of dots.
+_TOKEN_SHAPE = re.compile(r"^(gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}"
+                          r"|ghs_(?=.{36,}$)[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$")
 
 DEVICE_CODE_URL = "https://github.com/login/device/code"
 ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
