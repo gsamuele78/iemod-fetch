@@ -36,7 +36,7 @@ classifiers = [
 ]
 # The runtime's libraries (ADR-0043); requirements/runtime.txt pins each by
 # version and hash for CI, the .pyz and the bundles.
-dependencies = ["filelock>=3.12,<4", "publicsuffixlist>=1.0"]
+dependencies = ["filelock>=3.12,<5", "publicsuffixlist>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/gsamuele78/iemod-fetch"
