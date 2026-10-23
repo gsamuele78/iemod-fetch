@@ -280,3 +280,25 @@ def test_the_take_reads_the_new_copys_own_game_requirement(tmp_path, monkeypatch
     rec = record(tmp_path)
     assert rec["status"] == "ok"
     assert any("declares support for" in a for a in rec["advisories"]), rec["advisories"]
+
+
+def test_a_github_snapshot_is_not_offered_its_own_release(tmp_path, monkeypatch):
+    """
+    Measured on 2026-10-23 (download-sources, real=all): EET came as GitHub's
+    source snapshot of v14.1, whose tp2 still says v14.0, and was offered
+    v14.1 - the API's zipball URL did not read as GitHub.
+    """
+    snapshot = "https://api.github.com/repos/Gibberlings3/EndlessBG1/zipball/v2.0"
+    stub = DiscoveryStub(
+        owners={},
+        releases={"Gibberlings3/EndlessBG1": {"tag_name": "v2.0", "assets": [],
+                                               "zipball_url": snapshot}},
+        blobs={snapshot: mod_zip("v1.0")})
+    setup(tmp_path, monkeypatch, stub)
+
+    code, out = run(ARGS)
+
+    assert code == 0, out
+    assert stub.downloaded == [snapshot]
+    assert not record(tmp_path)["newer"]
+    assert "--take-newer" not in out

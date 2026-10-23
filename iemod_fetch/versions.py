@@ -170,8 +170,10 @@ def newer_release(tag: str | None, installed: str | None) -> bool:
     `compare_published`: a dotless tag whose two readings disagree (`V19`
     against `2.0`) is not offered; a release candidate or a beta is never offered over
     a stable copy (`v4.1.0-rc1` against `4.0`), nor a tag that is a date over
-    a numbered version (`2025.05.18` against `v1.5`): those rank, but are not
-    "the newer version" a player asked for.
+    a numbered version (`2025.05.18` against `v1.5`), nor the same number
+    with a word added (`v04ru`, The Rune's Russian build of `V0.4`; a single
+    letter is still a revision): those rank, but are not "the newer version"
+    a player asked for.
     """
     if not tag or not installed or compare_published(tag, installed) != 1:
         return False
@@ -179,4 +181,16 @@ def newer_release(tag: str | None, installed: str | None) -> bool:
         return False
     if _is_prerelease(tag) and not _is_prerelease(installed):
         return False
+    if _variant(tag, installed):
+        return False
     return not (_DATE.search(tag) and not _DATE.search(installed))
+
+
+def _variant(tag: str, installed: str) -> bool:
+    """The same digits, the tag adding a word longer than a letter: a build of
+    the same release (a language, a platform), not a newer one."""
+    if _digits(tag).lstrip("0") != _digits(installed).lstrip("0"):
+        return False
+    words = {p for p in parse_version(installed) or () if isinstance(p, str)}
+    extra = [p for p in parse_version(tag) or () if isinstance(p, str) and p not in words]
+    return any(len(word) > 1 for word in extra)

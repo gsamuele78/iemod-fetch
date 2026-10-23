@@ -118,6 +118,9 @@ def test_a_dotless_tag_spelling_its_own_release_is_still_equal():
     ("20180929", "v1.5 BETA", False),
     ("20240101", "20230101", True),          # dates on both sides rank
     ("V19", "2.0", False),                   # not known
+    ("v04ru", "V0.4", False),                # The Rune's Russian build of 0.4 (measured)
+    ("v2.0-linux", "v2.0", False),           # a platform's build of the same release
+    ("1.4c", "1.4", True),                   # a letter is a revision
     # review of #56, real tags from krion64's cache: a letter is a revision
     ("v4.81a", "v4.0", True), ("1.4.4a", "1.4", True), ("v2.5a", "1.0", True),
     ("1.4b", "1.3", True), ("v2.0-alpha", "v1.0", False),
