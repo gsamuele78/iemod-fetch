@@ -20,6 +20,7 @@ one row per component, so a single component can be dragged on its own (M5b
 item 30); its lines are written `tp2 n`, as the command line reads them.
 """
 import os
+import time
 from collections.abc import Callable
 
 from PySide6.QtCore import QThread, Qt, Signal
@@ -34,6 +35,7 @@ from .mods import Key, _in_thread, _target
 
 Planner = Callable[[str, list[Key], dict, str], dict]
 ROLE = Qt.ItemDataRole.UserRole
+NODE = Qt.ItemDataRole.UserRole + 1
 RED = QColor(176, 0, 32)
 
 
@@ -64,6 +66,7 @@ class OrderPage(QWidget):
         self._planning: QThread | None = None
         self._again = False
         self._generation = 0
+        self.last_check_ms = 0.0               # the last check after a drop (item 31)
 
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(lambda _index: self._can_split())
@@ -197,7 +200,15 @@ class OrderPage(QWidget):
         widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         for unit in phase["units"]:
             widget.addItem(self._item(unit))
-        widget.model().rowsMoved.connect(lambda *_args: self._reordered())
+        before = {unit["node"]: list(unit.get("after") or ()) for unit in phase["units"]}
+        followers = api.order_followers(before)
+        breaks = api.order_breaks([unit["node"] for unit in phase["units"]], before)
+        widget.setProperty("breaks", breaks)
+
+        def dropped(_parent, start, _end, _dest, row) -> None:
+            self._dropped(widget, row - 1 if row > start else row, before, followers)
+            self._reordered()
+        widget.model().rowsMoved.connect(dropped)
         widget.currentItemChanged.connect(lambda *_args: self._can_split())
         return widget
 
@@ -209,6 +220,7 @@ class OrderPage(QWidget):
                      else "  (by kind)")
         item = QListWidgetItem(text)
         item.setData(ROLE, unit)
+        item.setData(NODE, unit["node"])      # read on every drop: a string, not the dict
         components = ", ".join(f"#{c[1]}" for c in unit["components"][:12])
         tips = [f"Components: {components}"]
         if unit["constrained"]:
@@ -240,6 +252,37 @@ class OrderPage(QWidget):
             widget = self.tabs.widget(index)
             out.append([widget.item(row).data(ROLE) for row in range(widget.count())])
         return out
+
+    def _dropped(self, widget: QListWidget, row: int, before: dict, followers: dict) -> None:
+        """
+        The marks right after a drop, before the plan comes back: only the
+        rules the moved row is in are checked again (M5b item 31; the full
+        plan still follows, in the background, and replaces them).
+        """
+        started = time.perf_counter()
+        items = [widget.item(r) for r in range(widget.count())]
+        order = [item.data(NODE) for item in items]
+        if len(set(order)) < len(order):
+            # A split or a join not yet planned: its parts still share the
+            # mod's node and the rules are the old plan's, so which row moved
+            # and what it breaks cannot be told - the plan's marks follow
+            # (review of #75).
+            self.problems.setText("Checked when the plan comes back.")
+            return
+        moved = order[row] if 0 <= row < len(order) else ""
+        previous = set(widget.property("breaks") or ())
+        breaks = api.order_breaks_after_move(previous, order, before, moved, followers)
+        widget.setProperty("breaks", breaks)
+        wrong = {node for pair in breaks for node in pair}
+        # only the rows whose mark changes are painted again
+        changed = wrong ^ {node for pair in previous for node in pair}
+        for item, node in zip(items, order, strict=True):
+            if node in changed:
+                item.setForeground(QBrush(RED) if node in wrong
+                                   else widget.palette().text())
+        self.last_check_ms = (time.perf_counter() - started) * 1000
+        self.problems.setText(f"{len(breaks)} rule(s) broken by this order, checked "
+                              "at once; the full plan follows." if breaks else "")
 
     def _reordered(self) -> None:
         try:

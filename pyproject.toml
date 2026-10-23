@@ -183,6 +183,8 @@ ignore = [
 # `random` supplies retry jitter; nothing security-bearing reads it.
 "iemod_fetch/net.py" = ["S311"]
 "tools/*" = ["T20"]
+# `random` draws a benchmark's orders and moves, seeded; nothing secret.
+"tools/order_check_benchmark.py" = ["T20", "S311"]
 # The original script is kept verbatim so its defects stay reproducible
 # (ADR-0001). Linting it would mean changing it, which destroys the evidence.
 "legacy/*" = ["ALL"]
