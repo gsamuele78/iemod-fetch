@@ -10,8 +10,9 @@ name: Community data
 
 on:
   pull_request:
-    paths: ["iemod_fetch/datasync.py", "iemod_fetch/kinds.py", "tools/places_check.py",
-            ".github/workflows/community-data.yml"]
+    paths: ["iemod_fetch/datasync.py", "iemod_fetch/kinds.py", "iemod_fetch/ordering.py",
+            "iemod_fetch/available.py", "iemod_fetch/catalogues.py", "iemod_fetch/moddb.py",
+            "tools/places_check.py", ".github/workflows/community-data.yml"]
   schedule:
     - cron: "41 3 * * *"
   workflow_dispatch:
@@ -83,15 +84,17 @@ jobs:
           python -c "import json; n = len(json.load(open('mods.json'))['mods']); print(n, 'mods'); assert n > 1500"
 
       # GUI-AUDIT item 29: the kinds and the places on the live data. A new
-      # category in lcc-docs or BWS-NG, or a games/eet.json whose shape moved,
-      # fails here - not in a player's run, where it would place nothing.
+      # category in lcc-docs or BWS-NG, a krion64 category a kind places into
+      # renamed, a games/eet.json whose shape moved, or a count that
+      # collapsed fails here - not in a player's run, where it would place
+      # nothing. The summary is written on the night it fails too.
       - name: The kinds and the places still hold
+        env:
+          GH_TOKEN: ""              # reads the cache only
         run: |
+          rc=0
           python tools/places_check.py "$IEMOD_DATA_DIR" --log tests/data/WeiDU.log \
-            --json places.json
-          {
-            echo "### Kinds and places (ADR-0041)"
-            echo '```json'
-            cat places.json
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            --json places.json --summary places.md \
+            --min-kinds 1500 --min-by-kind 300 --min-by-sequence 1 || rc=$?
+          if [ -f places.md ]; then cat places.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$rc"

@@ -4,14 +4,19 @@ Do the kinds and the places still hold on the live community data? (GUI-AUDIT
 M5 item 29, ADR-0041.)
 
     python3 tools/places_check.py DATA_DIR [--log WeiDU.log] [--json OUT]
+        [--summary OUT.md] [--min-kinds N] [--min-by-kind N] [--min-by-sequence N]
 
 DATA_DIR is iemod-fetch's data cache (`--update-data` fills it: lcc-docs,
 bws-ng, krion64). Exit 1, naming what moved, when:
 
 - lcc-docs or BWS-NG uses a category `iemod_fetch/kinds.py` does not map - a
   new label would show raw and place nothing, so the table needs a line;
+- krion64 no longer has a category a kind maps to (renamed, say) - every mod
+  of that kind would lose its place;
 - BWS-NG's games/eet.json has no bg2ee sequence with the EET core in it -
-  its shape moved, and decision 2a would silently place nothing.
+  its shape moved, and decision 2a would silently place nothing;
+- a count falls under its floor (the workflow gives them): a source whose
+  shape moved shows as a collapse, not as an error (review of #73).
 
 Printed, and with --json written: the mods with a kind that krion64 does not
 place, and how many the sequence, the kind, or nothing places; with --log, the
@@ -23,6 +28,7 @@ is krion64's own order, so it cannot be the judge).
 Read-only; nothing is downloaded.
 """
 import argparse
+import html
 import json
 import os
 import sys
@@ -33,7 +39,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 from iemod_fetch.available import available_mods  # noqa: E402
 from iemod_fetch.catalogues import CatalogueSet  # noqa: E402
 from iemod_fetch.datasync import data_paths  # noqa: E402
-from iemod_fetch.kinds import BWS_NG, LCC_DOCS, KindHint, _fold  # noqa: E402
+from iemod_fetch.kinds import (BG1_QUESTS, BWS_NG, LCC_DOCS, PLACES, KindHint,  # noqa: E402
+                               _fold)
 from iemod_fetch.moddb import ModDatabase  # noqa: E402
 from iemod_fetch.ordering import (EET_LOG, OrderIndex, bws_sequence,  # noqa: E402
                                   plan_order)
@@ -85,8 +92,8 @@ def inversions(order: list[tuple[str, int]], sequence: list[tuple[str, int]]) ->
 
 def log_check(log: str, index: OrderIndex, kinds: dict, sequence: list) -> dict:
     out = {}
-    for name, extra in (("without", {}), ("with", {"kinds": kinds, "sequence": sequence})):
-        plan = plan_order([(log, EET_LOG)], index, **extra)
+    for name, hints, entries in (("without", {}, []), ("with", kinds, sequence)):
+        plan = plan_order([(log, EET_LOG)], index, kinds=hints, sequence=entries)
         order = [(unit.key, number) for unit in plan.logs.get(EET_LOG, ())
                  for _p, _l, number, _c in unit.lines]
         wrong, pairs = inversions(order, sequence)
@@ -101,6 +108,10 @@ def main(argv=None) -> int:
     parser.add_argument("data_dir")
     parser.add_argument("--log", help="a WeiDU.log to plan (its EET install)")
     parser.add_argument("--json", help="write the result here")
+    parser.add_argument("--summary", help="write it as Markdown here, safe to show")
+    for floor in ("kinds", "by-kind", "by-sequence"):
+        parser.add_argument(f"--min-{floor}", type=int, default=0,
+                            help=f"fail when the {floor.replace('-', ' ')} count is under N")
     args = parser.parse_args(argv)
 
     paths = data_paths(args.data_dir)
@@ -115,9 +126,11 @@ def main(argv=None) -> int:
         sequence = bws_sequence(json.load(fh))
     kinds = hints(catalogue, database)
 
-    result = {"unknown labels": unknown_labels(catalogue, database),
-              "sequence entries": len(sequence),
-              "places": places(index, kinds, sequence)}
+    result: dict = {"unknown labels": unknown_labels(catalogue, database),
+                    "missing krion64 categories": missing_categories(index),
+                    "mods with a kind": len(kinds),
+                    "sequence entries": len(sequence),
+                    "places": places(index, kinds, sequence)}
     if args.log:
         result["log"] = log_check(args.log, index, kinds, sequence)
     print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -127,12 +140,46 @@ def main(argv=None) -> int:
 
     problems = [f"{source} uses categories kinds.py does not map: {', '.join(labels)}"
                 for source, labels in result["unknown labels"].items() if labels]
+    if result["missing krion64 categories"]:
+        problems.append("krion64 no longer has the categories kinds.py places into: "
+                        + ", ".join(result["missing krion64 categories"]))
     if ("eet", 0) not in sequence:
         problems.append("BWS-NG's games/eet.json has no bg2ee sequence with eet:0 - "
                         "its shape moved")
+    counted = result["places"]
+    for floor, value in ((args.min_kinds, len(kinds)),
+                         (args.min_by_kind, counted["by kind"]),
+                         (args.min_by_sequence, counted["by BWS-NG's sequence"])):
+        if value < floor:
+            problems.append(f"a count collapsed ({value}, floor {floor}) - "
+                            "a source's shape moved?")
     for problem in problems:
-        print(f"::error::{problem}", file=sys.stderr)
+        print(f"::error::{escape(problem)}", file=sys.stderr)
+    if args.summary:
+        with open(args.summary, "w", encoding="utf-8") as fh:
+            fh.write(summary(result, problems))
     return 1 if problems else 0
+
+
+def missing_categories(index: OrderIndex) -> list[str]:
+    """The krion64 categories a kind places into that krion64 does not have."""
+    wanted = {category for category, _share in PLACES.values()} | {BG1_QUESTS}
+    return sorted(wanted - set(index.categories))
+
+
+def escape(text: str) -> str:
+    """A workflow command's message, as GitHub requires: an upstream label
+    must not end the line and start a command of its own (review of #73)."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def summary(result: dict, problems: list[str]) -> str:
+    """Markdown for the job summary: upstream text HTML-escaped inside <pre>,
+    which no label can close the way it could a ``` fence."""
+    body = html.escape(json.dumps(result, indent=2, ensure_ascii=False))
+    lines = ["### Kinds and places (ADR-0041)", ""]
+    lines += [f"- **{html.escape(problem)}**" for problem in problems]
+    return "\n".join(lines + ["", f"<pre>{body}</pre>", ""])
 
 
 if __name__ == "__main__":

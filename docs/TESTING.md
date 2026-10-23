@@ -336,8 +336,13 @@ To repeat it: append `tools/bio_interop_test.rs` to BIO's
 community-data workflow, on the data it has just fetched:
 
 * it **fails** when lcc-docs or BWS-NG use a category `iemod_fetch/kinds.py`
-  does not map (it would show raw and place nothing), or when BWS-NG's
-  `games/eet.json` no longer has a bg2ee sequence with the EET core;
+  does not map (it would show raw and place nothing), when krion64 loses a
+  category a kind places into, when BWS-NG's `games/eet.json` no longer has a
+  bg2ee sequence with the EET core, or when a count falls under its floor
+  (more than 1,500 mods with a kind, 300 placed by kind, one by the
+  sequence). Mutated copies of the real data - krion64 renaming QUEST MODS
+  BG2, lcc-docs renaming its `categories` key - fail it; the job summary is
+  written on the night it fails, with the upstream text escaped;
 * it counts what places the mods with a kind that krion64 does not place.
   On the 2026-10-23 data: 1,071 such mods; 15 by BWS-NG's sequence, 436 by
   kind, 620 with no place (each with its reason);
@@ -391,7 +396,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,575 collected (8 run the real WeiDU, 84 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,580 collected (8 run the real WeiDU, 84 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

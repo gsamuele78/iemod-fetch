@@ -2307,10 +2307,12 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
   placed. Names without `.tp2` (catalogue titles, folders, Sorting Order
   lines) now go through `ordering.name_key`.
 - The mapping table is data in the repository (`iemod_fetch/kinds.py`,
-  item 26). A weekly workflow checking it against the live sources - a source
-  that changes its categories or its shape failing that workflow, not a run -
-  is not built yet: it is left for item 29. Until then a new label shows as
-  it is and makes no disagreement.
+  item 26). It is checked every night against the live sources
+  (`tools/places_check.py` in the community-data workflow, item 29): an
+  unmapped category, a krion64 category a kind places into gone, a
+  `games/eet.json` without its bg2ee sequence, or a count under its floor
+  fails that workflow, not a run. In a run a new label shows as it is and
+  makes no disagreement.
 - BWS-NG's data is GPL-3.0 and is read at run time from the user's data cache,
   as the rest of it already is (ADR-0036); nothing of it is bundled, and test
   fixtures are written by hand to its schema.

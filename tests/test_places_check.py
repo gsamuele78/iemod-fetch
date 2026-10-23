@@ -5,7 +5,11 @@ is GPL and is never bundled, so its files here are made up to its schema.
 """
 import json
 
+from iemod_fetch.kinds import BG1_QUESTS, PLACES
 from tools import places_check
+
+# every category a kind places into, as krion64 has them
+CATEGORIES = ["EET STARTS HERE", BG1_QUESTS, *dict.fromkeys(c for c, _s in PLACES.values())]
 
 
 def write(path, data):
@@ -14,7 +18,8 @@ def write(path, data):
 
 
 def cache(root, lcc_label="Interface", bws_code="ui", order=("eet:0", "leui:0", "newui:0",
-                                                               "otherui:0")):
+                                                               "otherui:0"),
+          categories=tuple(CATEGORIES)):
     write(root / "lcc-docs" / "db" / "mods.json", [
         {"tp2": "newui", "name": "New UI", "categories": [lcc_label], "games": ["BG2EE"],
          "urls": []},
@@ -25,7 +30,7 @@ def cache(root, lcc_label="Interface", bws_code="ui", order=("eet:0", "leui:0", 
     write(root / "bws-ng" / "data" / "games" / "eet.json",
           {"sequences": [{"game": "bg2ee", "order": list(order)}]})
     write(root / "krion64" / "data" / "categories.json",
-          {"categories": {"EET STARTS HERE": {}, "INTERFACE": {}}})
+          {"categories": {name: {} for name in categories}})
     for key, category in (("EET", "EET STARTS HERE"), ("LeUI", "INTERFACE"),
                           ("otherui", "INTERFACE")):
         write(root / "krion64" / "data" / "mods" / f"{key}.json",
@@ -64,3 +69,55 @@ def test_inversions_count_the_pairs_ordered_the_other_way_round():
     assert places_check.inversions([("a", 0), ("b", 0), ("c", 0)], sequence) == (0, 3)
     assert places_check.inversions([("c", 0), ("a", 0), ("b", 0)], sequence) == (2, 3)
     assert places_check.inversions([("x", 1), ("b", 0)], sequence) == (0, 0)
+
+
+def test_krion64_losing_a_category_a_kind_places_into_fails(tmp_path, capsys):
+    """Review of #73: krion64 renaming QUEST MODS BG2 exited 0 while every BG2
+    quest lost its place."""
+    kept = [c for c in CATEGORIES if c != "QUEST MODS BG2"]
+    assert places_check.main([cache(tmp_path, categories=kept)]) == 1
+    assert "krion64 no longer has the categories kinds.py places into: QUEST MODS BG2" \
+        in capsys.readouterr().err
+
+
+def test_a_count_under_its_floor_fails(tmp_path, capsys):
+    """Review of #73: lcc-docs renaming its `categories` key left 97 mods with
+    a kind and exit 0; the workflow gives floors."""
+    assert places_check.main([cache(tmp_path), "--min-kinds", "2"]) == 0
+    assert places_check.main([cache(tmp_path), "--min-kinds", "3"]) == 1
+    assert "a count collapsed (2, floor 3)" in capsys.readouterr().err
+    assert places_check.main([cache(tmp_path), "--min-by-sequence", "2"]) == 1
+
+
+def test_upstream_text_cannot_start_a_workflow_command_or_break_the_summary(tmp_path, capsys):
+    """Review of #73: a label is the upstream's text."""
+    label = "x\n::stop-commands::evil\n```<b>"
+    summary = tmp_path / "summary.md"
+    assert places_check.main([cache(tmp_path, lcc_label=label),
+                              "--summary", str(summary)]) == 1
+    err = capsys.readouterr().err
+    assert not any(line.startswith("::stop-commands") for line in err.splitlines())
+    assert "x%0A::stop-commands::evil%0A```<b>" in err
+    text = summary.read_text(encoding="utf-8")
+    assert "<b>" not in text and "&lt;b&gt;" in text and text.count("<pre>") == 1
+
+
+def test_a_log_is_planned_without_and_with_the_places(tmp_path):
+    root = cache(tmp_path)
+    log = tmp_path / "WeiDU.log"
+    log.write_text("~EET\\EET.tp2~ #0 #0 // EET\n~otherui\\otherui.tp2~ #0 #0 // o\n"
+                   "~newui\\newui.tp2~ #0 #0 // n\n~leui\\leui.tp2~ #0 #0 // l\n",
+                   encoding="utf-8")
+    out = tmp_path / "out.json"
+    assert places_check.main([root, "--log", str(log), "--json", str(out)]) == 0
+    result = json.loads(out.read_text(encoding="utf-8"))["log"]
+    assert result["without"]["placed"] == 0 and result["with"]["placed"] == 1
+    assert result["with"]["components"] == 4
+    assert result["with"]["the other way round"] < result["without"]["the other way round"]
+
+
+def test_a_repeated_entry_counts_at_its_first_place_and_a_tie_is_no_inversion():
+    """Review of #73: two mutations of inversions survived."""
+    assert places_check.inversions([("b", 0), ("a", 0)],
+                                   [("a", 0), ("b", 0), ("a", 0)]) == (1, 1)
+    assert places_check.inversions([("a", 0), ("a", 0)], [("a", 0)]) == (0, 1)
