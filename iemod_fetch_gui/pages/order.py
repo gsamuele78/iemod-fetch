@@ -18,6 +18,11 @@ contradiction is shown, never silently won either way. "Use the computed
 order" deletes the file. "Split into components" turns the selected mod into
 one row per component, so a single component can be dragged on its own (M5b
 item 30); its lines are written `tp2 n`, as the command line reads them.
+"Fix..." on a red row offers what mends it (M5b item 32), each previewed
+before it is applied: the row just after the mod a rule puts before it, or
+just before the one a rule puts after it; the row planned again by the rules
+with your other moves kept; or its components turned off. Only a fix that
+mends its rule and adds no other broken rule and no new error is applied.
 """
 import os
 import time
@@ -25,15 +30,18 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLabel, QListWidget,
-                               QListWidgetItem, QMessageBox, QPushButton, QTabWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout,
+                               QLabel, QListWidget, QListWidgetItem, QMessageBox,
+                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
 
 from .mods import Key, _in_thread, _target
 
 Planner = Callable[[str, list[Key], dict, str], dict]
+# (game, chosen, labels, project folder, the order by hand or None) -> a plan
+# with "errors" (api.preview_install_order); nothing is written
+Previewer = Callable[[str, list[Key], dict, str, list | None], dict]
 ROLE = Qt.ItemDataRole.UserRole
 NODE = Qt.ItemDataRole.UserRole + 1
 RED = QColor(176, 0, 32)
@@ -46,6 +54,59 @@ def plan_selection(game: str, chosen: list[Key], labels: dict, project_dir: str)
                               target=_target(project), fetch_metadata=True)
 
 
+def preview_selection(game: str, chosen: list[Key], labels: dict, project_dir: str,
+                      phases: list | None) -> dict:
+    """The real preview: the planner on the project's data, with `phases` as
+    the order by hand, writing nothing."""
+    project = api.load_project(project_dir)
+    return api.preview_install_order(game, chosen, labels, folder=project_dir,
+                                     phases=phases, target=_target(project),
+                                     fetch_metadata=True)
+
+
+def _same_component(unit: dict) -> Callable[[Key], bool]:
+    """Whether a chosen (tp2, number) is one of `unit`'s components."""
+    mine = {(path.lower(), number) for path, number, _label in unit["components"]}
+    return lambda key: (key[0].replace("\\", "/").lower(), key[1]) in mine
+
+
+def _judged(unit: dict, out: dict) -> list[tuple[str, str, bool]]:
+    """The planner's previews of a row's fixes, against the plan as it is:
+    (kind, what the preview says, whether the fix may be applied)."""
+    base = out["base"]
+    mine = _same_component(unit)
+    judged = []
+    for kind in ("replan", "off"):
+        result = out.get(kind)
+        if result is None:
+            continue
+        broken = sorted(set(result.get("violations") or ())
+                        - set(base.get("violations") or ()))
+        errors = sorted(set(result.get("errors") or ()) - set(base.get("errors") or ()))
+        lines, still = [], False
+        if kind == "replan":
+            for phase in result.get("phases") or ():
+                rows = phase["units"]
+                for n, other in enumerate(rows):
+                    if not any(mine((c[0], c[1])) for c in other["components"]):
+                        continue
+                    still = still or other["flagged"]
+                    after = rows[n - 1]["name"] if n else "the start"
+                    lines.append(f"{other['name']} would go after {after} "
+                                 f"({phase['title']}, row {n + 1} of {len(rows)}).")
+            if still:
+                lines.append("A rule still finds it in the wrong place.")
+        else:
+            lines.append(f"{unit['name']} is left out of the selection.")
+        lines += [f"Newly broken: {text}" for text in broken]
+        lines += [f"New error: {text}" for text in errors]
+        ok = not (broken or errors or still)
+        lines.append("It mends the rule and breaks nothing else." if ok
+                     else "So it is not applied.")
+        judged.append((kind, "\n".join(lines), ok))
+    return judged
+
+
 def _plain(text: str) -> QLabel:
     label = QLabel(text)
     label.setTextFormat(Qt.TextFormat.PlainText)
@@ -53,14 +114,88 @@ def _plain(text: str) -> QLabel:
     return label
 
 
+class FixDialog(QDialog):
+    """
+    The fixes of one red row, each previewed before it is applied (M5b item
+    32). A move is checked at once against the plan's rules; planning the row
+    again and turning it off are previewed by the planner, in the background.
+    """
+    previewed = Signal()
+
+    def __init__(self, parent: QWidget, unit: dict, fixes: list[dict]) -> None:
+        super().__init__(parent)
+        name = unit["name"]
+        self.setWindowTitle(f"Fix {name}")
+        # one per click: freed once closed (a preview still on its way is
+        # then dropped by Qt with it)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.unit = unit
+        self.fixes = fixes
+        self.options = QListWidget()
+        for fix in fixes:
+            self.options.addItem(fix["label"])
+        self.preview = _plain("")
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.apply = self.buttons.addButton("Apply", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        self.options.currentRowChanged.connect(lambda _row: self._show())
+        layout = QVBoxLayout(self)
+        layout.addWidget(_plain(f"{name} is in the wrong place for a rule. Choose a fix: "
+                                "each is previewed here, and only one that mends the rule "
+                                "without breaking another or adding an error is applied."))
+        layout.addWidget(self.options)
+        layout.addWidget(self.preview)
+        layout.addWidget(self.buttons)
+        self.options.setCurrentRow(0)
+        self._show()
+
+    def chosen(self) -> dict | None:
+        row = self.options.currentRow()
+        return self.fixes[row] if 0 <= row < len(self.fixes) else None
+
+    # Slots of this object, so a worker thread's answer is handled in the
+    # window's thread, never in the worker's.
+    def planner_done(self, out: dict) -> None:
+        """The planner's previews have come back."""
+        for kind, text, ok in _judged(self.unit, out):
+            self._previewed(kind, text, ok)
+        self.previewed.emit()
+
+    def planner_failed(self, message: str) -> None:
+        for kind in ("replan", "off"):
+            self._previewed(kind, f"No preview: {message}", False)
+        self.previewed.emit()
+
+    def planner_finished(self) -> None:
+        pass
+
+    def _previewed(self, kind: str, preview: str, ok: bool) -> None:
+        for fix in self.fixes:
+            if fix["kind"] == kind:
+                fix.update(preview=preview, ok=ok)
+        self._show()
+
+    def _show(self) -> None:
+        fix = self.chosen()
+        self.preview.setText(fix["preview"] if fix else "")
+        self.apply.setEnabled(bool(fix and fix["ok"]))
+
+
 class OrderPage(QWidget):
     completeChanged = Signal(bool)
     planned = Signal()
+    # the components a fix turns off, (tp2, number): the window unticks them
+    # on the mods page and plans again
+    turn_off = Signal(list)
 
-    def __init__(self, project_dir: str, plan: Planner = plan_selection) -> None:
+    def __init__(self, project_dir: str, plan: Planner = plan_selection,
+                 preview: Previewer = preview_selection) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.plan = plan
+        self.preview = preview
+        self.fixing: FixDialog | None = None
         self.result: dict = {}
         self.wanted: tuple[str, list[Key], dict] | None = None
         self._planning: QThread | None = None
@@ -85,10 +220,15 @@ class OrderPage(QWidget):
         self.join.setToolTip("The selected mod's parts in this tab as one row again")
         self.join.setEnabled(False)
         self.join.clicked.connect(self._join)
+        self.fix = QPushButton("Fix...")
+        self.fix.setToolTip("What mends the selected red row, previewed before it is applied")
+        self.fix.setEnabled(False)
+        self.fix.clicked.connect(self._fix)
         bar = QHBoxLayout()
         bar.addWidget(self.summary, 1)
         bar.addWidget(self.split)
         bar.addWidget(self.join)
+        bar.addWidget(self.fix)
         bar.addWidget(self.reset)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>3. Install order</h2>"))
@@ -120,6 +260,7 @@ class OrderPage(QWidget):
         self.summary.setText("Planning the install order...")
         self.split.setEnabled(False)
         self.join.setEnabled(False)
+        self.fix.setEnabled(False)
         self.completeChanged.emit(False)        # Next waits for this plan
         plan, (game, chosen, labels) = self.plan, self.wanted
         generation, folder = self._generation, self.project_dir
@@ -159,6 +300,7 @@ class OrderPage(QWidget):
         self.result = result
         self.split.setEnabled(False)            # the rows it would split are gone
         self.join.setEnabled(False)
+        self.fix.setEnabled(False)
         current = self.tabs.currentIndex()
         self.tabs.clear()
         if not result.get("planned"):
@@ -308,7 +450,9 @@ class OrderPage(QWidget):
         if widget is None or self._planning is not None or not isinstance(unit, dict):
             self.split.setEnabled(False)
             self.join.setEnabled(False)
+            self.fix.setEnabled(False)
             return
+        self.fix.setEnabled(bool(unit["flagged"]))
         self.split.setEnabled(len(unit["components"]) > 1)
         self.join.setEnabled(bool(unit.get("split"))
                              and len(self._parts(widget, unit["key"])) > 1)
@@ -353,6 +497,85 @@ class OrderPage(QWidget):
                      components=[c for part in parts for c in part["components"]])
         widget.insertItem(rows[0], self._item(whole))
         self._reordered()
+
+    # ---------------------------------------------------------------- fixes
+    def _fix(self) -> None:
+        """The fixes of the selected red row, in a dialog, each previewed."""
+        widget, row = self._selected()
+        if widget is None or self.wanted is None:
+            return
+        units = [widget.item(r).data(ROLE) for r in range(widget.count())]
+        unit = units[row]
+        names = {u["node"]: u["name"] for u in units}
+        before = {u["node"]: list(u.get("after") or ()) for u in units}
+        fixes = []
+        for fix in api.order_fixes([u["node"] for u in units], before, unit["node"]):
+            where = "after" if fix["kind"] == "after" else "before"
+            still = (f" {len(fix['left'])} other rule(s) on it stay broken."
+                     if fix["left"] else "")
+            fixes.append(dict(fix, label=f"Move it just {where} {names[fix['anchor']]}",
+                              ok=True, preview=(
+                                  f"{unit['name']} goes just {where} "
+                                  f"{names[fix['anchor']]}: {len(fix['fixed'])} rule(s) "
+                                  f"mended, none broken.{still}")))
+        game, chosen, labels = self.wanted
+        index = self.tabs.indexOf(widget)
+        phases = self.phases()
+        without = [tab if n != index else tab[:row] + tab[row + 1:]
+                   for n, tab in enumerate(phases)]
+        mine = _same_component(unit)
+        keys = [key for key in chosen if mine(key)]
+        custom = bool(self.result.get("custom"))
+        waiting = "Previewing with the planner..."
+        if custom:
+            fixes.append({"kind": "replan", "ok": False, "preview": waiting,
+                          "label": "Plan it again by the rules, keeping your other moves",
+                          "phases": without})
+        if keys:
+            fixes.append({"kind": "off", "ok": False, "preview": waiting, "keys": keys,
+                          "label": f"Turn it off ({len(keys)} component(s))",
+                          "phases": without if custom else None})
+        dialog = FixDialog(self, unit, fixes)
+        self.fixing = dialog
+        dialog.accepted.connect(lambda: self._apply_fix(widget, dialog.chosen()))
+        preview, folder = self.preview, self.project_dir
+        now = phases if custom else None
+        left = [key for key in chosen if not mine(key)]
+
+        def run():
+            out = {"base": preview(game, chosen, labels, folder, now)}
+            if custom:
+                out["replan"] = preview(game, chosen, labels, folder, without)
+            if keys:
+                out["off"] = preview(game, left, labels, folder, without if custom else None)
+            return out
+        if custom or keys:
+            _in_thread(run, dialog.planner_done, dialog.planner_failed,
+                       dialog.planner_finished)
+        dialog.open()
+
+    def _apply_fix(self, widget: QListWidget, fix: dict | None) -> None:
+        if fix is None or not fix["ok"]:
+            return
+        if fix["kind"] in ("after", "before"):
+            items = {widget.item(r).data(NODE): widget.item(r) for r in range(widget.count())}
+            while widget.count():
+                widget.takeItem(0)
+            for node in fix["order"]:
+                widget.addItem(items[node])
+            self._reordered()
+            return
+        if fix["phases"] is not None:
+            try:
+                api.save_install_order(self.project_dir, fix["phases"])
+            except Exception as exc:
+                QMessageBox.critical(self, "Cannot save the install order", str(exc))
+                return
+        if fix["kind"] == "off":
+            self.turn_off.emit(fix["keys"])         # the window unticks them and plans
+            return
+        self._generation += 1
+        self._plan()
 
     def _reset(self) -> None:
         try:
