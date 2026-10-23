@@ -121,9 +121,9 @@ def test_the_unpacked_program_is_still_executable(tmp_path, monkeypatch):
     monkeypatch.setattr(bundle, "tag", lambda: "linux-x86_64")
     monkeypatch.setattr(bundle.platform, "system", lambda: "Linux")
     folder = program(tmp_path)
-    os.chmod(folder / bundle.NAME, 0o755)
+    os.chmod(folder / bundle.NAME, 0o700)
     path = bundle.pack(str(folder), str(tmp_path / "dist"))
     bundle.unpack(path, str(tmp_path / "unpacked"))
     unpacked = tmp_path / "unpacked" / bundle.NAME / bundle.NAME
     assert unpacked.read_bytes() == b"\x7fELF program"
-    assert os.stat(unpacked).st_mode & 0o111
+    assert os.stat(unpacked).st_mode & 0o100
