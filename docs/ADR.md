@@ -2031,6 +2031,12 @@ command line either.
       failed because downloads.weaselmods.net answered its download link with
       an HTML page, not the archive. About 20 of the log's mods are
       WeaselMods'; that is the next defect to fix, with the manifest too.
+  - *Amendment (2026-10-23).* `tools/landing_probe.py`, run by the workflow
+    on the real pages, showed why: WeaselMods runs WordPress Download
+    Manager, which draws the button by script, and the page's own link to
+    itself was taken for the file. `?wpdmdl=<post id>` on the package page
+    answers the zip (Alabaster Sands: `AlabasterSands-v2.0.zip`, 16 MB); the
+    resolver now gives that, and never a link to the page itself.
   - Measuring in the sandbox anyway found three defects, fixed here: a mod
     the catalogue could not resolve said only "entry has no url and no
     github repository"; a link typed with accents crashed the mod; a bare
