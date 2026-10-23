@@ -65,6 +65,9 @@ class Runner:
         self._stream = stream
         self._on_event = on_event
         self.cancel = cancel if cancel is not None else threading.Event()
+        # a wait between the client's retries ends when the run is cancelled
+        if getattr(client, "cancel", False) is None:
+            client.cancel = self.cancel
 
     def _emit(self, event: str, **fields) -> None:
         if self._on_event is None:

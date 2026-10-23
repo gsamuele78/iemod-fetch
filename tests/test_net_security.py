@@ -429,3 +429,74 @@ def test_a_retry_after_date_is_waited_until(fake_opener):
     slept = []
     assert HttpClient(sleep=slept.append).get_json("https://x.example/j") == {"ok": True}
     assert len(slept) == 1 and 15.0 <= slept[0] <= 21.0
+
+
+# ------------------------------------ the waits and Cancel (review of #61)
+def test_cancel_set_before_a_retry_stops_at_once(fake_opener, tmp_path):
+    import threading
+    from iemod_fetch.errors import Cancelled
+    _limited_once(fake_opener, (403, {"Retry-After": "30"}))
+    ev = threading.Event()
+    ev.set()
+    slept = []
+    with pytest.raises(Cancelled):
+        HttpClient(sleep=slept.append).download(
+            "https://github.com/o/r/releases/download/v1/a.zip", str(tmp_path / "a.zip"),
+            cancel=ev)
+    assert slept == []
+
+
+def test_cancel_ends_a_wait_for_a_rate_limit(fake_opener):
+    """A secondary limit's wait was a time.sleep the GUI's Cancel could not end:
+    'Stopping...' for minutes, and a quit that outlived Qt's thread wait."""
+    import threading
+    from iemod_fetch.errors import Cancelled
+    calls = {"n": 0}
+
+    def limited(req):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 403, "x", {"Retry-After": "60"},
+                                     io.BytesIO())
+    fake_opener(default=limited)
+    client = HttpClient()                  # the real time.sleep
+    client.cancel = threading.Event()
+    threading.Timer(0.2, client.cancel.set).start()
+    started = time.monotonic()
+    with pytest.raises(Cancelled):
+        client.get_json("https://api.github.com/x")
+    assert time.monotonic() - started < 5 and calls["n"] == 1
+
+
+def test_the_runner_hands_its_cancel_to_the_client(tmp_path):
+    from iemod_fetch.runner import Options, Runner
+    client = HttpClient()
+    runner = Runner(client, Options(target_dir=str(tmp_path / "Mods"), workers=1))
+    assert client.cancel is runner.cancel
+
+
+def test_a_secondary_limit_asking_more_than_five_minutes_stops(fake_opener):
+    """Retrying sooner than GitHub asks prolongs the limit (its docs warn of a ban)."""
+    calls = _limited_once(fake_opener, (403, {"Retry-After": "600"}))
+    with pytest.raises(HttpStatusError, match="600 s"):
+        HttpClient(sleep=lambda *_: None).get_json("https://api.github.com/x")
+    assert calls["n"] == 1
+
+
+def test_a_429_with_the_quota_spent_is_not_retried(fake_opener):
+    """It resets up to an hour away; retrying after 2 and 4 s only spent requests."""
+    calls = _limited_once(fake_opener, (429, {"X-RateLimit-Remaining": "0",
+                                              "X-RateLimit-Reset": "1900000000"}))
+    with pytest.raises(HttpStatusError, match="rate limit exhausted"):
+        HttpClient(sleep=lambda *_: None).get_json("https://api.github.com/x")
+    assert calls["n"] == 1
+
+
+def test_a_secondary_limit_that_outlasts_the_retries(fake_opener):
+    def limited(req):
+        raise urllib.error.HTTPError(req.full_url, 403, "x", {},
+                                     io.BytesIO(b"You have exceeded a secondary rate limit"))
+    fake_opener(default=limited)
+    slept = []
+    with pytest.raises(NetworkError):
+        HttpClient(sleep=slept.append).get_json("https://api.github.com/x")
+    assert slept == [60.0, 120.0]

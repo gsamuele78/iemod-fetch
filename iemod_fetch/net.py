@@ -62,6 +62,7 @@ DEFAULT_TIMEOUT = 45
 _CHUNK = 64 * 1024
 _PROGRESS_STEP = 256 * 1024     # a progress bar needs a few updates, not thousands
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+_MAX_WAIT = 300.0               # seconds; a longer Retry-After is not waited out
 # Errors from the local filesystem, which no amount of retrying will fix.
 _LOCAL_ERRNOS = {errno.ENOSPC, errno.EACCES, errno.EPERM, errno.EROFS,
                  errno.ENAMETOOLONG, getattr(errno, "EDQUOT", errno.ENOSPC)}
@@ -181,6 +182,9 @@ class HttpClient:
         self.max_bytes = max_bytes
         self.retries = max(1, retries)
         self._sleep = sleep
+        # The run's cancel event (Runner sets it): a wait between retries ends
+        # when it is set, so Cancel never waits out a rate limit (review of #61).
+        self.cancel = None
         self._opener = urllib.request.build_opener(SafeRedirectHandler(allow_http))
 
     # -- policy ------------------------------------------------------------
@@ -215,9 +219,12 @@ class HttpClient:
         req = urllib.request.Request(url, headers=headers, method=method)
         return self._opener.open(req, timeout=self.timeout)
 
-    def _with_retries(self, url: str, action: Callable[[], _T]) -> _T:
+    def _with_retries(self, url: str, action: Callable[[], _T], cancel=None) -> _T:
+        stop = cancel if cancel is not None else self.cancel
         last: BaseException | None = None
         for attempt in range(1, self.retries + 1):
+            if stop is not None and stop.is_set():
+                raise Cancelled(f"{url}: cancelled")
             try:
                 return action()
             except urllib.error.HTTPError as exc:
@@ -227,10 +234,18 @@ class HttpClient:
                 # and the start of its body are used, so release the connection
                 # now rather than whenever the exception is garbage-collected.
                 _release(exc)
-                if exc.code not in _RETRYABLE_STATUS and not secondary:
+                spent = self._rate_limit_reason(exc)
+                # A spent hourly quota resets up to an hour away, a 429 as much
+                # as a 403: GitHub's docs say wait for the reset, not retry
+                if (exc.code not in _RETRYABLE_STATUS and not secondary) or spent:
                     raise HttpStatusError(url, exc.code,
-                                          self._rate_limit_reason(exc)
-                                          or exc.reason or "") from exc
+                                          spent or exc.reason or "") from exc
+                asked = self._retry_after(exc, cap=math.inf)
+                if secondary and asked is not None and asked > _MAX_WAIT:
+                    # retrying sooner than GitHub asks prolongs the limit
+                    raise HttpStatusError(url, exc.code,
+                                          f"GitHub's secondary rate limit: it asks to wait "
+                                          f"{asked:.0f} s; run again later") from exc
                 delay = self._retry_after(exc) or (
                     self._secondary_backoff(attempt) if secondary else self._backoff(attempt))
             except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
@@ -245,11 +260,21 @@ class HttpClient:
                 delay = self._backoff(attempt)
             if attempt == self.retries:
                 break
-            self._sleep(delay)
+            self._wait(url, delay, stop)
         raise NetworkError(f"{url}: giving up after {self.retries} attempts: {last}") from last
 
+    def _wait(self, url: str, delay: float, stop) -> None:
+        """Sleep `delay`, or less if the run is cancelled meanwhile."""
+        if stop is not None and self._sleep is time.sleep and hasattr(stop, "wait"):
+            if stop.wait(delay):
+                raise Cancelled(f"{url}: cancelled")
+            return
+        self._sleep(delay)
+        if stop is not None and stop.is_set():
+            raise Cancelled(f"{url}: cancelled")
+
     @staticmethod
-    def _retry_after(exc) -> float | None:
+    def _retry_after(exc, cap: float = 300.0) -> float | None:
         value = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
         if not value:
             return None
@@ -267,7 +292,7 @@ class HttpClient:
         # Server input: NaN or a negative value would make time.sleep raise.
         if math.isnan(seconds):
             return None
-        return min(max(seconds, 0.0), 300.0)
+        return min(max(seconds, 0.0), cap)
 
     @staticmethod
     def _secondary_limit(url: str, exc) -> bool:
@@ -294,7 +319,7 @@ class HttpClient:
     @staticmethod
     def _secondary_backoff(attempt: int) -> float:
         """GitHub: at least one minute, then longer each time."""
-        return float(min(60 * 2 ** (attempt - 1), 300))
+        return float(min(60 * 2 ** (attempt - 1), _MAX_WAIT))
 
     @staticmethod
     def _rate_limit_reason(exc) -> str | None:
@@ -428,7 +453,7 @@ class HttpClient:
                 if os.path.exists(part):
                     os.remove(part)
 
-        return self._with_retries(url, action)
+        return self._with_retries(url, action, cancel)
 
 
 def sha256_file(path: str) -> str:

@@ -1846,8 +1846,11 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
   quotas, the secondary one included) stop the run like a network failure.
   *Amendment (2026-10-23, GUI-AUDIT item 45):* a secondary limit is first
   waited out in `net.py`, as GitHub's docs prescribe (Retry-After, else one
-  minute and then longer, three attempts); only one that outlasts them
-  reaches here and stops the run.
+  minute and then longer, over the run's retries - three by default); only
+  one that outlasts them reaches here and stops the run. A Retry-After over
+  five minutes is not waited out but stops at once (retrying sooner than
+  GitHub asks prolongs the limit), and every wait ends when the run is
+  cancelled.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.
