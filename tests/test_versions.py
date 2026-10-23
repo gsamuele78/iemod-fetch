@@ -118,6 +118,13 @@ def test_a_dotless_tag_spelling_its_own_release_is_still_equal():
     ("20180929", "v1.5 BETA", False),
     ("20240101", "20230101", True),          # dates on both sides rank
     ("V19", "2.0", False),                   # not known
+    # the same number with a word added - a language, a platform, an author's
+    # suffix (RoxanneSHS: ru for The-Rune, measured) - is not newer
+    ("v04ru", "V0.4", False), ("v2.0-linux", "v2.0", False), ("v2.0-linux", "2", False),
+    # review of #63: the number is compared, not the digits
+    ("v11.0-fr", "1.10", True), ("v12.0-ee", "1.20", True), ("v3.1fr", "v3.0", True),
+    ("v1.21-fix", "1.2.1", False),           # v1.21 is read as 1.2.1, word or not
+    ("1.4c", "1.4", True),                   # a letter is a revision
     # review of #56, real tags from krion64's cache: a letter is a revision
     ("v4.81a", "v4.0", True), ("1.4.4a", "1.4", True), ("v2.5a", "1.0", True),
     ("1.4b", "1.3", True), ("v2.0-alpha", "v1.0", False),
