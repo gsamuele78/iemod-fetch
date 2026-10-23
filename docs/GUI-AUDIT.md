@@ -151,7 +151,7 @@ ADD_SPELL.
 | 12 | BIO share-code **import/export** (format only). **Done**: `--bio-code`, `--emit-bio-code`; a BIO-made code round-trips to the same payload byte for byte, and BIO decodes ours | S-M |
 | 13 | Read Project Infinity `weidu-log.csv` and krion64 `mod-forge.json`. **Done**: `--pi-list` (LABELs from the tp2s, krion64 as a reported fallback: 708/732 agree) and staged `mod-forge.json` read as rules (none of 103 measured mods ships one yet) | S |
 
-### M3 — The wizard up to download (v3.0)
+### M3 — The wizard up to download (v3.0) — released in 3.0.0
 
 ADR-0031: `iemod_fetch_gui`, PySide6, importing only `iemod_fetch.api`. The
 phases are BWS-NG's order. Each phase saves a file the CLI also reads, so a
@@ -192,7 +192,7 @@ run can be stopped and resumed, or finished from the command line.
 | M3 | A pytest-qt test, run offscreen on Windows, Linux and macOS, goes through phases 1-5 on a fixture EET selection: picks components, resolves a conflict, reorders, downloads from a local fixture server, cancels and resumes.<br>The `selection.json` it saves is byte-identical to the CLI's for the same choices.<br>The window never blocks for more than 100 ms during a download.<br>The `.pyz` stays standard-library only, and the PyInstaller build starts on all three OSes. |
 | M4 | The mock EET plan installs end to end from the GUI on Windows and Linux runners with the real WeiDU and mod_installer.<br>Cancelling mid-install, then resuming, finishes with the same WeiDU.log as an uninterrupted run.<br>A prompt without a recorded answer stops and asks; it is never answered by guess.<br>Restoring the backup gives back the game folder as it was. |
 
-**M3 so far.** `tests/gui/test_m3_end_to_end.py` drives the real main window,
+**M3, as released in 3.0.0.** `tests/gui/test_m3_end_to_end.py` drives the real main window,
 offscreen, through phases 1-4 on a fixture EET selection: the project's ini,
 components chosen and a conflict resolved, a mod reordered, then the real
 download from a loopback `http.server`, cancelled while a mod is still
