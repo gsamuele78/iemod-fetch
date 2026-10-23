@@ -229,3 +229,21 @@ def test_a_dependency_already_broken_is_a_finding_not_a_need(tmp_path):
     result = conflicts(tmp_path, chosen=without)
     assert not any(n["rule"] == "eetend(0) needs eet(0)" for n in result["needs"])
     assert any(f["kind"] == "depends" for f in result["findings"])
+
+
+def test_an_optional_dependency_is_a_need_only_when_optional_ones_count():
+    """Review of #81: a soft dependency ("can also integrate with") is no
+    reason to ask before unticking - unless optional ones are reported."""
+    from iemod_fetch.rules import DEPENDS, Context, Install, ModSpec, Rule, RuleSet
+    install = Install(components={"addon": {0}, "base": {0}})
+    rule = Rule(DEPENDS, ModSpec("addon", "addon", frozenset({0})),
+                (ModSpec("base", "base", None),), optional=True)
+    hard = Rule(DEPENDS, ModSpec("addon", "addon", frozenset({0})),
+                (ModSpec("base", "base", frozenset({0})),))
+    chosen = [("addon/addon.tp2", 0), ("base/base.tp2", 0)]
+    assert api._needs([install], RuleSet(rules=[rule]), Context(), chosen) == []
+    with_optional = api._needs([install], RuleSet(rules=[rule]),
+                               Context(include_optional=True), chosen)
+    assert [n["chosen"] for n in with_optional] == [[["addon/addon.tp2", 0]]]
+    assert api._needs([install], RuleSet(rules=[hard]), Context(), chosen)[0]["on"] == [
+        [["base/base.tp2", 0]]]

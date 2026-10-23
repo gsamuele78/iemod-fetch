@@ -518,3 +518,13 @@ def test_the_real_check_names_what_a_mods_own_tp2_needs(qtbot, tmp_path):
     qtbot.waitUntil(lambda: bool(asked), timeout=2000)
     assert asked[0][1] == ["EET end #0  EET end"]
     assert widget.chosen() == [(core, 0), (end, 0)]                  # kept
+
+
+def test_a_deselect_the_player_chose_elsewhere_is_not_asked_about_again(qtbot, tmp_path):
+    """Review of #81: the conflicts panel's Deselect, or the order page's
+    "turn it off", is the player's answer already - no second question."""
+    check = needing(((ADDON, 0), [[(TP2, 0)]]))
+    widget, asked = guarded(qtbot, tmp_path, check, [(TP2, 0), (ADDON, 0)], "keep")
+    widget.deselect([(TP2, 0)])
+    qtbot.wait(50)
+    assert asked == [] and widget.chosen() == [(ADDON, 0)]
