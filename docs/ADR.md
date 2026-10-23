@@ -74,6 +74,15 @@ non-interactive on every channel — `credential.interactive=false`,
 accepted only if it matches a GitHub token shape, so a stored username/password
 is never sent as a bearer.
 
+*Note (2026-10-23).* GitHub App installation tokens (`ghs_`) became stateless
+in 2026: a JWT after the prefix, about 520 characters, with two dots and `-`.
+The shape refused them, so such a token in the credential helper was dropped
+in silence and the run went anonymous. The shape now takes `ghs_` followed by
+three non-empty base64url segments (at least 36 characters after `ghs_`); the classic
+shapes are unchanged. Tokens from the environment, `--token-file` and `gh` were
+never shape-checked and were not affected - the workflows' `GITHUB_TOKEN`
+kept working.
+
 **Consequences.** The three `http://` entries in your manifest now need an
 explicit `--allow-http`. That is the correct friction: you should know you are
 fetching mods over cleartext.
