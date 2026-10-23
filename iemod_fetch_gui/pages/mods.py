@@ -49,6 +49,17 @@ def _target(project: dict) -> str:
     return os.path.join(folder, project.get("target") or "Mods")
 
 
+def preset_size(preset: dict) -> int:
+    """The components a preset names, each once: a log or an EET code may repeat one."""
+    return (len({(tp2.lower(), number) for tp2, number in preset["chosen"]})
+            + len({name.lower() for name in preset["unmatched"]}))
+
+
+def same_folder(a: str, b: str) -> bool:
+    """Whether two paths are one folder: on Windows case differs, and links lead there too."""
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
 def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str) -> dict:
     """The real checker: the selection's conflicts and the project's decisions."""
     project = api.load_project(project_dir)
@@ -241,6 +252,10 @@ class ModsPage(QWidget):
 
     def _failed(self, message: str) -> None:
         self._loading = False
+        # The tree shown is the old game's: drop it, so choosing this game again
+        # loads its list instead of finding one already there (review of #41).
+        self.mods = []
+        self.tree.clear()
         self.status.setText(f"The mod list could not be loaded: {message}")
 
     def _fill(self, mods: list) -> None:
@@ -386,7 +401,7 @@ class ModsPage(QWidget):
         if self.chosen() and QMessageBox.question(
                 self, "Load the preset",
                 f"Replace the {len(self.chosen())} component(s) chosen now with the "
-                f"preset's {len(preset['chosen']) + len(preset['unmatched'])}?") \
+                f"preset's {preset_size(preset)}?") \
                 != QMessageBox.StandardButton.Yes:
             return
         wanted = [tuple(pair) for pair in preset["chosen"]]
@@ -439,7 +454,7 @@ class ModsPage(QWidget):
                     self, "Save the preset", f"{path} exists. Replace it?") \
                     != QMessageBox.StandardButton.Yes:
                 return
-        if os.path.dirname(os.path.abspath(path)) == os.path.abspath(self.project_dir) \
+        if same_folder(os.path.dirname(os.path.abspath(path)), self.project_dir) \
                 and os.path.basename(path).lower() in PROJECT_FILES:
             QMessageBox.critical(self, "Cannot save the preset",
                                  f"{os.path.basename(path)} is the project's own file; "

@@ -131,6 +131,30 @@ def test_a_loader_that_fails_is_shown_not_raised(qtbot, tmp_path):
     assert "could not be loaded: no network" in widget.status.text()
 
 
+def test_a_list_that_failed_loads_when_the_game_is_chosen_again(qtbot, tmp_path):
+    # Review of #41: after a failed switch the old game's tree stayed, so
+    # choosing the game again found "a list" and loaded nothing, presets off
+    offline = [True]
+
+    def flaky(game, project):
+        if game == "BGEE" and offline[0]:
+            raise OSError("offline")
+        return json.loads(json.dumps(MODS))
+    widget = ModsPage(str(tmp_path), load=flaky, check=no_check)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.loaded, timeout=5000):
+        widget.start("EET")
+    with qtbot.waitSignal(widget.loaded, timeout=5000):
+        widget.start("BGEE")
+    assert "could not be loaded: offline" in widget.status.text()
+    assert widget.tree.topLevelItemCount() == 0        # not EET's list
+    offline[0] = False
+    with qtbot.waitSignal(widget.loaded, timeout=5000):
+        widget.start("BGEE")
+    assert widget.tree.topLevelItemCount() == 2
+    assert widget.load_preset.isEnabled() and widget.save_preset.isEnabled()
+
+
 def test_the_wizard_goes_from_folders_to_mods_and_saves_both(qtbot, tmp_path):
     project = tmp_path / "project"
     planned = {"phases": [{"role": "WeiDU.log", "title": "EET", "units": [{

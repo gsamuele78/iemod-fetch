@@ -146,3 +146,21 @@ def test_presets_wait_for_the_list_being_loaded(qtbot, tmp_path):
     assert widget.load_preset.isEnabled() and widget.save_preset.isEnabled()
     widget._presets(False)          # as start() does while a list loads
     assert not widget.load_preset.isEnabled() and not widget.save_preset.isEnabled()
+
+
+def test_the_confirmation_counts_a_repeated_component_once():
+    from iemod_fetch_gui.pages.mods import preset_size
+    assert preset_size({"chosen": [["bg1ub/bg1ub.tp2", 0], ["BG1UB/BG1UB.TP2", 0],
+                                   ["eet/EET.tp2", 0]],
+                        "unmatched": ["ghost/setup-ghost.tp2 #1"] * 2}) == 3
+
+
+def test_a_project_folder_named_another_way_is_the_same_folder(tmp_path):
+    from iemod_fetch_gui.pages.mods import same_folder
+    (tmp_path / "real").mkdir()
+    try:
+        (tmp_path / "link").symlink_to(tmp_path / "real", target_is_directory=True)
+    except OSError:                 # Windows without the privilege to make links
+        pytest.skip("cannot make a symbolic link here")
+    assert same_folder(str(tmp_path / "link"), str(tmp_path / "real") + "/")
+    assert not same_folder(str(tmp_path), str(tmp_path / "real"))
