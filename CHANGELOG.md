@@ -53,7 +53,8 @@ Python API, which is internal.
   one option per SUBCOMPONENT group - the one chosen, else the first (it was
   Qt's last); the only option of a FORCED_SUBCOMPONENT group is not unticked
   while its mod stays. `api.selection_digest`: the check and the plan are not
-  run again when nothing they read has changed.
+  run again when nothing they read has changed - the selection, the project's
+  files, the community data and the mods staged in the target folder.
 - **Deselect knowing who needs it** (GUI-AUDIT M5b item 34). Unticking a
   component that chosen ones need - its own mod's `requires`, or a dependency
   rule the last check found satisfied - asks first: untick those too, keep

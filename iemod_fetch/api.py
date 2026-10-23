@@ -860,27 +860,50 @@ def save_decisions(folder: str, choose: dict | None = None,
 
 def selection_digest(game: str, chosen: Sequence[tuple[str, int]],
                      labels: dict | None = None, folder: str | None = None,
-                     data_dir: str | None = None) -> str:
+                     data_dir: str | None = None, target: str | None = None) -> str:
     """
     A digest of what a check or a plan of a wizard selection reads: the game,
     the components chosen, their labels, the project files that change the
-    answer (its ini, install-order.txt, decisions.json) and the data cache's
-    record of its last refresh, each by size and modification time. The same
-    digest twice: nothing to check again (GUI-AUDIT M5b item 35).
+    answer (its ini, install-order.txt, decisions.json), the data cache's
+    record of its last refresh and its cache of the mods' own inis, and the
+    mods staged under `target` - each mod folder and the files directly in it
+    (its tp2, its metadata ini) - each by size and modification time. The
+    same digest twice: nothing to check again (GUI-AUDIT M5b item 35).
     """
-    files = []
     data = data_dir or datasync.default_data_dir()
-    for name, path in [(name, os.path.join(folder, name) if folder else "")
-                       for name in (PROJECT_FILE, INSTALL_ORDER_FILE, DECISIONS_FILE)] + [
-                          ("data", os.path.join(data, datasync.MANIFEST))]:
-        try:
-            stat = os.stat(path) if path else None
-        except OSError:
-            stat = None
-        files.append([name, stat.st_size, stat.st_mtime_ns] if stat else [name])
+    paths = [(name, os.path.join(folder, name) if folder else "")
+             for name in (PROJECT_FILE, INSTALL_ORDER_FILE, DECISIONS_FILE)]
+    paths += [("data", os.path.join(data, datasync.MANIFEST)),
+              ("metadata", os.path.join(data, premeta.CACHE_FILE))]
+    files = [[name, *_stamp(path)] for name, path in paths]
     return stable_id("selection", game.upper(), [list(key) for key in chosen],
                      sorted([list(key), str(label)] for key, label in (labels or {}).items()),
-                     files)
+                     files, _staged_stamp(target))
+
+
+def _stamp(path: str) -> list[int]:
+    """[size, mtime_ns] of `path`, [] when it is not there."""
+    try:
+        stat = os.stat(path) if path else None
+    except OSError:
+        return []
+    return [stat.st_size, stat.st_mtime_ns] if stat else []
+
+
+def _staged_stamp(target: str | None) -> list:
+    """The mods staged under `target`, two levels deep, by name, size and time:
+    a mod staged, removed or extracted again changes it (review of #82)."""
+    if not target or not os.path.isdir(target):
+        return []
+    out = []
+    with os.scandir(target) as entries:
+        for entry in sorted(entries, key=lambda e: e.name):
+            out.append([entry.name, *_stamp(entry.path)])
+            if entry.is_dir(follow_symlinks=False):
+                with os.scandir(entry.path) as inner:
+                    out += [[entry.name, child.name, *_stamp(child.path)]
+                            for child in sorted(inner, key=lambda c: c.name)]
+    return out
 
 
 def ignore_order(folder: str, unit: str, after: str, rules: Sequence[str],

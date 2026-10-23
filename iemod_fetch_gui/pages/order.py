@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QHB
 
 from iemod_fetch import api
 
-from .mods import Key, _in_thread, _target
+from .mods import Key, _in_thread, _target, selection_digest
 
 Planner = Callable[[str, list[Key], dict, str], dict]
 # (game, chosen, labels, project folder, the order by hand or None) -> a plan
@@ -285,8 +285,8 @@ class OrderPage(QWidget):
         """Plan `chosen` for `game`, in a worker thread - unless the plan shown
         already answers it: nothing it reads has changed (item 35)."""
         if (self.result and self._planning is None
-                and self._planned == api.selection_digest(game, chosen, labels,
-                                                          self.project_dir)):
+                and self._planned == selection_digest(game, chosen, labels,
+                                                      self.project_dir)):
             self.completeChanged.emit(self.is_complete())
             self.planned.emit()
             return
@@ -311,7 +311,7 @@ class OrderPage(QWidget):
         self.completeChanged.emit(False)        # Next waits for this plan
         plan, (game, chosen, labels) = self.plan, self.wanted
         generation, folder = self._generation, self.project_dir
-        self._planning_digest = api.selection_digest(game, chosen, labels, folder)
+        self._planning_digest = selection_digest(game, chosen, labels, folder)
 
         def run():
             try:

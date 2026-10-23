@@ -868,3 +868,16 @@ def test_coming_back_with_nothing_changed_keeps_the_plan(qtbot, tmp_path):
     with qtbot.waitSignal(widget.planned, timeout=5000):
         widget.start("EET", ALL[:-1], {})
     assert widget.plan.calls == calls + 2
+
+
+def test_a_mod_staged_since_the_plan_is_planned_again(qtbot, tmp_path):
+    """Review of #82: back from the download page, a staged mod's own ini can
+    order it differently - the plan shown is not kept."""
+    widget = ruled_page(qtbot, tmp_path)
+    calls = widget.plan.calls
+    ini = tmp_path / "Mods" / "ub" / "ub.ini"                  # the project's target
+    ini.parent.mkdir(parents=True)
+    ini.write_text("[Metadata]\nAfter = ascension\n")
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.start("EET", ALL, {})
+    assert widget.plan.calls == calls + 1

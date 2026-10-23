@@ -109,6 +109,13 @@ def _under(item: QTreeWidgetItem, row: QTreeWidgetItem) -> bool:
     return False
 
 
+def selection_digest(game: str, chosen: list[Key], labels: dict, project_dir: str) -> str:
+    """What a check or a plan of the project's selection reads (item 35),
+    with the mods staged in its target folder."""
+    return api.selection_digest(game, chosen, labels, project_dir,
+                                target=_target(api.load_project(project_dir)))
+
+
 def kinds_of(mod: dict) -> list[str]:
     """A mod's kinds; a list from before item 26 has only its catalogue categories."""
     return mod.get("kinds") or mod.get("categories") or ["(none)"]
@@ -815,7 +822,7 @@ class ModsPage(QWidget):
         generation = self._generation
         # nothing the check reads has changed since the last answer: keep it
         # (M5b item 35) - a tick undone, a filter changed, Next pressed again
-        digest = f"{generation}:{api.selection_digest(*args)}"
+        digest = f"{generation}:{selection_digest(*args)}"
         if digest == self._answered and self.conflicts:
             self.checked.emit()
             return
