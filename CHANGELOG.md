@@ -16,7 +16,9 @@ Python API, which is internal.
   chooses - told apart by the file's content - matched to the list ignoring
   case and spelling, each component chosen as a click would (its
   SUBCOMPONENT cleared, what it needs chosen). What the list does not have
-  is named in a message, never guessed. `api.import_selection`,
+  is named in a message, never guessed; a file that chooses nothing (a fresh
+  game's WeiDU.log) is refused, replacing a choice asks first, and a preset
+  never replaces the project's own files. `api.import_selection`,
   `api.export_selection`.
 - **The wizard's download and extraction** (phase 4, ADR-0039): a row per mod
   (downloading with bytes, extracting, done, already there, failed, no

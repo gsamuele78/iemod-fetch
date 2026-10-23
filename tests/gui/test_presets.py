@@ -79,3 +79,70 @@ def test_a_cancelled_dialog_does_nothing(qtbot, tmp_path, monkeypatch):
     assert not list(tmp_path.glob("*.json")) or \
         {p.name for p in tmp_path.glob("*.json")} <= {api.SELECTION_FILE,
                                                       api.DECISIONS_FILE}
+
+
+def test_a_log_with_no_component_changes_nothing(qtbot, tmp_path, monkeypatch):
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (UB, 10))
+    log = tmp_path / "WeiDU.log"
+    log.write_text("// Log of Currently Installed WeiDU Mods\n")
+    answer(monkeypatch, log)
+    errors = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: errors.append(a[2]))
+    widget.load_preset.click()
+    assert errors and "chooses no component" in errors[0]
+    assert widget.chosen() == [(UB, 10)]
+
+
+def test_replacing_a_choice_asks_first(qtbot, tmp_path, monkeypatch):
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (UB, 10))
+    log = tmp_path / "WeiDU.log"
+    log.write_text("~CDTWEAKS\\SETUP-CDTWEAKS.TP2~ #0 #100 // x\n")
+    answer(monkeypatch, log)
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.No)
+    widget.load_preset.click()
+    assert widget.chosen() == [(UB, 10)]                  # No keeps it
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.Yes)
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.load_preset.click()
+    assert widget.chosen() == [(TW, 100)]
+
+
+@pytest.mark.parametrize("name", ["decisions", "selection.json", "install-order.txt"])
+def test_a_preset_never_replaces_the_projects_own_files(qtbot, tmp_path, monkeypatch,
+                                                         name):
+    # Review of #41: "decisions" became decisions.json, replaced unasked
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (UB, 10))
+    (tmp_path / api.DECISIONS_FILE).write_text('{"keep": "me"}')
+    answer(monkeypatch, tmp_path / name)
+    errors = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: errors.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.Yes)
+    widget.save_preset.click()
+    assert (tmp_path / api.DECISIONS_FILE).read_text() == '{"keep": "me"}'
+    assert errors or name == "install-order.txt" and not (tmp_path / name).exists()
+
+
+def test_a_name_completed_with_json_asks_before_replacing(qtbot, tmp_path, monkeypatch):
+    widget, _checker = page(qtbot, tmp_path)
+    choose(qtbot, widget, (UB, 10))
+    (tmp_path / "mine.json").write_text("old")
+    answer(monkeypatch, tmp_path / "mine")
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.No)
+    widget.save_preset.click()
+    assert (tmp_path / "mine.json").read_text() == "old"
+
+
+def test_presets_wait_for_the_list_being_loaded(qtbot, tmp_path):
+    # Review of #41: a preset loaded while another game's list loaded went to
+    # the old tree, then was thrown away
+    widget, _checker = page(qtbot, tmp_path)
+    assert widget.load_preset.isEnabled() and widget.save_preset.isEnabled()
+    widget._presets(False)          # as start() does while a list loads
+    assert not widget.load_preset.isEnabled() and not widget.save_preset.isEnabled()

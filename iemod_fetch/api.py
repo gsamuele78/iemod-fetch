@@ -646,10 +646,17 @@ def import_selection(path: str, game: str, known_tp2s: Sequence[str] = (),
             pi.add_krion(index, _json_records(krion))
         selection, pi_notes = pi.selection_from_pi(pi.parse_pi_list(text), game, index)
         notes += pi_notes
+    if not any(install.components for install in selection.installs):
+        # a fresh game's WeiDU.log holds only its header: loading it would
+        # clear the whole choice, saying nothing
+        raise ConfigError(f"{path}: it chooses no component ({kind.replace('-', ' ')})")
     games = [install.game.upper() for install in selection.installs]
     expected = {"EET", "BGEE"} if game.upper() == "EET" else {game.upper()}
     if set(games) - expected:
         notes.append(f"the preset is for {', '.join(games)}; the project is {game.upper()}")
+    elif game.upper() == "EET" and "EET" not in games:
+        notes.append("the preset is a BG:EE build, not EET; its components are chosen "
+                     "for this EET build")
     by_path = {tp2.lower(): tp2 for tp2 in known_tp2s}
     by_name: dict = {}
     for tp2 in known_tp2s:

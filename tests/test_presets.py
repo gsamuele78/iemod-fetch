@@ -95,10 +95,44 @@ def test_a_preset_for_another_game_says_so(tmp_path):
     assert got["notes"] == ["the preset is for BG2EE; the project is BGEE"]
 
 
-def test_an_eet_build_reads_both_installs():
+def test_a_bg_ee_build_loaded_into_an_eet_project_says_so(tmp_path):
+    path = tmp_path / "bgee.json"
+    path.write_text(json.dumps({"schema_version": 1, "installs": [
+        {"game": "BGEE", "components": [{"tp2": "bg1ub/bg1ub.tp2", "component": 0}]}]}))
+    got = api.import_selection(str(path), "EET", [])
+    assert got["notes"] == [("the preset is a BG:EE build, not EET; its components are "
+                             "chosen for this EET build")]
+    assert got["chosen"] == [["bg1ub/bg1ub.tp2", 0]]
+
+
+def test_a_log_that_names_no_game_is_read_as_the_projects():
     got = api.import_selection(os.path.join(MOCK, "WeiDU-BGEE.log"), "EET", [])
-    assert got["kind"] == "weidu-log" and got["notes"] == []
+    assert got["kind"] == "weidu-log" and got["games"] == ["EET"] and got["notes"] == []
     assert ["bg1ub/bg1ub.tp2", 0] in got["chosen"]
+
+
+def test_an_eet_build_reads_both_installs(tmp_path):
+    chosen = [("bg1ub/bg1ub.tp2", 0), ("eet/EET.tp2", 0)]
+    path = tmp_path / "eet.json"
+    path.write_text(json.dumps({"schema_version": 1, "installs": [
+        {"game": "BGEE", "components": [{"tp2": chosen[0][0], "component": 0}]},
+        {"game": "EET", "components": [{"tp2": chosen[1][0], "component": 0}]}]}))
+    got = api.import_selection(str(path), "EET", [])
+    assert got["games"] == ["BGEE", "EET"] and got["notes"] == []
+    assert got["chosen"] == [list(pair) for pair in chosen]
+
+
+@pytest.mark.parametrize("text", [
+    "// Log of Currently Installed WeiDU Mods\n// The top of the file is the 'oldest' mod\n",
+    "", "   \n",
+    '{"schema_version": 1, "installs": [{"game": "BGEE", "components": []}]}'])
+def test_a_preset_that_chooses_nothing_is_refused_not_a_cleared_choice(tmp_path, text):
+    # Review of #41: a fresh game's WeiDU.log (its header only) was read as an
+    # empty Project Infinity list and silently cleared the whole choice
+    path = tmp_path / "WeiDU.log"
+    path.write_text(text)
+    with pytest.raises(ConfigError, match="chooses no component"):
+        api.import_selection(str(path), "BGEE", KNOWN, data_dir=str(tmp_path / "no-cache"))
 
 
 @pytest.mark.parametrize("text", ["{ not json", "BIO-MODLIST-V1:!!!",
