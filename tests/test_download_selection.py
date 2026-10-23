@@ -229,3 +229,27 @@ def test_with_no_manifest_a_failed_mod_says_what_the_catalogue_tried(project):
     assert "o/eefixpack" in details["eefixpack"]
     assert "no url and no github" not in details["eefixpack"]
     assert details["ghost"] == "no manifest entry, and the catalogue does not list this mod"
+
+
+def test_take_newer_reaches_the_run_and_each_record_carries_its_offer(project, monkeypatch):
+    """GUI-AUDIT item 59: the wizard's button is the command line's --take-newer."""
+    folder, _ = project
+    seen = {}
+    real_run = api.run
+
+    def spy(settings, **kw):
+        seen["take_newer"] = settings.take_newer
+        return real_run(settings, **kw)
+
+    monkeypatch.setattr(api, "run", spy)
+    result = api.download_selection(str(folder), take_newer=["DlcMerger"])
+    assert seen["take_newer"] == ["DlcMerger"]
+    assert all("newer" in r for r in result["records"])
+
+
+@pytest.mark.parametrize("name", ["only", "take_newer"])
+def test_a_folder_name_given_alone_is_refused(project, name):
+    """Review of #62: "Ascension" was read as A, s, c, e, n, ..."""
+    folder, _ = project
+    with pytest.raises(ConfigError, match="list of mod folders"):
+        api.download_selection(str(folder), **{name: "Ascension"})

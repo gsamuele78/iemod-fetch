@@ -1054,24 +1054,32 @@ def project_settings(folder: str) -> Settings:
 
 
 def download_selection(folder: str, on_event=None, cancel=None,
-                       only: Sequence[str] = ()) -> dict:
+                       only: Sequence[str] = (), take_newer: Sequence[str] = ()) -> dict:
     """
     Phase 4 of the wizard (ADR-0039): download, verify and extract every mod of
     `folder`/selection.json into the project's target - the run
     `iemod-fetch --config FOLDER/iemod-fetch.ini --selection
     FOLDER/selection.json` makes in FOLDER. A mod already there and verified is
     skipped, so running again resumes; `only` (mod folders) retries those.
+    `take_newer` (mod folders, or ["all"] for every one offered) installs the
+    newer GitHub release a run offered for each, over the copy there
+    (`--take-newer`, GUI-AUDIT item 59).
     `on_event` receives the run's progress events (from worker threads);
     setting `cancel` stops the downloads at their next chunk.
 
     Returns {"records": [{"folder", "status", "detail", "url", "version",
-    "bytes", "error_code"}], "cancelled": bool, "counts": {...},
-    "exit_code": int}.
+    "bytes", "error_code", "newer"}], "cancelled": bool, "counts": {...},
+    "exit_code": int}; `newer` is the offer ({"version", "installed", "repo",
+    "date", "url"}) or None.
     """
+    for name, value in (("only", only), ("take_newer", take_newer)):
+        if isinstance(value, str):      # a name, not a list: read letter by letter
+            raise ConfigError(f"{name} is a list of mod folders, not {value!r}")
     settings = replace(
         project_settings(folder), selection=os.path.join(folder, SELECTION_FILE),
         # the selection is what is wanted, and this is a download
-        weidu_log=[], pi_list=None, bio_code=None, only=list(only), quiet=True,
+        weidu_log=[], pi_list=None, bio_code=None, only=list(only),
+        take_newer=list(take_newer), quiet=True,
         check_only=False, dry_run=False, list_mods=None, describe_mods=None,
         emit_selection=None, emit_bio_code=None, update_data=False,
         all_manifest_entries=False,
@@ -1085,10 +1093,11 @@ def download_selection(folder: str, on_event=None, cancel=None,
         raise ConfigError("the download run produced no report")
     records = [{"folder": r.folder, "status": r.status.value, "detail": r.detail,
                 "url": r.url, "version": r.version, "bytes": r.bytes,
-                "error_code": r.error_code} for r in report.records]
+                "error_code": r.error_code, "newer": r.newer} for r in report.records]
     # with no catalogue to fall back on, a mod the manifest lacks is not tried
     records += [{"folder": u["folder"], "status": "manual", "detail": u["detail"],
-                 "url": None, "version": None, "bytes": 0, "error_code": "unresolved"}
+                 "url": None, "version": None, "bytes": 0, "error_code": "unresolved",
+                 "newer": None}
                 for u in report.unresolved]
     counts = report.counts()
     counts["manual"] = counts.get("manual", 0) + len(report.unresolved)

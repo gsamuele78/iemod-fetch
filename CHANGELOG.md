@@ -47,6 +47,12 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The wizard offers a newer GitHub release, and takes it on request**
+  (GUI-AUDIT M7 item 59). The download page shows a mod's offer under "Newer
+  release" with a box to tick; "Install the ticked newer releases" runs the
+  command line's `--take-newer` for the ticked mods only - nothing is
+  replaced unasked. `api.download_selection` takes `take_newer` and each
+  record carries `newer`.
 - **The download measurement, every mod and from home** (GUI-AUDIT M7 item
   57). The download-sources workflow, run by hand, takes `real=all` to
   download every mod the catalogue found instead of 20, and its summary says
