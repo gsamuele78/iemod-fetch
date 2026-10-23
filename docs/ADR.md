@@ -1580,6 +1580,40 @@ semantics - the later install's copy of a shared file stays - not a merge;
 whether that is what the player wants is theirs to judge, which is why it is
 an option and never a recommendation.
 
+**Amendment (2026-10-23, GUI-AUDIT M5b item 33) — ignoring a broken order
+rule on a row of the install order.** `decisions.json` gains an optional
+top-level `ignored_order`: one entry per row of the wizard's install order,
+`{"unit": the planner's node (log|key|part), "after": the row just above it
+("" for the first), "rules": the broken rules ignored, as the plan words them,
+"why": the player's reason}`.
+
+Context: the order page marks a row red when an order rule the plan could
+not keep names it, and the player may know better (a pair tested together, a
+rule that is stale). Recording that as an `accept` was the obvious way, and
+does not work: a finding is judged on the selection's own order, and a rule
+broken only by the order the player set by hand (`install-order.txt`) has no
+finding at all - it exists only as the plan's residual violation, which has
+no stable id.
+
+Decision: the ignore names the row, its place and the rules, and holds only
+while all three still match (`IgnoredOrder.holds`): the row just after the
+same row, breaking no rule beyond those ignored, and breaking at least one.
+Dragging the row also forgets the ignore at once (the page removes it), so a
+row moved and planned back to the same place is shown again too. The wizard
+shows an ignored row grey, with the reason, instead of red; "Stop ignoring"
+removes the entry. `save_decisions` keeps the entries it is not given, so the
+conflicts page, which never shows them, does not drop them.
+
+Consequences: the command line reads and checks `ignored_order` and does
+nothing else with it - a run's plan still reports the rule as it is; the
+ignore is the wizard's display, not a decision the run applies. A file with
+the key is refused by an iemod-fetch older than this change (the reader
+refuses unknown keys, as it should); `schema_version` stays 1 because a file
+without the key reads as before. The place is "the row just above it": a row
+dragged in between, or the row above moved away, shows it again too - on the
+side of showing a broken rule rather than hiding one. Nodes carry the part
+number of a split mod, so splitting or joining it shows the row again.
+
 ---
 
 ## ADR-0034 — Engine limits are checked against primary sources, and warned on, never blocked

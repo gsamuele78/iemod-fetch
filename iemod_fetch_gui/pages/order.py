@@ -23,7 +23,15 @@ before it is applied: the row just after the mod a rule puts before it, or
 just before the one a rule puts after it; the row planned again by the rules
 with your other moves kept; or its components turned off. Only a fix that
 mends its rule and adds no other broken rule and no new error is applied.
+Under the list, the selected row's panel (M5b item 33): every order rule on
+it - what it must come after or before, the rule as written and where it
+comes from - red where it is broken now, dimmed where it names a whole mod
+rather than components. "Ignore..." keeps a red row's broken rules as the
+player's call, with why, in decisions.json: the row is shown grey, not red,
+while it stays where it is and breaks no other rule; dragging it, or a rule
+it newly breaks, shows it red again.
 """
+import html
 import os
 import time
 from collections.abc import Callable
@@ -31,8 +39,8 @@ from collections.abc import Callable
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout,
-                               QLabel, QListWidget, QListWidgetItem, QMessageBox,
-                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
+                               QInputDialog, QLabel, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
 
@@ -45,6 +53,7 @@ Previewer = Callable[[str, list[Key], dict, str, list | None], dict]
 ROLE = Qt.ItemDataRole.UserRole
 NODE = Qt.ItemDataRole.UserRole + 1
 RED = QColor(176, 0, 32)
+GREY = QColor(128, 128, 128)          # an ignored row; a rule naming a whole mod
 
 
 def plan_selection(game: str, chosen: list[Key], labels: dict, project_dir: str) -> dict:
@@ -224,11 +233,20 @@ class OrderPage(QWidget):
         self.fix.setToolTip("What mends the selected red row, previewed before it is applied")
         self.fix.setEnabled(False)
         self.fix.clicked.connect(self._fix)
+        self.ignore = QPushButton("Ignore...")
+        self.ignore.setToolTip("Keep the selected red row where it is: its broken rules "
+                               "are your call, kept in decisions.json with why")
+        self.ignore.setEnabled(False)
+        self.ignore.clicked.connect(self._ignore)
+        self.panel = QLabel("")
+        self.panel.setTextFormat(Qt.TextFormat.RichText)
+        self.panel.setWordWrap(True)
         bar = QHBoxLayout()
         bar.addWidget(self.summary, 1)
         bar.addWidget(self.split)
         bar.addWidget(self.join)
         bar.addWidget(self.fix)
+        bar.addWidget(self.ignore)
         bar.addWidget(self.reset)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>3. Install order</h2>"))
@@ -239,6 +257,7 @@ class OrderPage(QWidget):
             f"{api.INSTALL_ORDER_FILE}, which the command line uses too."))
         layout.addLayout(bar)
         layout.addWidget(self.tabs, 1)
+        layout.addWidget(self.panel)
         layout.addWidget(self.problems)
 
     # ----------------------------------------------------------- planning
@@ -261,6 +280,7 @@ class OrderPage(QWidget):
         self.split.setEnabled(False)
         self.join.setEnabled(False)
         self.fix.setEnabled(False)
+        self.ignore.setEnabled(False)
         self.completeChanged.emit(False)        # Next waits for this plan
         plan, (game, chosen, labels) = self.plan, self.wanted
         generation, folder = self._generation, self.project_dir
@@ -301,6 +321,8 @@ class OrderPage(QWidget):
         self.split.setEnabled(False)            # the rows it would split are gone
         self.join.setEnabled(False)
         self.fix.setEnabled(False)
+        self.ignore.setEnabled(False)
+        self.panel.setText("")
         current = self.tabs.currentIndex()
         self.tabs.clear()
         if not result.get("planned"):
@@ -329,7 +351,15 @@ class OrderPage(QWidget):
                 parts.insert(2, f"{by_bws} placed by BWS-NG's sequence")
         self.summary.setText("; ".join(parts) + ".")
         self.reset.setEnabled(bool(result.get("custom")))
-        lines = list(result.get("violations") or [])
+        # a rule every row it names ignores says so, as those rows do (item 33)
+        whys: dict[str, list[str]] = {}
+        for unit in units:
+            for broken in unit.get("broken") or ():
+                whys.setdefault(broken, []).append(
+                    unit["ignored"]["why"] if unit.get("ignored") else "")
+        lines = [f"{line} (ignored: {whys[line][0]})"
+                 if whys.get(line) and all(whys[line]) else line
+                 for line in result.get("violations") or []]
         lines += ["These rules contradict each other, one was set aside: "
                   + " -> ".join(cycle) for cycle in result.get("cycles") or []]
         self.problems.setText("\n".join(lines))
@@ -348,7 +378,11 @@ class OrderPage(QWidget):
         widget.setProperty("breaks", breaks)
 
         def dropped(_parent, start, _end, _dest, row) -> None:
-            self._dropped(widget, row - 1 if row > start else row, before, followers)
+            at = row - 1 if row > start else row
+            self._dropped(widget, at, before, followers)
+            unit = widget.item(at).data(ROLE) if 0 <= at < widget.count() else None
+            if isinstance(unit, dict) and unit.get("ignored"):
+                self._unignore(unit["node"])     # a row moved is shown again (item 33)
             self._reordered()
         widget.model().rowsMoved.connect(dropped)
         widget.currentItemChanged.connect(lambda *_args: self._can_split())
@@ -380,7 +414,12 @@ class OrderPage(QWidget):
                         "chosen - " + unit["no_place"] + ".")
         if unit["moved"]:
             tips.append("Moved from where it was chosen, by the rules.")
-        if unit["flagged"]:
+        if unit["flagged"] and unit.get("ignored"):
+            item.setForeground(QBrush(GREY))
+            item.setText(text + "  (ignored)")
+            tips.append("A rule says it is in the wrong place; you ignore it: "
+                        + unit["ignored"]["why"])
+        elif unit["flagged"]:
             item.setForeground(QBrush(RED))
             tips.append("An order rule says it is in the wrong place (see below).")
         item.setToolTip("\n".join(tips))
@@ -447,12 +486,16 @@ class OrderPage(QWidget):
         plan's: while a plan is under way they wait (review of #74)."""
         widget, row = self._selected()
         unit = widget.item(row).data(ROLE) if widget is not None else None
+        self._show_rules(widget, unit if isinstance(unit, dict) else None)
         if widget is None or self._planning is not None or not isinstance(unit, dict):
             self.split.setEnabled(False)
             self.join.setEnabled(False)
             self.fix.setEnabled(False)
+            self.ignore.setEnabled(False)
             return
         self.fix.setEnabled(bool(unit["flagged"]))
+        self.ignore.setText("Stop ignoring" if unit.get("ignored") else "Ignore...")
+        self.ignore.setEnabled(bool(unit.get("ignored") or unit.get("broken")))
         self.split.setEnabled(len(unit["components"]) > 1)
         self.join.setEnabled(bool(unit.get("split"))
                              and len(self._parts(widget, unit["key"])) > 1)
@@ -576,6 +619,67 @@ class OrderPage(QWidget):
             return
         self._generation += 1
         self._plan()
+
+    # ------------------------------------------------- the row's panel
+    def _show_rules(self, widget: QListWidget | None, unit: dict | None) -> None:
+        """The order rules on the selected row (M5b item 33)."""
+        if widget is None or unit is None:
+            self.panel.setText("")
+            return
+        breaks = set(widget.property("breaks") or ())
+        lines = [f"<b>{html.escape(unit['name'])}</b>"]
+        for rule in unit.get("rules") or ():
+            pair = ((unit["node"], rule["node"]) if rule["must"] == "after"
+                    else (rule["node"], unit["node"]))
+            text = (f"Must come {rule['must']} {html.escape(rule['name'])}: "
+                    f"{html.escape(rule['rule'])} ({html.escape(rule['source'])}, "
+                    f"{html.escape(rule['severity'])})")
+            if pair in breaks:
+                text = f'<span style="color: {RED.name()}">{text} - broken</span>'
+            elif rule["whole"]:
+                text = (f'<span style="color: {GREY.name()}">{text} - names the whole '
+                        "mod</span>")
+            lines.append(text)
+        if not unit.get("rules"):
+            lines.append("No order rule names it.")
+        for broken in unit.get("broken") or ():
+            lines.append(f'<span style="color: {RED.name()}">Broken: '
+                         f"{html.escape(broken)}</span>")
+        if unit.get("ignored"):
+            lines.append(f"Ignored, while it stays where it is: "
+                         f"{html.escape(unit['ignored']['why'])}")
+        self.panel.setText("<br>".join(lines))
+
+    def _ignore(self) -> None:
+        """Ignore the selected row's broken rules, with why - or stop."""
+        widget, row = self._selected()
+        if widget is None:
+            return
+        unit = widget.item(row).data(ROLE)
+        if unit.get("ignored"):
+            self._unignore(unit["node"])
+        else:
+            why, ok = QInputDialog.getText(
+                self, f"Ignore {unit['name']}",
+                "Why it stays here although a rule says otherwise "
+                "(kept in decisions.json):")
+            if not ok or not why.strip():
+                return
+            above = widget.item(row - 1).data(NODE) if row else ""
+            try:
+                api.ignore_order(self.project_dir, unit["node"], above,
+                                 unit["broken"], why.strip())
+            except Exception as exc:
+                QMessageBox.critical(self, "Cannot save the decision", str(exc))
+                return
+        self._generation += 1
+        self._plan()
+
+    def _unignore(self, node: str) -> None:
+        try:
+            api.unignore_order(self.project_dir, node)
+        except Exception as exc:
+            QMessageBox.critical(self, "Cannot save the decision", str(exc))
 
     def _reset(self) -> None:
         try:
