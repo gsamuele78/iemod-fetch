@@ -40,8 +40,9 @@ the plan's number for the milestone, not a break: the command line only gains
 (a `mod_extracting` event; with no `mod_downloads.json`, the community
 catalogue as the source) and is fixed, nothing is removed or renamed.
 Installation from the wizard is the next milestone (M4); then M5, the order
-and the selection by kind of mod for what krion64 does not place, with
-Infinity Mod Runner and its Forge as references
+and the selection by kind of mod for what krion64 does not place - measured
+first: BWS-NG's per-component order, then a kind only where the sources agree
+(ADR-0041) - with Infinity Mod Runner and its Forge as references
 ([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -481,7 +482,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,255 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,259 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -680,7 +681,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,255, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,259, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |
