@@ -163,7 +163,7 @@ and two features that close the path from logs to a running game:
 | E3 | **Ordered `asset_prefer` list** in the manifest, for releases the platform prefix does not disambiguate. | Orchestrator `pkg_windows`/`pkg_linux` | explicit, per mod |
 | E4 | **Cache GitHub release lists** with a TTL, to stay under the 60/h anonymous quota on a 148-mod run. | Orchestrator `github_release_list.rs` | — |
 | E5 | **`AGENTS.md`** stating the never-guess rule, with a test that it exists and names `CONTRIBUTING.md`. AI-assisted contributions are now the norm. | `AiAgentInfrastructure/tests/agents-md` | — |
-| E6 | **Drop Python 3.9** (v3.0.0): unlocks `X \| Y` types and lets mypy check the real floor. | — | breaking; needs an operator survey first |
+| E6 | **Drop Python 3.9** (a later major; 3.0.0 kept 3.9 to stay non-breaking): unlocks `X \| Y` types and lets mypy check the real floor. | — | breaking; needs an operator survey first |
 
 The 2026-09-10 items below (A–F) remain open and keep their priority; A (live
 GitHub API contract tests) is still the largest untested surface.

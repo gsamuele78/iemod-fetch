@@ -6,7 +6,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html), where
 the public surface is the CLI's flags and the JSON report schema — not the
 Python API, which is internal.
 
-## [Unreleased]
+## [3.0.0] - 2026-10-23
+
+The wizard up to download (milestone M3, GUI-AUDIT). The major version is
+the plan's number for that milestone, not a break: no flag, file or report
+field of the command line is removed or renamed. Its changes are additive -
+a `mod_extracting` event, and a run with no `mod_downloads.json` that uses
+the community catalogue instead of stopping - plus the fixes below.
 
 ### Added
 - **Presets** in the wizard's mod selection (GUI-AUDIT item 19): *Save

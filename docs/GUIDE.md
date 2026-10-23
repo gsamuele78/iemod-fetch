@@ -13,8 +13,8 @@ Project Infinity still does the WeiDU ordering and component selection.
 
 ```bash
 tar xzf iemod-fetch.tar.gz && cd iemod-fetch
-python3 -m pytest -q                 # 290 passed - confirms the copy is sound
-python3 build.py                     # -> ./iemod-fetch.pyz  (34 KB, no deps)
+python3 -m pytest -q                 # all pass (GUI tests skip without Qt) - the copy is sound
+python3 build.py                     # -> ./iemod-fetch.pyz  (about 200 KB, no deps)
 ```
 
 The community catalogue that fills catalogue gaps and provides health

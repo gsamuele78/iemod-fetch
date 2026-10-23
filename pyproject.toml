@@ -12,7 +12,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "iemod-fetch"
-version = "2.5.0"
+version = "3.0.0"
 description = "Resolve, verify and stage Infinity Engine mods from a WeiDU log, and plan a rule-compliant install order"
 readme = "README.md"
 license = "MIT"

@@ -32,12 +32,15 @@ the evidence does not decide is reported to you, with the reason.
 
 Standard library only at runtime. One file, no dependencies.
 
-**Current release: 2.5.0** - the desktop wizard's first three phases (game and
-folders, mod selection with a conflicts panel, install order), the mods'
-authors' own install order read before download, Project Infinity Sorting
-Order files (`--sorting-order`), and which community source is used for what,
-measured (ADR-0036). What changed in each release is in
-[`CHANGELOG.md`](CHANGELOG.md).
+**Current release: 3.0.0** - the desktop wizard up to download (milestone
+M3): game and folders, mod selection with conflicts and presets, install
+order, then download and extraction with cancel and resume, also as a program
+that needs no Python (Linux and Windows zips, macOS added when built). 3.0 is
+the plan's number for the milestone, not a break: the command line only gains
+(a `mod_extracting` event; with no `mod_downloads.json`, the community
+catalogue as the source) and is fixed, nothing is removed or renamed.
+Installation from the wizard is the next milestone (M4). What changed in each
+release is in [`CHANGELOG.md`](CHANGELOG.md).
 
 | Step | What happens | Flag |
 |---|---|---|
@@ -117,7 +120,7 @@ pip install git+https://github.com/gsamuele78/iemod-fetch   # then: iemod-fetch 
 
 ### The wizard (GUI)
 
-A desktop wizard is being built on the same tool (milestone M3, ADR-0031): a
+A desktop wizard on the same tool (milestone M3, released in 3.0.0; ADR-0031): a
 PySide6 app that reaches the tool only through `iemod_fetch.api`, in BWS-NG's
 phases. It is separate from the CLI, which stays one standard-library file.
 
@@ -126,7 +129,7 @@ pip install "iemod-fetch[gui] @ git+https://github.com/gsamuele78/iemod-fetch"
 iemod-fetch-gui --project ~/eet-build      # the folder that keeps the project
 ```
 
-**Without Python** (ADR-0040): from the next release, each GitHub release
+**Without Python** (ADR-0040): from 3.0.0, each GitHub release
 carries `iemod-fetch-gui-<os>-<arch>.zip` for Linux and Windows; a macOS zip
 is added within hours, when GitHub's macOS runner built it. Unzip it (with
 `unzip` or your desktop's archive tool, which keep its links) and run
@@ -674,7 +677,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,097, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,255, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |
