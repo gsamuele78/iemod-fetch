@@ -106,6 +106,20 @@ def test_a_mod_its_kind_placed_says_so_and_one_it_could_not_says_why(qtbot, tmp_
     assert "1 placed by kind" in widget.summary.text()
 
 
+def test_a_mod_bws_ngs_sequence_placed_says_so(qtbot, tmp_path):
+    """Decision 2a: BWS-NG's EET sequence placed it, before any kind."""
+    def planner(game, chosen, labels, folder):
+        units = [unit("eet"), dict(unit("allison"), category="NEW NPC MODS",
+                                   placed_by="placed by BWS-NG's EET sequence: after alassa #0",
+                                   placed_from="BWS-NG")]
+        return {"phases": [{"role": "EET", "title": "EET", "units": units}],
+                "cycles": [], "violations": [], "planned": True, "custom": False}
+    widget, _planner = page(qtbot, tmp_path, planner)
+    assert widget.tabs.widget(0).item(1).text() == "allison  -  NEW NPC MODS  (by BWS-NG)"
+    assert "1 placed by BWS-NG's sequence" in widget.summary.text()
+    assert "placed by kind" not in widget.summary.text()
+
+
 def test_the_players_own_order_supersedes_a_place_by_kind(qtbot, tmp_path):
     """Review of #67 (L1): with install-order.txt the kind places nothing."""
     def planner(game, chosen, labels, folder):
