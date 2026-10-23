@@ -126,15 +126,16 @@ def add_licences(folder: str) -> None:
     os.makedirs(licences, exist_ok=True)
     for name in sorted(os.listdir(os.path.join(ROOT, "packaging", "licenses"))):
         shutil.copy(os.path.join(ROOT, "packaging", "licenses", name), licences)
-    for name in RUNTIME:                     # MPL-2.0 for publicsuffixlist
+    for name in RUNTIME:                     # publicsuffixlist MPL-2.0, filelock MIT
         dist = importlib.metadata.distribution(name)
-        # MPL-2.0 3.2(a): where the Source Code Form of what ships compiled is
-        urls = dict(url.split(", ", 1) for url in dist.metadata.get_all("Project-URL") or ())
-        with open(os.path.join(target, f"NOTICE-{name}.txt"), "w", encoding="utf-8") as fh:
-            fh.write(f"{name} {dist.version}, unmodified, is part of this program, under "
-                     f"the Mozilla Public License 2.0 (licenses/{name}-LICENSE).\n"
-                     f"Its source code: https://pypi.org/project/{name}/{dist.version}/#files"
-                     + (f" and {urls['Homepage']}" if "Homepage" in urls else "") + "\n")
+        if dist.metadata.get("License-Expression") == "MPL-2.0":
+            # MPL-2.0 3.2(a): where the Source Code Form of what ships compiled is
+            urls = dict(url.split(", ", 1) for url in dist.metadata.get_all("Project-URL") or ())
+            with open(os.path.join(target, f"NOTICE-{name}.txt"), "w", encoding="utf-8") as fh:
+                fh.write(f"{name} {dist.version}, unmodified, is part of this program, under "
+                         f"the Mozilla Public License 2.0 (licenses/{name}-LICENSE).\n"
+                         f"Its source code: https://pypi.org/project/{name}/{dist.version}/#files"
+                         + (f" and {urls['Homepage']}" if "Homepage" in urls else "") + "\n")
         for entry in dist.files or ():
             if "licenses" in str(entry).replace("\\", "/").split("/") or \
                     entry.name.startswith(("LICENSE", "COPYING")):

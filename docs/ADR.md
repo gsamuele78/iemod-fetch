@@ -2500,6 +2500,46 @@ it; a wizard build on 3.15 has not been run.
   Windows (PEP 686), which a green build has to show is harmless here.
 - Bundled libraries make their security fixes ours to ship.
 
+### Amendment (2026-10-23): filelock adopted, at 3.x
+
+The defect, measured first (`tests/test_datalock.py`, fails on main): two
+refreshes of one data folder - the wizard at start and `--update-data` - shared
+the `<source>.new` staging folder. The second wiped the first's download (the
+first failed with `No such file or directory`), and the first, saving its
+manifest last, erased the entry the second had just written: the folder held
+a copy the manifest no longer named.
+
+**Decision**: a refresh that has something to do holds
+`filelock.FileLock(<data dir>/.lock)` from reading the manifest to saving it.
+When every source is fresh it writes nothing and takes no lock. When another
+program holds it, `--update-data` waits up to 300 s; the automatic refresh at
+the start of a run does not wait (review of #66: it stalled an ordinary run
+for five minutes behind `--update-data`) - the other program is updating the
+data already, and the last good copy is used. Either way the sources not
+refreshed report `failed` with the reason. filelock is imported only then:
+it brings asyncio and sqlite3, about 0.2 s on each start. Readers take no
+lock: a source is swapped in by two renames, so a run reading at that instant
+can miss that source for this run, or meet half of krion64's per-mod files;
+measured as possible, not seen, and left as it was before.
+**filelock 3.32.7**, the last 3.x (2026-09-16), not 4.x: 4.0.0 came out the
+next day and had eighteen releases in its first thirty days, so Dependabot
+holds the major version until it settles. MIT, pure Python, standard library
+imports only.
+
+**Alternatives**: `fcntl.flock` and `msvcrt.locking` by hand - twenty lines,
+but two code paths to test where only one runs in CI's Linux job, and the
+Windows half (byte-range locks; `LK_LOCK` retries ten times a second apart, no timeout of one's choosing) is the part
+filelock exists to get right. Rejected for the reason this ADR adopts
+libraries at all.
+
+**Consequences**: one more library in the .pyz and the bundles (its MIT
+licence file shipped; no source offer needed, unlike MPL's). `--update-data`
+can wait for another one, at most five minutes. Not covered: the metadata
+cache (`mod-metadata.json`), saved outside the lock - two runs at once can
+lose one side's new entries, which costs only fetching them again. On a file
+system without `flock`, filelock falls back to a marker file that a crash on
+another machine leaves behind.
+
 ---
 
 ## ADR-0044 — lcc-docs' dates as a second update signal, never as a version

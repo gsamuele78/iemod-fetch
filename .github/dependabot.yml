@@ -21,6 +21,11 @@ updates:
     groups:
       runtime:
         patterns: ["*"]
+    # filelock 4 had twenty releases in its first month (2026-09/10): stay on
+    # 3.x until the line settles, then move by hand with a test run.
+    ignore:
+      - dependency-name: filelock
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "deps(runtime)"
 
