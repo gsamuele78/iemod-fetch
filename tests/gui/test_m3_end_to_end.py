@@ -4,8 +4,9 @@ driven through phases 1-4 on a fixture EET selection, as a player drives it.
 
 1. EET, with synthetic BG:EE and BG2:EE folders; Next saves iemod-fetch.ini.
 2. Components chosen, a conflict resolved with its one-click option; Next
-   saves selection.json, byte for byte what api.save_selection (the command
-   line's writer) makes of the same choices.
+   saves selection.json, byte for byte what the command line writes
+   (`--emit-selection`) from WeiDU.logs that install the same components
+   under the same names.
 3. A mod dragged to another place; Next.
 4. The real download (api.download_selection, the real HttpClient) from an
    http.server on 127.0.0.1: cancelled while one mod is still arriving -
@@ -34,6 +35,7 @@ pytest.importorskip("pytestqt")
 from PySide6.QtCore import QModelIndex, Qt, QTimer  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
+from iemod_fetch.cli import main as cli_main  # noqa: E402
 from iemod_fetch.config import load_config  # noqa: E402
 from iemod_fetch_gui.window import MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
@@ -299,9 +301,22 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
     labels = {(UB, 0): "Restored Elfsong Tavern", (UB, 10): "Edie the Merchant",
               (EET, 0): "EET core", (TW, 100): "Remove Helmet Animations",
               (SCS, 1000): "Smarter mages"}
+    # The command line's own writer: --emit-selection from the WeiDU.logs that
+    # install the same components, under the same names (review of #43: a
+    # second api.save_selection compared the wizard's writer with itself).
     cli = tmp_path / "cli"
-    api.save_selection(str(cli), "EET", chosen, labels)
-    assert saved == (cli / api.SELECTION_FILE).read_bytes()
+    cli.mkdir()
+    for name, rows in (("WeiDU-BGEE.log", chosen[:2]), ("WeiDU.log", chosen[2:])):
+        (cli / name).write_text(
+            "// Log of Currently Installed WeiDU Mods\n"
+            + "".join(f"~{tp2}~ #0 #{number} // {labels[(tp2, number)]}\n"
+                      for tp2, number in rows), encoding="utf-8")
+    monkeypatch.chdir(cli)                  # no project ini of the wizard's here
+    assert cli_main(["-w", f"{cli / 'WeiDU-BGEE.log'}:BGEE", "-w", f"{cli / 'WeiDU.log'}:EET",
+                     "-m", str(project / "mods.json"), "--emit-selection", str(cli / "cli.json"), "--check-only",
+                     "--no-update-data", "--no-discovery", "--no-gh-cli",
+                     "--no-git-credential", "-q"]) == 0
+    assert saved == (cli / "cli.json").read_bytes()
     assert [i["game"] for i in json.loads(saved)["installs"]] == ["BGEE", "EET"]
 
     # 3. Install order ------------------------------------------------------

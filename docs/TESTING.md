@@ -127,8 +127,9 @@ serve fixtures over a loopback TCP listener for the same reason.
 **The wizard end to end.** `tests/gui/test_m3_end_to_end.py` is the M3
 validation run: the real main window, offscreen, through phases 1-4 on a
 fixture EET selection - the project's ini saved, components chosen and a
-conflict resolved, `selection.json` compared byte for byte with what
-`api.save_selection` writes for the same choices, a mod dragged, then the real
+conflict resolved, `selection.json` compared byte for byte with what the
+command line's `--emit-selection` writes from WeiDU.logs that install the
+same components under the same names, a mod dragged, then the real
 `api.download_selection` and `HttpClient` against a loopback `http.server`.
 One mod trickles in as a slow mirror does; the player cancels it, the page
 says so and the target holds only the mods that finished; Download again

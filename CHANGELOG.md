@@ -58,7 +58,8 @@ Python API, which is internal.
 - **The M3 validation test** (`tests/gui/test_m3_end_to_end.py`): the real
   main window, offscreen, from the game folders to every mod downloaded on a
   fixture EET selection - a conflict resolved, a mod reordered, the
-  `selection.json` byte-identical to the command line's, the real download
+  `selection.json` byte-identical to what the command line's
+  `--emit-selection` writes from WeiDU.logs of the same components, the real download
   from a loopback mirror cancelled mid-file (nothing half-installed) and
   resumed (only the rest fetched again), the event loop never held for
   100 ms, no connection but loopback. The wizard's tests now run on macOS

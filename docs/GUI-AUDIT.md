@@ -205,8 +205,11 @@ now (item 18), so it belongs to M4. What each criterion stands at:
 - Phases 1-4 offscreen: CI's GUI job runs it on Linux and Windows (a gate),
   and `macos.yml`'s GUI job on macOS (informational, as all of macOS is since
   its runners stopped starting on 2026-10-21).
-- `selection.json` byte-identical to `api.save_selection`'s for the same
-  choices: **met** (asserted in the same run).
+- `selection.json` byte-identical to the CLI's: **met** - the wizard's file
+  equals what `iemod-fetch --emit-selection` writes from WeiDU.logs that
+  install the same components under the same names (asserted in the same
+  run). A real log that spells a tp2 in capitals gives that spelling, not
+  the catalogue's, so the two then differ in case only.
 - Never blocked for 100 ms during a download: **met on Linux** - the longest
   gap of a 10 ms timer during both downloads is 11-16 ms, 32 ms with every
   core busy; the same assertion holds on every OS CI runs it on.
