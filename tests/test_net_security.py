@@ -348,3 +348,28 @@ def test_the_default_ceiling_admits_a_real_mod():
     """BGGO is 1.4 GB; the old 512 MiB default rejected six real downloads."""
     from iemod_fetch.net import DEFAULT_MAX_BYTES
     assert DEFAULT_MAX_BYTES >= 1_457_111_463
+
+
+# ------------------------------------------------- same site (ADR-0043)
+@pytest.mark.parametrize("page, link, same", [
+    # two users' GitHub Pages are two sites: the hand-written rule took both
+    # for github.io, so a link to another user's page escaped the offsite gate
+    ("https://modder.github.io/mod/", "https://attacker.github.io/x.zip", False),
+    ("https://a.gitlab.io/m/", "https://b.gitlab.io/x.zip", False),
+    # not a public suffix (the list is the authority, not a guess): one site
+    ("https://a.sourceforge.io/", "https://b.sourceforge.io/x.zip", True),
+    ("https://modder.github.io/mod/", "https://modder.github.io/files/x.zip", True),
+    # the ordinary mod hosts are unchanged
+    ("https://www.gibberlings3.net/mods/", "https://gibberlings3.net/files/x.zip", True),
+    ("https://www.weaselmods.net/p", "https://weaselmods.net/d.zip", True),
+    ("https://forums.beamdog.com/t", "https://www.gibberlings3.net/x", False),
+    ("https://shop.example.co.uk/", "https://www.example.co.uk/x", True),
+    ("https://a.co.uk/", "https://b.co.uk/", False),
+    # an address is its own site; so is a bare suffix
+    ("http://127.0.0.1:8000/page", "http://127.0.0.1:8000/x.zip", True),
+    ("http://127.0.0.1/page", "http://127.0.0.2/x.zip", False),
+    ("http://[::1]:8000/page", "http://[::1]:8000/x.zip", True),
+])
+def test_same_site_follows_the_public_suffix_list(page, link, same):
+    from iemod_fetch.net import same_site
+    assert same_site(page, link) is same

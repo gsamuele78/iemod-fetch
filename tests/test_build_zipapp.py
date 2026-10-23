@@ -102,3 +102,34 @@ def test_a_malformed_source_date_epoch_fails_loudly(monkeypatch):
     with pytest.raises(SystemExit) as excinfo:
         build_module._source_date_epoch()
     assert "SOURCE_DATE_EPOCH" in str(excinfo.value)
+
+
+def test_the_archive_carries_its_runtime_libraries_and_uses_them(pyz, tmp_path):
+    """The Public Suffix List is read from inside the zip, in an isolated
+    interpreter that sees nothing installed (ADR-0043)."""
+    import zipfile
+    with zipfile.ZipFile(pyz) as zf:
+        names = zf.namelist()
+    assert "publicsuffixlist/public_suffix_list.dat" in names
+    assert any(n.endswith(".dist-info/licenses/LICENSE") for n in names)   # MPL-2.0
+    assert not any(n.endswith(("RECORD", "INSTALLER", "direct_url.json")) for n in names)
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); "
+            "from iemod_fetch.net import same_site; "
+            "print(same_site('https://a.github.io/', 'https://b.github.io/'))")
+    out = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(pyz)],
+                         capture_output=True, text=True, check=True, cwd=tmp_path)
+    assert out.stdout.strip() == "False"
+
+
+def test_a_build_with_another_version_than_the_pin_stops(monkeypatch, tmp_path):
+    import importlib.metadata
+
+    real = importlib.metadata.distribution
+
+    class Older:
+        version = "0.0.1"
+        files = ()
+    monkeypatch.setattr(importlib.metadata, "distribution",
+                        lambda name: Older() if name == "publicsuffixlist" else real(name))
+    with pytest.raises(SystemExit, match="pins"):
+        build.build(str(tmp_path / "x.pyz"))

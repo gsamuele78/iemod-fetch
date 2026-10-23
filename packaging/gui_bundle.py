@@ -21,7 +21,9 @@ library names), as `unzip` and desktop archive tools restore them: copies would
 double Qt's size and leave two files to replace for one library.
 """
 import argparse
+import importlib.metadata
 import os
+import re
 import platform
 import shutil
 import stat
@@ -32,6 +34,8 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = "iemod-fetch-gui"
+with open(os.path.join(ROOT, "requirements", "runtime.txt"), encoding="utf-8") as _fh:
+    RUNTIME = tuple(re.findall(r"^([A-Za-z0-9_.-]+)==", _fh.read(), re.MULTILINE))
 FIXED = (1980, 1, 1, 0, 0, 0)                 # every entry's date: same folder, same zip
 ENTRY = "import sys\nfrom iemod_fetch_gui.app import main\n\nsys.exit(main())\n"
 # Qt modules the wizard never uses: kept out to keep the download small.
@@ -88,6 +92,10 @@ def build(work: str) -> str:
             "--paths", ROOT]
     for module in EXCLUDE:
         args += ["--exclude-module", module]
+    # the runtime's libraries (ADR-0043) with their data and metadata: the
+    # Public Suffix List is a data file PyInstaller does not see by itself
+    for name in RUNTIME:
+        args += ["--collect-data", name, "--copy-metadata", name]
     subprocess.run(args + [entry], check=True, cwd=work)
     folder = os.path.join(work, "out", NAME)
     if platform.system() == "Darwin" and os.path.isdir(os.path.join(work, "out",
@@ -110,6 +118,13 @@ def add_licences(folder: str) -> None:
     os.makedirs(licences, exist_ok=True)
     for name in sorted(os.listdir(os.path.join(ROOT, "packaging", "licenses"))):
         shutil.copy(os.path.join(ROOT, "packaging", "licenses", name), licences)
+    for name in RUNTIME:                     # MPL-2.0 for publicsuffixlist
+        dist = importlib.metadata.distribution(name)
+        for entry in dist.files or ():
+            if "licenses" in str(entry).replace("\\", "/").split("/") or \
+                    entry.name.startswith(("LICENSE", "COPYING")):
+                shutil.copy(str(entry.locate()),
+                            os.path.join(licences, f"{name}-{entry.name}"))
     with open(os.path.join(target, "NOTICE-Qt.txt"), "w", encoding="utf-8") as fh:
         fh.write(notice(versions()))
 

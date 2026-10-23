@@ -51,7 +51,11 @@ def test_the_folder_carries_the_licences(tmp_path, monkeypatch):
     bundle.add_licences(str(folder))
     assert (folder / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
     assert sorted(os.listdir(folder / "licenses")) == ["GPL-3.0-only.txt",
-                                                       "LGPL-3.0-only.txt"]
+                                                       "LGPL-3.0-only.txt",
+                                                       "publicsuffixlist-LICENSE"]
+    # the runtime library's own licence, MPL-2.0 (ADR-0043)
+    mpl = (folder / "licenses" / "publicsuffixlist-LICENSE").read_text(encoding="utf-8")
+    assert "Mozilla Public License" in mpl
     lgpl = (folder / "licenses" / "LGPL-3.0-only.txt").read_text(encoding="utf-8")
     assert "GNU LESSER GENERAL PUBLIC LICENSE" in lgpl and "Version 3" in lgpl
     assert "Qt 6.12.0" in (folder / "NOTICE-Qt.txt").read_text(encoding="utf-8")

@@ -1,7 +1,6 @@
 version: 2
 updates:
-  # The developer toolchain is the only dependency surface there is: the shipped
-  # tool has none (ADR-0002).
+  # The developer toolchain (pyproject.toml's extras).
   - package-ecosystem: pip
     directory: /
     schedule: { interval: weekly, day: monday }
@@ -12,6 +11,18 @@ updates:
         update-types: [minor, patch]
     commit-message:
       prefix: "deps"
+
+  # The runtime's libraries, pinned by hash (ADR-0043): their own pull request,
+  # since they ship to players. publicsuffixlist releases with every change to
+  # the list, so weekly and grouped.
+  - package-ecosystem: pip
+    directory: /requirements
+    schedule: { interval: weekly, day: monday }
+    groups:
+      runtime:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps(runtime)"
 
   # An unpinned action is remote code with write access to the release job.
   - package-ecosystem: github-actions

@@ -64,7 +64,8 @@ Five contracts are enforced, and CI fails on a violation:
 
 1. **The core imports nothing from the shell.** Every module below the line is
    testable with no network, no temporary directory and no clock.
-2. **The runtime imports no third-party package** (ADR-0002).
+2. **The runtime imports no third-party package but those of
+   `requirements/runtime.txt`** (ADR-0043; publicsuffixlist today).
 3. **Nothing imports `cli`** except the entry point.
 4. **The CLI decides nothing.** It may not import the planners, the runner or
    the formats; it reaches the tool only through `api`, the same functions the
