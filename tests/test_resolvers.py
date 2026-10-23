@@ -176,6 +176,9 @@ def test_repo_extraction_is_exact(url, expected):
     ("https://www.gibberlings3.net/forums/topic/30786-kit-pack/", True),
     ("https://baldurs-gate.de/index.php?resources/ascalons-questpack.4/", False),
     ("https://www.gibberlings3.net/files/file/702-a-mod-for-the-orderly/", False),
+    ("https://baldurs-gate.de/index.php?/threads/1/", True),    # route with a slash
+    ("https://github.com/someone/topic/releases", False),        # a code host: no thread
+    ("https://gitlab.com/someone/discussion", False),
     # an author's own download pages are not threads
     ("https://www.shsforums.net/files/file/1084-fishing-for-trouble/", False),
     ("https://downloads.weaselmods.net/download/alabaster-sands/?wpdmdl=593", False),

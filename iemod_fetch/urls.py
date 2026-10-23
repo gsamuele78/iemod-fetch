@@ -43,6 +43,11 @@ def unwrap_redirect(url: str) -> str:
     return url
 
 
+# Where code is published: never a forum, whatever its paths are called.
+CODE_HOSTS = frozenset({"github.com", "gitlab.com", "bitbucket.org", "codeberg.org",
+                        "sourceforge.net"})
+
+
 def is_forum_post(url: str) -> bool:
     """
     A forum thread, or a file attached to one: anyone in the thread may have
@@ -58,7 +63,9 @@ def is_forum_post(url: str) -> bool:
     # XenForo keeps the route in the query: `index.php?threads/45508/` is a
     # thread (baldurs-gate.de's link to a dead Dark Tidings .rar), while
     # `index.php?resources/...` is the author's own release page.
-    route = parts.query.lower() if path.endswith("/index.php") else ""
+    route = parts.query.lower().lstrip("/") if path.endswith("/index.php") else ""
+    if host.removeprefix("www.") in CODE_HOSTS:
+        return False                    # a repository named `topic` is no thread
     return (host.startswith("forums.")
             or bool(segments & {"topic", "discussion", "threads"})   # G3: /forums/topic/
             or path.endswith("/viewtopic.php")

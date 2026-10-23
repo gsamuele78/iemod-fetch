@@ -22,6 +22,20 @@ from .urls import is_forum_post
 from .versions import newer_release
 
 
+
+def _pinned(source) -> str:
+    """What pins a source to one file, if anything: a sha256, a tag, an asset."""
+    return ", ".join(f"{name} {value}" for name, value in (
+        ("sha256", source.sha256), ("release_tag", source.release_tag),
+        ("asset", source.asset)) if value)
+
+
+def _unpinned(source, repo):
+    """The same source, as a GitHub repository's latest release."""
+    return _replace(source, url=None, github=repo, release_tag=None, asset=None,
+                    sha256=None)
+
+
 @dataclass
 class Options:
     target_dir: str
@@ -220,16 +234,19 @@ class Runner:
                     # its release is taken instead: once, and held to the same
                     # .tp2 check (GUI-AUDIT M7 item 55).
                     repo = repo_from_url(exc.final_url or "")
-                    if not repo or ("github", repo) in skip:
+                    if (not repo or _pinned(source)
+                            or ("github", repo.lower()) in {
+                                (k, str(v).lower()) for k, v in
+                                (s for s in skip if isinstance(s, tuple))}):
                         raise
                     skip.update({("github", repo), ("github", repo.lower())})
-                    probe = self.github.resolve(_replace(
-                        source, url=None, github=repo, release_tag=None, asset=None,
-                        sha256=None))
+                    probe = self.github.resolve(_unpinned(source, repo))
                     if probe.candidate is None:
-                        raise ModFetchError(f"{exc}; it leads to {repo} on GitHub, whose "
-                                            f"release could not be had: {probe.reason}"
-                                            ) from exc
+                        # the same code as the failure it stands for: the
+                        # report's error codes are a contract (ADR-0030)
+                        raise NotAnArchive(exc.url, exc.sniff, exc.final_url, note=(
+                            f"; it leads to {repo} on GitHub, whose release could "
+                            f"not be had: {probe.reason}")) from exc
                     resolution.warnings.append(
                         f"{folder}: {exc.url} leads to {repo} on GitHub; its release "
                         f"is used instead")
@@ -393,9 +410,15 @@ class Runner:
                       warnings=list(resolution.warnings))
 
     def _led_to_github(self, source, folder, landing):
-        """The release of the repository a landing page redirected to (item 55)."""
-        probe = self.github.resolve(_replace(source, url=None, github=landing.github,
-                                             release_tag=None, asset=None, sha256=None))
+        """
+        The release of the repository a landing page redirected to (item 55) -
+        never for a source pinned to a file: a pin means that file or nothing.
+        """
+        if _pinned(source):
+            landing.reason += (f"; it is pinned to a file ({_pinned(source)}), so "
+                               f"{landing.github}'s release is not taken instead")
+            return landing
+        probe = self.github.resolve(_unpinned(source, landing.github))
         if not probe.ok:
             landing.reason += f"; {probe.reason}"
             return landing
@@ -524,7 +547,10 @@ class Runner:
         def from_url(url, how, kind):
             if (kind, url) in skip:
                 return None
-            probe = self.landing.resolve(_replace(source, url=url, github=None))
+            src = _replace(source, url=url, github=None)
+            probe = self.landing.resolve(src)
+            if probe.github:            # a link that redirected to GitHub (item 55)
+                probe = self._led_to_github(src, folder, probe)
             if fresh(probe, (kind, url)):
                 probe.warnings.append(f"{folder}: resolved via {entry.origin} {how}-> {url}")
                 return probe

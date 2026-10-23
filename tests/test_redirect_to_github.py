@@ -125,3 +125,57 @@ def test_html_that_does_not_lead_to_github_fails_as_before(tmp_path, monkeypatch
     assert code == 1
     assert stub.downloaded == [DOWNLOAD]
     assert "did not return an archive" in report(tmp_path)["records"][0]["detail"]
+
+
+# ------------------------------------------------------ review of #59
+def test_a_pinned_manifest_link_is_never_handed_over(tmp_path, monkeypatch):
+    """A sha256 means that file or nothing: the repository's latest release is
+    not taken instead, on the landing path."""
+    stub = release_stub(zip_bytes("EndlessBG1"))
+    make(tmp_path, monkeypatch, stub, WEIDU, {"mods": [
+        {"name": "Endless BG1", "tp2": "EndlessBG1", "url": DOWNLOAD, "sha256": "a" * 64}]})
+
+    code, out = run(ARGS)
+
+    assert code == 1
+    assert stub.downloaded == []
+    assert not (tmp_path / "Mods" / "EndlessBG1").exists()
+    assert "pinned to a file" in report(tmp_path)["records"][0]["detail"]
+
+
+def test_a_pinned_page_link_is_never_handed_over_when_downloaded(tmp_path, monkeypatch):
+    """The same on the download path: the page's link lands on GitHub."""
+    stub = release_stub(zip_bytes("EndlessBG1"))
+    make(tmp_path, monkeypatch, stub, WEIDU, {"mods": [
+        {"name": "Endless BG1", "tp2": "EndlessBG1", "url": PAGE, "sha256": "a" * 64}]})
+
+    code, out = run(ARGS)
+
+    assert code == 1
+    assert stub.downloaded == [DOWNLOAD]               # never the release's asset
+    assert not (tmp_path / "Mods" / "EndlessBG1").exists()
+
+
+def test_a_release_that_cannot_be_had_keeps_the_not_an_archive_code(tmp_path, monkeypatch):
+    """The report's error codes are a contract (ADR-0030)."""
+    stub = RedirectingStub(owners={}, releases={}, blobs={})
+    setup(tmp_path, monkeypatch, stub, url=PAGE)
+
+    assert run(ARGS)[0] == 1
+    assert report(tmp_path)["records"][0]["error_code"] == "not_an_archive"
+
+
+def test_a_catalogue_link_that_leads_to_a_github_page_takes_its_release(
+        tmp_path, monkeypatch):
+    """The catalogue's own landing path follows the redirect too."""
+    stub = release_stub(zip_bytes("EndlessBG1"))
+    make(tmp_path, monkeypatch, stub, WEIDU,
+         {"mods": [{"name": "Endless BG1", "tp2": "EndlessBG1"}]})   # no url, no github
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1", "urls": [DOWNLOAD]}]}))
+
+    code, out = run([*ARGS, "-c", "lcc.json"])
+
+    assert code == 0, out
+    assert (tmp_path / "Mods" / "EndlessBG1" / "EndlessBG1.tp2").exists()
+    assert stub.downloaded == [ASSET]

@@ -56,8 +56,8 @@ class NotAnArchive(ModFetchError):
     """The server returned something that is not an archive (HTML, JSON, ...)."""
     code = "not_an_archive"
 
-    def __init__(self, url, sniff, final_url=None):
-        super().__init__(f"{url} did not return an archive; got: {sniff!r}")
+    def __init__(self, url, sniff, final_url=None, note=""):
+        super().__init__(f"{url} did not return an archive; got: {sniff!r}{note}")
         self.url = url
         self.sniff = sniff
         # where the redirects ended, when it is another URL
