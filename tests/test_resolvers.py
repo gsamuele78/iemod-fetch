@@ -369,3 +369,37 @@ def test_a_refusal_is_not_called_a_rate_limit(status, headers, said):
                                                         status, "Forbidden")})
     res = GitHubResolver(client).resolve(src(github="o/r"))
     assert not res.ok and said in res.reason and "set GH_TOKEN" not in res.reason
+
+
+def test_a_link_to_the_page_itself_is_never_the_download(fake_opener):
+    # Measured on the real site (download-sources.yml, 2026-10-22): a WeaselMods
+    # page links to itself, `/download/<its slug>/`, which scored on the slug and
+    # was "downloaded" - an HTML page, not the archive
+    page = "https://downloads.weaselmods.net/download/alabaster-sands/"
+    body = weasel_page(extra=b'<a href="/download/alabaster-sands/#top">Download</a>'
+                             b'<a href="https://downloads.weaselmods.net/download/'
+                             b'alabaster-sands">Alabaster Sands</a>')
+    res = LandingPageResolver(landing(page, body)).resolve(src(key="AlabasterSands", url=page))
+    assert not res.ok and "scored high enough" in res.reason
+
+
+def test_a_wpdm_package_page_gives_its_own_download_link(fake_opener):
+    # Measured on the real site: WeaselMods' button is drawn by script, so the
+    # page's links never show it; ?wpdmdl=<post id> answers the zip itself
+    # (Alabaster Sands, post 593: AlabasterSands-v2.0.zip)
+    page = "https://downloads.weaselmods.net/download/alabaster-sands/"
+    body = weasel_page().replace(
+        b"<html>", b'<html><body data-rsssl="1" class="wpdmpro-template-default single '
+                   b'single-wpdmpro postid-593 wp-custom-logo right-sidebar ">')
+    res = LandingPageResolver(landing(page, body)).resolve(src(key="AlabasterSands", url=page))
+    assert res.ok
+    assert res.candidate.url == page + "?wpdmdl=593"
+    assert res.candidate.filename == "alabaster-sands.zip"
+
+
+def test_a_page_listing_wpdm_packages_is_not_a_package(fake_opener):
+    # the site's home or a category lists many packages: no single post id
+    page = "https://downloads.weaselmods.net/"
+    body = weasel_page().replace(b"<html>", b'<html><body class="home blog postid-12">')
+    res = LandingPageResolver(landing(page, body)).resolve(src(url=page))
+    assert not res.ok

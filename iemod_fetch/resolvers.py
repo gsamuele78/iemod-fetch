@@ -56,7 +56,11 @@ _ARCHIVE_CT = ("application/zip", "application/x-zip", "application/octet-stream
 # every mod in its sidebar, the alphabetically first one would otherwise win for
 # every mod on the site.
 _MIN_LINK_SCORE = 40
-
+# A WordPress Download Manager package page (WeaselMods): the package is the
+# post, and `?wpdmdl=<post id>` on the page's own URL is its file. The button
+# that carries it is drawn by script, so the page's links never show it.
+_WPDM_PACKAGE = re.compile(r'<body[^>]*class="[^"]*\bsingle-wpdmpro\b[^"]*\bpostid-(\d+)\b',
+                           re.IGNORECASE)
 
 
 def _page_slug(url: str) -> str:
@@ -279,6 +283,15 @@ class _LinkExtractor(HTMLParser):
 
 
 
+def _same_page(link: str, page_url: str) -> bool:
+    """The link is the page it is on (fragment and trailing slash aside)."""
+    def key(url: str) -> tuple:
+        parts = urllib.parse.urlsplit(url)
+        return (parts.scheme.lower(), (parts.hostname or "").lower(),
+                parts.path.rstrip("/") or "/", parts.query)
+    return key(link) == key(page_url)
+
+
 class LandingPageResolver:
     """
     Scrapes a mod's landing page for its download link.
@@ -337,6 +350,16 @@ class LandingPageResolver:
         return posixpath.basename(urllib.parse.urlparse(url).path) or f"{source.key}.zip"
 
     def _from_html(self, source, page_url, body) -> Resolution:
+        package = _WPDM_PACKAGE.search(body)
+        if package:
+            # Measured on downloads.weaselmods.net (download-sources.yml):
+            # ?wpdmdl=593 on Alabaster Sands' page answers its zip directly.
+            # Like any candidate, it is installed only if it holds the tp2.
+            base = urllib.parse.urlsplit(page_url)._replace(query="", fragment="")
+            link = f"{urllib.parse.urlunsplit(base)}?wpdmdl={package.group(1)}"
+            return Resolution(candidate=Candidate(
+                link, f"{_page_slug(page_url) or source.key}.zip", origin="page-link",
+                sha256=source.sha256))
         parser = _LinkExtractor(page_url)
         try:
             parser.feed(body)
@@ -347,6 +370,8 @@ class LandingPageResolver:
         scored = []
         for raw_link, text in parser.links:
             link = unwrap_redirect(raw_link)
+            if _same_page(link, page_url):
+                continue          # the page itself: downloading it gives the page
             score = self._score(link, text)
             if score <= 0:
                 continue

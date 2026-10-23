@@ -36,6 +36,14 @@ Python API, which is internal.
   fails it; only a quota or network failure is inconclusive.
 
 ### Fixed
+- **WeaselMods downloads** (about 20 mods of an EET build). Its package pages
+  draw the download button by script, so no link on the page was the file:
+  the tool either found nothing or took the page's link to itself and
+  "downloaded" an HTML page. A WordPress Download Manager package page now
+  gives `?wpdmdl=<its post id>`, which the real site answers with the zip
+  (checked on Alabaster Sands and The Bloodied Stings of Barovia); a link to
+  the page itself is never a candidate. `tools/landing_probe.py` shows what a
+  landing page gives the tool, from the download-sources workflow.
 - A command-line run in a project the wizard made (`--config
   PROJECT/iemod-fetch.ini` without `--plan-order`) stopped on the
   `language_preference`, `bgee_dir` and `bg2ee_dir` the wizard writes there:
