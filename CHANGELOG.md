@@ -54,7 +54,9 @@ Python API, which is internal.
   mod and in its JSON record (`newer`: version, installed, repo, date, url).
   `--take-newer FOLDER` (repeatable; `all` for every one offered; `take_newer`
   in the ini) installs that release over the copy on disk, kept in
-  `.backup/`; if GitHub cannot give it, the copy is left as it is. Measured:
+  `.backup/`; if GitHub cannot give it, the copy is left as it is. Only a
+  release that is offered is taken, by its tag (never an older one, nor the
+  same one again on the next run). Measured:
   Ascension from a Beamdog thread (v1.5 BETA) is offered 2.1.0 from
   Gibberlings3/Ascension (krion64 knows it as InfinityMods/Ascension, renamed);
   finchnpc is offered nothing, its only scanned repository being a fork

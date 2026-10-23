@@ -165,3 +165,52 @@ def test_a_copy_from_github_is_not_offered_its_own_release(tmp_path, monkeypatch
     assert code == 0, out
     assert stub.downloaded == [ASSET]
     assert not record(tmp_path)["newer"]
+
+
+def test_asking_by_name_never_takes_an_older_release(tmp_path, monkeypatch):
+    """Review of #52: the name alone took the release with no offer - v2.0 over v3.0."""
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("v3.0")})
+    setup(tmp_path, monkeypatch, stub)
+    assert run(ARGS)[0] == 0
+    stub.releases = {"Gibberlings3/EndlessBG1": {"tag_name": "v2.0", "assets": [
+        {"name": "m.zip", "browser_download_url": ASSET}]}}
+    stub.blobs[ASSET] = mod_zip("v2.0")
+
+    code, out = run([*ARGS, "--take-newer", "EndlessBG1"])
+
+    assert code == 0, out
+    assert "VERSION ~v3.0~" in installed_version(tmp_path)
+    assert stub.downloaded == [FORUM]
+
+
+def test_a_release_taken_is_not_taken_again_on_the_next_run(tmp_path, monkeypatch):
+    """Review of #52: take_newer kept in the ini replaced the mod on every run."""
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("v1.5 BETA")})
+    setup(tmp_path, monkeypatch, stub)
+    assert run(ARGS)[0] == 0
+    stub.releases = {"Gibberlings3/EndlessBG1": {"tag_name": "v2.0", "assets": [
+        {"name": "m.zip", "browser_download_url": ASSET}]}}
+    stub.blobs[ASSET] = mod_zip("v2.0")
+    assert run([*ARGS, "--take-newer", "EndlessBG1"])[0] == 0
+
+    code, out = run([*ARGS, "--take-newer", "EndlessBG1"])
+
+    assert code == 0, out
+    assert stub.downloaded == [FORUM, ASSET]
+    assert record(tmp_path)["status"] == "skipped"
+
+
+def test_the_take_asks_github_for_the_release_offered(tmp_path, monkeypatch):
+    """Review of #52: it asked for /releases/latest, which may be older than the offer."""
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("v1.5 BETA")})
+    setup(tmp_path, monkeypatch, stub)
+    assert run(ARGS)[0] == 0
+    stub.releases = {"Gibberlings3/EndlessBG1": {"tag_name": "v2.0", "assets": [
+        {"name": "m.zip", "browser_download_url": ASSET}]}}
+    stub.blobs[ASSET] = mod_zip("v2.0")
+    stub.calls.clear()
+
+    assert run([*ARGS, "--take-newer", "EndlessBG1"])[0] == 0
+
+    asked = [u for u in stub.calls if "/repos/Gibberlings3/EndlessBG1/releases" in u]
+    assert asked and all(u.endswith("/releases/tags/v2.0") for u in asked), asked

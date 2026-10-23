@@ -135,7 +135,7 @@ class Runner:
         expect_tp2 = ((source.expect_tp2 if source else None)
                       or (entry.expected_tp2 if entry else None))
 
-        taking = self._taking_newer(folder)
+        taking = self._taking_newer(folder, expect_tp2)
         if taking:
             return self._take_newer(item, taking, expect_tp2, advisories)
 
@@ -292,31 +292,33 @@ class Runner:
                  f"this copy declares {newer['installed']}. To install it instead: "
                  f"--take-newer {folder}")]
 
-    def _taking_newer(self, folder):
-        """The (repo, release) to install for `folder` under --take-newer."""
+    def _taking_newer(self, folder, expect_tp2):
+        """
+        The (repo, release) to install for `folder` under --take-newer: only
+        one offered for the copy on disk, named or by `all`. Asking by name
+        never takes an older release, nor the same one again on each run
+        (review of #52).
+        """
         wanted = self.options.take_newer
-        known = self.releases.get(normalize_key(folder)) if wanted else None
-        if not known:
+        if not wanted or not (folder.lower() in wanted or "all" in wanted):
             return None
-        if folder.lower() in wanted:
-            return known
-        if "all" in wanted:
-            kept = self.state.get(folder) or {}
-            if self._newer(folder, kept.get("url"), kept.get("mod_version")):
-                return known
-        return None
+        kept = self.state.get(folder) or (self.state.get(expect_tp2) if expect_tp2 else None) or {}
+        if not self._newer(folder, kept.get("url"), kept.get("mod_version")):
+            return None
+        return self.releases.get(normalize_key(folder))
 
     def _take_newer(self, item, known, expect_tp2, advisories) -> Record:
         """
         Install the GitHub release asked for, over the copy on disk (kept in
-        .backup/, as --force keeps it). Only that release: if it cannot be had,
+        .backup/, as --force keeps it). Only that release - its tag, not
+        whatever GitHub calls latest now (review of #52): if it cannot be had,
         the mod is left as it is - the catalogue's other sources would only
         bring back the copy being replaced.
         """
         folder = item.folder
         repo, release = known
         source = _replace(item.source or ModSource(key=folder, name=folder),
-                          url=None, github=repo, release_tag=None, asset=None,
+                          url=None, github=repo, release_tag=release.tag, asset=None,
                           sha256=None)
         resolution = self.github.resolve(source)
         candidate = resolution.candidate
