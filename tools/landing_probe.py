@@ -11,7 +11,6 @@ every element whose attributes mention a download (href, data-*, action,
 onclick), trimmed; and what LandingPageResolver picks from it.
 """
 import os
-import re
 import sys
 from html.parser import HTMLParser
 
@@ -22,7 +21,7 @@ if ROOT not in sys.path:
 from iemod_fetch.errors import ModFetchError  # noqa: E402
 from iemod_fetch.manifest import ModSource  # noqa: E402
 from iemod_fetch.net import HttpClient  # noqa: E402
-from iemod_fetch.resolvers import LandingPageResolver  # noqa: E402
+from iemod_fetch.resolvers import _WPDM_PACKAGE, LandingPageResolver  # noqa: E402
 
 WORDS = ("download", "wpdm", "dl=", ".zip", ".rar", ".7z", ".iemod", "package")
 HEADERS = ("Content-Type", "Content-Disposition", "Content-Length", "Location", "Server")
@@ -45,7 +44,8 @@ def probe(client, url):
     print(f"== {url}")
     try:
         with client.open(url) as resp:
-            print(f"   status {getattr(resp, 'status', '?')}, final {resp.geturl()}")
+            final = resp.geturl()
+            print(f"   status {getattr(resp, 'status', '?')}, final {final}")
             for name in HEADERS:
                 if resp.headers.get(name):
                     print(f"   {name}: {resp.headers.get(name)}")
@@ -63,11 +63,13 @@ def probe(client, url):
         print(f"   {len(body):,} bytes of HTML; {len(parser.found)} element(s) about a download:")
         for element in parser.found[:60]:
             print(f"     {element}")
-        post = re.search(rb"postid-(\d+)", body)
-        if post and b"Download Manager" in body:
-            # WordPress Download Manager's own direct link: ?wpdmdl=<package id>
-            direct = f"{url.split('?')[0]}?wpdmdl={post.group(1).decode()}"
-            print(f"   WPDM package {post.group(1).decode()}; trying {direct}")
+        post = _WPDM_PACKAGE.search(body.decode("utf-8", errors="replace"))
+        if post:
+            # what the resolver gives a WordPress Download Manager package page,
+            # built as it builds it: from the page's final URL. Fetching it
+            # counts as one download on the site.
+            direct = f"{final.split('?')[0].split('#')[0]}?wpdmdl={post.group(1)}"
+            print(f"   WPDM package {post.group(1)}; trying {direct}")
             try:
                 with client.open(direct) as got:
                     print(f"     status {getattr(got, 'status', '?')}, final {got.geturl()}")
