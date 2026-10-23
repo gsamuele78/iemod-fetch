@@ -13,7 +13,7 @@ Python API, which is internal.
   component with fixes after a manual move (measured against BWS-NG, Infinity
   Mod Runner and Project Infinity); one Python version and the libraries that
   earn their place (ADR-0043, for 4.0.0); defects the audits reproduced, to be
-  fixed in the standard library; and what the other projects do that this
+  fixed in the standard library (the offsite check with publicsuffixlist); and what the other projects do that this
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added

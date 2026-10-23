@@ -2392,18 +2392,23 @@ unread, for the player to prune with it.
 ## ADR-0043 — One Python version, chosen like a distribution's kernel, and the libraries that earn their place
 
 **Status**: accepted (the owner's decision, 2026-10-23); carried out in 4.0.0
-**Supersedes**: ADR-0001's "no runtime dependency" and ROADMAP E6
+**Supersedes**: ADR-0001's zero-runtime-dependency constraint (cited
+elsewhere as ADR-0002), ADR-0028's Python-version bullet, ADR-0029's "still
+standard library only" for the CLI, the M3 validation row's "the `.pyz` stays
+standard-library only", and ROADMAP E6
 **Date**: 2026-10-23
 
 ### Context
 
-3.0.0 supports Python 3.9 to 3.14; the tools run on 3.12, written out in 15
-places across 10 workflows. 3.9 has been out of support since October 2025,
+3.0.0 supports Python 3.9 to 3.14; the tools run on 3.12, written out in 20
+places across all 10 workflows, plus two test matrices and four settings in
+`pyproject.toml`. 3.9 has been out of support since October 2025,
 3.10 since 2026-10-01 (PEP 619); 3.15.0 shipped on 2026-10-09 (PEP 790).
 Two audits of the code against the libraries the community uses (PyPI
 metadata, and the candidates run, 2026-10-23) found:
 
-- what kept them out was mostly Python 3.9: the current releases of urllib3,
+- what kept them out, besides the standard-library-only rule, was mostly
+  Python 3.9: the current releases of urllib3,
   filelock, platformdirs, tenacity, rapidfuzz and jsonschema need 3.10 or
   3.11;
 - the defects found (M7: the sort's cycle handling, tp2 strings, `.tra`
@@ -2442,7 +2447,7 @@ it; a wizard build on 3.15 has not been run.
   12 and 13, and macOS's `/usr/bin/python3` (3.9.6) users take the bundle.
 - One version tested, on Linux and Windows: a defect that only an older
   Python would show is no longer looked for, on purpose.
-- The code can drop its 3.9 forms (681 `Optional`/`List` annotations,
+- The code can drop its 3.9 forms (about 890 `Optional`/`List` annotations,
   tarfile's filter fallback) in one mechanical change.
 - Moving to 3.15 is a measured step: it makes UTF-8 the default encoding on
   Windows (PEP 686), which a green build has to show is harmless here.
@@ -2462,10 +2467,15 @@ per repository. lcc-docs (`db/mods.json`, 2,151 mods, kept by hand every two
 or three days) has no version numbers; it has `last_update` (2,142 mods),
 `status` (stable, beta, obsolete 75, archived 66, missing 60...), `safe` and
 `compatibilities` ("EE version >= 2.5"). Measured on the supplied logs (149
-mods): 90 have both, **52 only an lcc-docs date** (mods outside GitHub:
-Weasel Mods, Gibberlings3, baldurs-gate.de, the Artisans), 4 only a krion64
-release, 3 neither; for 9, the lcc-docs date is newer than krion64's latest
-release.
+mods), with the data of 2026-10-23, matching each tp2 to krion64's mod
+records (`t` -> `gh`) and to lcc-docs' `tp2`: 90 have both, **52 only an
+lcc-docs date** - no tagged GitHub release krion64 can see: mods hosted
+elsewhere (Weasel Mods, Gibberlings3's site, baldurs-gate.de) and GitHub
+repositories without releases (gibberlings3/ee_fixpack, gitjas/toa...) - 4
+only a krion64 release, 3 neither; for 9, the lcc-docs date is newer than
+krion64's latest release. The numbers move with the matching: through the
+manifest's `github` field, 87 / 55 / 4 / 3 and 7 newer; through krion64's
+mods index, 112 / 30 / 3 / 4. Between 30 and 55 mods, then.
 
 ### Decision
 
@@ -2478,6 +2488,6 @@ release.
 
 ### Consequences
 
-The 52 mods outside GitHub get a signal they lack today. Some marks will be
+The 30 to 55 mods with no GitHub release get a signal they lack today. Some marks will be
 pages edited without a new release; the wording says so. A test pins that a
 date is never presented as a version.

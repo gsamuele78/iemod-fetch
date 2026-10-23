@@ -259,11 +259,11 @@ by running the candidates.
 
 | # | Item | Size |
 |---|---|---|
-| 36 | **The platform**: `.python-version` (3.14) read by every workflow instead of 15 literal versions in 10 files; `requires-python = ">=3.14"`; ruff, mypy and the classifiers on it; tests on it, on Linux and Windows (macOS informational). The CLI also ships as a PyInstaller bundle beside the wizard, so a player needs no Python of their own. Breaking: 4.0.0, with a migration note. | M |
+| 36 | **The platform**: `.python-version` (3.14) read by every workflow instead of 20 literal versions in 10 workflows, two test matrices and four settings in `pyproject.toml`; `requires-python = ">=3.14"`; ruff, mypy and the classifiers on it; tests on it, on Linux and Windows (macOS informational). The CLI also ships as a PyInstaller bundle beside the wizard, so a player needs no Python of their own. Breaking: 4.0.0, with a migration note. | M |
 | 37 | **The weekly check** (ADR-0028's `upstream-versions.yml`): the newest stable from actions/python-versions' manifest, and every place that names the version compared; an issue when they disagree, and a PR moving `.python-version` once a full build - wizard and CLI bundles, all tests - passes on the newer one. Dependabot cannot do it (verified in dependabot-core: it never touches `python-version`). Next candidate: 3.15, after its build is green - it makes UTF-8 the default on Windows (PEP 686). | S |
-| 38 | **Mechanical modernisation**, alone in its PR: ruff `UP` rewrites the 681 `Optional`/`List`/... annotations; `hashlib.file_digest`; `datetime.fromisoformat`; tarfile's data filter without the fallback; `PySide6>=6.11`. | S |
+| 38 | **Mechanical modernisation**, alone in its PR: ruff `UP` rewrites about 890 `Optional`/`List`/... annotations (522 UP006 and 371 UP045 at py314) and 140 typing imports; `hashlib.file_digest`; `datetime.fromisoformat`; tarfile's data filter without the fallback; `PySide6>=6.11`. | S |
 | 39 | **Libraries adopted**, each with a test that fails before it, pinned by hash, scanned by pip-audit: **filelock** (MIT: a lock around the shared data folder, which the GUI and the CLI both write) and **publicsuffixlist** (MPL-2.0, unmodified, licence shipped: `a.github.io` and `b.github.io` are different sites, which the offsite check gets wrong today). **urllib3** only if keep-alive is measured to matter. | M |
-| 40 | **7-Zip in the bundles** (about 45% of lcc-docs' links with an extension are .rar, .7z or .exe), after a licence review of the unRAR clause. | S |
+| 40 | **7-Zip in the bundles** (about half of lcc-docs' direct download links - 150 of 290 - are .rar, .7z or .exe), after a licence review of the unRAR clause. | S |
 
 Rejected, with the measurement: charset-normalizer (it reads short Cyrillic
 `.tra` text as cp1125 and Western text as big5), tenacity and requests-cache
@@ -271,16 +271,16 @@ Rejected, with the measurement: charset-normalizer (it reads short Cyrillic
 PEP 440), rapidfuzz (difflib is enough), tldextract, vdf, atomicwrites,
 keyring, py7zr (LGPL, compiled dependencies, no RAR).
 
-### M7 — Defects the audits found, fixed in the standard library
+### M7 — Defects the audits found, fixed in the standard library (except the offsite check: publicsuffixlist, item 39)
 
 | # | Defect, reproduced | Fix |
 |---|---|---|
-| 41 | **Security**: `same_site("modder.github.io", "attacker.github.io")` is true, so a link to another user's page escapes the offsite gate. | item 39 |
+| 41 | **Security**: `same_site("https://modder.github.io/m/", "https://attacker.github.io/x.zip")` is true (`registrable_suffix` reduces both to `github.io`), so a link to another user's page escapes the offsite gate. | item 39 |
 | 42 | **Order**: a stuck sort reports every remaining unit as the cycle and forces the top one even outside it; with A<->B, "C after A" is broken. | `graphlib`: the real cycle, released from inside it |
 | 43 | **tp2**: `~Use "smart" AI~` is read as `Use `; `~~~~~` strings are not read. | reuse `tra.py`'s scanner; real WeiDU as the oracle |
-| 44 | **.tra**: Russian, Polish, Japanese and Chinese text decoded as cp1252, silently. | UTF-8 first, then the code page of the language folder |
+| 44 | **.tra**: non-UTF-8 Russian, Polish, Japanese and Chinese text decoded as cp1252 (or latin-1), silently. | after UTF-8, the code page of the language folder |
 | 45 | **GitHub**: a 403 secondary limit is not retried; an HTTP-date `Retry-After` is ignored; no ETag, so repeat runs spend the rate limit. | `email.utils`, an ETag store |
-| 46 | Nine hand-written atomic writes, some with one fixed temp name and no fsync. | one helper |
+| 46 | Nine hand-written atomic writes: seven with one fixed temp name, two with an fsync. | one helper |
 
 ### M8 — What the other projects do and this tool does not (feature audit)
 
@@ -292,7 +292,7 @@ Infinity). Ranked by value to a player installing a large EET setup.
 | 47 | **Known-issue classifier** for install output: the Forge's 37 general patterns and per-mod `ki` matched against WeiDU's output and WSETUP.DEBUG (today only their descriptions are shown, before installing). Measured on a labelled corpus. | IMR, Forge (MIT) | M |
 | 48 | **Prompts known before installing**: every `ACTION_READLN` in the staged tp2s plus the Forge's manual-step notes, and whether an answer is recorded. Never IMR's "answer 1 after 30 s" (ADR-0005). | IMR | S |
 | 49 | **Preflight**: free disk space for the plan and the backup; the WeiDU binary's version against the newest and against what mods need. | IMR, BWS-NG | S |
-| 50 | **Update signal from lcc-docs' dates** (ADR-0044): 52 of the supplied 149 mods have no GitHub release krion64 can see, only an lcc-docs date. | lcc-docs | S |
+| 50 | **Update signal from lcc-docs' dates** (ADR-0044): between 30 and 55 of the supplied 149 mods, depending on how they are matched, have no GitHub release krion64 can see, only an lcc-docs date (ADR-0044). | lcc-docs | S |
 | 51 | Release notes and activity (`body`, `pushed`) in the update view; the Forge's `in`, `rec` and `eet_compat` notes in the selection. | Forge | S |
 | 52 | An opt-in set of community patches for known mod bugs (IMR's 62, idempotent), with sha256 before and after; needs its own ADR - it changes mod content. | IMR (MIT data) | M |
 | 53 | `AT_EXIT` scripts kept beside a mod's folder (to be checked first); install-time estimate and slow-component notice; a post-install report and a diagnostic bundle with paths removed; a translated wizard. | IMR, BWS-NG | M |
@@ -313,6 +313,10 @@ Infinity). Ranked by value to a player installing a large EET setup.
 | M3 | A pytest-qt test, run offscreen on Windows, Linux and macOS, goes through phases 1-5 on a fixture EET selection: picks components, resolves a conflict, reorders, downloads from a local fixture server, cancels and resumes.<br>The `selection.json` it saves is byte-identical to the CLI's for the same choices.<br>The window never blocks for more than 100 ms during a download.<br>The `.pyz` stays standard-library only, and the PyInstaller build starts on all three OSes. |
 | M4 | The mock EET plan installs end to end from the GUI on Windows and Linux runners with the real WeiDU and mod_installer.<br>Cancelling mid-install, then resuming, finishes with the same WeiDU.log as an uninterrupted run.<br>A prompt without a recorded answer stops and asks; it is never answered by guess.<br>Restoring the backup gives back the game folder as it was. |
 | M5 | Every mod of the 146-mod log has a place from krion64, BWS-NG's sequence or a decisive kind, with its source named, or is marked as having none; none is placed silently (ADR-0041).<br>The plan's disagreements with BWS-NG's sequence (independent of krion64; the supplied log is the Forge's own output) are measured and published, and shown to the player.<br>Each source's classification is read from its real files by a weekly workflow, and a change in its shape fails that workflow, not a player's run.<br>A plan reordered by kind installs with the real WeiDU in the mock EET job. |
+| M5b | After a split and a move in the wizard, the GUI's order and `--plan-order`'s agree; the incremental check equals the full one after random sequences of moves (property test), and its time after a drop is measured on the 146-mod log and a 3,000-component order; every offered fix leaves its rule satisfied and adds no error. |
+| M6 | One `.python-version` names the version every workflow, `requires-python`, ruff, mypy and the classifiers use, and the weekly check fails when one disagrees; the CLI and the wizard bundles start on a machine with no Python; each adopted library has a test that failed without it, is pinned by hash and passes pip-audit. |
+| M7 | Each defect has a test reproducing it, red before its fix and green after; the tp2 one is checked against the real WeiDU. |
+| M8 | Each item ships with its own measurement: the classifier's precision and recall on a labelled corpus, the prompts found against the prompts met in a real-WeiDU run, the update signals on the supplied logs. |
 
 **M3, as released in 3.0.0.** `tests/gui/test_m3_end_to_end.py` drives the real main window,
 offscreen, through phases 1-4 on a fixture EET selection: the project's ini,
