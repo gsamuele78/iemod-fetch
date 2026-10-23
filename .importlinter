@@ -9,7 +9,7 @@
 #            config, pinning, selection, available, contract, tra, freshness,
 #            decisions, bio, pi, limits, choices
 #            -> pure. Parse, compare, decide. No sockets, no subprocesses.
-#   shell    net, auth, archives, install, orgindex, resolvers, datasync, runner,
+#   shell    net, etagcache, auth, archives, install, orgindex, resolvers, datasync, runner,
 #            api, cli
 #            -> everything that touches the network, the filesystem or a
 #               subprocess.
@@ -70,6 +70,7 @@ source_modules =
     iemod_fetch.sortorder
 forbidden_modules =
     iemod_fetch.net
+    iemod_fetch.etagcache
     iemod_fetch.auth
     iemod_fetch.archives
     iemod_fetch.install
@@ -147,7 +148,7 @@ layers =
     iemod_fetch.runner
     iemod_fetch.resolvers | iemod_fetch.install | iemod_fetch.orgindex | iemod_fetch.datasync
     iemod_fetch.net
-    iemod_fetch.archives | iemod_fetch.auth
+    iemod_fetch.archives | iemod_fetch.auth | iemod_fetch.etagcache
     iemod_fetch.plan | iemod_fetch.report
     iemod_fetch.installer | iemod_fetch.tra
     iemod_fetch.resolution | iemod_fetch.languages
@@ -180,6 +181,7 @@ forbidden_modules =
     iemod_fetch.archives
     iemod_fetch.atomic
     iemod_fetch.auth
+    iemod_fetch.etagcache
     iemod_fetch.available
     iemod_fetch.bio
     iemod_fetch.catalogues
