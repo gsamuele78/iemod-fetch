@@ -19,7 +19,7 @@ from .report import Record, RunReport, Status, line_for
 from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
                         repo_from_url)
 from .urls import is_forum_post
-from .versions import compare_published
+from .versions import newer_release
 
 
 @dataclass
@@ -65,6 +65,9 @@ class Runner:
         self._stream = stream
         self._on_event = on_event
         self.cancel = cancel if cancel is not None else threading.Event()
+        # a wait between the client's retries ends when the run is cancelled
+        if getattr(client, "cancel", False) is None:
+            client.cancel = self.cancel
 
     def _emit(self, event: str, **fields) -> None:
         if self._on_event is None:
@@ -278,7 +281,7 @@ class Runner:
         if not known or not version or repo_from_url(url or ""):
             return None
         repo, release = known
-        if compare_published(release.tag, version) != 1:
+        if not newer_release(release.tag, version):
             return None
         return {"version": release.tag, "installed": version, "repo": repo,
                 "date": release.date, "url": release.url}
@@ -347,6 +350,8 @@ class Runner:
             return Record(folder, Status.FAILED, f"filesystem error: {exc}",
                           source_key=source.key, url=candidate.url,
                           error_code="filesystem")
+        # the new copy's own GAME_IS, as for any other download
+        advisories = self._reconcile_with_tp2(advisories, outcome, item.game)
         with self._lock:
             self.state.record(outcome.folder, sha256=result.sha256, url=candidate.url,
                               version=candidate.version, tp2_file=outcome.tp2_file,

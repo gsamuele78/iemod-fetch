@@ -69,8 +69,19 @@ Python API, which is internal.
   same one again on the next run). Measured:
   Ascension from a Beamdog thread (v1.5 BETA) is offered 2.1.0 from
   Gibberlings3/Ascension (krion64 knows it as InfinityMods/Ascension, renamed);
-  finchnpc is offered nothing, its only scanned repository being a fork
-  (RoxanneSHS/Finch v53).
+  finchnpc is offered nothing: its only scanned repository, RoxanneSHS/Finch
+  (v53, which is 5.3), is not named like the mod, and the rule trusts only
+  a repository that is - it misses this one rather than guess. An offer
+  needs a plainly newer release (`versions.newer_release`): never a dotless
+  tag whose readings disagree (`V19`, 19 or 1.9, against `2.0`; a number
+  like BG1NPC's `v32` against `v31.1` is not dotless, and `v071` reads
+  0.71), never a release candidate, beta, alpha or `pre-` tag over a stable
+  copy (`v4.1.0-rc1` over `4.0`; a bare letter is a revision: `v4.81a` is
+  offered over `v4.0`),
+  never a tag that is a date over a version
+  (`20180929` over `v1.5 BETA`), and a repository named exactly like the mod
+  is preferred to one whose name only holds it. A release taken is checked
+  against the game's GAME_IS like any download.
 - **A game folder's backup and restore** (GUI-AUDIT M4 item 21, ADR-0042):
   `--backup GAME_DIR [--backup-to DIR]` copies `override/`, the
   `lang/*/dialog*.tlk` and the root's files with their sha256 and lists every
@@ -84,6 +95,39 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **GitHub's secondary rate limit is waited out, not taken for a refusal**
+  (GUI-AUDIT M7 item 45). A 403 from GitHub stopped at once unless the hourly
+  quota was spent, but GitHub also answers 403 (or 429) when requests come too
+  fast, and its docs say to wait and retry: the `Retry-After` seconds, else at
+  least one minute, then longer. That is what the client now does, for
+  GitHub only and only when the response says so (a Retry-After header, or
+  "secondary rate limit" in the body); a real refusal and a spent hourly
+  quota still stop at once with their own message - a 429 with the quota
+  spent too, which was retried after 2 and 4 s. A secondary limit asking
+  more than five minutes stops at once rather than retrying early, and
+  Cancel ends any wait between retries at once (the GUI's Stop no longer
+  sits out a rate limit). A `Retry-After` given as an HTTP date (RFC 9110)
+  is now waited until, not ignored.
+- **A Russian, Polish or Chinese mod's component names read in its own
+  script** (GUI-AUDIT M7 item 44). A .tra file that is not UTF-8 was read as
+  Windows-1252 whatever its language: on 103 real mods, 2,286 Russian and
+  721 Chinese .tra files came out as Latin letters, and Polish and Czech
+  ones lost their `ł`, `ś`, `ź`. The code page now follows the language
+  folder, by WeiDU 251's own table for HANDLE_CHARSETS (Russian cp1251,
+  Polish and Czech cp1250, Simplified Chinese cp936, Traditional cp950,
+  Japanese cp932, Korean cp949); measured, every one of those files then
+  decodes to its own script. UTF-8 is still tried first.
+- **`--language-preference` picks the language WeiDU means** (GUI-AUDIT M7
+  item 43). The tp2 reader took a string from `~` or `"` to the next `~` or
+  `"`, and any `LANGUAGE` word as a declaration: `~Use "smart" AI~` read as
+  `Use`, `~~~~~...~~~~~` strings not at all, and code such as
+  `iconv_path = ...` or `reload_array = ... LANGUAGE` as a language. On the
+  119 tp2s of 103 real mods, 12 language lists disagreed with WeiDU 251's
+  `--list-languages`, and 11 mods got a wrong WeiDU language number for at
+  least one of eight common languages - NTotSC's English was number 1, its
+  German; BP-BGT-Worldmap offered none. The tp2 reader now uses the scanner
+  the component names already used (moved to `iemod_fetch/weidu_lex.py`):
+  all 119 agree with WeiDU.
 - **Every saved file goes through one atomic write** (GUI-AUDIT M7 item 46).
   Eight places wrote `<file>.tmp` and renamed it over the file: one temp
   name for every writer, so two runs saving the same state, report or cache

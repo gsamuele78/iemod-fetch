@@ -1844,6 +1844,13 @@ Two of those name a mod by its display name ("Coran in BG2") and order nothing.
   that tp2 off for an hour and keeps what it found before; it never stops the
   others. A 401 (a credential GitHub refuses) and a 403 or 429 (GitHub's
   quotas, the secondary one included) stop the run like a network failure.
+  *Amendment (2026-10-23, GUI-AUDIT item 45):* a secondary limit is first
+  waited out in `net.py`, as GitHub's docs prescribe (Retry-After, else one
+  minute and then longer, over the run's retries - three by default); only
+  one that outlasts them reaches here and stops the run. A Retry-After over
+  five minutes is not waited out but stops at once (retrying sooner than
+  GitHub asks prolongs the limit), and every wait ends when the run is
+  cancelled.
 - An author's ini can be wrong or old, like any rule source; its order rules
   carry the file as their origin, so a finding says whose claim it is.
 - Component conflicts get nothing from PI: its format has no such field.
@@ -2062,8 +2069,9 @@ command line either.
     of the entry's other sources gets its turn (GUI-AUDIT M7 items 54, 58).
     And a copy from anywhere but GitHub is compared with the latest release
     krion64's daily scan names for the repository called like the mod (a
-    fork is never offered); when that release is newer by
-    `versions.compare_published` - never on versions it cannot rank - the
+    repository named otherwise is never offered); when that release is plainly
+    newer by `versions.newer_release` - never on versions it cannot rank, a
+    release candidate over a release, or a date over a version - the
     record carries it as `newer` and the run tells the player to re-run
     with `--take-newer FOLDER` (or `all`). Offered, not taken: the player
     decides, as ADR-0005 wants, and a front end can make it a button. Taken,

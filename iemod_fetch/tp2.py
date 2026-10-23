@@ -24,18 +24,19 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from .weidu_lex import _skip, _string, _strip, keyword_ends, languages
+
 _MAX_TP2_BYTES = 8 * 1024 * 1024
 
 _COMMENT_BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
 _COMMENT_LINE = re.compile(r"^//.*|\s//.*", re.MULTILINE)
 
-_QUOTED = r'[~"](.*?)[~"]'
-_VERSION = re.compile(r"\bVERSION\s+[~\"](.+?)[~\"]", re.IGNORECASE)
+# A WeiDU string closes on the mark that opened it: `~Use "smart" AI~` holds
+# its quotes, and `~~~~~...~~~~~` holds tildes (checked against WeiDU 251's
+# --list-components-json). Any of the three is one value: _first() takes it.
+_QUOTED = r'(?:~~~~~(.*?)~~~~~|~([^~]*)~|"([^"]*)")'
 _AUTHOR = re.compile(rf"\bAUTHOR\s*{_QUOTED}", re.IGNORECASE | re.DOTALL)
 _BEGIN = re.compile(rf"\bBEGIN\s*{_QUOTED}", re.IGNORECASE | re.DOTALL)
-_LANGUAGE = re.compile(r"\bLANGUAGE\s*((?:[~\"](?:.*?)[~\"]\s*)+)",
-                       re.IGNORECASE | re.DOTALL)
-_STRING = re.compile(_QUOTED, re.DOTALL)
 # A positive game assertion: not negated, and not the `GAME_IS ~x~ ? 1 : 0`
 # idiom, which yields a value rather than stating a requirement.
 #
@@ -96,35 +97,39 @@ def strip_comments(content: str) -> str:
 
 
 def parse_tp2(content: str, path: str = "<tp2>") -> Tp2Info:
-    clean = strip_comments(content)
+    # comments out, strings whole: a `//` inside ~http://...~ or ~a // b~ is
+    # text, so no field runs on past its closing mark (review of #57)
+    clean = _strip(content)
     info = Tp2Info(path=path)
 
-    match = _VERSION.search(clean)
-    if match:
-        info.version = match.group(1).strip() or None
+    # VERSION as a word of code, followed by its string: never `%VERSION%`
+    # or a word inside a string (review of #57)
+    for end in keyword_ends(clean, "VERSION"):
+        value, _j = _string(clean, _skip(clean, end))
+        if value is not None:
+            info.version = value.strip() or None
+            break
     match = _BEGIN.search(clean)
     if match:
-        info.mod_name = match.group(1).strip() or None
+        info.mod_name = _first(match.groups()).strip() or None
 
-    info.authors = [a.strip() for a in _AUTHOR.findall(clean) if a.strip()]
+    info.authors = [a.strip() for a in map(_found, _AUTHOR.findall(clean)) if a.strip()]
 
     seen = set()
-    for block in _GAMES.findall(clean):
-        for raw_token in re.split(r"[\s,]+", block.strip()):
+    for games in map(_found, _GAMES.findall(clean)):
+        for raw_token in re.split(r"[\s,]+", games.strip()):
             token = raw_token.strip()
             if token and token.lower() not in seen:
                 seen.add(token.lower())
                 info.games.append(token)
 
-    for block in _LANGUAGE.finditer(clean):
-        # a LANGUAGE block is (display name, directory, tra files...)
-        values = _STRING.findall(block.group(1))
-        if values:
-            info.language_decls.append(
-                (values[0].strip(), values[1].strip() if len(values) > 1 else ""))
-            name = values[0].strip()
-            if name and name not in info.languages:
-                info.languages.append(name)
+    # (display name, directory): WeiDU's own reading, bare words included
+    # (SCS's `LANGUAGE ~English~ ENGLISH ...`), never a LANGUAGE inside code
+    for language in languages(content):
+        name = language.name.strip()
+        info.language_decls.append((name, language.directory.strip()))
+        if name and name not in info.languages:
+            info.languages.append(name)
     return info
 
 
@@ -214,6 +219,11 @@ class Tp2Component:
 
 def _first(groups) -> str:
     return next((g for g in groups if g is not None), "")
+
+
+def _found(groups: tuple[str, ...]) -> str:
+    """The value of a findall() match of _QUOTED: its groups not taken are ''."""
+    return next((g for g in groups if g), "")
 
 
 def tp2_identity(name: str) -> str:
