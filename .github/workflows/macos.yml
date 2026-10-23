@@ -45,3 +45,24 @@ jobs:
       - run: pip install -e ".[test]"
       - name: Test suite
         run: python -m pytest -q
+
+  gui:
+    # The wizard's tests on macOS (GUI-AUDIT M3: offscreen on Windows, Linux
+    # and macOS), informational like the rest of this file.
+    name: GUI (PySide6, offscreen) on macos-latest (informational)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      IEMOD_REQUIRE_GUI: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[guitest]"
+      - name: The wizard's tests, and the api it calls
+        run: python -m pytest -q -rs tests/gui tests/test_project.py

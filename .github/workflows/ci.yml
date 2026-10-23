@@ -109,7 +109,7 @@ jobs:
   gui:
     # The PySide6 wizard (ADR-0031), driven by pytest-qt with no screen. Its own
     # job: the CLI's matrix never installs Qt, so a Qt problem names this gate.
-    # macOS joins when the wizard does more than its first phase (M3 validation).
+    # macOS runs the same tests in macos.yml, informational like all of macOS.
     name: GUI (PySide6, offscreen) on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
