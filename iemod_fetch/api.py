@@ -380,10 +380,11 @@ def _github_releases(settings) -> dict:
     Mod key -> (owner/repo, its latest release) from krion64's daily scan, for
     the repository named like the mod: what a copy from elsewhere is compared
     with (ADR-0039 amendment). Only a repository whose name is the mod's, or
-    holds it: "the newest any repository of the mod names" would offer
-    RoxanneSHS/Finch v53 for Pocket Plane's finchnpc. The repository is
-    read from the release's own URL, so a renamed one (InfinityMods/Ascension,
-    now Gibberlings3's) is downloaded from where it lives.
+    holds it - one named exactly like it first: "the newest any repository of
+    the mod names" would offer RoxanneSHS/Finch v53 for Pocket Plane's
+    finchnpc, a repository it cannot tell from a fork. The repository is read from the release's own URL, so a renamed
+    one (InfinityMods/Ascension, now Gibberlings3's) is downloaded from where
+    it lives; without one, as a source spells it rather than lowercased.
     """
     if not settings.releases:
         return {}
@@ -391,12 +392,18 @@ def _github_releases(settings) -> dict:
     out = {}
     for mod in list_mods(settings.manifest, settings.catalogue, settings.mod_db,
                          settings.allow_http, settings.releases):
-        for repo in mod.repos:
-            name = normalize_key(repo.split("/", 1)[1])
+        if not mod.key:
+            continue
+        named = [(normalize_key(repo.split("/", 1)[1]), repo) for repo in mod.repos]
+        ranked = ([r for n, r in named if n == mod.key]
+                  + [r for n, r in named if n != mod.key and mod.key in n])
+        spelled = {s["github"].lower(): s["github"] for s in mod.sources
+                   if isinstance(s.get("github"), str)}
+        for repo in ranked:
             release = cache.get(repo)
-            if (release and not release.archived and mod.key
-                    and (name == mod.key or mod.key in name)):
-                out[mod.key] = (repo_from_url(release.url or "") or repo, release)
+            if release and not release.archived:
+                out[mod.key] = (repo_from_url(release.url or "")
+                                or spelled.get(repo, repo), release)
                 break
     return out
 
