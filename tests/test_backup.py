@@ -425,8 +425,87 @@ def test_a_folder_leading_elsewhere_is_never_entered(tmp_path, monkeypatch):
     root, path = backed_up(tmp_path)
     shared = root / "linked"
     write(shared / "user-file.txt", b"not the game's")
-    monkeypatch.setattr(backup, "_mount_points", lambda: {os.path.realpath(shared)})
+    monkeypatch.setattr(backup, "_mount_points",
+                        lambda: {os.path.realpath(shared): os.stat(shared).st_dev})
     plan = backup.plan_restore(path, str(root))
     assert plan["displace"] == [] and plan["mounts"] == ["linked"]
     backup.restore(path, str(root))
     assert (shared / "user-file.txt").read_bytes() == b"not the game's"
+
+
+# ------------------------------------------------- third review of #48
+def test_a_mount_on_a_path_to_put_back_stops_the_restore_before_any_change(
+        tmp_path, monkeypatch):
+    """shutil.move onto a mount once copied it and rmtree()d the mounted
+    folder - outside the game. Now the restore stops first, exit 1."""
+    import io
+
+    from iemod_fetch import cli
+    from iemod_fetch.errors import ModFetchError
+    root, path = backed_up(tmp_path)
+    spot = root / "override" / "spwi101.spl"
+    spot.unlink()
+    write(spot / "precious.txt", b"lives outside the game")
+    monkeypatch.setattr(backup, "_mount_points",
+                        lambda: {os.path.realpath(spot): os.stat(spot).st_dev})
+    plan = backup.plan_restore(path, str(root))
+    assert plan["blocked"] == ["override/spwi101.spl"]
+    with pytest.raises(ModFetchError, match="nothing restored"):
+        backup.restore(path, str(root))
+    assert (spot / "precious.txt").read_bytes() == b"lives outside the game"
+    assert cli.main(["--restore-backup", path], stream=io.StringIO()) == 1
+
+
+def test_a_folder_where_the_backup_has_a_file_is_emptied_and_replaced(tmp_path):
+    root, path = backed_up(tmp_path)
+    spot = root / "override" / "spwi101.spl"
+    spot.unlink()
+    write(spot / "inner.txt", b"a mod's")
+    result = backup.restore(path, str(root))
+    assert spot.read_bytes() == b"SPL original"
+    aside = pathlib.Path(result["displaced_to"])
+    assert (aside / "override" / "spwi101.spl" / "inner.txt").read_bytes() == b"a mod's"
+
+
+def test_a_move_across_drives_never_leaves_two_copies(tmp_path, monkeypatch):
+    """Across drives a file is copied, then removed; when it cannot be
+    removed the copy is taken back, so a rerun starts from the same state."""
+    import errno as _errno
+    root, path = backed_up(tmp_path)
+    write(root / "added.txt", b"added")
+
+    def cross_device(_src, _dst):
+        raise OSError(_errno.EXDEV, "cross-device")
+    monkeypatch.setattr(backup.os, "rename", cross_device)
+    real_remove = os.remove
+
+    def busy(target):
+        if str(target).endswith(os.path.join("BG2EE", "added.txt")):
+            raise OSError(_errno.EBUSY, "busy")
+        real_remove(target)
+    monkeypatch.setattr(backup.os, "remove", busy)
+    with pytest.raises(OSError):
+        backup.restore(path, str(root))
+    assert (root / "added.txt").read_bytes() == b"added"
+    copies = list(pathlib.Path(path).glob("displaced-*/added.txt"))
+    assert copies == []
+
+
+def test_a_backups_folder_that_is_a_game_folder_by_another_path_is_refused(tmp_path):
+    root = game(tmp_path)
+    (root / "extras").mkdir()
+    if os.name == "nt":
+        pytest.skip("symbolic links need privileges on Windows")
+    os.symlink(root / "extras", tmp_path / "backups-elsewhere")
+    with pytest.raises(ConfigError, match="inside the game folder"):
+        backup.create(str(root), str(tmp_path / "backups-elsewhere"))
+
+
+def test_the_journal_names_only_what_was_moved(tmp_path):
+    root, path = backed_up(tmp_path)
+    (root / "MyNotes" / "drafts").mkdir(parents=True)
+    journal = pathlib.Path(path) / backup.JOURNAL
+    journal.write_text('"../escape/x"\nnot json\n"mymod/a.itm"\n', encoding="utf-8")
+    result = backup.restore(path, str(root))
+    assert (root / "MyNotes" / "drafts").is_dir()
+    assert result["removed_folders"] == [] and not journal.exists()

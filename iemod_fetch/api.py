@@ -1303,9 +1303,12 @@ def _backup_step(settings, say, on_event, cancel) -> int:
         say(f"    left alone: {len(plan['links']) + len(plan['mounts'])} links, junctions or "
             f"other drives, never entered")
     for rel in plan["blocked"][:5]:
-        say(f"    blocked   : {rel} (a junction or another drive where the backup has a folder)")
+        say(f"    blocked   : {rel} (a junction, mount or another drive is on or inside it)")
     say("    folders   : only the ones the moves leave empty, and the backup did not have, "
         "are removed")
+    if plan["blocked"]:
+        say("    nothing changed: remove what blocks the restore first")
+        return 1
     if not settings.apply:
         say("    nothing changed: run again with --apply to restore")
         # 1 when a restore could not bring everything back, shown or done

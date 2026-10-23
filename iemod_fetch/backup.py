@@ -29,6 +29,7 @@ a manifest is a file anyone could have edited (review of #48).
 Standard library only; nothing here runs WeiDU or anything downloaded.
 """
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -46,7 +47,7 @@ MANIFEST = "iemod-backup.json"
 FILES = "files"
 PARTIAL = ".partial"
 DISPLACED = "displaced-"
-JOURNAL = "restore-in-progress.json"
+JOURNAL = "restore-in-progress.jsonl"
 COPIED_DIRS = ("override",)
 _CHUNK = 1024 * 1024
 
@@ -100,36 +101,50 @@ def _scan(root: str):
             if os.path.islink(full):
                 links.append(_rel(full, root))
             elif os.path.isfile(full):
-                files[_rel(full, root)] = full
+                # a file mounted over another one lives elsewhere too (#48)
+                if _leads_elsewhere(full, device, mount_points):
+                    mounts.append(_rel(full, root))
+                else:
+                    files[_rel(full, root)] = full
     return files, sorted(folders), sorted(links), sorted(mounts)
 
 
-def _mount_points() -> set:
-    """Linux's mount table: a bind mount of the same disk has the same st_dev
-    as its parent and is not os.path.ismount, but it is listed here."""
+def _mount_points() -> Dict[str, int]:
+    """Linux's mount table, {mount point: device}: a bind mount of the same
+    disk has the same st_dev as its parent and is not os.path.ismount, but it
+    is listed here. Read as bytes - a mount point need not be UTF-8 (#48)."""
     try:
-        with open("/proc/self/mountinfo", encoding="utf-8") as fh:
+        with open("/proc/self/mountinfo", "rb") as fh:
             lines = fh.read().splitlines()
     except OSError:
-        return set()
-    points = set()
+        return {}
+    points: Dict[str, int] = {}
     for line in lines:
-        fields = line.split(" ")
-        if len(fields) > 4:
-            points.add(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[4]))
+        fields = line.split(b" ")
+        if len(fields) <= 4:
+            continue
+        point = re.sub(rb"\\([0-7]{3})", lambda m: bytes([int(m.group(1), 8)]), fields[4])
+        try:
+            major, minor = (int(x) for x in fields[2].split(b":"))
+        except ValueError:
+            continue
+        points[os.fsdecode(point)] = os.makedev(major, minor)
     return points
 
 
-def _leads_elsewhere(full: str, device: int, mount_points: set) -> bool:
-    """A folder that is not a link but whose content lives elsewhere: a
-    Windows junction or mount (a reparse point), a mount point, another
-    drive."""
+def _leads_elsewhere(full: str, device: int, mount_points: Dict[str, int]) -> bool:
+    """A file or folder that is not a link but whose content lives
+    elsewhere: a Windows junction or mount (a reparse point), a mount point,
+    another drive. A mount-table entry counts only when its device is the
+    one the path has now: one shadowed by a later mount over a parent is not
+    there any more (#48)."""
     st = os.lstat(full)
     if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT",
                                                       0x400):
         return True
-    return st.st_dev != device or os.path.ismount(full) or \
-        os.path.realpath(full) in mount_points
+    if st.st_dev != device or (stat.S_ISDIR(st.st_mode) and os.path.ismount(full)):
+        return True
+    return mount_points.get(os.path.realpath(full)) == st.st_dev
 
 
 def _is_game(folder: str) -> bool:
@@ -266,6 +281,9 @@ def create(game_dir: str, backups_dir: str, name: Optional[str] = None,
     if os.path.exists(final):
         raise ConfigError(f"{final} exists already")
     present, folders, links, mounts = _scan(game_dir)
+    if _overlaps(backups_dir, game_dir, folders):
+        raise ConfigError(f"{backups_dir} is inside the game folder (one of its folders under "
+                          f"another name): a backup there would be displaced by its own restore")
     for rel in links + mounts:
         root_file = "/" not in rel and not os.path.isdir(os.path.join(game_dir, rel))
         if root_file or any(rel.lower() == d or rel.lower().startswith(d + "/")
@@ -379,13 +397,33 @@ def plan_restore(backup: str, game_dir: str) -> dict:
             cannot.append(f"{rel}: missing, and not in the backup")
         elif os.path.getsize(now) != size:
             cannot.append(f"{rel}: changed, and not in the backup")
-    blocked = [rel for rel in put_back for mount in mounts_now
-               if rel.startswith(mount + "/")]
+    # a mount on, above or below a path to put back: a restore would have to
+    # move or write through it (#48: shutil.move emptied a mounted folder)
+    blocked = sorted({rel for rel in put_back for mount in mounts_now
+                      if rel == mount or rel.startswith(mount + "/")
+                      or mount.startswith(rel + "/")})
     return {"backup": os.path.abspath(backup), "game_dir": game_dir,
             "backed_up_from": manifest["game_dir"], "put_back": put_back,
             "displace": displace, "cannot_restore": cannot,
             "links": sorted(known_links & set(links_now)), "mounts": mounts_now,
             "blocked": blocked}
+
+
+def _overlaps(path: str, game_dir: str, folders: List[str]) -> bool:
+    """Whether path, or a parent of it, IS the game folder or one of its
+    folders - by identity: a mount of a game folder elsewhere is that folder
+    (review of #48: a backups folder mounted from the game's)."""
+    ids = {_identity(game_dir)} | {_identity(os.path.join(game_dir, *rel.split("/")))
+                                    for rel in folders}
+    ids.discard(None)
+    here = os.path.realpath(path)
+    while True:
+        if _identity(here) in ids:
+            return True
+        parent = os.path.dirname(here)
+        if parent == here:
+            return False
+        here = parent
 
 
 def _same_folder(a: str, b: str) -> bool:
@@ -424,19 +462,19 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
     if not other_folder and not _same_folder(game_dir, plan["backed_up_from"]):
         raise ConfigError(f"{game_dir} is not the folder this backup was made of "
                           f"({plan['backed_up_from']}); name it as the target to restore there")
-    if _inside(backup, game_dir) or _inside(game_dir, backup):
-        raise ConfigError(f"{backup} and {game_dir} overlap")
     if plan["blocked"]:
-        raise ConfigError(f"{plan['blocked'][0]}: where the backup has a folder there is now a "
-                          f"junction or another drive; remove it first, nothing restored")
+        raise ModFetchError(f"{plan['blocked'][0]}: a junction, mount or another drive is on "
+                            f"or inside this path; remove it first - nothing restored")
     manifest = read_manifest(backup)
-    files_now, _folders, links_now, _mounts = _scan(game_dir)
+    files_now, folders_now, links_now, _mounts = _scan(game_dir)
+    if _inside(game_dir, backup) or _overlaps(backup, game_dir, folders_now):
+        raise ConfigError(f"{backup} and {game_dir} overlap")
     # what is on disk is moved by the name the disk gave it, whatever letters
     # it holds; only the manifest's names go through _join
     on_disk = {**files_now, **{rel: os.path.join(game_dir, *rel.split("/"))
                                for rel in links_now}}
     journal = os.path.join(backup, JOURNAL)
-    earlier = _read_journal(journal)              # asides of a restore cut short
+    earlier = _read_journal(journal)              # what a restore cut short moved
     asides: List[str] = []
     moved: List[str] = []
 
@@ -449,12 +487,12 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
                 break
         if target is None:                 # first move, or a name that clashes
             asides.append(_new_aside(backup))
-            _write_journal(journal, earlier + asides)
             target = os.path.join(asides[-1], *rel.split("/"))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.lexists(target):        # never replace what was moved aside
             raise OSError(f"{target} exists: nothing moved over it")
-        shutil.move(source, target)
+        _journal_add(journal, rel)         # before the move: a cut run is known
+        _move(source, target)
         moved.append(rel)
         _emit(on_progress, event="restore_displaced", file=rel)
 
@@ -468,7 +506,11 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
     for rel in plan["put_back"]:
         _check_cancel(cancel)
         target = _join(game_dir, rel)
-        if os.path.lexists(target):
+        if os.path.isdir(target) and not os.path.islink(target):
+            # a folder where the backup has a file: what it held was moved
+            # aside above; it is empty now, or the restore stops here
+            os.rmdir(target)
+        elif os.path.lexists(target):
             move_aside(rel, target)
         source = _join(os.path.join(backup, FILES), rel)
         os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -479,8 +521,7 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
             raise VerificationFailed(f"{target}: the copy put back does not match the backup")
         _emit(on_progress, event="restore_put_back", file=rel)
     # the folders the moves left empty - this run's, and a cut run's
-    for aside in earlier:
-        moved.extend(_scan(aside)[0] if os.path.isdir(aside) else [])
+    moved.extend(earlier)
     removed = _remove_emptied(game_dir, moved, keep={rel.lower() for rel in manifest["folders"]})
     with contextlib.suppress(FileNotFoundError):
         os.remove(journal)                         # the restore is finished
@@ -521,21 +562,58 @@ def _remove_emptied(game_dir: str, moved: List[str], keep: set) -> List[str]:
     return sorted(removed)
 
 
+def _move(source: str, target: str) -> None:
+    """A file or a link, never a folder, from source to target. Not
+    shutil.move: across drives, or onto a mount, it copies a folder and then
+    rmtree()s the source - which emptied a mounted folder outside the game
+    (review of #48). Here a file is copied, checked and only then removed; a
+    copy whose source cannot be removed is taken back, so a rerun finds the
+    state it started from."""
+    st = os.lstat(source)
+    if not (stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode)):
+        raise OSError(f"{source}: not a file or a link, not moved")
+    try:
+        os.rename(source, target)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    if stat.S_ISLNK(st.st_mode):
+        os.symlink(os.readlink(source), target)
+    else:
+        shutil.copy2(source, target, follow_symlinks=False)
+        if os.path.getsize(target) != st.st_size:
+            os.remove(target)
+            raise OSError(f"{source}: the copy moved aside is incomplete, nothing moved")
+    try:
+        os.remove(source)
+    except OSError:
+        os.remove(target)                      # ours, a copy: the source stays
+        raise
+
+
+def _journal_add(path: str, rel: str) -> None:
+    """One moved path per line, appended before it is moved."""
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rel) + "\n")
+
+
 def _read_journal(path: str) -> List[str]:
+    """The paths a restore cut short moved: only names a manifest could hold."""
     try:
         with open(path, encoding="utf-8") as fh:
-            asides = json.load(fh).get("asides", [])
-    except (OSError, ValueError, AttributeError):
+            lines = fh.read().splitlines()
+    except (OSError, ValueError):
         return []
-    folder = os.path.dirname(path)
-    return [os.path.join(folder, name) for name in asides
-            if isinstance(name, str) and name.startswith(DISPLACED) and "/" not in name
-            and "\\" not in name]
-
-
-def _write_journal(path: str, asides: List[str]) -> None:
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"asides": [os.path.basename(a) for a in asides]}, fh)
+    found = []
+    for line in lines:
+        try:
+            rel = json.loads(line)
+        except ValueError:
+            continue
+        if _safe_rel(rel):
+            found.append(rel)
+    return found
 
 
 def list_backups(backups_dir: str) -> List[dict]:

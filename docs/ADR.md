@@ -2283,12 +2283,20 @@ handled apart.
   - also a bind mount of the same disk, read from Linux's mount table - or
   another drive. Where a copied file or folder should be (`override/`, `lang/`,
   a root file) one stops the backup: it would be silently incomplete. Others
-  are listed, left alone and reported; a restore that would have to write
-  through one stops before changing anything.
+  are listed, left alone and reported; a restore that would have to move or
+  write through one - on, above or below a path to put back - stops before
+  changing anything (exit 1, also when only the plan is shown). Files mounted
+  over a file count too.
+- **Moves never use `shutil.move`**: across drives, or onto a mount, it copies
+  a folder and then deletes the source tree - which emptied a mounted folder
+  outside the game in the third review. A restore moves only files and links;
+  across drives a file is copied, its size checked, and only then removed, and
+  a copy whose source cannot be removed is taken back. A folder where the
+  backup has a file is emptied by the moves above it and then removed.
 - **Folders are compared by identity, not spelling** (device and inode of each
   parent): on macOS `~/games/bg2ee` is `~/Games/BG2EE`, and an alias or a
-  mount of the game folder is the game folder, so a backup cannot be put
-  inside it under another name.
+  mount of the game folder - or of any folder in it - is that folder, so a
+  backup cannot be put inside it under another name.
 - **A name is what the disk says.** Files found on disk are moved by their own
   path, whatever letters they hold (`\` and `:` are ordinary on Linux and
   macOS: a mod unpacked from a Windows-made zip, a save named "Chapter 2:
@@ -2305,9 +2313,10 @@ handled apart.
   puts back - into a `<backup>/displaced-<time>/` folder that restore made for
   itself (never shared, nothing in it replaced), then copies the backup's
   files back and checks each against its sha256. A folder is removed only
-  when the moves - this run's, or those of a run cut short, recorded in the
-  backup's `restore-in-progress.json` - left it empty and the backup did not
-  have it: an empty folder made since, or the target's own, stays.
+  when the moves - this run's, or those of a run cut short, recorded one path
+  per line in the backup's `restore-in-progress.jsonl` before each move - left
+  it empty and the backup did not have it: an empty folder made since, or the
+  target's own, stays.
 - **Names match exactly**: on a case-sensitive system a mod's `x.itm` beside a
   backed-up `X.ITM` is moved aside. A listed, uncopied file whose name only
   changed case counts as present, so it is never moved away for want of a copy.
@@ -2338,6 +2347,12 @@ removed, and exit codes that disagreed with this record. Each has a test in
 `tests/test_backup.py`. Not testable here, and left as limits: a backup made
 on Linux holding `A.ITM` and `a.itm` restored onto a case-insensitive drive,
 and a name stored in one Unicode form returned in another by macOS's HFS+.
+A third review found a mount on a path to put back emptied through
+`shutil.move`, a backups folder mounted from a game folder, file mounts, a
+non-UTF-8 mount table, and a journal trusted too far; each has a test or was
+re-run against real bind mounts. Left as a limit, failing loudly: a mount
+shadowed by a later mount over its parent can make a real folder look like a
+mount, and the backup is then refused.
 
 ### Consequences
 
