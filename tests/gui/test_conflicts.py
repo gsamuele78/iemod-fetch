@@ -271,7 +271,7 @@ def test_a_check_of_the_previous_game_never_lands_on_the_next(qtbot, tmp_path):
     old = widget.conflicts
     widget.start("BG2EE")                     # the list for another game is loading
     assert widget.conflicts == {} and widget.panel.buttons == {}
-    widget._check_done((widget._generation - 1, old, ""))
+    widget._check_done((widget._generation - 1, old, "", ""))
     assert widget.conflicts == {} and widget.panel.buttons == {}
     qtbot.waitUntil(lambda: widget._thread is None and widget._checking is None,
                     timeout=5000)

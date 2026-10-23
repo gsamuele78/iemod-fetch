@@ -74,7 +74,7 @@ from .weidu_lex import legacy_charset
 from .etagcache import ETagCache
 from .urls import repo_from_url
 from . import tra
-from .contract import SCHEMA_VERSION
+from .contract import SCHEMA_VERSION, stable_id
 from .weidu import ParsedLog, parse_weidu_files, parse_weidu_log, split_log_spec
 from . import __version__
 
@@ -86,7 +86,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
-           "ignore_order", "unignore_order",
+           "ignore_order", "unignore_order", "selection_digest",
            "selection_plan", "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
@@ -856,6 +856,31 @@ def save_decisions(folder: str, choose: dict | None = None,
          for unit, i in ignored_order.items()}))
     parse_decisions(text, source="the wizard's decisions")    # refuse before writing
     return _write_whole(folder, DECISIONS_FILE, text)
+
+
+def selection_digest(game: str, chosen: Sequence[tuple[str, int]],
+                     labels: dict | None = None, folder: str | None = None,
+                     data_dir: str | None = None) -> str:
+    """
+    A digest of what a check or a plan of a wizard selection reads: the game,
+    the components chosen, their labels, the project files that change the
+    answer (its ini, install-order.txt, decisions.json) and the data cache's
+    record of its last refresh, each by size and modification time. The same
+    digest twice: nothing to check again (GUI-AUDIT M5b item 35).
+    """
+    files = []
+    data = data_dir or datasync.default_data_dir()
+    for name, path in [(name, os.path.join(folder, name) if folder else "")
+                       for name in (PROJECT_FILE, INSTALL_ORDER_FILE, DECISIONS_FILE)] + [
+                          ("data", os.path.join(data, datasync.MANIFEST))]:
+        try:
+            stat = os.stat(path) if path else None
+        except OSError:
+            stat = None
+        files.append([name, stat.st_size, stat.st_mtime_ns] if stat else [name])
+    return stable_id("selection", game.upper(), [list(key) for key in chosen],
+                     sorted([list(key), str(label)] for key, label in (labels or {}).items()),
+                     files)
 
 
 def ignore_order(folder: str, unit: str, after: str, rules: Sequence[str],

@@ -30,6 +30,12 @@ does, narrower: it chooses the selected component's missing prerequisites -
 one alternative of an "any one of", never every one - then keeps it against
 the error incompatibilities that name it, deselecting their other side; a
 warning stays the player's. What it would do is shown first.
+
+A mod ticked whole takes one option of each SUBCOMPONENT group - the one
+already chosen, else the group's first - rather than Qt's last (M5b item 35);
+unticking the only option of a FORCED_SUBCOMPONENT group while the mod keeps
+other components puts it back, as WeiDU would ask for one. A check is not run
+again when nothing it reads has changed (api.selection_digest).
 """
 import html
 import os
@@ -56,6 +62,33 @@ FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available",
 KIND_COLUMN = 3
 DISAGREE = "\u26a0 "        # the mark on a row whose sources disagree on its kind
 CHECK_DELAY_MS = 700      # a burst of clicks is checked once, after it ends
+class _Cascade(QTreeWidgetItem):
+    """
+    A mod's (or an EET tp2's) row: Qt ticks its components one by one when it
+    is ticked, and the page would keep the last option of each SUBCOMPONENT
+    group. The tick is caught here, and the groups settled once it is done.
+    """
+
+    def __init__(self, texts: list[str], page: ModsPage) -> None:
+        super().__init__(texts)
+        self.page = page
+
+    def setData(self, column: int, role: int, value: Any) -> None:  # noqa: N802 (Qt)
+        page = self.page
+        if (column != 0 or role != Qt.ItemDataRole.CheckStateRole or page._updating
+                or Qt.CheckState(value) != Qt.CheckState.Checked):
+            super().setData(column, role, value)
+            return
+        before = page._checked()
+        page._cascading += 1
+        try:
+            super().setData(column, role, value)
+        finally:
+            page._cascading -= 1
+        if not page._cascading:
+            page._settle(self, before)
+
+
 KRION_NOTE = ("Components from krion64's records: the mod is not downloaded yet. "
               "Its own tp2 decides once it is, and the choice is checked again then.")
 
@@ -64,6 +97,16 @@ def _target(project: dict) -> str:
     """The CLI's --target, resolved as the CLI resolves it when run in the project."""
     folder = os.path.dirname(project["path"])
     return os.path.join(folder, project.get("target") or "Mods")
+
+
+def _under(item: QTreeWidgetItem, row: QTreeWidgetItem) -> bool:
+    """Whether `item` is `row` or below it."""
+    current: QTreeWidgetItem | None = item
+    while current is not None:
+        if current is row:
+            return True
+        current = current.parent()
+    return False
 
 
 def kinds_of(mod: dict) -> list[str]:
@@ -237,6 +280,9 @@ class ModsPage(QWidget):
         self.resolve.setEnabled(False)
         self.resolve.clicked.connect(self._resolve)
         self._unticked: set[Key] = set()    # unticked by the player, not yet asked about
+        self._answered = ""                 # the digest the conflicts shown answer
+        self._cascading = 0                 # a mod row ticking its components
+        self.checks = 0                     # checks run, not skipped (item 35)
         bar = QHBoxLayout()
         bar.addWidget(self.search, 1)
         bar.addWidget(self.filter)
@@ -331,7 +377,7 @@ class ModsPage(QWidget):
         kind = ", ".join(kinds_of(mod))
         if mod.get("kind_disagreement"):
             kind = DISAGREE + kind
-        item = QTreeWidgetItem([mod.get("name") or mod["key"], version, origin, kind])
+        item = _Cascade([mod.get("name") or mod["key"], version, origin, kind], self)
         item.setData(0, ROLE, ("mod", mod["key"]))
         item.setToolTip(KIND_COLUMN, _said(mod) or kind)
         if not any(t["components"] and not t.get("refused") for t in tp2s):
@@ -344,7 +390,7 @@ class ModsPage(QWidget):
         for tp2 in tp2s:
             parent = item
             if len(tp2s) > 1:                       # EET: EET.tp2 and EET_end.tp2
-                parent = QTreeWidgetItem([tp2["tp2"].rsplit("/", 1)[-1], "", tp2["origin"]])
+                parent = _Cascade([tp2["tp2"].rsplit("/", 1)[-1], "", tp2["origin"]], self)
                 parent.setFlags(parent.flags() | Qt.ItemFlag.ItemIsUserCheckable
                                 | Qt.ItemFlag.ItemIsAutoTristate)
                 item.addChild(parent)
@@ -397,6 +443,8 @@ class ModsPage(QWidget):
             self._count()
             return
         if item.checkState(0) == Qt.CheckState.Checked:
+            if self._cascading:
+                return                  # the mod's row settles its groups after
             self._updating = True
             try:
                 self._choose(item, set())
@@ -424,6 +472,57 @@ class ModsPage(QWidget):
             needed_item = self.items.get((tp2, needed))
             if needed_item is not None and not needed_item.isDisabled():
                 self._choose(needed_item, seen)
+
+    def _settle(self, row: QTreeWidgetItem, before: set[Key]) -> None:
+        """
+        After a mod's row ticked its components: one option per SUBCOMPONENT
+        group - the one chosen before, else the group's first - and what each
+        chosen component needs (M5b item 35).
+        """
+        mine = [item for key, item in self.items.items() if _under(item, row)]
+        self._updating = True
+        try:
+            groups: dict[tuple, list[QTreeWidgetItem]] = {}
+            for item in mine:
+                _kind, (tp2, _number), component = item.data(0, ROLE)
+                if component["exclusive"]:
+                    groups.setdefault((tp2, component["exclusive"]), []).append(item)
+            for options in groups.values():
+                kept = next((o for o in options if o.data(0, ROLE)[1] in before),
+                            options[0])
+                for option in options:
+                    option.setCheckState(0, Qt.CheckState.Checked if option is kept
+                                         else Qt.CheckState.Unchecked)
+            seen: set[Key] = set()
+            for item in mine:
+                if item.checkState(0) == Qt.CheckState.Checked:
+                    self._choose(item, seen)
+        finally:
+            self._updating = False
+        self._count()
+
+    def _forced_back(self, removed: set[Key]) -> list[Key]:
+        """
+        The options of a FORCED_SUBCOMPONENT group unticked when no other of
+        the group stays and the tp2 keeps other components: WeiDU asks for
+        one of them, so they go back (M5b item 35).
+        """
+        chosen = self._checked()
+        back: list[Key] = []
+        for key in sorted(removed):
+            _kind, (tp2, _number), component = self.items[key].data(0, ROLE)
+            if not component["forced"] or not component["exclusive"]:
+                continue
+            group = [other for other in self.items.values()
+                     if other.data(0, ROLE)[1][0] == tp2
+                     and other.data(0, ROLE)[2]["exclusive"] == component["exclusive"]]
+            if any(o.data(0, ROLE)[1] in chosen for o in group):
+                continue
+            if any(other[0] == tp2 for other in chosen) and not any(
+                    b[0] == tp2 and self.items[b].data(0, ROLE)[2]["exclusive"]
+                    == component["exclusive"] for b in back):
+                back.append(key)
+        return back
 
     # ------------------------------------- who needs it (M5b item 34)
     def _checked(self) -> set[Key]:
@@ -465,6 +564,20 @@ class ModsPage(QWidget):
         self._unticked.clear()
         if not removed:
             return
+        back = self._forced_back(removed)
+        if back:
+            self._updating = True
+            try:
+                for key in back:
+                    self.items[key].setCheckState(0, Qt.CheckState.Checked)
+            finally:
+                self._updating = False
+            removed -= set(back)
+            self._count()
+            self.status.setText(f"{self._name(back[0])}: its mod needs one option of "
+                                "this group; choose another instead of none.")
+            if not removed:
+                return
         needing = self.dependents(removed)
         if not needing:
             return
@@ -697,30 +810,39 @@ class ModsPage(QWidget):
             self._recheck = True
             return
         self._recheck = False
-        self.panel.busy()
         check, args = self.check, (self.game, self.chosen(), self.labels(),
                                    self.project_dir)
         generation = self._generation
+        # nothing the check reads has changed since the last answer: keep it
+        # (M5b item 35) - a tick undone, a filter changed, Next pressed again
+        digest = f"{generation}:{api.selection_digest(*args)}"
+        if digest == self._answered and self.conflicts:
+            self.checked.emit()
+            return
+        self.checks += 1
+        self.panel.busy()
 
-        def run() -> tuple[int, dict | None, str]:
+        def run() -> tuple[int, dict | None, str, str]:
             # The generation travels with the result: the slots below are the
             # page's own methods, so Qt runs them on the window's thread (a
             # lambda slot would run on the worker's).
             try:
-                return generation, check(*args), ""
+                return generation, check(*args), "", digest
             except Exception as exc:      # shown on the panel, never a crash
-                return generation, None, str(exc)
+                return generation, None, str(exc), ""
         self._checking = _in_thread(run, self._check_done, self.panel.failed,
                                     self._check_finished)
 
     def _check_done(self, outcome: tuple) -> None:
-        generation, result, problem = outcome
+        generation, result, problem, digest = outcome
         if generation != self._generation:
             return                      # checked a list this page no longer shows
         if result is None:
+            self._answered = ""
             self._set_conflicts({})
             self.panel.failed(problem)
             return
+        self._answered = digest
         self._set_conflicts(result)
 
     def _set_conflicts(self, result: dict) -> None:

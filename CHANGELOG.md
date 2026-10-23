@@ -47,6 +47,13 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Several rows at once, keys and find on the order page; group defaults**
+  (GUI-AUDIT M5b item 35). Rows are selected and dragged together, moved one
+  place with Ctrl+Up / Ctrl+Down, and found by name. A mod ticked whole takes
+  one option per SUBCOMPONENT group - the one chosen, else the first (it was
+  Qt's last); the only option of a FORCED_SUBCOMPONENT group is not unticked
+  while its mod stays. `api.selection_digest`: the check and the plan are not
+  run again when nothing they read has changed.
 - **Deselect knowing who needs it** (GUI-AUDIT M5b item 34). Unticking a
   component that chosen ones need - its own mod's `requires`, or a dependency
   rule the last check found satisfied - asks first: untick those too, keep

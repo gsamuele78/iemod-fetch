@@ -182,7 +182,9 @@ brings the ones it needs; unticking one that chosen ones need asks first -
 untick those too, keep it, or untick it alone. *Resolve for this component*
 chooses what it is missing (one alternative of an "any one of") and keeps it
 against the errors that name it, after showing what it would do; warnings stay
-yours. A mod whose components nobody describes cannot be
+yours. A mod ticked whole takes one option of each SUBCOMPONENT group (the one
+already chosen, else the first), and keeps one of a FORCED_SUBCOMPONENT group.
+A mod whose components nobody describes cannot be
 chosen yet, and says so. Next writes `selection.json`, which the CLI reads
 with `--selection`.
 
@@ -227,8 +229,9 @@ row offers what mends it - just after or just before the mod the rule names, pla
 again with your other moves kept, or turned off - each previewed, and applied only if
 it breaks no other rule and adds no error. Under the list, the selected row's rules -
 red where broken, dimmed where they name a whole mod; *Ignore...* keeps a red row as your
-call, with why, in `decisions.json`, until it is dragged or breaks another rule. *Use the
-computed order* forgets it. Answers to WeiDU prompts come with the
+call, with why, in `decisions.json`, until it is dragged or breaks another rule. Several
+rows can be selected and dragged together, moved with Ctrl+Up / Ctrl+Down, or found by
+name. *Use the computed order* forgets it. Answers to WeiDU prompts come with the
 install step (M4): only BWS-NG describes prompts as data, for 4 components
 (ADR-0036).
 
@@ -535,7 +538,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,656 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,668 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -779,7 +782,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,656, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,668, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
