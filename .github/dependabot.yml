@@ -9,8 +9,8 @@ updates:
       dev-tooling:
         patterns: ["*"]
         update-types: [minor, patch]
-    # This entry also reads pyproject's runtime dependencies (it opened the
-    # filelock 3 -> 4 pull request, #76): the same hold as below.
+    # This entry also reads pyproject's runtime dependencies (it pushed a
+    # filelock 3 -> 4 branch on 2026-10-23): the same hold as below.
     ignore:
       - dependency-name: filelock
         update-types: ["version-update:semver-major"]

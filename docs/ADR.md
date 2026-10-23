@@ -2637,8 +2637,10 @@ on-disk protocol, also unused here. Measured on 3.14: the suite and
 holding the lock) pass unchanged; `import filelock` takes 37 ms instead of
 79 ms, since 4.2 loads the lock types other than `FileLock` on first use.
 Dependabot holds the next major version for a move by hand, in both of
-its pip entries: the root one reads pyproject's dependencies too, and it is
-the one that opened the 3 -> 4 pull request (#76) the hold was meant to stop.
+its pip entries: the root one reads pyproject's dependencies too, and had no
+hold - it pushed a 3 -> 4 branch of its own. #76, the 3 -> 4.2.1 pull request
+from the `/requirements` entry, came the evening of the advisory despite that
+entry's hold, so a security fix can still arrive as a pull request.
 
 **Consequences**: Python 3.11 or newer for filelock, below the 3.14 the
 project requires. A later 4.x is a Dependabot pull request like any other
