@@ -70,6 +70,19 @@ def test_only_the_github_api_is_asked_conditionally(fake_opener, tmp_path):
     assert not (tmp_path / "etags").exists()       # nothing kept for another host
 
 
+def test_a_git_tree_named_by_its_commit_is_not_kept(fake_opener, tmp_path):
+    """Every new commit of the community data is a new tree URL whose answer
+    never changes: keeping it would only grow the folder, one whole tree per
+    commit, with nothing to remove it."""
+    answer, seen = github(body=b'{"tree": []}')
+    fake_opener(default=answer)
+    c = client(tmp_path)
+    for sha in ("a" * 40, "b" * 40):
+        c.get_json(f"https://api.github.com/repos/o/r/git/trees/{sha}?recursive=1")
+    assert seen == [None, None]
+    assert not (tmp_path / "etags").exists()
+
+
 def test_a_304_with_nothing_kept_is_an_error_not_an_empty_answer(fake_opener, tmp_path):
     fake_opener(default=lambda req: (_ for _ in ()).throw(
         urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, io.BytesIO())))

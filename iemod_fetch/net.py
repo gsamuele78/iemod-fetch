@@ -373,8 +373,14 @@ class HttpClient:
         The body, and the ETag to keep it under when it is new. A GitHub API
         answer kept from an earlier run is asked for with If-None-Match; a 304
         means it is unchanged, and the kept body is used (GUI-AUDIT item 45).
+
+        A git object named by its hash (`/git/trees/<sha>`) is not kept: its
+        answer never changes, so it is never asked twice, and each new commit
+        of the community data would add a file of its whole tree that nothing
+        removes.
         """
-        if self.etags is None or host_of(url) != "api.github.com":
+        if (self.etags is None or host_of(url) != "api.github.com"
+                or "/git/" in urllib.parse.urlsplit(url).path):
             return self.read_bytes(url, limit=cap), None
         kept = self.etags.get(url)
 

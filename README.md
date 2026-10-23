@@ -510,7 +510,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,489 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,490 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -547,8 +547,9 @@ GitHub's answers (each mod's latest release, the data's HEAD) are kept beside
 the cache, in `<data dir>-http`, with their ETag: the next run asks
 "changed since?", and an unchanged answer comes back empty. With a token
 (`GH_TOKEN`) such an answer does not count against GitHub's hourly limit;
-without one it still counts, and saves only the download. Deleting the
-folder is always safe.
+without one it still counts, and saves only the download. One small file is
+kept per question asked; the data's file lists, which change with every
+commit, are not kept. Deleting the folder is always safe.
 
 ## Sharing a list with BIO
 
@@ -743,9 +744,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,489, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,490, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
-| mypy | clean, 53 modules |
+| mypy | clean, 62 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 7, all kept |

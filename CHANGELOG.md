@@ -55,7 +55,9 @@ Python API, which is internal.
   with If-None-Match; an unchanged one is a `304` with no body. GitHub's
   docs, and a measurement here (X-RateLimit-Remaining went 14985 -> 14984 for
   a 200 and stayed 14984 for the 304): an authorized 304 is free. Without a
-  token it still counts, and saves only the transfer.
+  token it still counts, and saves only the transfer. A git tree named by its
+  commit is not kept: it never changes, and keeping one per new commit of the
+  community data would only grow the folder (review of #64).
 - **The wizard offers a newer GitHub release, and takes it on request**
   (GUI-AUDIT M7 item 59). The download page shows a mod's offer under "Newer
   release" with a box to tick; "Install the ticked newer releases" runs the
