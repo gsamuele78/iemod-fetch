@@ -505,10 +505,9 @@ def test_a_backups_folder_that_is_a_game_folder_by_another_path_is_refused(tmp_p
 def test_the_journal_names_only_what_was_moved(tmp_path):
     root, path = backed_up(tmp_path)
     (root / "MyNotes" / "drafts").mkdir(parents=True)
-    journal = pathlib.Path(path) / backup.JOURNAL
-    ident = list(backup._identity(str(root)))
-    journal.write_text(json.dumps({"game": ident}) + '\n"../escape/x"\nnot json\n'
-                       '"MyNotes/drafts/x.txt"\n', encoding="utf-8")
+    journal = pathlib.Path(backup._journal_path(path, str(root)))
+    journal.write_text(json.dumps({"game": os.path.realpath(root)}) +
+                       '\n"../escape/x"\nnot json\n"MyNotes/drafts/x.txt"\n', encoding="utf-8")
     result = backup.restore(path, str(root))
     # never moved (not in any displaced- folder): its folder stays
     assert (root / "MyNotes" / "drafts").is_dir()
@@ -534,8 +533,9 @@ def test_a_journal_of_another_game_folder_removes_nothing_here(tmp_path):
     other = tmp_path / "copy"
     write(other / "chitin.key", b"KEY")
     (other / "mods" / "x").mkdir(parents=True)
-    journal = pathlib.Path(path) / backup.JOURNAL
-    journal.write_text(json.dumps({"game": [1, 2]}) + '\n"mods/x/2"\n', encoding="utf-8")
+    # a journal naming another folder, in this folder's journal file
+    journal = pathlib.Path(backup._journal_path(path, str(other)))
+    journal.write_text(json.dumps({"game": "/elsewhere"}) + '\n"mods/x/2"\n', encoding="utf-8")
     result = backup.restore(path, str(other), other_folder=True)
     assert (other / "mods" / "x").is_dir() and result["removed_folders"] == []
 
@@ -568,3 +568,52 @@ def test_a_backup_inside_the_game_is_refused_by_the_plan_already(tmp_path):
     inside = root / "mybackups" / "before"
     _shutil.move(path, inside)
     assert cli.main(["--restore-backup", str(inside)], stream=io.StringIO()) == 2
+
+
+# ------------------------------------------------- fifth review of #48
+def test_two_folders_cut_from_one_backup_each_finish_their_own(tmp_path):
+    """One journal per game folder: restoring one backup into two folders,
+    both cut, once overwrote the first folder's journal with the second's."""
+    _root, path = backed_up(tmp_path)
+    games = []
+    for name in ("G1", "G2"):
+        folder = tmp_path / name
+        write(folder / "chitin.key", b"KEY")
+        write(folder / "mymod" / "backup" / "0" / "a.itm", b"a")
+        write(folder / "mymod" / "setup-mymod.tp2", b"tp2")
+        games.append(folder)
+    for folder in games:
+        cancel = threading.Event()
+
+        def on_progress(event, cancel=cancel):
+            if event["event"] == "restore_displaced":
+                cancel.set()
+        with pytest.raises(InterruptedError):
+            backup.restore(path, str(folder), on_progress=on_progress, cancel=cancel,
+                           other_folder=True)
+    for folder in games:
+        backup.restore(path, str(folder), other_folder=True)
+        assert not (folder / "mymod").exists(), folder
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs a case-sensitive file system")
+def test_a_folder_to_become_a_file_keeps_no_case_twin(tmp_path):
+    probe = tmp_path / "Probe"
+    probe.write_bytes(b"")
+    if (tmp_path / "probe").exists():
+        pytest.skip("case-insensitive file system")
+    root = game(tmp_path)
+    write(root / "foo", b"root file")
+    write(root / "FOO" / "bar.txt", b"listed")
+    path = backup.create(str(root), str(tmp_path / "backups"), name="before")
+    (root / "foo").unlink()
+    import shutil as _shutil
+    _shutil.rmtree(root / "FOO")
+    write(root / "foo" / "bar.txt", b"the player's")
+    plan = backup.plan_restore(path, str(root))
+    assert "foo/bar.txt" in plan["displace"]
+    assert "FOO/bar.txt: missing, and not in the backup" in plan["cannot_restore"]
+    result = backup.restore(path, str(root))
+    assert (root / "foo").read_bytes() == b"root file"
+    assert (pathlib.Path(result["displaced_to"]) / "foo" / "bar.txt").read_bytes() == \
+        b"the player's"

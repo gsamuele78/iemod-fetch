@@ -2319,11 +2319,12 @@ handled apart.
   itself (never shared, nothing in it replaced), then copies the backup's
   files back and checks each against its sha256. A folder is removed only
   when the moves - this run's, or those of a run cut short, recorded one path
-  per line in the backup's `restore-in-progress.jsonl` before each move, under
-  a first line naming the game folder by identity, and counted only if the
-  file is in one of the backup's `displaced-` folders now - left it empty and
-  the backup did not have it: an empty folder made since, or the target's own,
-  stays. A journal of another folder is set aside, never used.
+  per line, before each move, in a journal of its own for each game folder
+  (`restore-in-progress-<hash of the folder's path>.jsonl` in the backup: by
+  path, since a drive plugged in again may change its device number), and
+  counted only if the file is in one of the backup's `displaced-` folders now
+  - left it empty and the backup did not have it: an empty folder made since,
+  or the target's own, stays.
 - **Names match exactly**: on a case-sensitive system a mod's `x.itm` beside a
   backed-up `X.ITM` is moved aside. A listed, uncopied file whose name only
   changed case counts as present, so it is never moved away for want of a copy.
@@ -2364,7 +2365,11 @@ subfolders where the backup has a file never restored, a journal of one game
 folder used in another, a part copy left behind, and the overlap refused only
 by `--apply`; each has a test. Flagged, not testable here: on btrfs
 subvolumes mounted with `subvol=` the mount table's device may differ from
-`st_dev`, so a same-disk bind mount there may go unseen.
+`st_dev`, so a same-disk bind mount there may go unseen. A fifth review found
+one journal per backup overwritten when two folders were cut, a journal lost
+when a drive came back with another device number, and a listed file's case
+twin kept inside a folder that had to become a file again; none lost data,
+each kept a rerun from finishing, and each has a test.
 
 ### Consequences
 

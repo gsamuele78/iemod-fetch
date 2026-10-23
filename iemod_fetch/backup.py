@@ -47,7 +47,7 @@ MANIFEST = "iemod-backup.json"
 FILES = "files"
 PARTIAL = ".partial"
 DISPLACED = "displaced-"
-JOURNAL = "restore-in-progress.jsonl"
+JOURNAL_PREFIX = "restore-in-progress-"
 _NAME_SURROGATE = 0x20000000          # IO_REPARSE_TAG bit: "points to another name"
 COPIED_DIRS = ("override",)
 _CHUNK = 1024 * 1024
@@ -384,20 +384,24 @@ def plan_restore(backup: str, game_dir: str) -> dict:
                         if rel not in copied and rel not in present}
     renamed: Dict[str, str] = {}                       # listed rel -> its name now
     put_back, displace, cannot = [], [], []
+    for rel, meta in sorted(copied.items()):
+        now = present.get(rel)
+        if now is None or os.path.getsize(now) != meta["size"] or _sha256(now) != meta["sha256"]:
+            put_back.append(rel)
+    # under a path that becomes a file again nothing can stay, not even a
+    # listed file under another case (fifth review of #48)
+    inside_put_back = tuple(rel + "/" for rel in put_back)
     for rel in sorted(present):
         if rel in inventory:
             continue
-        listed = uncopied_missing.pop(rel.lower(), None)
+        listed = None if rel.startswith(inside_put_back) else \
+            uncopied_missing.pop(rel.lower(), None)
         if listed is not None:
             renamed[listed] = rel
         else:
             displace.append(rel)
     known_links = set(manifest["links"])
     displace = sorted(displace + [rel for rel in links_now if rel not in known_links])
-    for rel, meta in sorted(copied.items()):
-        now = present.get(rel)
-        if now is None or os.path.getsize(now) != meta["size"] or _sha256(now) != meta["sha256"]:
-            put_back.append(rel)
     for rel, size in sorted(inventory.items()):
         if rel in copied:
             continue
@@ -480,7 +484,7 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
     # it holds; only the manifest's names go through _join
     on_disk = {**files_now, **{rel: os.path.join(game_dir, *rel.split("/"))
                                for rel in links_now}}
-    journal = os.path.join(backup, JOURNAL)
+    journal = _journal_path(backup, game_dir)
     earlier = _read_journal(journal, game_dir, backup)   # what a cut restore moved
     asides: List[str] = []
     moved: List[str] = []
@@ -609,22 +613,30 @@ def _move(source: str, target: str) -> None:
         raise
 
 
+def _journal_path(backup: str, game_dir: str) -> str:
+    """One journal per game folder, named from its path: a drive plugged in
+    again keeps its path but may change its device number, and two folders
+    restored from one backup never share - or overwrite - a journal (fifth
+    review of #48)."""
+    key = os.path.normcase(os.path.realpath(game_dir))
+    digest = hashlib.sha256(os.fsencode(key)).hexdigest()[:16]
+    return os.path.join(backup, f"{JOURNAL_PREFIX}{digest}.jsonl")
+
+
 def _journal_add(path: str, rel: str, game_dir: str) -> None:
     """One moved path per line, appended before it is moved; the first line
-    names the game folder, by identity."""
+    names the game folder."""
     new = not os.path.exists(path)
     with open(path, "a", encoding="utf-8") as fh:
         if new:
-            fh.write(json.dumps({"game": list(_identity(game_dir) or ())}) + "\n")
+            fh.write(json.dumps({"game": os.path.realpath(game_dir)}) + "\n")
         fh.write(json.dumps(rel) + "\n")
 
 
 def _read_journal(path: str, game_dir: str, backup: str) -> List[str]:
     """The paths a restore cut short moved out of THIS game folder and that
-    are in one of this backup's displaced- folders now: a journal of another
-    folder, or a path that was never moved, removes nothing (fourth review of
-    #48). A journal of another folder is set aside, so this run starts its
-    own."""
+    are in one of this backup's displaced- folders now: a path that was
+    never moved removes nothing (fourth review of #48)."""
     try:
         with open(path, encoding="utf-8") as fh:
             lines = fh.read().splitlines()
@@ -634,10 +646,9 @@ def _read_journal(path: str, game_dir: str, backup: str) -> List[str]:
         header = json.loads(lines[0]) if lines else None
     except ValueError:
         header = None
-    if not isinstance(header, dict) or header.get("game") != list(_identity(game_dir) or ()):
-        with contextlib.suppress(OSError):
-            os.replace(path, path + ".other")
-        return []
+    if not isinstance(header, dict) or not isinstance(header.get("game"), str) or \
+            os.path.normcase(header["game"]) != os.path.normcase(os.path.realpath(game_dir)):
+        return []                          # not this folder's: left as it is
     asides = [os.path.join(backup, name) for name in os.listdir(backup)
               if name.startswith(DISPLACED) and os.path.isdir(os.path.join(backup, name))
               and not os.path.islink(os.path.join(backup, name))]
