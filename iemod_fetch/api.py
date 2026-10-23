@@ -223,6 +223,10 @@ def run(settings: Settings, stream=None, config=None, on_event=None,
     """
     settings = replace(settings, weidu_log=list(settings.weidu_log or []))
     stream = stream if stream is not None else _Silent()
+    if not settings.restore_backup and (settings.apply or settings.restore_to):
+        raise ConfigError("--apply and --restore-to go with --restore-backup")
+    if not settings.backup and settings.backup_to:
+        raise ConfigError("--backup-to goes with --backup")
     if settings.backup or settings.verify_backup or settings.restore_backup:
         # the game folder only: no community data, no network
         return Outcome(exit_code=_backup_action(settings, stream, on_event, cancel))
@@ -1253,14 +1257,10 @@ def _backup_action(settings, stream, on_event, cancel) -> int:
                                         ("--restore-backup", settings.restore_backup)) if value]
     if len(actions) > 1:
         raise ConfigError(f"{' and '.join(actions)}: one at a time")
-    if not settings.restore_backup and (settings.apply or settings.restore_to):
-        raise ConfigError("--apply and --restore-to go with --restore-backup")
-    if not settings.backup and settings.backup_to:
-        raise ConfigError("--backup-to goes with --backup")
     try:
         return _backup_step(settings, say, on_event, cancel)
-    except InterruptedError:
-        say("    stopped: what was done stays done; run it again to finish")
+    except (InterruptedError, KeyboardInterrupt):
+        say("    stopped: nothing is lost; run the same command again to finish")
         return 1
     except OSError as exc:            # a full disk, a file in use: said, not a traceback
         say(f"    failed: {exc}")
@@ -1285,6 +1285,12 @@ def _backup_step(settings, say, on_event, cancel) -> int:
         for problem in result["problems"]:
             say(f"    {problem}")
         return 0 if result["ok"] else 1
+    check = verify_backup(settings.restore_backup)
+    if not check["ok"]:              # said now, not only once --apply is given
+        say(f"  restore     : {settings.restore_backup} is DAMAGED, it cannot be restored")
+        for problem in check["problems"]:
+            say(f"    {problem}")
+        return 1
     plan = plan_restore(settings.restore_backup, settings.restore_to)
     say(f"  restore     : {plan['game_dir']} from {plan['backup']}")
     if os.path.normcase(plan["game_dir"]) != os.path.normcase(plan["backed_up_from"]):
@@ -1293,8 +1299,13 @@ def _backup_step(settings, say, on_event, cancel) -> int:
     say(f"    move aside: {len(plan['displace'])} files added since")
     for line in plan["cannot_restore"]:
         say(f"    cannot    : {line}")
-    if plan["links"]:
-        say(f"    left alone: {len(plan['links'])} links the backup did not hold")
+    if plan["links"] or plan["mounts"]:
+        say(f"    left alone: {len(plan['links']) + len(plan['mounts'])} links, junctions or "
+            f"other drives, never entered")
+    for rel in plan["blocked"][:5]:
+        say(f"    blocked   : {rel} (a junction or another drive where the backup has a folder)")
+    say("    folders   : only the ones the moves leave empty, and the backup did not have, "
+        "are removed")
     if not settings.apply:
         say("    nothing changed: run again with --apply to restore")
         # 1 when a restore could not bring everything back, shown or done
@@ -1303,6 +1314,8 @@ def _backup_step(settings, say, on_event, cancel) -> int:
                             on_event=on_event, cancel=cancel)
     for aside in result["displaced"]:
         say(f"    moved aside to {aside} (nothing was deleted)")
+    if result["removed_folders"]:
+        say(f"    removed {len(result['removed_folders'])} folders left empty")
     return 1 if result["cannot_restore"] else 0
 
 

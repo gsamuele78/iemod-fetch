@@ -196,8 +196,9 @@ def test_restores_never_share_a_displaced_folder(tmp_path, monkeypatch):
     assert (pathlib.Path(second["displaced_to"]) / "override" / "user.itm").read_bytes() == b"second"
 
 
-@pytest.mark.parametrize("rel", ["../../escape.txt", "/etc/escape.txt", "C:/escape.txt",
-                                 "override\\..\\..\\escape.txt", "override/../../escape.txt"])
+@pytest.mark.parametrize("rel", ["../../escape.txt", "/etc/escape.txt", "override/../../escape.txt"]
+                         + (["C:/escape.txt", "override\\..\\..\\escape.txt"]
+                            if os.name == "nt" else []))
 def test_a_manifest_naming_a_path_outside_is_refused(tmp_path, rel):
     import hashlib
     import json
@@ -339,3 +340,93 @@ def test_a_damaged_backup_exits_1_with_a_message(tmp_path):
     root, path = backed_up(tmp_path)
     (pathlib.Path(path) / "files" / "chitin.key").write_bytes(b"tampered")
     assert cli.main(["--restore-backup", path, "--apply"], stream=io.StringIO()) == 1
+
+
+# ------------------------------------------------- second review of #48
+@pytest.mark.skipif(os.name == "nt", reason="'\\' and ':' cannot be in a Windows file name")
+def test_names_with_backslash_or_colon_are_backed_up_and_moved_aside(tmp_path):
+    """A mod unpacked from a Windows-made zip leaves `mymod\\backup\\a.itm` on
+    Linux; a save may be named "Chapter 2: ...". Such a name once stopped
+    every restore at the same file, and made a backup unreadable."""
+    root = game(tmp_path)
+    write(root / "save" / "Chapter 2: Irenicus" / "x.sav", b"a save")
+    path = backup.create(str(root), str(tmp_path / "backups"), name="before")
+    assert backup.verify(path)["ok"]
+    write(root / "mymod\\backup\\0\\a.itm", b"from a Windows zip")
+    write(root / "override" / "spwi101.spl", b"patched")
+    result = backup.restore(path, str(root))
+    assert not (root / "mymod\\backup\\0\\a.itm").exists()
+    assert (pathlib.Path(result["displaced_to"]) / "mymod\\backup\\0\\a.itm").exists()
+    assert (root / "override" / "spwi101.spl").read_bytes() == b"SPL original"
+    assert [b["name"] for b in backup.list_backups(str(tmp_path / "backups"))] == ["before"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
+def test_a_backup_reached_through_another_name_of_the_game_is_refused(tmp_path):
+    """Compared by identity, not by spelling: an alias of the game folder
+    (a link here; on macOS another letter case, a mount elsewhere)."""
+    root = game(tmp_path)
+    alias = tmp_path / "alias"
+    os.symlink(root, alias)
+    with pytest.raises(ConfigError, match="inside the game folder"):
+        backup.create(str(root), str(alias / "backups"))
+
+
+def test_empty_folders_made_since_are_left_alone(tmp_path):
+    root, path = backed_up(tmp_path)
+    (root / "save" / "my-new-slot").mkdir(parents=True)
+    write(root / "mymod" / "setup-mymod.tp2", b"tp2")
+    result = backup.restore(path, str(root))
+    assert (root / "save" / "my-new-slot").is_dir()          # not touched by the moves
+    assert result["removed_folders"] == ["mymod"]
+
+
+def test_a_backup_of_another_folder_leaves_its_empty_folders(tmp_path):
+    _root, path = backed_up(tmp_path)
+    other = tmp_path / "other"
+    write(other / "chitin.key", b"KEY")
+    for name in ("save", "mpsave", "temp"):
+        (other / name).mkdir()
+    backup.restore(path, str(other), other_folder=True)
+    assert all((other / name).is_dir() for name in ("save", "mpsave", "temp"))
+
+
+def test_the_command_line_checks_the_backup_before_showing_a_plan(tmp_path):
+    import io
+
+    from iemod_fetch import cli
+    _root, path = backed_up(tmp_path)
+    (pathlib.Path(path) / "files" / "chitin.key").write_bytes(b"tampered")
+    out = io.StringIO()
+    assert cli.main(["--restore-backup", path], stream=out) == 1
+    assert "DAMAGED" in out.getvalue()
+    (pathlib.Path(path) / backup.MANIFEST).write_text("{not json", encoding="utf-8")
+    assert cli.main(["--verify-backup", path], stream=io.StringIO()) == 1
+    assert backup.list_backups(str(tmp_path / "backups")) == []   # skipped, not raised
+
+
+@pytest.mark.parametrize("argv", [["--apply"], ["--restore-to", "x"], ["--backup-to", "x"]])
+def test_backup_options_alone_are_an_error_not_a_normal_run(tmp_path, monkeypatch, argv):
+    import io
+
+    from iemod_fetch import cli
+
+    def no_network(*_args, **_kwargs):
+        raise AssertionError("reached for the network")
+    monkeypatch.setattr("socket.socket.connect", no_network)
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(argv, stream=io.StringIO()) == 2
+
+
+def test_a_folder_leading_elsewhere_is_never_entered(tmp_path, monkeypatch):
+    """A junction or a bind mount is not a link to os.path.islink: once it
+    was entered, and files living outside the game were moved into the
+    backup. Here the mount table names the folder (a bind mount needs root)."""
+    root, path = backed_up(tmp_path)
+    shared = root / "linked"
+    write(shared / "user-file.txt", b"not the game's")
+    monkeypatch.setattr(backup, "_mount_points", lambda: {os.path.realpath(shared)})
+    plan = backup.plan_restore(path, str(root))
+    assert plan["displace"] == [] and plan["mounts"] == ["linked"]
+    backup.restore(path, str(root))
+    assert (shared / "user-file.txt").read_bytes() == b"not the game's"

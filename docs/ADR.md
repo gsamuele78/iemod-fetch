@@ -2278,9 +2278,24 @@ handled apart.
   (empty ones too) and every link - so a restore knows what an install ADDED
   anywhere (a mod folder, a new BIFF in `data/`) and what it CHANGED that was
   not copied.
-- **Links are never followed.** A link where a copied file or folder should be
-  (`override/`, `lang/`, a root file) stops the backup: it would be silently
-  incomplete. Other links are listed, left alone and reported.
+- **Links are never followed, and nothing leading elsewhere is entered**: a
+  symbolic link, a Windows junction or mount (a reparse point), a mount point
+  - also a bind mount of the same disk, read from Linux's mount table - or
+  another drive. Where a copied file or folder should be (`override/`, `lang/`,
+  a root file) one stops the backup: it would be silently incomplete. Others
+  are listed, left alone and reported; a restore that would have to write
+  through one stops before changing anything.
+- **Folders are compared by identity, not spelling** (device and inode of each
+  parent): on macOS `~/games/bg2ee` is `~/Games/BG2EE`, and an alias or a
+  mount of the game folder is the game folder, so a backup cannot be put
+  inside it under another name.
+- **A name is what the disk says.** Files found on disk are moved by their own
+  path, whatever letters they hold (`\` and `:` are ordinary on Linux and
+  macOS: a mod unpacked from a Windows-made zip, a save named "Chapter 2:
+  ..."); only the manifest's names are checked, and on Windows those letters
+  are refused there. A backup is checked as readable, and as holding one file
+  per copy (a case-insensitive backups drive merges `X.ITM` and `x.itm`),
+  before it is renamed into place.
 - A backup is written as `<name>.partial` and renamed when complete: a backup
   that exists is whole. It may not be inside the game folder.
 - **A restore deletes nothing.** It verifies the backup first (every sha256,
@@ -2289,8 +2304,10 @@ handled apart.
   way - files and links added since, and the current version of each file it
   puts back - into a `<backup>/displaced-<time>/` folder that restore made for
   itself (never shared, nothing in it replaced), then copies the backup's
-  files back and checks each against its sha256. Only empty folders the
-  backup did not have are removed.
+  files back and checks each against its sha256. A folder is removed only
+  when the moves - this run's, or those of a run cut short, recorded in the
+  backup's `restore-in-progress.json` - left it empty and the backup did not
+  have it: an empty folder made since, or the target's own, stays.
 - **Names match exactly**: on a case-sensitive system a mod's `x.itm` beside a
   backed-up `X.ITM` is moved aside. A listed, uncopied file whose name only
   changed case counts as present, so it is never moved away for want of a copy.
@@ -2305,13 +2322,22 @@ handled apart.
   without `--apply`. `--backup`, `--verify-backup` and `--restore-backup` run
   one at a time (two together, or `--apply` without `--restore-backup`, is a
   configuration error), before anything else, and never reach the network.
-  A damaged backup, a full disk or a stop exits 1 with a message.
+  `--apply`, `--restore-to` or `--backup-to` without their action is a
+  configuration error (exit 2) before anything runs. A damaged or unreadable
+  backup - found before the plan is even shown - a full disk, a stop or
+  Ctrl-C exits 1 with a message.
 
 An independent review of #48 found, before merging, a restore losing a
 displaced file (two restores in one second shared a folder), a hand-edited
 manifest writing outside the game folder, a restore emptying a folder that was
 not a game, a case-only name never moved aside, and empty folders the backup
-had being removed; each has a test in `tests/test_backup.py`.
+had being removed. A second review found a restore that could never finish (a
+`\` in a mod's file name), a backup written inside its game under another
+spelling of the folder, a bind mount entered, empty folders made since being
+removed, and exit codes that disagreed with this record. Each has a test in
+`tests/test_backup.py`. Not testable here, and left as limits: a backup made
+on Linux holding `A.ITM` and `a.itm` restored onto a case-insensitive drive,
+and a name stored in one Unicode form returned in another by macOS's HFS+.
 
 ### Consequences
 
