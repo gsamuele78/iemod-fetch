@@ -169,3 +169,32 @@ LANGUAGE ~Deutsch~ german ~x/german/setup.tra~
 def test_version_is_the_preamble_line_not_a_variable():
     tp2 = 'BACKUP ~x~\nOUTER_SPRINT v ~%VERSION%~\nVERSION ~v3~\n'
     assert parse_tp2(tp2).version == "v3"
+
+
+def test_a_one_line_preamble_keeps_version_and_language():
+    """Review of #57: anchored to the line start, both were lost. WeiDU 251
+    prints `// Comp: v1` and `0:English` for this tp2."""
+    info = parse_tp2("BACKUP ~b/backup~ AUTHOR ~me~ VERSION ~v1~ "
+                     "LANGUAGE ~English~ ~english~ ~english/a.tra~\nBEGIN ~Comp~\n")
+    assert info.version == "v1"
+    assert info.language_decls == [("English", "english")]
+
+
+def test_words_inside_a_string_are_not_keywords():
+    """Review of #57: a line of a README string starting `version`, or a
+    PRINT reading `language packs`, was taken for the keyword. WeiDU 251:
+    VERSION v2 and the one language English."""
+    tp2 = ("BACKUP ~c/backup~\nREADME ~c/readme.txt\nversion 9 notes~\nVERSION ~v2~\n"
+           "LANGUAGE ~English~ ~english~ ~english/a.tra~\n"
+           "BEGIN ~Comp~\nPRINT ~Note:\nlanguage packs are separate.~\n")
+    info = parse_tp2(tp2)
+    assert info.version == "v2"
+    assert info.language_decls == [("English", "english")]
+
+
+def test_a_comment_mark_inside_a_string_does_not_end_it():
+    """Review of #57: `~bg2ee // eet~` lost its close to the comment strip and
+    the game list ran on into the next line."""
+    info = parse_tp2("BACKUP ~x~\nREQUIRE_PREDICATE GAME_IS ~bg2ee // eet~ ~x~\n"
+                     "ACTION_IF GAME_IS ~iwdee~ BEGIN END\n")
+    assert "ACTION_IF" not in info.games and "iwdee" in info.games

@@ -71,7 +71,34 @@ def _strip(content: str) -> str:
     return "".join(out)
 
 
-_LANGUAGE = re.compile(r"^[ \t]*LANGUAGE\b", re.IGNORECASE | re.MULTILINE)
+_BARE = re.compile(r"[^\s~\"%/]+")
+
+
+def keyword_ends(clean: str, keyword: str) -> list[int]:
+    """
+    Where `keyword` stands as a word of code - not inside a string, not in a
+    comment - in `clean` (comments already out): the offset just past it.
+    Anywhere on a line, as WeiDU reads a one-line preamble (review of #57).
+    """
+    ends: list[int] = []
+    i, n, word = 0, len(clean), keyword.upper()
+    while True:
+        i = _skip(clean, i)
+        if i >= n:
+            return ends
+        value, j = _string(clean, i)
+        if value is not None:
+            i = j
+            continue
+        bare = _BARE.match(clean, i)
+        if not bare:
+            i += 1                       # a lone '/' or an unclosed quote
+            continue
+        if bare.group(0).upper() == word:
+            ends.append(bare.end())
+        i = bare.end()
+
+
 def _strings_after(text: str, i: int, stop: int) -> list[str]:
     values: list[str] = []
     while True:
@@ -106,7 +133,7 @@ def languages(tp2: str) -> list[Language]:
     files are strings. Skipping a declaration would shift every index after it.
     """
     clean = _strip(tp2)
-    starts = [m.end() for m in _LANGUAGE.finditer(clean)]
+    starts = keyword_ends(clean, "LANGUAGE")
     found = []
     for k, start in enumerate(starts):
         stop = starts[k + 1] if k + 1 < len(starts) else len(clean)
