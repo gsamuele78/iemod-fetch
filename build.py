@@ -82,7 +82,9 @@ def _vendor(staging: str) -> None:
         for entry in dist.files or ():
             rel = str(entry).replace("\\", "/")
             parts = rel.split("/")
-            if "__pycache__" in parts or rel.endswith(".pyc") or rel.startswith(".."):
+            if ".." in parts or os.path.isabs(rel) or ":" in parts[0]:
+                continue                       # outside the package: a script, never copied
+            if "__pycache__" in parts or rel.endswith(".pyc"):
                 continue
             meta = parts[0].endswith(".dist-info")
             if meta and not (parts[-1] == "METADATA" or "licenses" in parts
@@ -91,12 +93,17 @@ def _vendor(staging: str) -> None:
             source = str(entry.locate())
             with open(source, "rb") as fh:
                 data = fh.read()
-            if entry.hash is not None:
+            if entry.hash is None:
+                if not meta:                   # a package file must be accounted for
+                    raise SystemExit(f"build aborted: {rel} has no hash in its RECORD")
+            else:
                 digest = base64.urlsafe_b64encode(
                     hashlib.new(entry.hash.mode, data).digest()).rstrip(b"=").decode()
                 if digest != entry.hash.value:
                     raise SystemExit(f"build aborted: {rel} differs from its RECORD")
             target = os.path.join(staging, *parts)
+            if not os.path.realpath(target).startswith(os.path.realpath(staging) + os.sep):
+                raise SystemExit(f"build aborted: {rel} would land outside the archive")
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "wb") as fh:
                 fh.write(data)

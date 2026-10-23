@@ -133,3 +133,43 @@ def test_a_build_with_another_version_than_the_pin_stops(monkeypatch, tmp_path):
                         lambda name: Older() if name == "publicsuffixlist" else real(name))
     with pytest.raises(SystemExit, match="pins"):
         build.build(str(tmp_path / "x.pyz"))
+
+
+class _Entry(str):
+    """A RECORD line as importlib.metadata gives it."""
+    def __new__(cls, rel, source, hashed):
+        self = super().__new__(cls, rel)
+        self._source, self.hash = source, hashed
+        return self
+
+    def locate(self):
+        return self._source
+
+
+def _fake_dist(monkeypatch, entries):
+    import importlib.metadata
+    real = importlib.metadata.distribution
+
+    class Dist:
+        version = build._pins()["publicsuffixlist"]
+        files = entries
+    monkeypatch.setattr(importlib.metadata, "distribution",
+                        lambda name: Dist() if name == "publicsuffixlist" else real(name))
+
+
+def test_vendoring_refuses_a_package_file_without_a_hash(monkeypatch, tmp_path):
+    source = tmp_path / "mod.py"
+    source.write_text("# tampered\n", encoding="utf-8")
+    _fake_dist(monkeypatch, [_Entry("publicsuffixlist/__init__.py", str(source), None)])
+    with pytest.raises(SystemExit, match="no hash"):
+        build._vendor(str(tmp_path / "stage"))
+
+
+def test_vendoring_never_writes_outside_the_archive(monkeypatch, tmp_path):
+    source = tmp_path / "x.txt"
+    source.write_text("x", encoding="utf-8")
+    _fake_dist(monkeypatch, [_Entry("publicsuffixlist/../../escape.txt", str(source), None),
+                             _Entry("/etc/escape.txt", str(source), None)])
+    stage = tmp_path / "a" / "stage"
+    build._vendor(str(stage))
+    assert not (tmp_path / "a" / "escape.txt").exists() and not (tmp_path / "escape.txt").exists()

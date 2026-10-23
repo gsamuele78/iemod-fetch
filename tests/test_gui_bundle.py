@@ -56,6 +56,8 @@ def test_the_folder_carries_the_licences(tmp_path, monkeypatch):
     # the runtime library's own licence, MPL-2.0 (ADR-0043)
     mpl = (folder / "licenses" / "publicsuffixlist-LICENSE").read_text(encoding="utf-8")
     assert "Mozilla Public License" in mpl
+    notice = (folder / "NOTICE-publicsuffixlist.txt").read_text(encoding="utf-8")
+    assert "unmodified" in notice and "https://pypi.org/project/publicsuffixlist/" in notice
     lgpl = (folder / "licenses" / "LGPL-3.0-only.txt").read_text(encoding="utf-8")
     assert "GNU LESSER GENERAL PUBLIC LICENSE" in lgpl and "Version 3" in lgpl
     assert "Qt 6.12.0" in (folder / "NOTICE-Qt.txt").read_text(encoding="utf-8")
@@ -134,3 +136,9 @@ def test_the_unpacked_program_is_still_executable(tmp_path, monkeypatch):
     unpacked = tmp_path / "unpacked" / bundle.NAME / bundle.NAME
     assert unpacked.read_bytes() == b"\x7fELF program"
     assert os.stat(unpacked).st_mode & 0o100
+
+
+def test_a_bundle_with_another_version_than_the_pin_stops(tmp_path, monkeypatch):
+    monkeypatch.setattr(bundle.importlib.metadata, "version", lambda name: "0.0.1")
+    with pytest.raises(SystemExit, match="pins"):
+        bundle.build(str(tmp_path))
