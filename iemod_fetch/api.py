@@ -1061,8 +1061,9 @@ def download_selection(folder: str, on_event=None, cancel=None,
     `iemod-fetch --config FOLDER/iemod-fetch.ini --selection
     FOLDER/selection.json` makes in FOLDER. A mod already there and verified is
     skipped, so running again resumes; `only` (mod folders) retries those.
-    `take_newer` (mod folders) installs the newer GitHub release a run offered
-    for each, over the copy there (`--take-newer`, GUI-AUDIT item 59).
+    `take_newer` (mod folders, or ["all"] for every one offered) installs the
+    newer GitHub release a run offered for each, over the copy there
+    (`--take-newer`, GUI-AUDIT item 59).
     `on_event` receives the run's progress events (from worker threads);
     setting `cancel` stops the downloads at their next chunk.
 
@@ -1071,6 +1072,9 @@ def download_selection(folder: str, on_event=None, cancel=None,
     "exit_code": int}; `newer` is the offer ({"version", "installed", "repo",
     "date", "url"}) or None.
     """
+    for name, value in (("only", only), ("take_newer", take_newer)):
+        if isinstance(value, str):      # a name, not a list: read letter by letter
+            raise ConfigError(f"{name} is a list of mod folders, not {value!r}")
     settings = replace(
         project_settings(folder), selection=os.path.join(folder, SELECTION_FILE),
         # the selection is what is wanted, and this is a download

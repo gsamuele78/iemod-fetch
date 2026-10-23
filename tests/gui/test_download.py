@@ -261,3 +261,69 @@ def test_a_plain_download_never_asks_for_a_newer_release(qtbot, tmp_path):
     widget = page(qtbot, tmp_path, fake)
     run(qtbot, widget)
     assert fake.taken == [[]]
+
+
+class TakeFails(Offering):
+    """GitHub out of reach when the take is asked for: the core says manual."""
+
+    def __call__(self, folder, on_event, cancel, only, take_newer=None):
+        result = super().__call__(folder, on_event, cancel, only, take_newer)
+        if take_newer:
+            for rec in result["records"]:
+                rec.update(status="manual", newer=None,
+                           detail="--take-newer: GitHub could not give it; the copy on "
+                                  "disk is kept")
+        return result
+
+
+def _ticked_take(qtbot, widget):
+    row = widget.rows["ascension"]
+    row.setCheckState(4, Qt.CheckState.Checked)
+    with qtbot.waitSignal(widget.finished, timeout=5000):
+        widget.newer_button.click()
+    return row
+
+
+def test_a_take_that_fails_leaves_the_mod_as_it_was(qtbot, tmp_path):
+    """Review of #62: the row flipped to "No download found" and Next locked."""
+    widget = page(qtbot, tmp_path, TakeFails())
+    run(qtbot, widget)
+
+    row = _ticked_take(qtbot, widget)
+
+    assert row.text(1) == "Done" and widget.is_complete()
+    assert "2.1.0" in row.text(4)                         # still offered, to retry
+    assert "not installed" in row.text(3) and "GitHub could not" in row.text(3)
+    assert not widget.retry_button.isEnabled()
+
+
+def test_a_cancelled_take_leaves_the_mod_as_it_was(qtbot, tmp_path):
+    fake = Offering()
+    widget = page(qtbot, tmp_path, fake)
+    run(qtbot, widget)
+    widget.rows["ascension"].setCheckState(4, Qt.CheckState.Checked)
+    fake.hold = True
+    with qtbot.waitSignal(widget.finished, timeout=5000):
+        widget.newer_button.click()
+        fake.started.wait(5)
+        widget.stop()
+
+    row = widget.rows["ascension"]
+    assert row.text(1) == "Done" and widget.is_complete()
+    assert "2.1.0" in row.text(4)
+
+
+def test_space_ticks_the_selected_rows_offer(qtbot, tmp_path):
+    """Review of #62: the box in the last column was out of the keyboard's reach."""
+    widget = page(qtbot, tmp_path, Offering())
+    run(qtbot, widget)
+    widget.table.setCurrentItem(widget.rows["ascension"])
+
+    qtbot.keyClick(widget.table, Qt.Key.Key_Space)
+
+    assert widget.rows["ascension"].checkState(4) == Qt.CheckState.Checked
+    assert widget.newer_button.isEnabled()
+    widget.table.setCurrentItem(widget.rows["ub"])        # no offer: nothing to tick
+    qtbot.keyClick(widget.table, Qt.Key.Key_Space)
+    assert widget.rows["ub"].data(4, Qt.ItemDataRole.CheckStateRole) is None
+    assert widget.newer_button.accessibleName()

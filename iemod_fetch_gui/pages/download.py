@@ -20,7 +20,8 @@ import threading
 import time
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QThread, Qt, Signal
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
@@ -102,6 +103,15 @@ class DownloadPage(QWidget):
         self.table.setColumnWidth(2, 140)
         self.table.setColumnWidth(DETAIL, 320)
         self.table.itemChanged.connect(lambda *_: self._buttons())
+        # the box sits in the last column, which the keyboard does not reach:
+        # Space on a row with an offer ticks it
+        self.table.installEventFilter(self)
+        self.table.setAccessibleName("Mods of the selection")
+        self.newer_button.setAccessibleName("Install the ticked newer releases")
+        self.newer_button.setToolTip(
+            "Replace each ticked mod with its newer GitHub release; the copy there "
+            "is kept aside. Space ticks the selected row's offer.")
+        self._taking: dict[str, tuple] = {}
 
         buttons = QHBoxLayout()
         buttons.addWidget(self.start_button)
@@ -164,6 +174,10 @@ class DownloadPage(QWidget):
         forward = self._forward
 
         asked = {"take_newer": list(take_newer)} if take_newer else {}
+        # what each row was, to come back to if its take does not happen
+        self._taking = {folder: (item.data(0, Qt.ItemDataRole.UserRole), item.text(DETAIL),
+                                 item.data(NEWER, Qt.ItemDataRole.UserRole))
+                        for folder, item in self.rows.items() if folder in (take_newer or ())}
 
         def run():
             try:
@@ -194,6 +208,17 @@ class DownloadPage(QWidget):
         ticked = self.ticked()
         if ticked:
             self.start(ticked, take_newer=ticked)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt)
+        if (watched is self.table and isinstance(event, QKeyEvent)
+                and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Space):
+            item = self.table.currentItem()
+            if item is not None and item.data(NEWER, Qt.ItemDataRole.CheckStateRole) is not None:
+                ticked = item.checkState(NEWER) == Qt.CheckState.Checked
+                item.setCheckState(NEWER, Qt.CheckState.Unchecked if ticked
+                                   else Qt.CheckState.Checked)
+                return True
+        return bool(super().eventFilter(watched, event))
 
     def stop(self) -> None:
         """Cancel the run: the downloads stop at their next chunk."""
@@ -250,6 +275,7 @@ class DownloadPage(QWidget):
     def _offer(self, item: QTreeWidgetItem, newer: dict | None) -> None:
         """A box to tick for a newer GitHub release, or none."""
         self.table.blockSignals(True)
+        item.setData(NEWER, Qt.ItemDataRole.UserRole, newer)
         if newer:
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(NEWER, Qt.CheckState.Unchecked)
@@ -275,8 +301,18 @@ class DownloadPage(QWidget):
                 # retried but not in the selection's plan any more: not the player's
                 self.table.takeTopLevelItem(self.table.indexOfTopLevelItem(self.rows[folder]))
                 del self.rows[folder]
+        taking, self._taking = self._taking, {}
         for record in result["records"]:            # the report is the authority
             item = self._row(record["folder"])
+            before = taking.get(record["folder"])
+            if before and record["status"] != "ok":
+                # the take did not happen (GitHub out of reach, cancelled, the
+                # archive refused): the copy there is untouched, and so is the row
+                status, detail, offer = before
+                self._finish_row(item, status, f"{detail} - the newer release was not "
+                                               f"installed: {record['detail']}")
+                self._offer(item, offer)
+                continue
             self._finish_row(item, record["status"], record["detail"])
             self._offer(item, record.get("newer"))
             if record.get("bytes"):

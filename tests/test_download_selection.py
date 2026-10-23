@@ -245,3 +245,11 @@ def test_take_newer_reaches_the_run_and_each_record_carries_its_offer(project, m
     result = api.download_selection(str(folder), take_newer=["DlcMerger"])
     assert seen["take_newer"] == ["DlcMerger"]
     assert all("newer" in r for r in result["records"])
+
+
+@pytest.mark.parametrize("name", ["only", "take_newer"])
+def test_a_folder_name_given_alone_is_refused(project, name):
+    """Review of #62: "Ascension" was read as A, s, c, e, n, ..."""
+    folder, _ = project
+    with pytest.raises(ConfigError, match="list of mod folders"):
+        api.download_selection(str(folder), **{name: "Ascension"})
