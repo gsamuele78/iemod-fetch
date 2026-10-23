@@ -48,6 +48,8 @@ EXCLUDE = ("tkinter", "PySide6", "shiboken6", "iemod_fetch_gui")
 # bundle would not start there - so the build stops instead.
 MAX_GLIBC = (2, 35)
 _GLIBC = re.compile(rb"GLIBC_2\.(\d+)(?:\.(\d+))?\x00")
+# A need that is not a version number: packed relative relocations (glibc 2.36).
+_GLIBC_ABI = {b"GLIBC_ABI_DT_RELR\x00": (2, 36)}
 
 
 def notice(versions: dict) -> str:
@@ -123,8 +125,9 @@ def glibc_needed(folder: str) -> tuple[int, int] | None:
                     continue
                 fh.seek(0)
                 data = fh.read()
-            for match in _GLIBC.finditer(data):
-                version = (2, int(match.group(1)))
+            found = [(2, int(m.group(1))) for m in _GLIBC.finditer(data)]
+            found += [version for name, version in _GLIBC_ABI.items() if name in data]
+            for version in found:
                 newest = version if newest is None or version > newest else newest
     return newest
 

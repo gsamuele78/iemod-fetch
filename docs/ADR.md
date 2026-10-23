@@ -2493,7 +2493,10 @@ it; a wizard build on 3.15 has not been run.
   need that Python; installing with pip needs it. (Done: `packaging/cli_bundle.py`,
   `iemod-fetch-cli-<os>-<arch>.zip`, one PyInstaller folder - not one file,
   which unpacks itself on every start and is what Windows antivirus software
-  flags most - run with `--version` and `--help` once unzipped.)
+  flags most - run with `--version` and `--help` once unzipped. Its Linux zip
+  is built on the oldest supported runner, ubuntu-22.04, because a Python
+  built on a newer system needs that system's glibc: the build OS decides
+  which systems the bundle reaches, and a check refuses anything above 2.35.)
 - **A library is adopted when it fixes a measured defect or a measured cost**:
   a test fails before it, it is pinned by hash, pip-audit scans it, its licence
   is permissive or file-level copyleft kept unmodified. First: filelock (a

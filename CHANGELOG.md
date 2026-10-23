@@ -59,9 +59,10 @@ Python API, which is internal.
   not the latest runner: setup-python's 3.14 for 24.04 needs glibc 2.38, and
   the bundle would not have started on Debian 12 (review of #70). The build
   stops if any bundled file needs a glibc newer than 2.35, and the zip is run
-  once more inside `debian:12`. Programs it starts (git, gh, 7-Zip, unrar)
-  get the system's library path back, not the bundle's (`childenv.py`), so
-  they load their own OpenSSL. Python's LICENSE.txt ships with it. Measured
+  once more inside `debian:12`. On Linux and macOS, programs it starts (git,
+  gh, 7-Zip, unrar) get the system's library path back, not the bundle's
+  (`childenv.py`), so they load their own OpenSSL; on Windows they still see
+  the bundle's DLL folder after their own (GUI-AUDIT row 61). Python's LICENSE.txt ships with it. Measured
   locally, with a standalone Python (glibc 2.17): 14.7 MB, built in 14 s; run
   with an empty environment and no Python on `PATH`, it took the data
   folder's lock and reached GitHub through a proxy over TLS. The size of the

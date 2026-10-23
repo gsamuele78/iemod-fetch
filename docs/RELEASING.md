@@ -47,8 +47,11 @@ review fixes are in and nothing merged later is. Then, in order:
    Linux and Windows, started once unzipped with `--check`,
    zipped as `iemod-fetch-gui-<os>-<arch>.zip` and added to `SHA256SUMS`; the
    command line the same way, run once unzipped with `--version` and `--help`,
-   as `iemod-fetch-cli-<os>-<arch>.zip` (`packaging/cli_bundle.py`). The
-   macOS bundles are `release-macos.yml`'s, which the release starts for its tag
+   as `iemod-fetch-cli-<os>-<arch>.zip` (`packaging/cli_bundle.py`; job `cli`).
+   Its Linux zip is built on `ubuntu-22.04`, refused if any file in it needs a
+   glibc newer than 2.35, and started once more inside `debian:12`. The
+   macOS bundles are `release-macos.yml`'s, each built and attached only when
+   the release lacks it, which the release starts for its tag
    (job `macos-bundle`): usually minutes later, else at its six-hourly check, it
    is built from the tag, attested and attached with its own `.sha256`;
 3. attests build provenance through Sigstore keyless signing;

@@ -8,8 +8,8 @@
 # attaches it, with its own .sha256. A pull request that changes the packaging
 # rehearses the build only. (A schedule, not workflow_run: nothing from another
 # run is trusted, and a quiet check costs one short Linux job.) The command
-# line's macOS bundle (cli_bundle.py) is built and attached with it; whether a
-# release still needs one is told by the wizard's zip.
+# line's macOS bundle (cli_bundle.py) is built and attached the same way; each
+# zip is built and uploaded only when the release lacks it.
 name: Release - macOS wizard bundle
 
 on:
@@ -45,6 +45,8 @@ jobs:
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
       build: ${{ steps.pick.outputs.build }}
+      gui: ${{ steps.pick.outputs.gui }}
+      cli: ${{ steps.pick.outputs.cli }}
       repair: ${{ steps.pick.outputs.repair }}
     steps:
       - id: pick
@@ -55,7 +57,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           if [ "$EVENT" = pull_request ]; then
-            echo "tag=" >> "$GITHUB_OUTPUT"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+            { echo "tag="; echo "build=true"; echo "gui=true"; echo "cli=true"; } >> "$GITHUB_OUTPUT"; exit 0
           fi
           tag="${WANTED:-$(gh release view --repo "$REPOSITORY" --json tagName -q .tagName)}"
           # each zip on its own (review of #70): a release missing either one
@@ -77,8 +79,13 @@ jobs:
                  | [$n[] | select(test("^iemod-fetch-(gui|cli)-macos") and endswith(".zip"))
                          | select((. + ".sha256") as $s | any($n[]; . == $s) | not)] | length')
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if { [ "$gui" = 0 ] && [ "$buildable" = yes ]; } || { [ "$cli" = 0 ] && [ "$clibuildable" = yes ]; }; then
-            echo "build=true"; else echo "build=false"; fi >> "$GITHUB_OUTPUT"
+          # each built only when its zip is missing: a wizard build that fails
+          # on a newer image never keeps the command line's zip away (review of #70)
+          need_gui=false; need_cli=false
+          if [ "$gui" = 0 ] && [ "$buildable" = yes ]; then need_gui=true; fi
+          if [ "$cli" = 0 ] && [ "$clibuildable" = yes ]; then need_cli=true; fi
+          if [ "$need_gui" = true ] || [ "$need_cli" = true ]; then build=true; else build=false; fi
+          { echo "build=$build"; echo "gui=$need_gui"; echo "cli=$need_cli"; } >> "$GITHUB_OUTPUT"
           if [ "$bare" != 0 ]; then echo "repair=true"; else echo "repair=false"; fi >> "$GITHUB_OUTPUT"
           echo "release $tag: macOS wizard zips $gui, command-line zips $cli (without .sha256: $bare); scripts: wizard $buildable, command line $clibuildable"
 
@@ -103,10 +110,12 @@ jobs:
         run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
       - run: pip install ".[gui]" "pyinstaller==6.22.3"
       - name: Build, sign ad hoc, zip, start the unzipped copy once
+        if: needs.target.outputs.gui == 'true'
         run: python packaging/gui_bundle.py --dist gui-dist
       # The command line too (GUI-AUDIT item 36): macOS's own python3 is 3.9.
       - name: The command line - build, run once, zip
-        run: test ! -f packaging/cli_bundle.py || python packaging/cli_bundle.py --dist gui-dist
+        if: needs.target.outputs.cli == 'true'
+        run: python packaging/cli_bundle.py --dist gui-dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-gui
@@ -124,10 +133,30 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: macos-gui, path: dist }
+      # Only what the release lacks is attested and uploaded: a zip already
+      # published keeps its own attestation, and these builds are not
+      # byte-for-byte reproducible (review of #70).
+      - id: lacks
+        name: Keep only the zips the release does not have
+        env:
+          TAG: ${{ needs.target.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          present=$(gh release view "$TAG" --repo "$REPOSITORY" --json assets -q '.assets[].name')
+          for zip in dist/iemod-fetch-*.zip; do
+            if printf '%s\n' "$present" | grep -qxF "${zip#dist/}"; then
+              echo "release $TAG already has ${zip#dist/}; left out"
+              rm "$zip"
+            fi
+          done
+          if ls dist/iemod-fetch-*.zip > /dev/null 2>&1; then echo "any=yes"; else echo "any=no"; fi >> "$GITHUB_OUTPUT"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.lacks.outputs.any == 'yes'
         with:
           subject-path: dist/iemod-fetch-*.zip
       - name: Upload it with its digest
+        if: steps.lacks.outputs.any == 'yes'
         env:
           TAG: ${{ needs.target.outputs.tag }}
           GH_TOKEN: ${{ github.token }}

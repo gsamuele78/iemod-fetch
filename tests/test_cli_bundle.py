@@ -105,3 +105,7 @@ def test_a_linux_bundle_that_would_not_start_on_debian_12_stops_the_build(tmp_pa
         cli.check_glibc(str(tmp_path))
     elf(tmp_path / cli.NAME, [2, 17, 34])
     cli.check_glibc(str(tmp_path))
+    # packed relative relocations need 2.36 with no GLIBC_2.36 in sight
+    (tmp_path / cli.NAME).write_bytes(b"\x7fELF" + b"\0" * 60 + b"GLIBC_2.17\0GLIBC_ABI_DT_RELR\0")
+    with pytest.raises(SystemExit, match="glibc 2.36"):
+        cli.check_glibc(str(tmp_path))
