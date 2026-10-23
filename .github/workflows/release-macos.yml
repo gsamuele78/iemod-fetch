@@ -2,7 +2,8 @@
 # runners started no job from 2026-10-21 to 2026-10-23: a job waiting for one
 # stays queued, not failed, and a queued job in release.yml kept its run - and
 # the `release` concurrency group, so the next release too - waiting. Here it
-# holds up nothing: every six hours it looks at the latest release and, when it
+# holds up nothing: release.yml starts it for each new release (a dispatch with
+# the tag), and every six hours it looks at the latest release and, when it
 # has no macOS bundle yet, builds one from the release's tag, attests it and
 # attaches it, with its own .sha256. A pull request that changes the packaging
 # rehearses the build only. (A schedule, not workflow_run: nothing from another

@@ -2120,6 +2120,13 @@ or PySide6. Three constraints shaped it.
   wizard does not use are excluded to keep them there.
 - A macOS bundle reaches a release up to six hours after it, or never while
   the runners do not start; the release says so in its notes.
+  - *Amendment (2026-10-23).* `release.yml` now starts `release-macos.yml`
+    for the new tag (`macos-bundle`, `workflow_dispatch` with the run's own
+    token, `actions: write` on that job only), so the bundle normally arrives
+    minutes after the release. The dispatch only queues the run - nothing
+    waits for a macOS runner - and the six-hourly check remains for a run
+    that fails or never starts. A dispatch from this session's GitHub
+    integration was refused (403), which is why the release does it itself.
 - The bundles carry no publisher signature and the macOS app is not
   notarized: Windows SmartScreen warns, and macOS refuses the downloaded app
   until the player allows it (System Settings, Privacy & Security, Open

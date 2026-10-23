@@ -308,6 +308,25 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
           fail_on_unmatched_files: true
 
+  # The macOS bundle is built apart (release-macos.yml, ADR-0040); starting it
+  # here brings it minutes after the release instead of at the next six-hourly
+  # check. A dispatch only queues that run: nothing here waits for a macOS
+  # runner, and if it fails the schedule still attaches the bundle later.
+  macos-bundle:
+    name: Start the macOS bundle for this release
+    needs: [decide, publish-github]
+    if: needs.decide.outputs.release == 'true' && !inputs.dry_run && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write           # workflow_dispatch of release-macos.yml, nothing else
+    steps:
+      - name: Dispatch release-macos.yml for the tag
+        env:
+          TAG: ${{ needs.decide.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: gh workflow run release-macos.yml --repo "$REPOSITORY" --ref main -f tag="$TAG"
+
   publish-pypi:
     name: PyPI (trusted publishing)
     needs: [decide, build, provenance]

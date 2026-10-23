@@ -6,6 +6,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html), where
 the public surface is the CLI's flags and the JSON report schema — not the
 Python API, which is internal.
 
+## [Unreleased]
+
+### Changed
+- The release starts the macOS wizard bundle's workflow for its own tag, so
+  the macOS zip arrives minutes after the release instead of at the next
+  six-hourly check, which remains for a run that fails (ADR-0040 amendment).
+
 ## [3.0.0] - 2026-10-23
 
 The wizard up to download (milestone M3, GUI-AUDIT). The major version is
