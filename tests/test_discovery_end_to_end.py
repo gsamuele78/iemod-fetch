@@ -400,6 +400,69 @@ def test_every_catalogue_source_is_tried_once_and_the_bar_stays(tmp_path, monkey
     assert not (tmp_path / "Mods" / "EndlessBG1").exists()
 
 
+class SigningStub(DiscoveryStub):
+    """A direct link that answers with a new signed URL every time it is
+    opened (SourceForge's latest/download, a presigned CDN link)."""
+
+    def __init__(self, link, wrong):
+        super().__init__(owners={}, releases={}, blobs={})
+        self.link, self.wrong, self.opened = link, wrong, 0
+
+    def open(self, url):
+        if url != self.link:
+            raise NetworkError(f"no landing page: {url}")
+        self.opened += 1
+        signed = f"https://cdn.example.org/f.zip?sig={self.opened}"
+        self.blobs[signed] = self.wrong
+        headers = {"Content-Type": "application/zip"}
+        return type("R", (), {"headers": headers, "geturl": lambda _self: signed,
+                              "__enter__": lambda _self: _self,
+                              "__exit__": lambda _self, *a: None})()
+
+
+def test_a_source_that_signs_a_new_url_each_time_gets_one_turn(tmp_path, monkeypatch):
+    """Review of #52: the loop stopped only when a resolved URL came round
+    again, so a link redirecting to a new signed URL on each probe was
+    downloaded and refused forever. A source has one turn, whatever URL it
+    answers with; when every source is refused, the failure names them all."""
+    link = "https://example.org/get.php?id=5"
+    stub = SigningStub(link, zip_bytes("SomeOtherMod"))
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1", "urls": [link]}]}))
+
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json", "--no-discovery",
+                     "--json-report", "r.json"])
+
+    assert code == 1
+    assert len(stub.downloaded) <= 2, stub.downloaded
+    assert not (tmp_path / "Mods" / "EndlessBG1").exists()
+
+
+def test_when_every_source_is_refused_the_failure_names_each(tmp_path, monkeypatch):
+    attachment = "https://forums.beamdog.com/uploads/editor/gk/qg6zo9o3fqho.zip"
+    asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
+    stub = DiscoveryStub(
+        owners={},
+        releases={"Gibberlings3/EndlessBG1": {"tag_name": "v1", "assets": [
+            {"name": "m.zip", "browser_download_url": asset}]}},
+        blobs={attachment: zip_bytes("000000001-Quick-Save"),
+               asset: zip_bytes("SomeOtherMod")})
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+
+    code, _out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json", "--no-discovery",
+                      "--json-report", "r.json"])
+
+    assert code == 1
+    report = json.loads((tmp_path / "r.json").read_text())
+    [record] = [r for r in report["records"] if r["folder"] == "EndlessBG1"]
+    assert attachment in record["detail"] and asset in record["detail"]
+    assert "expect_tp2" not in record["detail"]       # no advice from the last one alone
+
+
 def test_a_forum_attachment_waits_for_the_repository(tmp_path, monkeypatch):
     """
     Measured on 2026-10-23: lcc-docs' Beamdog attachments were a save game,

@@ -11,8 +11,11 @@ Policy (ADR-0003):
 """
 import contextlib
 import errno
+import functools
 import hashlib
 import http.client
+import importlib.resources
+import ipaddress
 import math
 import os
 import random
@@ -22,6 +25,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+
+from publicsuffixlist import PublicSuffixList
 from typing import TypeVar
 from collections.abc import Callable
 
@@ -68,14 +73,29 @@ def is_github_auth_host(url_or_host: str) -> bool:
     return host.lower().rstrip(".") in GITHUB_AUTH_HOSTS
 
 
+@functools.cache
+def _suffixes() -> PublicSuffixList:
+    """The Public Suffix List the library carries, read through
+    importlib.resources so it loads from inside the .pyz too (the library's
+    own default opens a path beside its file, which a zip has not)."""
+    data = importlib.resources.files("publicsuffixlist").joinpath("public_suffix_list.dat")
+    with data.open("rb") as fh:
+        return PublicSuffixList(source=fh)
+
+
 def registrable_suffix(host: str) -> str:
-    """Crude eTLD+1 for same-site link checks (adequate for the known mod hosts)."""
-    parts = host.lower().rstrip(".").split(".")
-    if len(parts) <= 2:
-        return ".".join(parts)
-    if parts[-2] in {"co", "com", "net", "org", "ac", "gov"} and len(parts[-1]) == 2:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:])
+    """A host's site: its registrable domain by the Public Suffix List, private
+    suffixes included - `a.github.io` and `b.github.io` are two sites, as two
+    users' pages are (ADR-0043; the hand-written rule took both for
+    `github.io`). An address, a suffix itself or a single label is its own
+    site."""
+    host = host.lower().rstrip(".")
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return host
+    except ValueError:
+        pass
+    return _suffixes().privatesuffix(host) or host
 
 
 def same_site(a: str, b: str) -> bool:

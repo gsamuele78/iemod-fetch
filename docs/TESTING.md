@@ -41,8 +41,8 @@ what the author imagined.
 ## 3. Property-based tests — laws, not examples
 
 `tests/test_properties.py`, using Hypothesis. Skipped, not failed, when
-Hypothesis is absent, because the runtime is standard library only and
-`python3 -m pytest` must work with nothing installed.
+Hypothesis is absent, because `python3 -m pytest` must work with nothing
+installed but the runtime's own libraries (`requirements/runtime.txt`).
 
 A property states something that must hold for **every** input, and Hypothesis
 searches for a counterexample and then *shrinks* it to the smallest input that
@@ -366,7 +366,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,325 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,357 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 58 modules |

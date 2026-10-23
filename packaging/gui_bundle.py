@@ -21,7 +21,9 @@ library names), as `unzip` and desktop archive tools restore them: copies would
 double Qt's size and leave two files to replace for one library.
 """
 import argparse
+import importlib.metadata
 import os
+import re
 import platform
 import shutil
 import stat
@@ -32,6 +34,10 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = "iemod-fetch-gui"
+with open(os.path.join(ROOT, "requirements", "runtime.txt"), encoding="utf-8") as _fh:
+    RUNTIME_PINS = dict(re.findall(r"^([A-Za-z0-9_.-]+)==([^\s\\]+)", _fh.read(),
+                                   re.MULTILINE))
+RUNTIME = tuple(RUNTIME_PINS)
 FIXED = (1980, 1, 1, 0, 0, 0)                 # every entry's date: same folder, same zip
 ENTRY = "import sys\nfrom iemod_fetch_gui.app import main\n\nsys.exit(main())\n"
 # Qt modules the wizard never uses: kept out to keep the download small.
@@ -88,6 +94,16 @@ def build(work: str) -> str:
             "--paths", ROOT]
     for module in EXCLUDE:
         args += ["--exclude-module", module]
+    # the runtime's libraries (ADR-0043) with their data and metadata: the
+    # Public Suffix List is a data file PyInstaller does not see by itself;
+    # the pinned version, as build.py checks for the .pyz
+    for name, pinned in RUNTIME_PINS.items():
+        installed = importlib.metadata.version(name)
+        if installed != pinned:
+            raise SystemExit(f"{name} {installed} is installed, requirements/runtime.txt "
+                             f"pins {pinned}")
+    for name in RUNTIME:
+        args += ["--collect-data", name, "--copy-metadata", name]
     subprocess.run(args + [entry], check=True, cwd=work)
     folder = os.path.join(work, "out", NAME)
     if platform.system() == "Darwin" and os.path.isdir(os.path.join(work, "out",
@@ -110,6 +126,20 @@ def add_licences(folder: str) -> None:
     os.makedirs(licences, exist_ok=True)
     for name in sorted(os.listdir(os.path.join(ROOT, "packaging", "licenses"))):
         shutil.copy(os.path.join(ROOT, "packaging", "licenses", name), licences)
+    for name in RUNTIME:                     # MPL-2.0 for publicsuffixlist
+        dist = importlib.metadata.distribution(name)
+        # MPL-2.0 3.2(a): where the Source Code Form of what ships compiled is
+        urls = dict(url.split(", ", 1) for url in dist.metadata.get_all("Project-URL") or ())
+        with open(os.path.join(target, f"NOTICE-{name}.txt"), "w", encoding="utf-8") as fh:
+            fh.write(f"{name} {dist.version}, unmodified, is part of this program, under "
+                     f"the Mozilla Public License 2.0 (licenses/{name}-LICENSE).\n"
+                     f"Its source code: https://pypi.org/project/{name}/{dist.version}/#files"
+                     + (f" and {urls['Homepage']}" if "Homepage" in urls else "") + "\n")
+        for entry in dist.files or ():
+            if "licenses" in str(entry).replace("\\", "/").split("/") or \
+                    entry.name.startswith(("LICENSE", "COPYING")):
+                shutil.copy(str(entry.locate()),
+                            os.path.join(licences, f"{name}-{entry.name}"))
     with open(os.path.join(target, "NOTICE-Qt.txt"), "w", encoding="utf-8") as fh:
         fh.write(notice(versions()))
 

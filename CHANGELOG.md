@@ -23,6 +23,17 @@ Python API, which is internal.
   part of the lint; `hashlib.file_digest` hashes backups; tarfile's `data`
   filter is used without the fallback for runtimes that lacked it. No
   behaviour changes: the same 1,317 tests pass.
+- **Fixed (security): two users' GitHub Pages were one site** (items 39 and
+  41). `same_site` reduced both `modder.github.io` and `attacker.github.io` to
+  `github.io`, so a landing page's link to another user's page escaped the
+  offsite gate (`--accept-offsite`). The site is now the registrable domain by
+  the **Public Suffix List** (publicsuffixlist, MPL-2.0 - the first runtime
+  library, ADR-0043), private suffixes included (github.io, gitlab.io...); an
+  address is its own site. The library is pinned by version and hash in
+  `requirements/runtime.txt`, carried inside the `.pyz` (318 KB, from 198) -
+  copied from the hash-checked installation, two builds still byte-identical -
+  and the bundles with its licence, audited by pip-audit, bumped by
+  Dependabot in a group of its own.
 - The weekly upstream check also watches Python (item 37): an issue when a
   newer stable Python is available, or when a place names another version than
   `.python-version`; a test holds them together.
@@ -68,8 +79,10 @@ Python API, which is internal.
   a compatibility patch, another mod. The .tp2 check refused it and the retry
   asked the catalogue again, getting the same attachment, so the repository or
   page the entry also lists was never tried. Each of the entry's sources now
-  gets its turn, each downloaded once and each held to the same check; the
-  warning names what was refused.
+  gets its turn - one turn per source, not per URL, so a link that redirects
+  to a new signed URL each time cannot loop - each held to the same check;
+  the warning names what was refused, and when every source is refused the
+  failure names each one.
 - **A forum's file comes last, and says so** (GUI-AUDIT M7 item 58, ADR-0039
   amendment). With GitHub out of reach - no token and 115 GitHub mods is
   enough - Ascension came from a Beamdog thread as v1.5 BETA (its repository:

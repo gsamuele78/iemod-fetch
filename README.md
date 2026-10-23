@@ -30,7 +30,9 @@ the components the community rule sets say must go, and writes one script that
 installs everything with WeiDU on Windows or Linux. It never guesses: whatever
 the evidence does not decide is reported to you, with the reason.
 
-Standard library only at runtime. One file, no dependencies.
+The standard library at runtime, plus one library that earns its place
+(publicsuffixlist, MPL-2.0: the Public Suffix List; ADR-0043), carried inside
+the one file - nothing to install but Python 3.14.
 
 **Current release: 3.0.0** - the desktop wizard up to download (milestone
 M3): game and folders, mod selection with conflicts and presets, install
@@ -122,7 +124,7 @@ older Python is told so and stops). The wizard's release bundle carries its own
 Python; a command-line bundle is planned for 4.0.0 (GUI-AUDIT item 36).
 
 ```bash
-# One file, no dependencies — on Python 3.14.
+# One file, its one library inside — on Python 3.14.
 python3 build.py            # -> ./iemod-fetch.pyz
 ./iemod-fetch.pyz --help    # POSIX;  py iemod-fetch.pyz --help  on Windows
 
@@ -508,7 +510,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,325 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,357 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -726,7 +728,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,325, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,357, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

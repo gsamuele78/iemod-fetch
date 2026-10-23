@@ -182,18 +182,27 @@ class Runner:
 
         try:
             refused = [candidate.url]
+            skip = {candidate.url}      # what was refused, and each source used
             while True:
                 try:
                     result, outcome = self._attempt(source, folder, candidate, expect_tp2)
                     break
-                except VerificationFailed:
+                except VerificationFailed as exc:
                     # The artefact is not this mod: the manifest's, or the
                     # catalogue's first source - lcc-docs links forum
                     # attachments that are save games, debug logs or another
                     # mod's patch. Each of the catalogue's other sources gets
-                    # its turn; the same strict check gates every one.
-                    alternate = self._catalogue_alternate(source, folder, entry, refused)
+                    # one turn - a source, not a URL: one that redirects to a
+                    # new signed URL each time would otherwise come round
+                    # forever - and the same strict check gates every one.
+                    if self.cancel.is_set():
+                        raise Cancelled("cancelled") from exc
+                    alternate = self._catalogue_alternate(source, folder, entry, skip)
                     if alternate is None:
+                        if len(refused) > 1:
+                            raise VerificationFailed(
+                                f"none of the {len(refused)} sources tried contained this "
+                                f"mod: {', '.join(refused)}") from exc
                         raise
                     candidate = alternate
                     refused.append(candidate.url)
@@ -427,14 +436,21 @@ class Runner:
                 f"{', '.join(info.normalised_games)} - not {game}")
         return kept
 
-    def _catalogue_alternate(self, source, folder, entry, used):
-        """The catalogue's best candidate whose URL is none of those in `used`."""
+    def _catalogue_alternate(self, source, folder, entry, skip: set):
+        """The catalogue's best candidate from a source not used yet, whose URL
+        was not refused; the source and the URL join `skip`."""
         if not entry:
             return None
-        probe = self._probe_catalogue(source, folder, entry, skip=used)
-        return probe[0].candidate if probe else None
+        used: list = []
+        probe = self._probe_catalogue(source, folder, entry, skip=skip, used=used)
+        if not probe:
+            return None
+        candidate = probe[0].candidate
+        skip.update(used)
+        skip.add(candidate.url)
+        return candidate
 
-    def _probe_catalogue(self, source, folder, entry, tried=None, skip=()):
+    def _probe_catalogue(self, source, folder, entry, tried=None, skip=(), used=None):
         """
         Try the sources a supplementary catalogue lists, best first.
 
@@ -444,19 +460,26 @@ class Runner:
         anyone in the thread posted is often not the mod, or an old copy of it
         (ADR-0039 amendment). All of them still have to pass the .tp2 check
         before anything is installed. Why each one failed is added to `tried`,
-        when given. A source whose candidate is in `skip` - already downloaded
-        and refused - is passed over, so the next one gets its turn.
+        when given. A source in `skip`, or whose candidate is - used already,
+        or downloaded and refused - is passed over, so the next one gets its
+        turn; the source returned is added to `used`, when given.
         """
         def failed(where, probe):
             if tried is not None and probe.reason:
                 tried.append(f"{where}: {probe.reason}")
 
-        def fresh(probe):
-            return probe.ok and probe.candidate.url not in skip
+        def fresh(probe, slot):
+            if slot in skip or not probe.ok or probe.candidate.url in skip:
+                return False
+            if used is not None:
+                used.append(slot)
+            return True
 
-        def from_url(url, how):
+        def from_url(url, how, kind):
+            if (kind, url) in skip:
+                return None
             probe = self.landing.resolve(_replace(source, url=url, github=None))
-            if fresh(probe):
+            if fresh(probe, (kind, url)):
                 probe.warnings.append(f"{folder}: resolved via {entry.origin} {how}-> {url}")
                 return probe
             failed(url, probe)
@@ -467,12 +490,13 @@ class Runner:
         pages = [u for u in entry.http_urls if u not in direct and not repo_from_url(u)]
 
         for url in direct:
-            if not is_forum_post(url) and (probe := from_url(url, "direct download ")):
+            if not is_forum_post(url) and (probe := from_url(url, "direct download ",
+                                                             "direct")):
                 return probe, None
 
-        if entry.github:
+        if entry.github and ("github", entry.github) not in skip:
             probe = self.github.resolve(_replace(source, github=entry.github))
-            if fresh(probe):
+            if fresh(probe, ("github", entry.github)):
                 probe.warnings.append(
                     f"{folder}: resolved via {entry.origin} -> {entry.github}; it will "
                     f"only be installed if it contains {folder}.tp2 or setup-{folder}.tp2")
@@ -480,13 +504,13 @@ class Runner:
             failed(entry.github, probe)
 
         for url in pages:
-            if not is_forum_post(url) and (probe := from_url(url, "")):
+            if not is_forum_post(url) and (probe := from_url(url, "", "page")):
                 return probe, None
         for url in direct:
-            if is_forum_post(url) and (probe := from_url(url, "forum attachment ")):
+            if is_forum_post(url) and (probe := from_url(url, "forum attachment ", "direct")):
                 return probe, None
         for url in pages:
-            if is_forum_post(url) and (probe := from_url(url, "forum thread ")):
+            if is_forum_post(url) and (probe := from_url(url, "forum thread ", "page")):
                 return probe, None
         return None
 

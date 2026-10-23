@@ -79,7 +79,7 @@ forbidden_modules =
     iemod_fetch.cli
 
 [importlinter:contract:no-third-party-at-runtime]
-name = The runtime depends on the standard library only (ADR-0002)
+name = The runtime takes no library but those of requirements/runtime.txt (ADR-0043)
 type = forbidden
 source_modules =
     iemod_fetch

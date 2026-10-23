@@ -1,0 +1,10 @@
+# The runtime's libraries (ADR-0043): each fixes a measured defect, is pure
+# Python, is pinned here by version and wheel hash, is scanned by pip-audit and
+# bumped by Dependabot, and is carried inside the .pyz and the bundles.
+#
+#   pip install --require-hashes -r requirements/runtime.txt
+#
+# publicsuffixlist (MPL-2.0, unmodified, licence shipped with it): the Public
+# Suffix List, so that two users' pages on github.io are two sites (net.py).
+publicsuffixlist==1.1.2.20261023 \
+    --hash=sha256:c792aa3fd37076c15f1c9d9897e59e9d58e8bacdf4315eb9cc10141a26d8995c
