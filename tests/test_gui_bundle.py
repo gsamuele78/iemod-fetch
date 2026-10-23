@@ -73,6 +73,8 @@ def test_the_same_folder_zips_to_the_same_bytes(tmp_path, monkeypatch):
 
 def links(base):
     """Qt's framework links as a macOS .app holds them; skip where none can be made."""
+    if os.name == "nt":             # Windows builds hold no links; its links take no '/'
+        pytest.skip("links are a macOS and Linux matter")
     versions = base / "QtCore.framework" / "Versions"
     (versions / "A").mkdir(parents=True)
     (versions / "A" / "QtCore").write_bytes(b"qt")
