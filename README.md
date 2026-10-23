@@ -134,7 +134,7 @@ iemod-fetch-gui --project ~/eet-build      # the folder that keeps the project
 
 **Without Python** (ADR-0040): from 3.0.0, each GitHub release
 carries `iemod-fetch-gui-<os>-<arch>.zip` for Linux and Windows; a macOS zip
-is added within hours, when GitHub's macOS runner built it. Unzip it (with
+is added minutes later, once GitHub's macOS runner built it. Unzip it (with
 `unzip` or your desktop's archive tool, which keep its links) and run
 `iemod-fetch-gui` inside; it is
 attested and listed in `SHA256SUMS` like the other assets. It is one folder,

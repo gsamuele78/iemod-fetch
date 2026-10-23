@@ -2,7 +2,8 @@
 # runners started no job from 2026-10-21 to 2026-10-23: a job waiting for one
 # stays queued, not failed, and a queued job in release.yml kept its run - and
 # the `release` concurrency group, so the next release too - waiting. Here it
-# holds up nothing: every six hours it looks at the latest release and, when it
+# holds up nothing: release.yml starts it for each new release (a dispatch with
+# the tag), and every six hours it looks at the latest release and, when it
 # has no macOS bundle yet, builds one from the release's tag, attests it and
 # attaches it, with its own .sha256. A pull request that changes the packaging
 # rehearses the build only. (A schedule, not workflow_run: nothing from another
@@ -25,11 +26,15 @@ permissions:
   contents: read
 
 concurrency:
-  # Scheduled checks replace one another (each looks at the latest release); a
-  # dispatch for a named release has its own group and is never cancelled, so a
-  # scheduled run that builds nothing cannot drop it. A rehearsal per pull request.
-  group: release-macos-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  # One group for every run that may attach (a dispatch from release.yml, the
+  # schedule, a dispatch by hand): two at once both saw no bundle and both
+  # built and uploaded one, leaving a zip and a .sha256 from different builds
+  # (review of #46). Not cancelled: a running build is never thrown away. A
+  # run still pending is replaced by a newer one, which looks at the latest
+  # release - the same tag, unless a dispatch named an older one by hand.
+  # A pull request's rehearsal has its own group.
+  group: release-macos-${{ github.event_name == 'pull_request' && github.ref || 'attach' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   target:
@@ -38,6 +43,7 @@ jobs:
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
       build: ${{ steps.pick.outputs.build }}
+      repair: ${{ steps.pick.outputs.repair }}
     steps:
       - id: pick
         env:
@@ -51,13 +57,20 @@ jobs:
           fi
           tag="${WANTED:-$(gh release view --repo "$REPOSITORY" --json tagName -q .tagName)}"
           has=$(gh release view "$tag" --repo "$REPOSITORY" --json assets \
-                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos"))] | length')
+                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos") and endswith(".zip"))] | length')
           # a release made before ADR-0040 has nothing to build it with
           if gh api "repos/$REPOSITORY/contents/packaging/gui_bundle.py?ref=$tag" --silent 2>/dev/null; then
             buildable=yes; else buildable=no; fi
+          # a zip whose .sha256 did not get up (a failed second upload) is
+          # repaired from the digest GitHub keeps for it, never rebuilt
+          bare=$(gh release view "$tag" --repo "$REPOSITORY" --json assets -q '
+                 [.assets[].name] as $n
+                 | [$n[] | select(startswith("iemod-fetch-gui-macos") and endswith(".zip"))
+                         | select((. + ".sha256") as $s | any($n[]; . == $s) | not)] | length')
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [ "$has" = 0 ] && [ "$buildable" = yes ]; then echo "build=true"; else echo "build=false"; fi >> "$GITHUB_OUTPUT"
-          echo "release $tag: macOS bundles attached $has, packaging script present: $buildable"
+          if [ "$bare" != 0 ]; then echo "repair=true"; else echo "repair=false"; fi >> "$GITHUB_OUTPUT"
+          echo "release $tag: macOS zips $has (without .sha256: $bare), packaging script present: $buildable"
 
   build:
     name: Wizard bundle (macos-latest)
@@ -101,7 +114,49 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
+          # Asked again here, not only by `target`: a published bundle is never
+          # replaced, so one a player may have checked keeps its .sha256.
+          has=$(gh release view "$TAG" --repo "$REPOSITORY" --json assets \
+                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos") and endswith(".zip"))] | length')
+          if [ "$has" != 0 ]; then
+            echo "release $TAG already has a macOS bundle; nothing uploaded"
+            exit 0
+          fi
           cd dist
           for zip in iemod-fetch-gui-*.zip; do sha256sum "$zip" > "$zip.sha256"; done
-          gh release upload "$TAG" iemod-fetch-gui-*.zip iemod-fetch-gui-*.zip.sha256 \
-            --repo "$REPOSITORY" --clobber
+          # The zip first, its .sha256 after: a .sha256 never stands without
+          # its zip. A failed zip upload leaves no zip, so the next check
+          # builds again; a failed .sha256 upload is repaired by `digest` at
+          # the next check (review of #46).
+          gh release upload "$TAG" iemod-fetch-gui-*.zip --repo "$REPOSITORY"
+          gh release upload "$TAG" iemod-fetch-gui-*.zip.sha256 --repo "$REPOSITORY" --clobber
+
+  digest:
+    name: Put back a missing .sha256 from the published zip's digest
+    needs: target
+    if: needs.target.outputs.repair == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # uploads the .sha256 to the release
+    steps:
+      - name: Write each missing .sha256 from GitHub's digest of its zip
+        env:
+          TAG: ${{ needs.target.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir sums && cd sums
+          gh api "repos/$REPOSITORY/releases/tags/$TAG" --jq '
+            [.assets[].name] as $n
+            | .assets[]
+            | select(.name | startswith("iemod-fetch-gui-macos") and endswith(".zip"))
+            | select((.name + ".sha256") as $s | any($n[]; . == $s) | not)
+            | "\(.name) \(.digest)"' |
+          while read -r name digest; do
+            case "$digest" in
+              sha256:????????????????????????????????????????????????????????????????) ;;
+              *) echo "no sha256 digest for $name: $digest"; exit 1 ;;
+            esac
+            printf '%s  %s\n' "${digest#sha256:}" "$name" > "$name.sha256"
+            gh release upload "$TAG" "$name.sha256" --repo "$REPOSITORY" --clobber
+          done
