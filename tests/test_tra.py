@@ -314,7 +314,11 @@ def test_a_fifo_is_not_opened(tmp_path):
     ("m/czech/a.tra", "cp1250"), ("m/cs_CZ/a.tra", "cp1250"), ("m/japanese/a.tra", "cp932"),
     ("m/korean/a.tra", "cp949"), ("m/Polski/a.tra", "cp1250"), ("m/pl_PL/a.tra", "cp1250"),
     ("m\\RUSSIAN\\a.tra", "cp1251"), ("m/ru_RU/a.tra", "cp1251"),
-    ("m/english/a.tra", "cp1252"), ("m/castilian/a.tra", "cp1252"), ("russian.tra", "cp1252")])
+    ("m/english/a.tra", "cp1252"), ("m/castilian/a.tra", "cp1252"), ("russian.tra", "cp1252"),
+    # the nearest language folder decides, not a mod folder's name (review of #58)
+    ("prussian_guard/english/a.tra", "cp1252"), ("polished_items/english/a.tra", "cp1252"),
+    ("english_x/russian/a.tra", "cp1251"), ("m/tra/russian/a.tra", "cp1251"),
+    ("m/russian/tra/a.tra", "cp1251")])
 def test_the_code_page_is_the_language_folders(path, charset):
     from iemod_fetch.weidu_lex import legacy_charset
     assert legacy_charset(path) == charset
