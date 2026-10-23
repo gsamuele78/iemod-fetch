@@ -4,6 +4,7 @@ WeiDU changes is copied and checked by sha256, the rest listed; a restore
 deletes nothing - what is in the way is moved aside - and says what it could
 not put back.
 """
+import json
 import os
 import pathlib
 import threading
@@ -505,7 +506,65 @@ def test_the_journal_names_only_what_was_moved(tmp_path):
     root, path = backed_up(tmp_path)
     (root / "MyNotes" / "drafts").mkdir(parents=True)
     journal = pathlib.Path(path) / backup.JOURNAL
-    journal.write_text('"../escape/x"\nnot json\n"mymod/a.itm"\n', encoding="utf-8")
+    ident = list(backup._identity(str(root)))
+    journal.write_text(json.dumps({"game": ident}) + '\n"../escape/x"\nnot json\n'
+                       '"MyNotes/drafts/x.txt"\n', encoding="utf-8")
     result = backup.restore(path, str(root))
+    # never moved (not in any displaced- folder): its folder stays
     assert (root / "MyNotes" / "drafts").is_dir()
     assert result["removed_folders"] == [] and not journal.exists()
+
+
+# ------------------------------------------------- fourth review of #48
+def test_a_folder_with_subfolders_where_the_backup_has_a_file_is_restored(tmp_path):
+    root, path = backed_up(tmp_path)
+    (root / "Baldur.exe").unlink()
+    write(root / "Baldur.exe" / "sub" / "mine.txt", b"mine")
+    (root / "Baldur.exe" / "emptysub").mkdir()
+    for _run in range(2):                       # once, and a rerun has nothing left
+        backup.restore(path, str(root))
+    assert (root / "Baldur.exe").read_bytes() == b"MZ" + b"\0" * 64
+    asides = list(pathlib.Path(path).glob("displaced-*"))
+    assert any((a / "Baldur.exe" / "sub" / "mine.txt").exists() for a in asides)
+    assert any((a / "Baldur.exe" / "emptysub").is_dir() for a in asides)   # moved, kept
+
+
+def test_a_journal_of_another_game_folder_removes_nothing_here(tmp_path):
+    _root, path = backed_up(tmp_path)
+    other = tmp_path / "copy"
+    write(other / "chitin.key", b"KEY")
+    (other / "mods" / "x").mkdir(parents=True)
+    journal = pathlib.Path(path) / backup.JOURNAL
+    journal.write_text(json.dumps({"game": [1, 2]}) + '\n"mods/x/2"\n', encoding="utf-8")
+    result = backup.restore(path, str(other), other_folder=True)
+    assert (other / "mods" / "x").is_dir() and result["removed_folders"] == []
+
+
+def test_a_copy_across_drives_cut_short_leaves_no_part_file(tmp_path, monkeypatch):
+    import errno as _errno
+    root, path = backed_up(tmp_path)
+    write(root / "big.bin", b"x" * 4096)
+
+    def cross_device(_src, _dst):
+        raise OSError(_errno.EXDEV, "cross-device")
+
+    def disk_full(src, dst, **_kw):
+        pathlib.Path(dst).write_bytes(b"x" * 100)
+        raise OSError(_errno.ENOSPC, "no space")
+    monkeypatch.setattr(backup.os, "rename", cross_device)
+    monkeypatch.setattr(backup.shutil, "copy2", disk_full)
+    with pytest.raises(OSError):
+        backup.restore(path, str(root))
+    assert (root / "big.bin").stat().st_size == 4096
+    assert list(pathlib.Path(path).glob("displaced-*/big.bin")) == []
+
+
+def test_a_backup_inside_the_game_is_refused_by_the_plan_already(tmp_path):
+    import io
+    import shutil as _shutil
+
+    from iemod_fetch import cli
+    root, path = backed_up(tmp_path)
+    inside = root / "mybackups" / "before"
+    _shutil.move(path, inside)
+    assert cli.main(["--restore-backup", str(inside)], stream=io.StringIO()) == 2

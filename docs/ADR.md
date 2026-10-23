@@ -2291,8 +2291,13 @@ handled apart.
   a folder and then deletes the source tree - which emptied a mounted folder
   outside the game in the third review. A restore moves only files and links;
   across drives a file is copied, its size checked, and only then removed, and
-  a copy whose source cannot be removed is taken back. A folder where the
-  backup has a file is emptied by the moves above it and then removed.
+  a copy whose source cannot be removed, or that fails part-way, is taken
+  back. A folder where the backup has a file is emptied by the moves above
+  it; its subfolders, empty by then, are moved aside as empty folders, and
+  it goes.
+- **Reparse points count as "elsewhere" only when they name another place**
+  (the name-surrogate tag: junctions, mounts, links); a OneDrive placeholder
+  or a deduplicated file holds its own content and is backed up.
 - **Folders are compared by identity, not spelling** (device and inode of each
   parent): on macOS `~/games/bg2ee` is `~/Games/BG2EE`, and an alias or a
   mount of the game folder - or of any folder in it - is that folder, so a
@@ -2314,9 +2319,11 @@ handled apart.
   itself (never shared, nothing in it replaced), then copies the backup's
   files back and checks each against its sha256. A folder is removed only
   when the moves - this run's, or those of a run cut short, recorded one path
-  per line in the backup's `restore-in-progress.jsonl` before each move - left
-  it empty and the backup did not have it: an empty folder made since, or the
-  target's own, stays.
+  per line in the backup's `restore-in-progress.jsonl` before each move, under
+  a first line naming the game folder by identity, and counted only if the
+  file is in one of the backup's `displaced-` folders now - left it empty and
+  the backup did not have it: an empty folder made since, or the target's own,
+  stays. A journal of another folder is set aside, never used.
 - **Names match exactly**: on a case-sensitive system a mod's `x.itm` beside a
   backed-up `X.ITM` is moved aside. A listed, uncopied file whose name only
   changed case counts as present, so it is never moved away for want of a copy.
@@ -2352,7 +2359,12 @@ A third review found a mount on a path to put back emptied through
 non-UTF-8 mount table, and a journal trusted too far; each has a test or was
 re-run against real bind mounts. Left as a limit, failing loudly: a mount
 shadowed by a later mount over its parent can make a real folder look like a
-mount, and the backup is then refused.
+mount, and the backup is then refused. A fourth review found a folder with
+subfolders where the backup has a file never restored, a journal of one game
+folder used in another, a part copy left behind, and the overlap refused only
+by `--apply`; each has a test. Flagged, not testable here: on btrfs
+subvolumes mounted with `subvol=` the mount table's device may differ from
+`st_dev`, so a same-disk bind mount there may go unseen.
 
 ### Consequences
 

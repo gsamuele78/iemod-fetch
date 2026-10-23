@@ -48,6 +48,7 @@ FILES = "files"
 PARTIAL = ".partial"
 DISPLACED = "displaced-"
 JOURNAL = "restore-in-progress.jsonl"
+_NAME_SURROGATE = 0x20000000          # IO_REPARSE_TAG bit: "points to another name"
 COPIED_DIRS = ("override",)
 _CHUNK = 1024 * 1024
 
@@ -140,7 +141,11 @@ def _leads_elsewhere(full: str, device: int, mount_points: Dict[str, int]) -> bo
     there any more (#48)."""
     st = os.lstat(full)
     if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT",
-                                                      0x400):
+                                                      0x400) \
+            and getattr(st, "st_reparse_tag", 0) & _NAME_SURROGATE:
+        # a junction, mount or link points elsewhere; a OneDrive placeholder
+        # or a deduplicated file is a reparse point too, but holds its own
+        # content (fourth review of #48)
         return True
     if st.st_dev != device or (stat.S_ISDIR(st.st_mode) and os.path.ismount(full)):
         return True
@@ -369,7 +374,11 @@ def plan_restore(backup: str, game_dir: str) -> dict:
         raise ConfigError(f"{game_dir}: no chitin.key - not a game folder, nothing to restore "
                           f"into")
     copied, inventory = manifest["copied"], manifest["inventory"]
-    present, _folders, links_now, mounts_now = _scan(game_dir)
+    present, folders_now, links_now, mounts_now = _scan(game_dir)
+    # said by the plan, not only by --apply (fourth review of #48)
+    if _inside(game_dir, backup) or _overlaps(backup, game_dir, folders_now):
+        raise ConfigError(f"{backup} and {game_dir} overlap: a backup cannot be restored into "
+                          f"a folder that holds it")
     # a listed, uncopied file found only under another case is that file
     uncopied_missing = {rel.lower(): rel for rel in inventory
                         if rel not in copied and rel not in present}
@@ -466,15 +475,13 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
         raise ModFetchError(f"{plan['blocked'][0]}: a junction, mount or another drive is on "
                             f"or inside this path; remove it first - nothing restored")
     manifest = read_manifest(backup)
-    files_now, folders_now, links_now, _mounts = _scan(game_dir)
-    if _inside(game_dir, backup) or _overlaps(backup, game_dir, folders_now):
-        raise ConfigError(f"{backup} and {game_dir} overlap")
+    files_now, _folders, links_now, _mounts = _scan(game_dir)
     # what is on disk is moved by the name the disk gave it, whatever letters
     # it holds; only the manifest's names go through _join
     on_disk = {**files_now, **{rel: os.path.join(game_dir, *rel.split("/"))
                                for rel in links_now}}
     journal = os.path.join(backup, JOURNAL)
-    earlier = _read_journal(journal)              # what a restore cut short moved
+    earlier = _read_journal(journal, game_dir, backup)   # what a cut restore moved
     asides: List[str] = []
     moved: List[str] = []
 
@@ -491,7 +498,7 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.lexists(target):        # never replace what was moved aside
             raise OSError(f"{target} exists: nothing moved over it")
-        _journal_add(journal, rel)         # before the move: a cut run is known
+        _journal_add(journal, rel, game_dir)   # before the move: a cut run is known
         _move(source, target)
         moved.append(rel)
         _emit(on_progress, event="restore_displaced", file=rel)
@@ -507,9 +514,15 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
         _check_cancel(cancel)
         target = _join(game_dir, rel)
         if os.path.isdir(target) and not os.path.islink(target):
-            # a folder where the backup has a file: what it held was moved
-            # aside above; it is empty now, or the restore stops here
-            os.rmdir(target)
+            # a folder where the backup has a file: its files and links were
+            # moved aside above; its folders, empty now, are moved aside too -
+            # as empty folders - so it can go (fourth review of #48)
+            for here, _dirs, _files in os.walk(target, topdown=False):
+                sub = _rel(here, game_dir)
+                if not asides:
+                    asides.append(_new_aside(backup))
+                os.makedirs(os.path.join(asides[0], *sub.split("/")), exist_ok=True)
+                os.rmdir(here)
         elif os.path.lexists(target):
             move_aside(rel, target)
         source = _join(os.path.join(backup, FILES), rel)
@@ -581,10 +594,14 @@ def _move(source: str, target: str) -> None:
     if stat.S_ISLNK(st.st_mode):
         os.symlink(os.readlink(source), target)
     else:
-        shutil.copy2(source, target, follow_symlinks=False)
-        if os.path.getsize(target) != st.st_size:
-            os.remove(target)
-            raise OSError(f"{source}: the copy moved aside is incomplete, nothing moved")
+        try:
+            shutil.copy2(source, target, follow_symlinks=False)
+            if os.path.getsize(target) != st.st_size:
+                raise OSError(f"{source}: the copy moved aside is incomplete, nothing moved")
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.remove(target)              # a part copy is never left behind
+            raise
     try:
         os.remove(source)
     except OSError:
@@ -592,26 +609,46 @@ def _move(source: str, target: str) -> None:
         raise
 
 
-def _journal_add(path: str, rel: str) -> None:
-    """One moved path per line, appended before it is moved."""
+def _journal_add(path: str, rel: str, game_dir: str) -> None:
+    """One moved path per line, appended before it is moved; the first line
+    names the game folder, by identity."""
+    new = not os.path.exists(path)
     with open(path, "a", encoding="utf-8") as fh:
+        if new:
+            fh.write(json.dumps({"game": list(_identity(game_dir) or ())}) + "\n")
         fh.write(json.dumps(rel) + "\n")
 
 
-def _read_journal(path: str) -> List[str]:
-    """The paths a restore cut short moved: only names a manifest could hold."""
+def _read_journal(path: str, game_dir: str, backup: str) -> List[str]:
+    """The paths a restore cut short moved out of THIS game folder and that
+    are in one of this backup's displaced- folders now: a journal of another
+    folder, or a path that was never moved, removes nothing (fourth review of
+    #48). A journal of another folder is set aside, so this run starts its
+    own."""
     try:
         with open(path, encoding="utf-8") as fh:
             lines = fh.read().splitlines()
     except (OSError, ValueError):
         return []
+    try:
+        header = json.loads(lines[0]) if lines else None
+    except ValueError:
+        header = None
+    if not isinstance(header, dict) or header.get("game") != list(_identity(game_dir) or ()):
+        with contextlib.suppress(OSError):
+            os.replace(path, path + ".other")
+        return []
+    asides = [os.path.join(backup, name) for name in os.listdir(backup)
+              if name.startswith(DISPLACED) and os.path.isdir(os.path.join(backup, name))
+              and not os.path.islink(os.path.join(backup, name))]
     found = []
-    for line in lines:
+    for line in lines[1:]:
         try:
             rel = json.loads(line)
         except ValueError:
             continue
-        if _safe_rel(rel):
+        if _safe_rel(rel) and any(os.path.lexists(os.path.join(a, *rel.split("/")))
+                                  for a in asides):
             found.append(rel)
     return found
 
