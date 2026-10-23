@@ -78,7 +78,7 @@ is never sent as a bearer.
 in 2026: a JWT after the prefix, about 520 characters, with two dots and `-`.
 The shape refused them, so such a token in the credential helper was dropped
 in silence and the run went anonymous. The shape now takes `ghs_` followed by
-three non-empty base64url segments (at least 36 characters); the classic
+three non-empty base64url segments (at least 36 characters after `ghs_`); the classic
 shapes are unchanged. Tokens from the environment, `--token-file` and `gh` were
 never shape-checked and were not affected - the workflows' `GITHUB_TOKEN`
 kept working.

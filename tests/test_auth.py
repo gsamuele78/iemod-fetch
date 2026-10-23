@@ -122,6 +122,10 @@ def test_a_stored_github_token_is_returned(monkeypatch, token):
     "ghp_short",                     # malformed
     "ghp_" + "A" * 20 + ".x",        # a dot belongs to the stateless ghs_ only
     "ghs_" + "." * 40,               # shaped like a JWT, but nothing in it
+    "ghs_a.b.c",                     # the shape, but too short
+    "ghs_" + "a" * 20 + ".b..c" + "d" * 20,       # an empty segment
+    "ghs_" + "a" * 20 + ".b.c.d" + "e" * 20,      # four segments
+    "ghs_" + "a" * 20 + ".b.c" + "d" * 20 + "==",  # base64 padding
     "not-a-token-at-all",
 ])
 def test_a_non_token_password_is_never_used_as_a_bearer(monkeypatch, password):

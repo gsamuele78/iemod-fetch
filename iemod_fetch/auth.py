@@ -91,7 +91,7 @@ def _from_git_credential(host: str = "github.com") -> str | None:
     for line in proc.stdout.decode("utf-8", "replace").splitlines():
         if line.startswith("password="):
             token = line.partition("=")[2].strip()
-            return token if _TOKEN_SHAPE.match(token) else None
+            return token if _TOKEN_SHAPE.fullmatch(token) else None
     return None
 
 

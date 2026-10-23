@@ -465,7 +465,8 @@ Exit codes: `0` success · `1` failures or unresolved mods · `2` bad configurat
   forum, and never survives a redirect off those hosts.
 * A value from git's credential helper is used only if it has the shape of a
   GitHub token (including 2026's stateless `ghs_` installation tokens), so a
-  stored password is never sent as one.
+  stored password is not mistaken for one - and a credential only ever goes to
+  GitHub itself.
 * Nothing is extracted until it has been identified by magic bytes, kept under a
   size ceiling, and (when the manifest pins a `sha256`) verified.
 * No archive member can be written outside its staging directory.
@@ -514,7 +515,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,522 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,526 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -758,7 +759,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,522, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,526, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 62 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
