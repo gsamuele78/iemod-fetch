@@ -2369,7 +2369,12 @@ subvolumes mounted with `subvol=` the mount table's device may differ from
 one journal per backup overwritten when two folders were cut, a journal lost
 when a drive came back with another device number, and a listed file's case
 twin kept inside a folder that had to become a file again; none lost data,
-each kept a rerun from finishing, and each has a test.
+each kept a rerun from finishing, and each has a test. Accepted, and left as a
+limit: a journal follows the folder's path, so after a restore is cut and
+the game is reinstalled at the same path, the rerun may remove empty folders
+the reinstall made under paths the cut run had emptied - only empty folders,
+never a file. Journals whose folder moved stay in the backup, small and
+unread, for the player to prune with it.
 
 ### Consequences
 
