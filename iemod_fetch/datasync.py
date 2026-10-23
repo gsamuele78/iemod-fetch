@@ -40,7 +40,7 @@ import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 from .catalogues import CatalogueSet
 from .errors import ModFetchError
@@ -60,7 +60,7 @@ SHOWN_CHANGES = 6
 
 # What a guard reports about a copy: counts, and one fact per mod (a version,
 # a status) whose movement between two commits is worth telling the user.
-Measure = Tuple[Dict[str, int], Dict[str, str]]
+Measure = tuple[dict[str, int], dict[str, str]]
 
 
 def check_lcc_docs(root: str) -> Measure:
@@ -102,10 +102,10 @@ def check_krion64(root: str) -> Measure:
 class Source:
     name: str                     # the cache directory
     repo: str                     # owner/repository on GitHub
-    paths: Tuple[str, ...]        # files, or directories ending in "/"
+    paths: tuple[str, ...]        # files, or directories ending in "/"
     licence: str = ""
     # The guard: reads a staged copy with the tool's parsers and measures it.
-    check: Optional[Callable[[str], Measure]] = field(default=None, compare=False)
+    check: Callable[[str], Measure] | None = field(default=None, compare=False)
 
 
 SOURCES = (
@@ -140,12 +140,12 @@ class Rejected(ModFetchError):
 @dataclass
 class DataPaths:
     """What the cache can stand in for, when the flag was not given."""
-    catalogue: Optional[str] = None           # --catalogue
-    rules: List[str] = field(default_factory=list)   # --rules
-    mod_db: Optional[str] = None              # --mod-db
-    order_catalogue: Optional[str] = None     # --order-catalogue
-    eet_sequence: Optional[str] = None        # --eet-sequence
-    releases: Optional[str] = None            # --releases
+    catalogue: str | None = None           # --catalogue
+    rules: list[str] = field(default_factory=list)   # --rules
+    mod_db: str | None = None              # --mod-db
+    order_catalogue: str | None = None     # --order-catalogue
+    eet_sequence: str | None = None        # --eet-sequence
+    releases: str | None = None            # --releases
 
 
 def default_data_dir() -> str:
@@ -167,7 +167,7 @@ def blob_sha(data: bytes) -> str:
                         usedforsecurity=False).hexdigest()
 
 
-def load_manifest(data_dir: str) -> Dict[str, dict]:
+def load_manifest(data_dir: str) -> dict[str, dict]:
     try:
         with open(os.path.join(data_dir, MANIFEST), encoding="utf-8") as fh:
             data = json.load(fh)
@@ -176,7 +176,7 @@ def load_manifest(data_dir: str) -> Dict[str, dict]:
         return {}
 
 
-def _save_manifest(data_dir: str, manifest: Dict[str, dict]) -> None:
+def _save_manifest(data_dir: str, manifest: dict[str, dict]) -> None:
     path = os.path.join(data_dir, MANIFEST)
     with open(path + ".tmp", "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, sort_keys=True)
@@ -195,7 +195,7 @@ def _wanted(source: Source, path: str) -> bool:
     return any(path == p or (p.endswith("/") and path.startswith(p)) for p in source.paths)
 
 
-def _epoch(date: str) -> Optional[float]:
+def _epoch(date: str) -> float | None:
     try:
         return float(calendar.timegm(time.strptime(date, "%Y-%m-%dT%H:%M:%SZ")))
     except (TypeError, ValueError):
@@ -203,7 +203,7 @@ def _epoch(date: str) -> Optional[float]:
 
 
 def _sync_one(client, data_dir: str, source: Source, entry: dict, force: bool,
-              max_age_hours: float, now: float, workers: int) -> Tuple[SyncResult, dict]:
+              max_age_hours: float, now: float, workers: int) -> tuple[SyncResult, dict]:
     if (not force and entry.get("checked_at")
             and now - entry["checked_at"] < max_age_hours * 3600
             and os.path.isdir(os.path.join(data_dir, source.name))):
@@ -328,7 +328,7 @@ def _guard(source: Source, staging: str, entry: dict) -> Measure:
     return metrics, facts
 
 
-def _changes(entry: dict, metrics: Dict[str, int], facts: Dict[str, str]) -> dict:
+def _changes(entry: dict, metrics: dict[str, int], facts: dict[str, str]) -> dict:
     """What moved since the last good copy; empty on the first copy."""
     old_facts = entry.get("facts")
     if not old_facts or not metrics:
@@ -347,7 +347,7 @@ def _changes(entry: dict, metrics: Dict[str, int], facts: Dict[str, str]) -> dic
 
 def refresh(client, data_dir: str, sources: Sequence[Source] = SOURCES,
             max_age_hours: float = DEFAULT_MAX_AGE_HOURS, force: bool = False,
-            now: Optional[float] = None, workers: int = 8) -> List[SyncResult]:
+            now: float | None = None, workers: int = 8) -> list[SyncResult]:
     """
     Bring the cache up to date; never raises for one source failing.
 
@@ -373,7 +373,7 @@ def refresh(client, data_dir: str, sources: Sequence[Source] = SOURCES,
 
 def data_paths(data_dir: str, sources: Sequence[Source] = SOURCES) -> DataPaths:
     """The cached data, as the flags it stands in for; only what is there."""
-    def there(*parts) -> Optional[str]:
+    def there(*parts) -> str | None:
         path = os.path.join(data_dir, *parts)
         return path if os.path.exists(path) else None
 
@@ -398,7 +398,7 @@ def data_paths(data_dir: str, sources: Sequence[Source] = SOURCES) -> DataPaths:
     return paths
 
 
-def _describe_changes(changes: dict) -> List[str]:
+def _describe_changes(changes: dict) -> list[str]:
     if not changes:
         return []
     lines = []
@@ -420,7 +420,7 @@ def _describe_changes(changes: dict) -> List[str]:
     return lines
 
 
-def describe(results: Sequence[SyncResult]) -> List[str]:
+def describe(results: Sequence[SyncResult]) -> list[str]:
     """One line per source, for the run's header."""
     lines = []
     for r in results:

@@ -17,7 +17,6 @@ contradiction with another rule is reported, not silently won.
 """
 import itertools
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
 
 from .errors import ConfigError
 from .naming import normalize_key
@@ -32,11 +31,11 @@ _MAX_BYTES = 4 * 1024 * 1024
 class Entry:
     key: str                         # tp2 key
     name: str                        # as written
-    numbers: Optional[Tuple[int, ...]]   # None: every chosen component ("*")
+    numbers: tuple[int, ...] | None   # None: every chosen component ("*")
     line: int
 
 
-def parse(text: str, source: str = "SortingOrder") -> List[Entry]:
+def parse(text: str, source: str = "SortingOrder") -> list[Entry]:
     out = []
     for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.split("//", 1)[0].replace(",", " ").replace(";", " ").strip()
@@ -55,7 +54,7 @@ def parse(text: str, source: str = "SortingOrder") -> List[Entry]:
     return out
 
 
-def load(path: str) -> List[Entry]:
+def load(path: str) -> list[Entry]:
     try:
         with open(path, "rb") as fh:
             data = fh.read(_MAX_BYTES + 1)
@@ -66,7 +65,7 @@ def load(path: str) -> List[Entry]:
     return parse(data.decode("utf-8-sig", errors="replace"), source=path)
 
 
-def rules(entries: List[Entry], chosen: Dict[str, Set[int]]) -> List[Rule]:
+def rules(entries: list[Entry], chosen: dict[str, set[int]]) -> list[Rule]:
     """
     Order rules from `entries` for a selection: `chosen` maps a tp2 key to the
     components chosen from it. A `*` line stands for the chosen components not
@@ -74,12 +73,12 @@ def rules(entries: List[Entry], chosen: Dict[str, Set[int]]) -> List[Rule]:
     and a component already placed by an earlier line stays there (a repeated
     line would otherwise order a mod before itself).
     """
-    named: Dict[str, Set[int]] = {}
+    named: dict[str, set[int]] = {}
     for entry in entries:
         if entry.numbers is not None:
             named.setdefault(entry.key, set()).update(entry.numbers)
-    groups: List[Tuple[Entry, frozenset]] = []
-    placed: Dict[str, Set[int]] = {}
+    groups: list[tuple[Entry, frozenset]] = []
+    placed: dict[str, set[int]] = {}
     for entry in entries:
         have = chosen.get(entry.key, set()) - placed.get(entry.key, set())
         wanted = (have - named.get(entry.key, set()) if entry.numbers is None

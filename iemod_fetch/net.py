@@ -22,7 +22,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Callable, Optional, TypeVar
+from typing import TypeVar
+from collections.abc import Callable
 
 from .archives import Kind, detect_kind
 from .errors import (Cancelled, ChecksumMismatch, HttpStatusError, InsecureURL,
@@ -148,7 +149,7 @@ def ascii_url(url: str) -> str:
 
 
 class HttpClient:
-    def __init__(self, token: Optional[str] = None, allow_http: bool = False,
+    def __init__(self, token: str | None = None, allow_http: bool = False,
                  timeout: int = DEFAULT_TIMEOUT, max_bytes: int = DEFAULT_MAX_BYTES,
                  retries: int = 3, sleep=time.sleep):
         self.token = token
@@ -183,7 +184,7 @@ class HttpClient:
         return headers
 
     # -- transport ---------------------------------------------------------
-    def open(self, url: str, method: str = "GET", extra_headers: Optional[dict] = None):
+    def open(self, url: str, method: str = "GET", extra_headers: dict | None = None):
         self.check_url(url)
         url = ascii_url(url)
         headers = self.headers_for(url)
@@ -192,7 +193,7 @@ class HttpClient:
         return self._opener.open(req, timeout=self.timeout)
 
     def _with_retries(self, url: str, action: Callable[[], _T]) -> _T:
-        last: Optional[BaseException] = None
+        last: BaseException | None = None
         for attempt in range(1, self.retries + 1):
             try:
                 return action()
@@ -223,7 +224,7 @@ class HttpClient:
         raise NetworkError(f"{url}: giving up after {self.retries} attempts: {last}") from last
 
     @staticmethod
-    def _retry_after(exc) -> Optional[float]:
+    def _retry_after(exc) -> float | None:
         value = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
         if not value:
             return None
@@ -237,7 +238,7 @@ class HttpClient:
         return min(max(seconds, 0.0), 300.0)
 
     @staticmethod
-    def _rate_limit_reason(exc) -> Optional[str]:
+    def _rate_limit_reason(exc) -> str | None:
         """GitHub's quota, named as such: a bare 403 reads as a permission error."""
         headers = getattr(exc, "headers", None)
         if not headers or headers.get("X-RateLimit-Remaining") != "0":
@@ -253,7 +254,7 @@ class HttpClient:
     def _backoff(attempt: int) -> float:
         return float(min(2 ** attempt, 30) + random.uniform(0, 0.5))
 
-    def read_bytes(self, url: str, limit: Optional[int] = None) -> bytes:
+    def read_bytes(self, url: str, limit: int | None = None) -> bytes:
         cap = limit or self.max_bytes
 
         def action() -> bytes:
@@ -295,9 +296,9 @@ class HttpClient:
         return self._with_retries(url, action)
 
     # -- download ----------------------------------------------------------
-    def download(self, url: str, dest_path: str, expected_sha256: Optional[str] = None,
+    def download(self, url: str, dest_path: str, expected_sha256: str | None = None,
                  require_archive: bool = True,
-                 progress: Optional[Callable[[int, Optional[int]], None]] = None,
+                 progress: Callable[[int, int | None], None] | None = None,
                  cancel=None) -> DownloadResult:
         """
         Stream `url` to `dest_path` atomically.

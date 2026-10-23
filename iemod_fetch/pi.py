@@ -20,7 +20,7 @@ an entry resolved that way says so. A line resolved by neither is reported,
 never matched by its description.
 """
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from .errors import ConfigError
 from .naming import normalize_key
@@ -49,9 +49,9 @@ class Target:
 @dataclass
 class LabelIndex:
     """LABEL -> component, and folder -> its tp2, from tp2s first, krion64 second."""
-    labels: Dict[str, Target] = field(default_factory=dict)
-    tp2s: Dict[str, Tuple[str, str]] = field(default_factory=dict)   # folder key -> (tp2, origin)
-    ambiguous: Dict[str, List[Target]] = field(default_factory=dict)
+    labels: dict[str, Target] = field(default_factory=dict)
+    tp2s: dict[str, tuple[str, str]] = field(default_factory=dict)   # folder key -> (tp2, origin)
+    ambiguous: dict[str, list[Target]] = field(default_factory=dict)
 
     def add(self, label: str, target: Target) -> None:
         key = label.strip().lower()
@@ -69,7 +69,7 @@ class LabelIndex:
             self.tp2s[folder] = (tp2.replace("\\", "/"), origin)
 
 
-def parse_pi_list(text: str) -> List[PiLine]:
+def parse_pi_list(text: str) -> list[PiLine]:
     """Every `ident;description` line, in order; comments and blanks skipped."""
     out = []
     for number, raw in enumerate(text.splitlines(), start=1):
@@ -112,8 +112,8 @@ def add_krion(index: LabelIndex, records: Iterable[dict]) -> LabelIndex:
     return index
 
 
-def selection_from_pi(lines: List[PiLine], game: str, index: LabelIndex
-                      ) -> Tuple[Selection, List[str]]:
+def selection_from_pi(lines: list[PiLine], game: str, index: LabelIndex
+                      ) -> tuple[Selection, list[str]]:
     """
     The selection a PI list says, and one note per entry krion64 resolved.
     Raises ConfigError naming every line no source resolves.
@@ -121,9 +121,9 @@ def selection_from_pi(lines: List[PiLine], game: str, index: LabelIndex
     name = _GAMES.get(game.upper())
     if name is None:
         raise ConfigError(f"unknown game {game!r} for a Project Infinity list")
-    choices: List[Choice] = []
-    notes: List[str] = []
-    unresolved: List[str] = []
+    choices: list[Choice] = []
+    notes: list[str] = []
+    unresolved: list[str] = []
     for line in lines:
         target = _resolve(line.ident, index)
         if isinstance(target, str):
@@ -157,7 +157,7 @@ def _resolve(ident: str, index: LabelIndex):
     if key in index.ambiguous:
         claims = ", ".join(f"{t.tp2} #{t.number}" for t in index.ambiguous[key])
         return f"LABEL claimed by more than one component: {claims}"
-    found: Optional[Target] = index.labels.get(key)
+    found: Target | None = index.labels.get(key)
     if found is None:
         return "LABEL not found in any staged tp2 or krion64 record"
     staged = index.tp2s.get(normalize_key(found.tp2.split("/")[0]))

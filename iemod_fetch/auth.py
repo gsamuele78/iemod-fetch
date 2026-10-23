@@ -17,7 +17,6 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from .errors import ConfigError, ModFetchError
 
@@ -32,7 +31,7 @@ ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 
 @dataclass
 class Credential:
-    token: Optional[str]
+    token: str | None
     source: str
 
     @property
@@ -45,7 +44,7 @@ class Credential:
         return f"token from {self.source} (5000 requests/hour)"
 
 
-def _from_gh_cli() -> Optional[str]:
+def _from_gh_cli() -> str | None:
     try:
         out = subprocess.run(["gh", "auth", "token"], stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, timeout=15, check=False)
@@ -57,7 +56,7 @@ def _from_gh_cli() -> Optional[str]:
     return token or None
 
 
-def _from_git_credential(host: str = "github.com") -> Optional[str]:
+def _from_git_credential(host: str = "github.com") -> str | None:
     """
     Ask git's own credential helper for an existing GitHub token.
 
@@ -91,18 +90,18 @@ def _from_git_credential(host: str = "github.com") -> Optional[str]:
     return None
 
 
-def resolve_credential(token_file: Optional[str] = None, use_gh: bool = True,
+def resolve_credential(token_file: str | None = None, use_gh: bool = True,
                        allow_prompt: bool = False,
-                       oauth_client_id: Optional[str] = None,
+                       oauth_client_id: str | None = None,
                        use_git_credential: bool = True,
                        client=None) -> Credential:
     """
     Resolution order, most explicit first. Never echoes the token.
     """
-    token: Optional[str]
+    token: str | None
     if token_file:
         try:
-            with open(token_file, "r", encoding="utf-8") as fh:
+            with open(token_file, encoding="utf-8") as fh:
                 token = fh.read().strip()
         except OSError as exc:
             raise ConfigError(f"cannot read --token-file {token_file}: {exc}") from exc

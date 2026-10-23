@@ -22,7 +22,7 @@ a hand-edited selection should fail loudly, not be ignored.
 """
 import json
 from dataclasses import dataclass, field
-from typing import Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from .errors import ConfigError, UnsafeName
 from .naming import safe_component
@@ -53,7 +53,7 @@ class RenderedLog:
 @dataclass
 class Install:
     game: str
-    components: List[Choice] = field(default_factory=list)
+    components: list[Choice] = field(default_factory=list)
 
     def weidu_log(self) -> RenderedLog:
         lines = ["// Log of Currently Installed WeiDU Mods",
@@ -70,9 +70,9 @@ class Install:
 
 @dataclass
 class Selection:
-    installs: List[Install] = field(default_factory=list)
+    installs: list[Install] = field(default_factory=list)
 
-    def weidu_logs(self) -> List[RenderedLog]:
+    def weidu_logs(self) -> list[RenderedLog]:
         return [install.weidu_log() for install in self.installs]
 
     def as_dict(self) -> dict:
@@ -119,7 +119,7 @@ def _tp2(value, where: str) -> str:
     return "/".join(parts)
 
 
-def tp2_problem(value: str) -> Optional[str]:
+def tp2_problem(value: str) -> str | None:
     """Why selection.json would refuse `value` as a tp2 path, or None."""
     try:
         _tp2(value, "tp2")
@@ -196,7 +196,7 @@ def selection_to_json(selection: Selection) -> str:
     return json.dumps(selection.as_dict(), indent=2) + "\n"
 
 
-def selection_from_logs(logs: Iterable[Tuple[Optional[str], ParsedLog]]) -> Selection:
+def selection_from_logs(logs: Iterable[tuple[str | None, ParsedLog]]) -> Selection:
     """A selection saying what these logs say: (game, parsed log) per install."""
     installs = []
     for game, parsed in logs:

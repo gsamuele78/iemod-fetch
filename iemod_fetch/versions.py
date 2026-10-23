@@ -8,7 +8,6 @@ pairs it cannot rank, and guessing there would be worse than admitting it — so
 "unknown", never as "equal".
 """
 import re
-from typing import Optional, Tuple
 
 # Stability ordering, least stable first:
 #     branch snapshot  <  alpha  <  beta  <  rc  <  a numbered release
@@ -28,7 +27,7 @@ _TRIM = re.compile(r"^(?:(?:version|ver)(?=[\s._\d-])|[vV])\.?\s*", re.IGNORECAS
 _SPLIT = re.compile(r"[^0-9A-Za-z]+")
 
 
-def parse_version(text: Optional[str]) -> Optional[Tuple]:
+def parse_version(text: str | None) -> tuple | None:
     """Split a version into comparable parts, or None if there is nothing to compare."""
     if not text:
         return None
@@ -42,7 +41,7 @@ def parse_version(text: Optional[str]) -> Optional[Tuple]:
     return tuple(parts) or None
 
 
-def compare(left: Optional[str], right: Optional[str]) -> Optional[int]:
+def compare(left: str | None, right: str | None) -> int | None:
     """
     -1 / 0 / 1 if `left` is older / same / newer than `right`; None if unknown.
     """
@@ -84,7 +83,7 @@ def compare(left: Optional[str], right: Optional[str]) -> Optional[int]:
     return sign
 
 
-def is_newer(candidate: Optional[str], baseline: Optional[str]) -> Optional[bool]:
+def is_newer(candidate: str | None, baseline: str | None) -> bool | None:
     result = compare(candidate, baseline)
     return None if result is None else result > 0
 
@@ -96,7 +95,7 @@ def _digits(text: str) -> str:
 _BEFORE = re.compile(r"^pre[-_ .]*(?=v?\d)", re.IGNORECASE)
 
 
-def compare_published(left: Optional[str], right: Optional[str]) -> Optional[int]:
+def compare_published(left: str | None, right: str | None) -> int | None:
     """
     `compare`, for two spellings of a release by different hands: an author's
     tp2 VERSION, its GitHub tag, a database's record of it. Measured on 95 mods

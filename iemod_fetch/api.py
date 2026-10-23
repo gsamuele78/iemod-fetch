@@ -26,7 +26,8 @@ import struct
 import sys
 import tempfile
 from dataclasses import dataclass, field, fields, replace
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any
+from collections.abc import Sequence
 
 from .auth import resolve_credential
 from . import backup
@@ -98,49 +99,49 @@ class Settings:
     the command line mean the same thing by the same word.
     """
     # inputs
-    manifest: Optional[str] = DEFAULT_MANIFEST       # None: the catalogue only
-    weidu_log: List[str] = field(default_factory=list)     # "PATH" or "PATH:GAME"
-    selection: Optional[str] = None
-    bio_code: Optional[str] = None         # a file holding a BIO-MODLIST-V1 code
-    pi_list: Optional[str] = None          # "PATH:GAME": a Project Infinity list
-    aliases: Optional[str] = None
-    catalogue: List[str] = field(default_factory=list)
-    rules: List[str] = field(default_factory=list)
-    mod_db: Optional[str] = None
-    order_catalogue: Optional[str] = None
-    eet_sequence: Optional[str] = None     # BWS-NG games/eet.json
-    releases: Optional[str] = None         # krion64 data/version_cache.json
-    suppress: Optional[str] = None
-    sorting_order: Optional[str] = None    # a Project Infinity Sorting Order file
+    manifest: str | None = DEFAULT_MANIFEST       # None: the catalogue only
+    weidu_log: list[str] = field(default_factory=list)     # "PATH" or "PATH:GAME"
+    selection: str | None = None
+    bio_code: str | None = None         # a file holding a BIO-MODLIST-V1 code
+    pi_list: str | None = None          # "PATH:GAME": a Project Infinity list
+    aliases: str | None = None
+    catalogue: list[str] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    mod_db: str | None = None
+    order_catalogue: str | None = None
+    eet_sequence: str | None = None     # BWS-NG games/eet.json
+    releases: str | None = None         # krion64 data/version_cache.json
+    suppress: str | None = None
+    sorting_order: str | None = None    # a Project Infinity Sorting Order file
     fetch_metadata: bool = False           # fetch planned mods' own metadata inis
     all_manifest_entries: bool = False
-    only: List[str] = field(default_factory=list)
+    only: list[str] = field(default_factory=list)
     # outputs
     target: str = "./Mods"
-    json_report: Optional[str] = None
-    emit_pinned_manifest: Optional[str] = None
-    events: Optional[str] = None
-    list_mods: Optional[str] = None
-    describe_mods: Optional[str] = None
+    json_report: str | None = None
+    emit_pinned_manifest: str | None = None
+    events: str | None = None
+    list_mods: str | None = None
+    describe_mods: str | None = None
     # a game folder's backup and restore (ADR-0042)
-    backup: Optional[str] = None           # GAME_DIR to back up
-    backup_to: Optional[str] = None        # where backups go
-    verify_backup: Optional[str] = None
-    restore_backup: Optional[str] = None
-    restore_to: Optional[str] = None       # the game folder (else the one backed up)
+    backup: str | None = None           # GAME_DIR to back up
+    backup_to: str | None = None        # where backups go
+    verify_backup: str | None = None
+    restore_backup: str | None = None
+    restore_to: str | None = None       # the game folder (else the one backed up)
     apply: bool = False                    # restore: do it, not only show it
-    emit_selection: Optional[str] = None
-    emit_bio_code: Optional[str] = None
-    plan_order: Optional[str] = None
+    emit_selection: str | None = None
+    emit_bio_code: str | None = None
+    plan_order: str | None = None
     resolve_conflicts: bool = False
-    decisions: Optional[str] = None        # decisions.json: the player's answers
+    decisions: str | None = None        # decisions.json: the player's answers
     simulate: bool = False
-    bgee_dir: Optional[str] = None
-    bg2ee_dir: Optional[str] = None
+    bgee_dir: str | None = None
+    bg2ee_dir: str | None = None
     emit_installer: bool = False
     language_preference: Any = None        # "fr_FR,en_US" or a parsed list
-    game_language: Optional[str] = None
-    conflict_report: Optional[str] = None
+    game_language: str | None = None
+    conflict_report: str | None = None
     show_advisories: bool = False
     quiet: bool = False
     # behaviour
@@ -157,28 +158,28 @@ class Settings:
     allow_http: bool = False
     allow_exe: bool = False
     no_discovery: bool = False
-    trusted_owners: Optional[str] = None
-    trusted_owner: List[str] = field(default_factory=list)
+    trusted_owners: str | None = None
+    trusted_owner: list[str] = field(default_factory=list)
     discovery_attempts: int = 1
-    owner_cache: Optional[str] = None
+    owner_cache: str | None = None
     accept_offsite: bool = False
     max_bytes: int = DEFAULT_MAX_BYTES
     timeout: int = 45
     retries: int = 3
     # GitHub credential
-    token_file: Optional[str] = None
+    token_file: str | None = None
     no_gh_cli: bool = False
     no_git_credential: bool = False
-    oauth_client_id: Optional[str] = None
+    oauth_client_id: str | None = None
     # community data (ADR-0032)
     update_data: bool = False
     no_update_data: bool = False
-    data_dir: Optional[str] = None
+    data_dir: str | None = None
     data_max_age: int = datasync.DEFAULT_MAX_AGE_HOURS
     no_default_data: bool = False
 
     @classmethod
-    def from_namespace(cls, namespace) -> "Settings":
+    def from_namespace(cls, namespace) -> Settings:
         """From the command line's parsed arguments (or anything with the names)."""
         values = {}
         for f in fields(cls):
@@ -194,9 +195,9 @@ class Settings:
 class Outcome:
     """What a run produced. Any part may be None when the run did not make it."""
     exit_code: int
-    report: Optional[RunReport] = None
+    report: RunReport | None = None
     order_plan: Any = None                  # ordering.OrderPlan, with --plan-order
-    conflict_report: Optional[ConflictReport] = None
+    conflict_report: ConflictReport | None = None
 
 
 class _Silent:
@@ -240,8 +241,8 @@ def run(settings: Settings, stream=None, config=None, on_event=None,
         return _run(settings, stream, config, on_event, cancel)
 
 
-def update_data(settings: Optional[Settings] = None, force: bool = False,
-                stream=None, on_event=None) -> List[datasync.SyncResult]:
+def update_data(settings: Settings | None = None, force: bool = False,
+                stream=None, on_event=None) -> list[datasync.SyncResult]:
     """
     Refresh the cached community data (lcc-docs, BWS-NG, krion64).
 
@@ -271,7 +272,7 @@ def update_data(settings: Optional[Settings] = None, force: bool = False,
     return results
 
 
-def data_status(data_dir: Optional[str] = None) -> dict:
+def data_status(data_dir: str | None = None) -> dict:
     """What the cache holds: per source, its repository, commit, date and check time."""
     return datasync.load_manifest(data_dir or datasync.default_data_dir())
 
@@ -325,7 +326,7 @@ class _LazyClient:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._client: Optional[HttpClient] = None
+        self._client: HttpClient | None = None
 
     def _get(self) -> HttpClient:
         if self._client is None:
@@ -335,7 +336,7 @@ class _LazyClient:
     def get_json(self, url: str):
         return self._get().get_json(url)
 
-    def read_bytes(self, url: str, limit: Optional[int] = None) -> bytes:
+    def read_bytes(self, url: str, limit: int | None = None) -> bytes:
         return self._get().read_bytes(url, limit=limit)
 
 
@@ -349,10 +350,10 @@ def _http_client(settings: Settings) -> HttpClient:
                       retries=settings.retries)
 
 
-def list_mods(manifest: Optional[str] = None, catalogues: Sequence[str] = (),
-              mod_db: Optional[str] = None, allow_http: bool = False,
-              releases: Optional[str] = None,
-              weidu_logs: Sequence[str] = ()) -> List[AvailableMod]:
+def list_mods(manifest: str | None = None, catalogues: Sequence[str] = (),
+              mod_db: str | None = None, allow_http: bool = False,
+              releases: str | None = None,
+              weidu_logs: Sequence[str] = ()) -> list[AvailableMod]:
     """
     Every mod the given sources know about, one entry each, sorted by name.
 
@@ -371,7 +372,7 @@ def list_mods(manifest: Optional[str] = None, catalogues: Sequence[str] = (),
                           installed=_installed_versions(weidu_logs))
 
 
-def _releases(path: Optional[str]):
+def _releases(path: str | None):
     if not path:
         return {}, []
     try:
@@ -413,7 +414,7 @@ _WEIDU_OS = "win32" if sys.platform.startswith("win") else (
     "osx" if sys.platform == "darwin" else "unix")
 
 
-def _text_under(root: str, relative: str) -> Optional[str]:
+def _text_under(root: str, relative: str) -> str | None:
     """
     A mod's text file by the path its tp2 writes, as WeiDU on Windows finds it:
     case-insensitive, separators either way. Nothing outside `root` is read:
@@ -476,8 +477,8 @@ _GUI_SECTION = "iemod-fetch-gui"
 GAMES = ("EET", "BGEE", "BG2EE")
 
 
-def check_game_folders(game: str, bgee_dir: Optional[str] = None,
-                       bg2ee_dir: Optional[str] = None) -> dict:
+def check_game_folders(game: str, bgee_dir: str | None = None,
+                       bg2ee_dir: str | None = None) -> dict:
     """
     Whether the folders are what `game` needs, as WeiDU's GAME_IS sees them:
     {"ok", "games": {"bgee", "bg2ee"}, "sod", "problems", "notes"}.
@@ -489,7 +490,7 @@ def check_game_folders(game: str, bgee_dir: Optional[str] = None,
             "notes": list(report.notes)}
 
 
-def languages() -> List[dict]:
+def languages() -> list[dict]:
     """Every language a preference can name, as {"code", "name"}."""
     return [{"code": code, "name": name} for code, name in LANGUAGES]
 
@@ -518,8 +519,8 @@ def load_project(folder: str) -> dict:
     return project
 
 
-def save_project(folder: str, game: str, bgee_dir: Optional[str] = None,
-                 bg2ee_dir: Optional[str] = None,
+def save_project(folder: str, game: str, bgee_dir: str | None = None,
+                 bg2ee_dir: str | None = None,
                  language_preference: Sequence[str] = ()) -> str:
     """
     Write the project into `folder`/iemod-fetch.ini, keeping every other
@@ -543,11 +544,11 @@ def save_project(folder: str, game: str, bgee_dir: Optional[str] = None,
 SELECTION_FILE = "selection.json"
 
 
-def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
-                data_dir: Optional[str] = None, catalogues: Sequence[str] = (),
-                mod_db: Optional[str] = None, krion: Optional[str] = None,
-                releases: Optional[str] = None, manifest: Optional[str] = None,
-                weidu_logs: Sequence[str] = (), preferences: Sequence[str] = ()) -> List[dict]:
+def mod_choices(game: str | None = None, target: str | None = None,
+                data_dir: str | None = None, catalogues: Sequence[str] = (),
+                mod_db: str | None = None, krion: str | None = None,
+                releases: str | None = None, manifest: str | None = None,
+                weidu_logs: Sequence[str] = (), preferences: Sequence[str] = ()) -> list[dict]:
     """
     Every mod a player can choose for `game`, with its components (ADR-0035):
     list_mods' entry plus "tp2s" - per tp2, its components and where they come
@@ -586,9 +587,9 @@ def mod_choices(game: Optional[str] = None, target: Optional[str] = None,
     return out
 
 
-def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
-                   labels: Optional[dict] = None, data_dir: Optional[str] = None,
-                   order_catalogue: Optional[str] = None) -> str:
+def save_selection(folder: str, game: str, chosen: Sequence[tuple[str, int]],
+                   labels: dict | None = None, data_dir: str | None = None,
+                   order_catalogue: str | None = None) -> str:
     """
     Write `folder`/selection.json: `chosen` is (tp2, component number) in
     install order. For EET it is two installs - the BG:EE phase and EET - as
@@ -601,9 +602,9 @@ def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
     return _write_whole(folder, SELECTION_FILE, text)
 
 
-def export_selection(path: str, game: str, chosen: Sequence[Tuple[str, int]],
-                     labels: Optional[dict] = None, data_dir: Optional[str] = None,
-                     order_catalogue: Optional[str] = None) -> str:
+def export_selection(path: str, game: str, chosen: Sequence[tuple[str, int]],
+                     labels: dict | None = None, data_dir: str | None = None,
+                     order_catalogue: str | None = None) -> str:
     """
     A preset (GUI-AUDIT item 19): the choice written as a selection.json at
     `path`, exactly as save_selection writes the project's, so either can be
@@ -617,8 +618,8 @@ def export_selection(path: str, game: str, chosen: Sequence[Tuple[str, int]],
 
 
 def import_selection(path: str, game: str, known_tp2s: Sequence[str] = (),
-                     target: Optional[str] = None, data_dir: Optional[str] = None,
-                     order_catalogue: Optional[str] = None) -> dict:
+                     target: str | None = None, data_dir: str | None = None,
+                     order_catalogue: str | None = None) -> dict:
     """
     A preset to choose from (GUI-AUDIT item 19): a selection.json, a WeiDU.log,
     a BIO share code or a Project Infinity list, told apart by what the file
@@ -642,7 +643,7 @@ def import_selection(path: str, game: str, known_tp2s: Sequence[str] = (),
         raise ConfigError(f"{path}: larger than {_MAX_TEXT_BYTES} bytes, not a preset")
     text = _decode_text(data).lstrip("\ufeff")
     head = text.lstrip()
-    notes: List[str] = []
+    notes: list[str] = []
     if head.startswith("{"):
         kind, selection = "selection", parse_selection(text, source=path)
     elif head.startswith(bio.PREFIX):
@@ -690,7 +691,7 @@ def import_selection(path: str, game: str, known_tp2s: Sequence[str] = (),
             "notes": notes}
 
 
-def _order_index(data_dir: Optional[str], order_catalogue: Optional[str] = None):
+def _order_index(data_dir: str | None, order_catalogue: str | None = None):
     """krion64's install order from the data cache (or the path given), if there."""
     path = order_catalogue or datasync.data_paths(
         data_dir or datasync.default_data_dir()).order_catalogue
@@ -702,8 +703,8 @@ def _order_index(data_dir: Optional[str], order_catalogue: Optional[str] = None)
         return None
 
 
-def _wizard_selection(game: str, chosen: Sequence[Tuple[str, int]],
-                      labels: Optional[dict] = None, index=None) -> Selection:
+def _wizard_selection(game: str, chosen: Sequence[tuple[str, int]],
+                      labels: dict | None = None, index=None) -> Selection:
     """
     The wizard's choice as a selection. An EET build is two installs: what
     krion64 files under a pre-EET category goes on BG:EE before the
@@ -769,8 +770,8 @@ def load_decisions(folder: str) -> dict:
     return out
 
 
-def save_decisions(folder: str, choose: Optional[dict] = None,
-                   accept: Optional[dict] = None) -> str:
+def save_decisions(folder: str, choose: dict | None = None,
+                   accept: dict | None = None) -> str:
     """
     Write `folder`/decisions.json (ADR-0033): `choose` maps a finding id to the
     option chosen, `accept` a finding id to why it is accepted. The CLI applies
@@ -781,13 +782,13 @@ def save_decisions(folder: str, choose: Optional[dict] = None,
     return _write_whole(folder, DECISIONS_FILE, text)
 
 
-def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
-                        labels: Optional[dict] = None, folder: Optional[str] = None,
-                        target: Optional[str] = None, data_dir: Optional[str] = None,
-                        rules: Sequence[str] = (), mod_db: Optional[str] = None,
-                        order_catalogue: Optional[str] = None,
+def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
+                        labels: dict | None = None, folder: str | None = None,
+                        target: str | None = None, data_dir: str | None = None,
+                        rules: Sequence[str] = (), mod_db: str | None = None,
+                        order_catalogue: str | None = None,
                         fetch_metadata: bool = False,
-                        sorting_order: Optional[str] = None) -> dict:
+                        sorting_order: str | None = None) -> dict:
     """
     What fights what in a selection, before anything is downloaded (M3 phase 2,
     ADR-0033): the findings a run with --selection --plan-order reports, each
@@ -887,11 +888,11 @@ INSTALL_ORDER_FILE = "install-order.txt"
 _PHASE_TITLES = {EET_LOG: "EET", PRE_EET_LOG: "BG:EE before the conversion"}
 
 
-def selection_plan(game: str, chosen: Sequence[Tuple[str, int]],
-                   labels: Optional[dict] = None, folder: Optional[str] = None,
-                   target: Optional[str] = None, data_dir: Optional[str] = None,
-                   rules: Sequence[str] = (), mod_db: Optional[str] = None,
-                   order_catalogue: Optional[str] = None,
+def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
+                   labels: dict | None = None, folder: str | None = None,
+                   target: str | None = None, data_dir: str | None = None,
+                   rules: Sequence[str] = (), mod_db: str | None = None,
+                   order_catalogue: str | None = None,
                    fetch_metadata: bool = False) -> dict:
     """
     The install order of a wizard selection (M3 phase 3, ADR-0038), planned
@@ -1062,7 +1063,7 @@ def download_selection(folder: str, on_event=None, cancel=None,
 
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
-             chosen: Sequence[Tuple[str, int]]) -> List[List[Any]]:
+             chosen: Sequence[tuple[str, int]]) -> list[list[Any]]:
     """
     The chosen (tp2, number) pairs a side or an option names: the tp2 the key
     names, as the plan keys its units - `eet` is EET.tp2, not EET_end.tp2 in
@@ -1075,7 +1076,7 @@ def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
     return [[tp2, number] for tp2, number in named if whole_mod or number in numbers]
 
 
-def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> List[dict]:
+def describe_mods(target: str = "./Mods", preferences: Sequence[str] = ()) -> list[dict]:
     """
     Every staged mod's components, named as WeiDU would name them (M2e).
 
@@ -1104,12 +1105,12 @@ def load_bio_code(path: str) -> bio.BioModlist:
         return bio.decode_share_code(fh.read(bio.MAX_CODE_CHARS + 1))
 
 
-def bio_code_of(selection: Selection, base: Optional[bio.BioModlist] = None) -> str:
+def bio_code_of(selection: Selection, base: bio.BioModlist | None = None) -> str:
     """The BIO-MODLIST-V1 code for `selection`, keeping `base`'s other fields."""
     return bio.encode_share_code(bio.modlist_from_selection(selection, base, __version__))
 
 
-def _use_selection(settings, workdir: str) -> Optional[bio.BioModlist]:
+def _use_selection(settings, workdir: str) -> bio.BioModlist | None:
     """
     Turn --selection or --bio-code into the WeiDU.log inputs every planner
     already reads.
@@ -1217,7 +1218,7 @@ def backups_dir(game_dir: str) -> str:
                         f"{os.path.basename(game_dir) or 'game'}-iemod-backups")
 
 
-def backup_game(game_dir: str, backups: Optional[str] = None, name: Optional[str] = None,
+def backup_game(game_dir: str, backups: str | None = None, name: str | None = None,
                 on_event=None, cancel=None) -> str:
     """Back a game folder up before installing (ADR-0042); the backup's path."""
     return backup.create(game_dir, backups or backups_dir(game_dir), name=name,
@@ -1228,12 +1229,12 @@ def verify_backup(path: str) -> dict:
     return backup.verify(path)
 
 
-def plan_restore(path: str, game_dir: Optional[str] = None) -> dict:
+def plan_restore(path: str, game_dir: str | None = None) -> dict:
     """What restoring would do; changes nothing."""
     return backup.plan_restore(path, game_dir or backup.read_manifest(path)["game_dir"])
 
 
-def restore_backup(path: str, game_dir: Optional[str] = None, on_event=None,
+def restore_backup(path: str, game_dir: str | None = None, on_event=None,
                    cancel=None) -> dict:
     """Bring a game folder back to a backup; deletes nothing (ADR-0042).
     Naming game_dir is what allows restoring into another folder than the
@@ -1243,7 +1244,7 @@ def restore_backup(path: str, game_dir: Optional[str] = None, on_event=None,
                           other_folder=game_dir is not None)
 
 
-def list_backups(game_dir: str, backups: Optional[str] = None) -> List[dict]:
+def list_backups(game_dir: str, backups: str | None = None) -> list[dict]:
     return backup.list_backups(backups or backups_dir(game_dir))
 
 
@@ -1407,13 +1408,13 @@ class RuleAnalysis:
     to refuse it. An empty instance means "no rules were loaded", which every
     consumer already handles.
     """
-    ruleset: Optional[RuleSet] = None
-    context: Optional[Context] = None
+    ruleset: RuleSet | None = None
+    context: Context | None = None
     installs: Sequence[Install] = ()
-    findings: List[dict] = field(default_factory=list)
+    findings: list[dict] = field(default_factory=list)
     # The staged mods' own tp2 constraints (ADR-0025): part of `ruleset` as
     # rules, and kept whole for the install simulation.
-    constraints: Optional[ModConstraints] = None
+    constraints: ModConstraints | None = None
 
     def __bool__(self) -> bool:
         return self.ruleset is not None
@@ -1518,7 +1519,7 @@ def _log_roles(specs):
     return roles
 
 
-def _plan_order(settings, analysis: "RuleAnalysis", stream):
+def _plan_order(settings, analysis: RuleAnalysis, stream):
     """Build the rule-compliant install order, if asked for."""
     if not getattr(settings, "plan_order", None):
         return None
@@ -1668,7 +1669,7 @@ def _emit_installer(settings, plan, stream) -> None:
           f"{os.path.join(plan_dir, script + '.cmd')}", file=stream)
 
 
-def _conflict_report(settings, analysis: "RuleAnalysis", plan):
+def _conflict_report(settings, analysis: RuleAnalysis, plan):
     """
     The component-level view: what actually fights what, and the smallest fix.
 
@@ -1706,7 +1707,7 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
     return report
 
 
-def _judged_installs(settings, analysis: "RuleAnalysis", by_role: bool):
+def _judged_installs(settings, analysis: RuleAnalysis, by_role: bool):
     """
     The installs the conflict report judges, named as --decisions names them.
 
@@ -1872,7 +1873,7 @@ def _game_language(settings) -> str:
     return str(settings.language_preference[0]) if settings.language_preference else "en_US"
 
 
-def _require_plan(settings, from_file: Optional[dict] = None) -> None:
+def _require_plan(settings, from_file: dict | None = None) -> None:
     """
     Flags that act on an install plan are meaningless without one. A value the
     config file gives is not refused: the wizard's project ini holds the game
@@ -1974,7 +1975,7 @@ def _analyse(settings, installed, stream):
     return analysis.findings, order_plan, _conflict_report(settings, analysis, order_plan)
 
 
-def _run(settings, stream, config=None, on_event=None, cancel=None) -> "Outcome":
+def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
     if settings.list_mods:
         _list_mods(settings, stream)
         return Outcome(exit_code=0)

@@ -38,7 +38,7 @@ import shutil
 import stat
 import threading
 import time
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from .errors import ConfigError, ModFetchError, VerificationFailed
 
@@ -50,9 +50,8 @@ DISPLACED = "displaced-"
 JOURNAL_PREFIX = "restore-in-progress-"
 _NAME_SURROGATE = 0x20000000          # IO_REPARSE_TAG bit: "points to another name"
 COPIED_DIRS = ("override",)
-_CHUNK = 1024 * 1024
 
-Progress = Optional[Callable[[dict], None]]
+Progress = Callable[[dict], None] | None
 
 
 # ------------------------------------------------------------------ helpers
@@ -78,10 +77,10 @@ def _scan(root: str):
     file or a folder, dangling or not - and every folder that leads elsewhere
     without being a link (a Windows junction, a mount point: review of #48).
     Neither links nor mounts are ever entered."""
-    files: Dict[str, str] = {}
-    folders: List[str] = []
-    links: List[str] = []
-    mounts: List[str] = []
+    files: dict[str, str] = {}
+    folders: list[str] = []
+    links: list[str] = []
+    mounts: list[str] = []
     device = os.stat(root).st_dev
     mount_points = _mount_points()
     for here, dirs, names in os.walk(root):
@@ -110,7 +109,7 @@ def _scan(root: str):
     return files, sorted(folders), sorted(links), sorted(mounts)
 
 
-def _mount_points() -> Dict[str, int]:
+def _mount_points() -> dict[str, int]:
     """Linux's mount table, {mount point: device}: a bind mount of the same
     disk has the same st_dev as its parent and is not os.path.ismount, but it
     is listed here. Read as bytes - a mount point need not be UTF-8 (#48)."""
@@ -119,7 +118,7 @@ def _mount_points() -> Dict[str, int]:
             lines = fh.read().splitlines()
     except OSError:
         return {}
-    points: Dict[str, int] = {}
+    points: dict[str, int] = {}
     for line in lines:
         fields = line.split(b" ")
         if len(fields) <= 4:
@@ -133,7 +132,7 @@ def _mount_points() -> Dict[str, int]:
     return points
 
 
-def _leads_elsewhere(full: str, device: int, mount_points: Dict[str, int]) -> bool:
+def _leads_elsewhere(full: str, device: int, mount_points: dict[str, int]) -> bool:
     """A file or folder that is not a link but whose content lives
     elsewhere: a Windows junction or mount (a reparse point), a mount point,
     another drive. A mount-table entry counts only when its device is the
@@ -181,11 +180,8 @@ def _join(root: str, rel: str) -> str:
 
 
 def _sha256(path: str) -> str:
-    digest = hashlib.sha256()
     with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(_CHUNK), b""):
-            digest.update(block)
-    return digest.hexdigest()
+        return hashlib.file_digest(fh, "sha256").hexdigest()
 
 
 def _identity(path: str):
@@ -214,7 +210,7 @@ def _inside(path: str, folder: str) -> bool:
         here = parent
 
 
-def _check_cancel(cancel: Optional[threading.Event]) -> None:
+def _check_cancel(cancel: threading.Event | None) -> None:
     if cancel is not None and cancel.is_set():
         raise InterruptedError("cancelled")
 
@@ -268,8 +264,8 @@ def _check_shape(backup: str, manifest: dict) -> None:
 
 # ------------------------------------------------------------------- create
 
-def create(game_dir: str, backups_dir: str, name: Optional[str] = None,
-           on_progress: Progress = None, cancel: Optional[threading.Event] = None) -> str:
+def create(game_dir: str, backups_dir: str, name: str | None = None,
+           on_progress: Progress = None, cancel: threading.Event | None = None) -> str:
     """Back game_dir up into backups_dir/<name>; returns the backup's path.
 
     It is written as `<name>.partial` and renamed only once every copy is
@@ -306,8 +302,8 @@ def create(game_dir: str, backups_dir: str, name: Optional[str] = None,
     copied = [(rel, full) for rel, full in entries if _is_copied(rel)]
     total = sum(os.path.getsize(full) for _, full in copied)
     _emit(on_progress, event="backup_started", files=len(copied), bytes=total)
-    inventory: Dict[str, int] = {}
-    hashes: Dict[str, dict] = {}
+    inventory: dict[str, int] = {}
+    hashes: dict[str, dict] = {}
     done = 0
     for rel, full in entries:
         _check_cancel(cancel)
@@ -382,7 +378,7 @@ def plan_restore(backup: str, game_dir: str) -> dict:
     # a listed, uncopied file found only under another case is that file
     uncopied_missing = {rel.lower(): rel for rel in inventory
                         if rel not in copied and rel not in present}
-    renamed: Dict[str, str] = {}                       # listed rel -> its name now
+    renamed: dict[str, str] = {}                       # listed rel -> its name now
     put_back, displace, cannot = [], [], []
     for rel, meta in sorted(copied.items()):
         now = present.get(rel)
@@ -422,7 +418,7 @@ def plan_restore(backup: str, game_dir: str) -> dict:
             "blocked": blocked}
 
 
-def _overlaps(path: str, game_dir: str, folders: List[str]) -> bool:
+def _overlaps(path: str, game_dir: str, folders: list[str]) -> bool:
     """Whether path, or a parent of it, IS the game folder or one of its
     folders - by identity: a mount of a game folder elsewhere is that folder
     (review of #48: a backups folder mounted from the game's)."""
@@ -460,7 +456,7 @@ def _new_aside(backup: str) -> str:
 
 
 def restore(backup: str, game_dir: str, on_progress: Progress = None,
-            cancel: Optional[threading.Event] = None, other_folder: bool = False) -> dict:
+            cancel: threading.Event | None = None, other_folder: bool = False) -> dict:
     """Bring game_dir back to the backup, deleting nothing (module doc).
 
     A folder other than the one backed up is restored only with other_folder
@@ -486,8 +482,8 @@ def restore(backup: str, game_dir: str, on_progress: Progress = None,
                                for rel in links_now}}
     journal = _journal_path(backup, game_dir)
     earlier = _read_journal(journal, game_dir, backup)   # what a cut restore moved
-    asides: List[str] = []
-    moved: List[str] = []
+    asides: list[str] = []
+    moved: list[str] = []
 
     def move_aside(rel: str, source: str) -> None:
         target = None
@@ -557,7 +553,7 @@ def _blocked(aside: str, rel: str) -> bool:
                for p in (os.path.join(aside, *parts[:i]) for i in range(1, len(parts) + 1)))
 
 
-def _remove_emptied(game_dir: str, moved: List[str], keep: set) -> List[str]:
+def _remove_emptied(game_dir: str, moved: list[str], keep: set) -> list[str]:
     """The folders the moves emptied, deepest first, when the backup did not
     have them: never a folder the backup had, never one holding anything,
     and never one the moves did not touch - an empty folder made since, or
@@ -633,7 +629,7 @@ def _journal_add(path: str, rel: str, game_dir: str) -> None:
         fh.write(json.dumps(rel) + "\n")
 
 
-def _read_journal(path: str, game_dir: str, backup: str) -> List[str]:
+def _read_journal(path: str, game_dir: str, backup: str) -> list[str]:
     """The paths a restore cut short moved out of THIS game folder and that
     are in one of this backup's displaced- folders now: a path that was
     never moved removes nothing (fourth review of #48)."""
@@ -664,9 +660,9 @@ def _read_journal(path: str, game_dir: str, backup: str) -> List[str]:
     return found
 
 
-def list_backups(backups_dir: str) -> List[dict]:
+def list_backups(backups_dir: str) -> list[dict]:
     """The finished backups in a folder, newest first."""
-    found: List[dict] = []
+    found: list[dict] = []
     if not os.path.isdir(backups_dir):
         return found
     for name in os.listdir(backups_dir):

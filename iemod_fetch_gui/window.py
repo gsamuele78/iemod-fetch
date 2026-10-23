@@ -3,7 +3,6 @@ The main window: BWS-NG's layout - the phases down the left, the current one
 on the right, Back and Next below. A phase is entered only when the one
 before it is complete; leaving it saves what it decided.
 """
-from typing import List
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
@@ -44,7 +43,7 @@ class MainWindow(QMainWindow):
         self.mods = ModsPage(project_dir, load, check)
         self.order = OrderPage(project_dir, plan)
         self.download = DownloadPage(project_dir, download)
-        self.pages: List[QWidget] = [self.game, self.mods, self.order, self.download,
+        self.pages: list[QWidget] = [self.game, self.mods, self.order, self.download,
                                      PendingPage(PHASES[4], self.game, "M4")]
         self.stack = QStackedWidget()
         for page in self.pages:

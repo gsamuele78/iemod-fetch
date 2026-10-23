@@ -23,7 +23,6 @@ import binascii
 import json
 import zlib
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 from .errors import ConfigError
 from .selection import Selection, parse_selection, selection_from_logs, selection_to_json
@@ -36,7 +35,7 @@ MAX_PAYLOAD_BYTES = 32 * 1024 * 1024      # after inflating: a zip bomb stops he
 
 # game_install -> the payload slots it fills, in install order, and the game
 # each slot's log installs onto in a selection.
-SLOTS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+SLOTS: dict[str, tuple[tuple[str, str], ...]] = {
     "EET": (("bgee", "BGEE"), ("bg2ee", "EET")),
     "BGEE": (("bgee", "BGEE"),),
     "BG2EE": (("bg2ee", "BG2EE"),),
@@ -55,11 +54,11 @@ class BioModlist:
         return str(self.payload.get("game_install", ""))
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         value = self.payload.get("name")
         return value if isinstance(value, str) else None
 
-    def logs(self) -> List[Tuple[str, str]]:
+    def logs(self) -> list[tuple[str, str]]:
         """(game, WeiDU.log text) per filled slot, in install order."""
         texts = self.payload.get("weidu_logs") or {}
         out = []
@@ -140,7 +139,7 @@ def encode_share_code(modlist: BioModlist) -> str:
     return PREFIX + base64.urlsafe_b64encode(packed).decode("ascii").rstrip("=")
 
 
-def _game_install(games: List[str]) -> str:
+def _game_install(games: list[str]) -> str:
     wanted = set(games)
     for install, slots in SLOTS.items():
         if wanted == {game for _slot, game in slots}:
@@ -151,7 +150,7 @@ def _game_install(games: List[str]) -> str:
                       f"this selection is for {sorted(wanted)}")
 
 
-def modlist_from_selection(selection: Selection, base: Optional[BioModlist] = None,
+def modlist_from_selection(selection: Selection, base: BioModlist | None = None,
                            tool_version: str = "") -> BioModlist:
     """
     A BIO payload for `selection`. Given `base` (an imported code), every field

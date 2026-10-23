@@ -15,7 +15,6 @@ import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from .archives import safe_extract
 from .errors import InstallConflict, VerificationFailed
@@ -32,17 +31,17 @@ class InstallOutcome:
     folder: str                       # the directory actually created
     dest: str
     tp2_file: str
-    backup: Optional[str] = None
+    backup: str | None = None
     file_count: int = 0
-    renamed_from: Optional[str] = None   # WeiDU folder, when it differed
-    tp2_info: Optional[Tp2Info] = None   # what the mod says about itself
+    renamed_from: str | None = None   # WeiDU folder, when it differed
+    tp2_info: Tp2Info | None = None   # what the mod says about itself
 
     @property
-    def version(self) -> Optional[str]:
+    def version(self) -> str | None:
         return self.tp2_info.version if self.tp2_info else None
 
 
-def find_tp2_files(root: str) -> List[str]:
+def find_tp2_files(root: str) -> list[str]:
     found = []
     for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
@@ -52,7 +51,7 @@ def find_tp2_files(root: str) -> List[str]:
 
 
 def verify_mod_dir(mod_dir: str, folder: str,
-                   expect_tp2: Optional[str] = None) -> Optional[str]:
+                   expect_tp2: str | None = None) -> str | None:
     """
     Return the .tp2 filename proving `mod_dir` really contains this mod, or None.
 
@@ -73,7 +72,7 @@ def verify_mod_dir(mod_dir: str, folder: str,
 
 
 def locate_mod_root(staging: str, folder: str,
-                    expect_tp2: Optional[str] = None) -> tuple:
+                    expect_tp2: str | None = None) -> tuple:
     """
     Find the mod root inside `staging`.
 
@@ -127,7 +126,7 @@ def fold_root_tp2(root: str, tp2_file: str, name: str) -> str:
 
 def install_from_archive(archive_path: str, target_root: str, folder: str,
                          force: bool = False, allow_exe: bool = False,
-                         expect_tp2: Optional[str] = None) -> InstallOutcome:
+                         expect_tp2: str | None = None) -> InstallOutcome:
     folder = safe_component(folder)
     target_root = os.path.abspath(target_root)
     dest = os.path.join(target_root, folder)
@@ -186,13 +185,13 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
 @dataclass
 class State:
     path: str
-    mods: Dict[str, dict] = field(default_factory=dict)
+    mods: dict[str, dict] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, target_root: str) -> "State":
+    def load(cls, target_root: str) -> State:
         path = os.path.join(target_root, STATE_FILENAME)
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 raw = json.load(fh)
             mods = raw.get("mods", {}) if isinstance(raw, dict) else {}
         except (OSError, json.JSONDecodeError, ValueError):
@@ -204,7 +203,7 @@ class State:
         entry.update({k: v for k, v in fields.items() if v is not None})
         self.mods[folder.lower()] = entry
 
-    def get(self, folder: str) -> Optional[dict]:
+    def get(self, folder: str) -> dict | None:
         return self.mods.get(folder.lower())
 
     def save(self) -> None:

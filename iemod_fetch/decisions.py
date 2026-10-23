@@ -20,7 +20,6 @@ something else.
 """
 import json
 from dataclasses import dataclass, field
-from typing import Dict
 
 from .contract import SCHEMA_VERSION
 from .errors import ConfigError
@@ -31,8 +30,8 @@ _ENTRY = {"finding", "choose", "accept"}
 
 @dataclass
 class Decisions:
-    choose: Dict[str, str] = field(default_factory=dict)    # finding id -> option id
-    accept: Dict[str, str] = field(default_factory=dict)    # finding id -> why
+    choose: dict[str, str] = field(default_factory=dict)    # finding id -> option id
+    accept: dict[str, str] = field(default_factory=dict)    # finding id -> why
 
     def __len__(self) -> int:
         return len(self.choose) + len(self.accept)

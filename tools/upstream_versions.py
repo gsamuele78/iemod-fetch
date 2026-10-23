@@ -33,7 +33,7 @@ import subprocess
 import sys
 import urllib.request
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 CI = ".github/workflows/ci.yml"
 _WEIDU_PIN = re.compile(r"WEIDU_URL:\s*\S*/releases/download/v(\d+\.\d+)/")
@@ -46,11 +46,11 @@ WHERE = {"weidu": "https://github.com/WeiDUorg/weidu/releases",
          "mod_installer": "https://github.com/dark0dave/mod_installer"}
 
 
-def _key(version: str) -> Tuple[int, ...]:
+def _key(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
-def pinned(ci_yaml: str) -> Dict[str, str]:
+def pinned(ci_yaml: str) -> dict[str, str]:
     out = {}
     weidu, installer = _WEIDU_PIN.search(ci_yaml), _MI_PIN.search(ci_yaml)
     if weidu:
@@ -60,7 +60,7 @@ def pinned(ci_yaml: str) -> Dict[str, str]:
     return out
 
 
-def newest_weidu(tags: Iterable[str]) -> Optional[str]:
+def newest_weidu(tags: Iterable[str]) -> str | None:
     releases = [m.group(1) for m in map(_WEIDU_TAG.match, tags) if m]
     return max(releases, key=_key) if releases else None
 
@@ -89,7 +89,7 @@ class Verdict:
                 + "3. CI green - the real-WeiDU job installs the mock EET plan with it.\n")
 
 
-def verdicts(pins: Dict[str, str], latest: Dict[str, str]) -> List[Verdict]:
+def verdicts(pins: dict[str, str], latest: dict[str, str]) -> list[Verdict]:
     return [Verdict(tool, pins[tool], latest[tool]) for tool in ("weidu", "mod_installer")
             if tool in pins and latest.get(tool)
             and _key(latest[tool]) > _key(pins[tool])]
@@ -101,7 +101,7 @@ _WORKFLOW_PYTHON = re.compile(r"""python-version\s*:\s*\[?\s*["']?([^"'\s,}\]#]+
 _STABLE = re.compile(r"^3\.(\d+)\.(\d+)$")
 
 
-def newest_python(manifest: list) -> Optional[str]:
+def newest_python(manifest: list) -> str | None:
     """The newest minor (3.N) with a stable, final release in the manifest."""
     minors = [int(m.group(1)) for m in
               (_STABLE.match(str(entry.get("version", ""))) for entry in manifest
@@ -110,7 +110,7 @@ def newest_python(manifest: list) -> Optional[str]:
     return f"3.{max(minors)}" if minors else None
 
 
-def python_places(root: str = ".") -> Dict[str, str]:
+def python_places(root: str = ".") -> dict[str, str]:
     """Every place that names the project's Python, and what it names
     ("" where it names none it should, "several" where it names more than
     one)."""
@@ -118,7 +118,7 @@ def python_places(root: str = ".") -> Dict[str, str]:
         with open(os.path.join(root, path), encoding="utf-8") as fh:
             return fh.read()
     project = read("pyproject.toml")
-    found: Dict[str, str] = {".python-version": read(".python-version").strip()}
+    found: dict[str, str] = {".python-version": read(".python-version").strip()}
 
     def one(name: str, pattern: str, text: str, form=lambda m: m.group(1)) -> None:
         values = {form(m) for m in re.finditer(pattern, text, re.MULTILINE)}
@@ -144,13 +144,13 @@ def python_places(root: str = ".") -> Dict[str, str]:
     return found
 
 
-def python_disagreements(places: Dict[str, str]) -> List[str]:
+def python_disagreements(places: dict[str, str]) -> list[str]:
     wanted = places[".python-version"]
     return [f"{place}: {value or 'none'} (.python-version says {wanted})"
             for place, value in places.items() if value != wanted]
 
 
-def python_issue(pinned_python: str, newest: str) -> Optional[Tuple[str, str]]:
+def python_issue(pinned_python: str, newest: str) -> tuple[str, str] | None:
     if newest and _key(newest) > _key(pinned_python):
         body = (f"Upstream: https://www.python.org/downloads/ - "
                 f"{MANIFEST}\n\n"
@@ -171,7 +171,7 @@ def _gh(*args: str) -> str:
                           check=True).stdout
 
 
-def _upstream() -> Dict[str, str]:
+def _upstream() -> dict[str, str]:
     tags = json.loads(_gh("api", "--paginate", "--slurp",
                           "repos/WeiDUorg/weidu/tags?per_page=100"))
     names = [tag["name"] for page in tags for tag in page]
@@ -182,7 +182,7 @@ def _upstream() -> Dict[str, str]:
             "mod_installer": version.group(1) if version else ""}
 
 
-def _python_check() -> List[Tuple[str, str]]:
+def _python_check() -> list[tuple[str, str]]:
     """Issues to open about Python: disagreeing places, a newer Python."""
     places = python_places()
     issues = []
