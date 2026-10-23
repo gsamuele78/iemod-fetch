@@ -613,6 +613,12 @@ Both are measured, not assumed (docs/TESTING.md):
   ranked. Known blind spot: a release tagged without bumping the tp2 VERSION
   (EET's v14.1 tag carries VERSION v14.0) still shows as an update after it is
   installed.
+* **A mod's kind** is what lcc-docs and BWS-NG say, mapped onto one
+  vocabulary (`kinds`, and `kinds_by_source` for who says what), with
+  krion64's `install_category` and `tags` beside it, never mapped. Where two
+  sources share no kind, `kind_disagreement` is `true` and nothing is chosen:
+  on the 2026-10-23 data, 1 of 1,843 mods (all 15 BWS-NG codes and 17
+  lcc-docs labels are mapped).
 
 The formats are `schemas/mods-v1.schema.json` and
 `schemas/components-v1.schema.json`; the GUI reads the same through
