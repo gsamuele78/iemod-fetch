@@ -503,7 +503,7 @@ def _toposort(units: list[Unit], edges: dict[str, set[str]],
     what makes the result "as close to the reference order as the rules allow"
     rather than "the reference order, rules permitting".
 
-    A cycle is never fatal: the lowest-priority member is released and the cycle
+    A cycle is never fatal: the cycle's first member in priority is released and the cycle
     is reported, so the operator always gets a complete plan plus the exact list
     of rules that contradict each other.
     """
@@ -520,13 +520,22 @@ def _toposort(units: list[Unit], edges: dict[str, set[str]],
     cycles: list[list[str]] = []
     left = set(members)
 
+    reported: list[set[str]] = []
     while left:
         if not ready:
-            stuck = sorted(left, key=lambda k: priorities[k])
-            names = [members[k].display if members[k].split else members[k].key
-                     for k in stuck]
-            cycles.append(names if len(names) <= 12 else names[:12] + ["..."])
-            forced = stuck[0]
+            # Stuck: some rules contradict each other. Release a unit only from
+            # inside a real cycle that waits on nothing else - before, every
+            # unit left was reported as "the cycle" and the top one forced even
+            # when it was merely downstream of one, breaking a rule that held
+            # (audit 2026-10-23, GUI-AUDIT item 42).
+            cycle = _first_cycle(left, pending, priorities)
+            if not any(cycle <= seen for seen in reported):
+                reported.append(cycle)
+                stuck = sorted(cycle, key=lambda k: priorities[k])
+                names = [members[k].display if members[k].split else members[k].key
+                         for k in stuck]
+                cycles.append(names if len(names) <= 12 else names[:12] + ["..."])
+            forced = min(cycle, key=lambda k: priorities[k])
             pending[forced] = set()
             heapq.heappush(ready, (priorities[forced], forced))
             continue
@@ -540,6 +549,57 @@ def _toposort(units: list[Unit], edges: dict[str, set[str]],
             if not pending[dependent] and dependent in left:
                 heapq.heappush(ready, (priorities[dependent], dependent))
     return emitted, cycles
+
+
+def _first_cycle(left: set[str], pending: dict[str, set[str]], priorities) -> set[str]:
+    """The strongly connected group of units, among those left, that waits on
+    nothing outside itself - a cycle the order cannot pass without breaking
+    one of its rules. Of several, the one holding the highest-priority unit."""
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    on_stack: set[str] = set()
+    stack: list[str] = []
+    groups: list[set[str]] = []
+    counter = 0
+    for root in sorted(left, key=lambda k: priorities[k]):
+        if root in index:
+            continue
+        work = [(root, iter(sorted(pending[root] & left)))]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+        while work:
+            node, deps = work[-1]
+            advanced = False
+            for dep in deps:
+                if dep not in index:
+                    index[dep] = low[dep] = counter
+                    counter += 1
+                    stack.append(dep)
+                    on_stack.add(dep)
+                    work.append((dep, iter(sorted(pending[dep] & left))))
+                    advanced = True
+                    break
+                if dep in on_stack:
+                    low[node] = min(low[node], index[dep])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                low[work[-1][0]] = min(low[work[-1][0]], low[node])
+            if low[node] == index[node]:
+                group = set()
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    group.add(member)
+                    if member == node:
+                        break
+                groups.append(group)
+    closed = [g for g in groups if all(pending[k] & left <= g for k in g)
+              and (len(g) > 1 or any(k in pending[k] for k in g))]
+    return min(closed, key=lambda g: min(priorities[k] for k in g))
 
 
 def _minimum_moves(before: list[str], after: list[str]) -> list[tuple[str, int, int]]:
