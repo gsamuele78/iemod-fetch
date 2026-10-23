@@ -10,7 +10,8 @@
 # filelock (MIT): a lock around the community-data folder, which the wizard and
 # the CLI both refresh (datasync.py). The last 3.x: 4.x has had twenty releases
 # in its first month; dependabot.yml holds the major version until it settles.
-filelock==3.32.7 \
-    --hash=sha256:65ff0d0190ea42038b32bda4b77834fb05be2cad4c5b9b01aa4dfb3614536e52
+filelock==4.2.1 \
+    --hash=sha256:7be2662e9e826b9bba28afc0f843a123280d799a2ea44bb5d35ccec67905ae44 \
+    --hash=sha256:c4c937ccac2a813cee448e662a56366cfb374c0f8702e75f295c412cc1c5d5a3
 publicsuffixlist==1.1.2.20261023 \
     --hash=sha256:c792aa3fd37076c15f1c9d9897e59e9d58e8bacdf4315eb9cc10141a26d8995c
