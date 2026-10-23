@@ -2274,24 +2274,44 @@ handled apart.
   `lang/*/dialog*.tlk`, and every file at the folder's root (`chitin.key`, an
   older game's `dialog.tlk`, `WeiDU.log`, `weidu.conf`, the executable). Each
   copy's size and **sha256** are in the backup's manifest.
-- **Everything else is listed** - every file's path and size - so a restore
-  knows what an install ADDED anywhere (a mod folder, a new BIFF in `data/`)
-  and what it CHANGED that was not copied.
+- **Everything else is listed** - every file's path and size, every folder
+  (empty ones too) and every link - so a restore knows what an install ADDED
+  anywhere (a mod folder, a new BIFF in `data/`) and what it CHANGED that was
+  not copied.
+- **Links are never followed.** A link where a copied file or folder should be
+  (`override/`, `lang/`, a root file) stops the backup: it would be silently
+  incomplete. Other links are listed, left alone and reported.
 - A backup is written as `<name>.partial` and renamed when complete: a backup
   that exists is whole. It may not be inside the game folder.
-- **A restore deletes nothing.** It verifies the backup first (every sha256;
-  a damaged backup restores nothing), then MOVES what is in the way - files
-  added since, and the current version of each file it puts back - into
-  `<backup>/displaced-<time>/` under its own path, then copies the backup's
-  files back and checks each against its sha256. Only folders it emptied
-  itself, and that the backup did not have, are removed.
+- **A restore deletes nothing.** It verifies the backup first (every sha256,
+  and the manifest's shape and paths: relative, no `..`, no drive, no
+  backslash - a damaged backup restores nothing), then MOVES what is in the
+  way - files and links added since, and the current version of each file it
+  puts back - into a `<backup>/displaced-<time>/` folder that restore made for
+  itself (never shared, nothing in it replaced), then copies the backup's
+  files back and checks each against its sha256. Only empty folders the
+  backup did not have are removed.
+- **Names match exactly**: on a case-sensitive system a mod's `x.itm` beside a
+  backed-up `X.ITM` is moved aside. A listed, uncopied file whose name only
+  changed case counts as present, so it is never moved away for want of a copy.
+- **It writes only into a game folder** (one with `chitin.key`), and only into
+  the one backed up unless the caller names another (`--restore-to`).
 - **What cannot be restored is said**: a listed, not copied, file that is
-  missing or of another size is named, and the command line exits 1.
+  missing or of another size is named, and the command line exits 1, both when
+  it shows the plan and when it restores.
 - **A restore cut short is finished by running it again**: the plan is made
-  from what is on disk.
+  from what is on disk, and the empty folders the cut run left are removed.
 - On the command line, `--restore-backup` shows the plan and changes nothing
   without `--apply`. `--backup`, `--verify-backup` and `--restore-backup` run
-  before anything else and never reach the network.
+  one at a time (two together, or `--apply` without `--restore-backup`, is a
+  configuration error), before anything else, and never reach the network.
+  A damaged backup, a full disk or a stop exits 1 with a message.
+
+An independent review of #48 found, before merging, a restore losing a
+displaced file (two restores in one second shared a folder), a hand-edited
+manifest writing outside the game folder, a restore emptying a folder that was
+not a game, a case-only name never moved aside, and empty folders the backup
+had being removed; each has a test in `tests/test_backup.py`.
 
 ### Consequences
 

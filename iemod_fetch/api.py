@@ -1231,9 +1231,12 @@ def plan_restore(path: str, game_dir: Optional[str] = None) -> dict:
 
 def restore_backup(path: str, game_dir: Optional[str] = None, on_event=None,
                    cancel=None) -> dict:
-    """Bring a game folder back to a backup; deletes nothing (ADR-0042)."""
+    """Bring a game folder back to a backup; deletes nothing (ADR-0042).
+    Naming game_dir is what allows restoring into another folder than the
+    one backed up."""
     return backup.restore(path, game_dir or backup.read_manifest(path)["game_dir"],
-                          on_progress=on_event, cancel=cancel)
+                          on_progress=on_event, cancel=cancel,
+                          other_folder=game_dir is not None)
 
 
 def list_backups(game_dir: str, backups: Optional[str] = None) -> List[dict]:
@@ -1245,12 +1248,35 @@ def _backup_action(settings, stream, on_event, cancel) -> int:
         if not settings.quiet:
             print(line, file=stream)
 
+    actions = [flag for flag, value in (("--backup", settings.backup),
+                                        ("--verify-backup", settings.verify_backup),
+                                        ("--restore-backup", settings.restore_backup)) if value]
+    if len(actions) > 1:
+        raise ConfigError(f"{' and '.join(actions)}: one at a time")
+    if not settings.restore_backup and (settings.apply or settings.restore_to):
+        raise ConfigError("--apply and --restore-to go with --restore-backup")
+    if not settings.backup and settings.backup_to:
+        raise ConfigError("--backup-to goes with --backup")
+    try:
+        return _backup_step(settings, say, on_event, cancel)
+    except InterruptedError:
+        say("    stopped: what was done stays done; run it again to finish")
+        return 1
+    except OSError as exc:            # a full disk, a file in use: said, not a traceback
+        say(f"    failed: {exc}")
+        return 1
+
+
+def _backup_step(settings, say, on_event, cancel) -> int:
     if settings.backup:
         path = backup_game(settings.backup, settings.backup_to, on_event=on_event,
                            cancel=cancel)
         manifest = backup.read_manifest(path)
         say(f"  backup      : {path} ({len(manifest['copied'])} files copied, "
             f"{len(manifest['inventory'])} listed)")
+        if manifest["links"]:
+            say(f"    not backed up: {len(manifest['links'])} links, left as they are "
+                f"(first: {manifest['links'][0]})")
         return 0
     if settings.verify_backup:
         result = verify_backup(settings.verify_backup)
@@ -1267,13 +1293,16 @@ def _backup_action(settings, stream, on_event, cancel) -> int:
     say(f"    move aside: {len(plan['displace'])} files added since")
     for line in plan["cannot_restore"]:
         say(f"    cannot    : {line}")
+    if plan["links"]:
+        say(f"    left alone: {len(plan['links'])} links the backup did not hold")
     if not settings.apply:
         say("    nothing changed: run again with --apply to restore")
-        return 0
+        # 1 when a restore could not bring everything back, shown or done
+        return 1 if plan["cannot_restore"] else 0
     result = restore_backup(settings.restore_backup, settings.restore_to,
                             on_event=on_event, cancel=cancel)
-    if result["displaced_to"]:
-        say(f"    moved aside to {result['displaced_to']} (nothing was deleted)")
+    for aside in result["displaced"]:
+        say(f"    moved aside to {aside} (nothing was deleted)")
     return 1 if result["cannot_restore"] else 0
 
 

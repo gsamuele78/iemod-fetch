@@ -96,7 +96,8 @@ def test_a_damaged_backup_restores_nothing(tmp_path):
     install(root)
     (tmp_path / "backups" / "before" / "files" / "chitin.key").write_bytes(b"tampered")
     assert not backup.verify(path)["ok"]
-    with pytest.raises(ConfigError, match="damaged"):
+    from iemod_fetch.errors import VerificationFailed
+    with pytest.raises(VerificationFailed, match="damaged"):
         backup.restore(path, str(root))
     assert (root / "override" / "newitem.itm").exists()            # untouched
 
@@ -166,9 +167,168 @@ def test_the_command_line_backs_up_shows_then_restores(tmp_path, monkeypatch):
     assert run("--verify-backup", made["path"])[0] == 0
     install(root)
     code, shown = run("--restore-backup", made["path"])               # shown only
-    assert code == 0 and "move aside: 5 files" in shown and "--apply" in shown
+    # 1: two changes could not be put back, which the plan says already
+    assert code == 1 and "move aside: 5 files" in shown and "--apply" in shown
     assert (root / "mymod").exists()
     # with --apply: restored; 1 because two changes could not be put back
     code, out = run("--restore-backup", made["path"], "--apply")
     assert code == 1 and "nothing was deleted" in out
     assert not (root / "mymod").exists()
+
+
+# ------------------------------------------------- review of #48 (data safety)
+def backed_up(tmp_path):
+    root = game(tmp_path)
+    return root, backup.create(str(root), str(tmp_path / "backups"), name="before")
+
+
+def test_restores_never_share_a_displaced_folder(tmp_path, monkeypatch):
+    """Two restores in one second used one displaced-<time>/ and the second's
+    moves replaced the first's files."""
+    monkeypatch.setattr(backup.time, "strftime", lambda *_a: "20261023T000000")
+    root, path = backed_up(tmp_path)
+    write(root / "override" / "user.itm", b"first")
+    first = backup.restore(path, str(root))
+    write(root / "override" / "user.itm", b"second")
+    second = backup.restore(path, str(root))
+    assert first["displaced_to"] != second["displaced_to"]
+    assert (pathlib.Path(first["displaced_to"]) / "override" / "user.itm").read_bytes() == b"first"
+    assert (pathlib.Path(second["displaced_to"]) / "override" / "user.itm").read_bytes() == b"second"
+
+
+@pytest.mark.parametrize("rel", ["../../escape.txt", "/etc/escape.txt", "C:/escape.txt",
+                                 "override\\..\\..\\escape.txt", "override/../../escape.txt"])
+def test_a_manifest_naming_a_path_outside_is_refused(tmp_path, rel):
+    import hashlib
+    import json
+    root, path = backed_up(tmp_path)
+    manifest_path = pathlib.Path(path) / backup.MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data = b"echo pwned"
+    manifest["copied"][rel] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    manifest["inventory"][rel] = len(data)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    from iemod_fetch.errors import VerificationFailed
+    with pytest.raises(VerificationFailed, match="damaged"):
+        backup.verify(path)
+    with pytest.raises(VerificationFailed):
+        backup.restore(path, str(root))
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_a_manifest_missing_a_field_is_an_error_not_a_traceback(tmp_path):
+    import json
+    _root, path = backed_up(tmp_path)
+    manifest_path = pathlib.Path(path) / backup.MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["copied"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    from iemod_fetch import cli
+    import io
+    assert cli.main(["--verify-backup", path], stream=io.StringIO()) == 1
+
+
+def test_a_restore_writes_only_into_a_game_folder_and_the_one_backed_up(tmp_path):
+    root, path = backed_up(tmp_path)
+    documents = tmp_path / "Documents"
+    write(documents / "thesis.docx", b"years of work")
+    with pytest.raises(ConfigError, match="not a game folder"):
+        backup.restore(path, str(documents), other_folder=True)
+    assert (documents / "thesis.docx").read_bytes() == b"years of work"
+    other = tmp_path / "BG2EE-copy"
+    write(other / "chitin.key", b"KEY V1  another install")
+    with pytest.raises(ConfigError, match="not the folder this backup was made of"):
+        backup.restore(path, str(other))
+    backup.restore(path, str(other), other_folder=True)              # named: allowed
+    assert (other / "chitin.key").read_bytes() == b"KEY V1  original"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="names that differ only in case need a "
+                    "case-sensitive file system")
+def test_a_file_differing_only_in_case_is_moved_aside_once(tmp_path):
+    root = game(tmp_path)
+    write(root / "override" / "X.ITM", b"backed up")
+    path = backup.create(str(root), str(tmp_path / "backups"), name="before")
+    write(root / "override" / "x.itm", b"a mod's")
+    plan = backup.plan_restore(path, str(root))
+    assert plan["put_back"] == [] and plan["displace"] == ["override/x.itm"]
+    backup.restore(path, str(root))
+    assert (root / "override" / "X.ITM").read_bytes() == b"backed up"
+    assert not (root / "override" / "x.itm").exists()
+    again = backup.plan_restore(path, str(root))
+    assert again["put_back"] == [] and again["displace"] == []
+
+
+def test_folders_the_backup_had_stay_even_when_they_were_empty(tmp_path):
+    root = game(tmp_path)
+    (root / "save").mkdir()
+    (root / "override" / "empty_sub").mkdir()
+    path = backup.create(str(root), str(tmp_path / "backups"), name="before")
+    write(root / "save" / "000000001-Quick-Save" / "BALDUR.gam", b"a save")
+    write(root / "override" / "empty_sub" / "new.itm", b"added")
+    backup.restore(path, str(root))
+    assert (root / "save").is_dir() and (root / "override" / "empty_sub").is_dir()
+    assert not (root / "save" / "000000001-Quick-Save").exists()     # added, emptied
+
+
+def test_a_rerun_after_a_cut_removes_the_mod_folders_it_emptied(tmp_path):
+    root, path = backed_up(tmp_path)
+    install(root)
+    cancel = threading.Event()
+
+    def on_progress(event):
+        if event["event"] == "restore_displaced" and event["file"].startswith("mymod/"):
+            cancel.set()
+    with pytest.raises(InterruptedError):
+        backup.restore(path, str(root), on_progress=on_progress, cancel=cancel)
+    backup.restore(path, str(root))
+    assert not (root / "mymod").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
+def test_links_are_never_followed(tmp_path):
+    root = game(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.symlink(elsewhere, root / "movies-link")              # a link the backup lists
+    path = backup.create(str(root), str(tmp_path / "backups"), name="before")
+    assert backup.read_manifest(path)["links"] == ["movies-link"]
+    # a backed-up file replaced by a dangling link: moved aside, never written through
+    os.remove(root / "override" / "spwi101.spl")
+    os.symlink(tmp_path / "outside.spl", root / "override" / "spwi101.spl")
+    plan = backup.restore(path, str(root))
+    assert plan["links"] == ["movies-link"] and (root / "movies-link").is_symlink()
+    assert not (tmp_path / "outside.spl").exists()
+    assert (root / "override" / "spwi101.spl").read_bytes() == b"SPL original"
+    assert not (root / "override" / "spwi101.spl").is_symlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
+def test_a_backup_refuses_an_override_that_is_a_link(tmp_path):
+    root = game(tmp_path)
+    real = tmp_path / "real-override"
+    (root / "override").rename(real)
+    os.symlink(real, root / "override")
+    with pytest.raises(ConfigError, match="is a link"):
+        backup.create(str(root), str(tmp_path / "backups"))
+
+
+def test_the_command_line_takes_one_backup_action_at_a_time(tmp_path):
+    import io
+
+    from iemod_fetch import cli
+    root, path = backed_up(tmp_path)
+    for argv in (["--backup", str(root), "--restore-backup", path, "--apply"],
+                 ["--verify-backup", path, "--restore-backup", path],
+                 ["--verify-backup", path, "--apply"],
+                 ["--verify-backup", path, "--backup-to", str(tmp_path)]):
+        assert cli.main(argv, stream=io.StringIO()) == 2, argv
+
+
+def test_a_damaged_backup_exits_1_with_a_message(tmp_path):
+    import io
+
+    from iemod_fetch import cli
+    root, path = backed_up(tmp_path)
+    (pathlib.Path(path) / "files" / "chitin.key").write_bytes(b"tampered")
+    assert cli.main(["--restore-backup", path, "--apply"], stream=io.StringIO()) == 1

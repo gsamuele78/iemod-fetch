@@ -280,7 +280,8 @@ the folder's root files) with their sha256, and list every other file. A
 restore **deletes nothing**: files added since, and the current version of
 each file put back, are moved into the backup's `displaced-<time>/`; what it
 cannot put back (a listed, not copied, file that changed) is named, and the
-exit code is 1. Offline; see [ADR-0042](docs/ADR.md). Back up BG2:EE *before*
+exit code is 1. It writes only into a game folder, and only into the one
+backed up unless `--restore-to` names another. Offline; see [ADR-0042](docs/ADR.md). Back up BG2:EE *before*
 EET's conversion: the converted `override/` is large.
 
 ## Configuration
@@ -499,7 +500,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,268 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,283 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -698,7 +699,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,268, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,283, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |
