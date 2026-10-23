@@ -229,6 +229,74 @@ the authors' metadata inis, the player's Sorting Order. Measured gaps:
 | 28 | **Exceptions per component**: a component whose kind differs from its mod's (a tweak pack's portraits, a tactical mod's kits, what goes after EET_end) is split and placed by its own kind, from krion64's and BWS-NG's per-component data; two chosen components known to overwrite the same thing (BWS-NG and krion64 conflict records, `mod-forge.json`) are reported with their order as an option, as conflicts are today. Static analysis of what a tp2 copies is not promised: WeiDU's language can compute any path. What can be measured is what an install really overwrote: Infinity Mod Runner's *File Guard* snapshots the override folder's md5s after each batch and flags a change outside an allowlist of files several mods legitimately write (`guard_allowlist.json`); the same check belongs to M4's installation, and its findings feed this item. | L |
 | 29 | **Tests on real data**: fixtures in the shape of the real files (krion64 MIT data may be pinned; BWS-NG's is GPL and is not bundled, so its fixtures are written by hand to its schema), a weekly workflow on the live sources, the 146-mod log as a benchmark (order inversions against the player's order, before and after), and the mock EET install with the real WeiDU on a plan reordered by kind. | M |
 
+### M5b — Editing the order by component (asked for on 2026-10-23)
+
+The player chooses and drops parts of mods, reorders by hand, and the tool
+checks the order again and offers fixes. Measured against BWS-NG (GPL, ideas
+only), Infinity Mod Runner (MIT) and Project Infinity (docs and wiki) on their
+real code: BWS-NG is the reference for component-level ordering (one row per
+component, incremental re-check of only the rules a move touches, a per-row
+violation panel, "ignore" that comes back on a new break); Infinity Mod
+Runner only runs an order made elsewhere; Project Infinity orders mods, and
+components through its Sorting Order file. **None of the three re-sorts or
+offers a fix after a manual move**; this tool's planner already computes the
+smallest moves, so it can.
+
+| # | Item | Size |
+|---|---|---|
+| 30 | **Split a mod and move one component** on the order page (expand a mod into its components); saved as Sorting Order `tp2 n n` lines, which the CLI already reads. Test: the GUI order and `--plan-order` agree after a split and a move. | M |
+| 31 | **Incremental check after a drop** (BWS-NG's technique: re-check only the rules touching what moved, at once; the full re-plan stays in the background). Measured: time to the marks after a drop, p50/p95, on the 146-mod / 780-component log and on a synthetic 3,000-component order; a property test that the incremental result always equals the full check. | M |
+| 32 | **Fixes on each flagged row**: "move just after X", "move just before Y", "re-plan keeping my other moves", "turn this component off"; each previewed. Test: a fix leaves no violation of its rule and no new error. | M |
+| 33 | **A per-row panel** (must be before / after, the rule's source) and **ignore**, kept in `decisions.json`, shown again when the row moves or a new rule breaks; rules naming a whole mod shown dimmed. | S |
+| 34 | **Deselect knowing who depends on it**: unticking a component warns about (or unticks) the ones that need it; one "auto-resolve" (dependencies first, then keep-this). Not BWS-NG's quirk of selecting every target of an "any one of" rule. | M |
+| 35 | Multi-row drag, Ctrl+Up/Down and search on the order page; exclusive groups with a default choice and a guard against emptying a required one; a selection hash that skips re-checks when nothing changed. | M |
+
+### M6 — One Python, and the libraries that earn their place (4.0.0; ADR-0043)
+
+Decided by the owner on 2026-10-23: one Python version for everything,
+chosen the way Debian chooses a kernel. Audited twice, on PyPI's metadata and
+by running the candidates.
+
+| # | Item | Size |
+|---|---|---|
+| 36 | **The platform**: `.python-version` (3.14) read by every workflow instead of 15 literal versions in 10 files; `requires-python = ">=3.14"`; ruff, mypy and the classifiers on it; tests on it, on Linux and Windows (macOS informational). The CLI also ships as a PyInstaller bundle beside the wizard, so a player needs no Python of their own. Breaking: 4.0.0, with a migration note. | M |
+| 37 | **The weekly check** (ADR-0028's `upstream-versions.yml`): the newest stable from actions/python-versions' manifest, and every place that names the version compared; an issue when they disagree, and a PR moving `.python-version` once a full build - wizard and CLI bundles, all tests - passes on the newer one. Dependabot cannot do it (verified in dependabot-core: it never touches `python-version`). Next candidate: 3.15, after its build is green - it makes UTF-8 the default on Windows (PEP 686). | S |
+| 38 | **Mechanical modernisation**, alone in its PR: ruff `UP` rewrites the 681 `Optional`/`List`/... annotations; `hashlib.file_digest`; `datetime.fromisoformat`; tarfile's data filter without the fallback; `PySide6>=6.11`. | S |
+| 39 | **Libraries adopted**, each with a test that fails before it, pinned by hash, scanned by pip-audit: **filelock** (MIT: a lock around the shared data folder, which the GUI and the CLI both write) and **publicsuffixlist** (MPL-2.0, unmodified, licence shipped: `a.github.io` and `b.github.io` are different sites, which the offsite check gets wrong today). **urllib3** only if keep-alive is measured to matter. | M |
+| 40 | **7-Zip in the bundles** (about 45% of lcc-docs' links with an extension are .rar, .7z or .exe), after a licence review of the unRAR clause. | S |
+
+Rejected, with the measurement: charset-normalizer (it reads short Cyrillic
+`.tra` text as cp1125 and Western text as big5), tenacity and requests-cache
+(neither fixes our retry or caching gaps), packaging (mod versions are not
+PEP 440), rapidfuzz (difflib is enough), tldextract, vdf, atomicwrites,
+keyring, py7zr (LGPL, compiled dependencies, no RAR).
+
+### M7 — Defects the audits found, fixed in the standard library
+
+| # | Defect, reproduced | Fix |
+|---|---|---|
+| 41 | **Security**: `same_site("modder.github.io", "attacker.github.io")` is true, so a link to another user's page escapes the offsite gate. | item 39 |
+| 42 | **Order**: a stuck sort reports every remaining unit as the cycle and forces the top one even outside it; with A<->B, "C after A" is broken. | `graphlib`: the real cycle, released from inside it |
+| 43 | **tp2**: `~Use "smart" AI~` is read as `Use `; `~~~~~` strings are not read. | reuse `tra.py`'s scanner; real WeiDU as the oracle |
+| 44 | **.tra**: Russian, Polish, Japanese and Chinese text decoded as cp1252, silently. | UTF-8 first, then the code page of the language folder |
+| 45 | **GitHub**: a 403 secondary limit is not retried; an HTTP-date `Retry-After` is ignored; no ETag, so repeat runs spend the rate limit. | `email.utils`, an ETag store |
+| 46 | Nine hand-written atomic writes, some with one fixed temp name and no fsync. | one helper |
+
+### M8 — What the other projects do and this tool does not (feature audit)
+
+Read on their code and data (Infinity Mod Runner, the Forge, BWS-NG, Project
+Infinity). Ranked by value to a player installing a large EET setup.
+
+| # | Item | From | Size |
+|---|---|---|---|
+| 47 | **Known-issue classifier** for install output: the Forge's 37 general patterns and per-mod `ki` matched against WeiDU's output and WSETUP.DEBUG (today only their descriptions are shown, before installing). Measured on a labelled corpus. | IMR, Forge (MIT) | M |
+| 48 | **Prompts known before installing**: every `ACTION_READLN` in the staged tp2s plus the Forge's manual-step notes, and whether an answer is recorded. Never IMR's "answer 1 after 30 s" (ADR-0005). | IMR | S |
+| 49 | **Preflight**: free disk space for the plan and the backup; the WeiDU binary's version against the newest and against what mods need. | IMR, BWS-NG | S |
+| 50 | **Update signal from lcc-docs' dates** (ADR-0044): 52 of the supplied 149 mods have no GitHub release krion64 can see, only an lcc-docs date. | lcc-docs | S |
+| 51 | Release notes and activity (`body`, `pushed`) in the update view; the Forge's `in`, `rec` and `eet_compat` notes in the selection. | Forge | S |
+| 52 | An opt-in set of community patches for known mod bugs (IMR's 62, idempotent), with sha256 before and after; needs its own ADR - it changes mod content. | IMR (MIT data) | M |
+| 53 | `AT_EXIT` scripts kept beside a mod's folder (to be checked first); install-time estimate and slow-component notice; a post-install report and a diagnostic bundle with paths removed; a translated wizard. | IMR, BWS-NG | M |
+
 **Explicitly not planned:**
 - Copying any BIO, BWS-NG or mod_installer code.
 - Bundling GPL data.
