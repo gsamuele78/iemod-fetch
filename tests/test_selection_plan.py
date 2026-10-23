@@ -315,3 +315,25 @@ def test_a_broken_cached_sequence_does_not_block_the_plan(tmp_path):
                           data_dir=str(tmp_path / "no-cache"))
     warned: list = []
     assert api._eet_sequences(cached, warned) is None and "cannot be read" in warned[0]
+
+
+def test_a_keep_both_decision_in_the_project_orders_the_wizards_plan(tmp_path):
+    """Item 28: the wizard's decisions.json "keep both, ascension last"
+    becomes an order rule of the plan - here against the mock's own rule
+    (ascension before stratagems #5900), which the plan then says."""
+    before = plan(tmp_path)
+    assert not before["violations"] and not before["cycles"]
+    found = api.selection_conflicts("EET", CHOSEN, folder=str(tmp_path),
+                                    order_catalogue=KRION,
+                                    rules=[os.path.join(MOCK, "rules")],
+                                    target=os.path.join(MOCK, "Mods"),
+                                    data_dir=str(tmp_path / "no-cache"))
+    overlap = next(f for f in found["findings"]
+                   if f["kind"] == "incompatible" and f["severity"] == "warning")
+    last = next(o for o in overlap["options"]
+                if o["action"] == "keep-both" and o["mod"] == "ascension")
+    api.save_decisions(str(tmp_path), choose={overlap["id"]: last["id"]})
+
+    after = plan(tmp_path)
+
+    assert after["violations"] or after["cycles"]

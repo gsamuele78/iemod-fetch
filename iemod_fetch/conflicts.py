@@ -140,6 +140,7 @@ class Finding:
 DESELECT = "deselect"       # remove these components from the plan
 REORDER = "reorder"         # install one side before the other
 INSTALL = "install"         # add what is missing - outside a plan's reach
+KEEP_BOTH = "keep-both"     # keep both sides, one installed after the other (item 28)
 
 
 @dataclass(frozen=True)
@@ -160,7 +161,7 @@ class Option:
     applicable: bool
     recommended: bool
     description: str
-    before: str = ""            # REORDER: the mod that goes first
+    before: str = ""            # REORDER, KEEP_BOTH: the mod that goes first
 
     def id(self, finding_id: str) -> str:
         return stable_id("option", finding_id, self.action, self.key,
@@ -211,7 +212,25 @@ def finding_options(finding: Finding) -> list[Option]:
     cheaper = left if _pinned_cost(left) < _pinned_cost(right) else right
     options = [_deselect(left, decides and cheaper is left),
                _deselect(right, decides and cheaper is right)]
-    return sorted(options, key=lambda o: (not o.recommended, o.whole_mod, o.cost))
+    return (sorted(options, key=lambda o: (not o.recommended, o.whole_mod, o.cost))
+            + _keep_both(finding))
+
+
+def _keep_both(finding: Finding) -> list[Option]:
+    """
+    Two components that touch the same thing, where no rule says they must
+    not coexist: keep both, the one installed last winning what they share
+    (GUI-AUDIT item 28, ADR-0033 amendment). Never for an error - a "hard"
+    incompatibility is not an overwrite to order - and never within one mod.
+    """
+    left, right = finding.left, finding.right
+    if (finding.kind != INCOMPATIBLE or finding.severity == "error" or right is None
+            or left.key == right.key):
+        return []
+    return [Option(KEEP_BOTH, last.mod, last.key, last.numbers, last.whole_mod, 0, True,
+                   False, f"keep both, {last.mod} installed last (its changes win)",
+                   before=first.key)
+            for first, last in ((left, right), (right, left))]
 
 
 @dataclass

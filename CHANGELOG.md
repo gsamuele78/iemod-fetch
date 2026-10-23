@@ -47,6 +47,19 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Keep both, one installed last** (GUI-AUDIT M5 item 28, ADR-0033
+  amended). Two components that touch the same thing, where no rule says they
+  must not coexist - an incompatibility graded below `error`, as krion64's
+  partial and soft conflicts and overlap advisories are - now offer, each way
+  round, "keep both, X installed last (its changes win)" besides deselecting
+  a side. Chosen in `decisions.json` (by hand, or the wizard's new button),
+  it becomes an order rule: the plan is made again with it, and the finding
+  is recorded as accepted with that reason. A choice that contradicts
+  another rule is reported by the plan, never hidden. A hard (`error`)
+  incompatibility does not offer it. The conflict report's option `action`
+  gains `keep-both`. Measured first: the rest of item 28 was already there
+  (krion64's per-component categories split 242 components) or has no data
+  (BWS-NG classifies no component on its own).
 - **BWS-NG's EET sequence places a mod krion64 does not, before any kind**
   (ADR-0041 decision 2a, the rest of GUI-AUDIT item 27). In the install after
   the EET core, such a mod goes after the nearest component before it in

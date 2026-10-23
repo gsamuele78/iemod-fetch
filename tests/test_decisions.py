@@ -12,7 +12,7 @@ import os
 import pytest
 
 from iemod_fetch import api
-from iemod_fetch.conflicts import DESELECT, INSTALL, REORDER, Finding, Side
+from iemod_fetch.conflicts import DESELECT, INSTALL, KEEP_BOTH, REORDER, Finding, Side
 from iemod_fetch.decisions import Decisions, decisions_to_json, parse_decisions
 from iemod_fetch.errors import ConfigError
 from iemod_fetch.rules import DEPENDS, INCOMPATIBLE
@@ -111,6 +111,63 @@ def test_an_accepted_conflict_keeps_both_sides_and_is_no_longer_outstanding(tmp_
     # and --resolve-conflicts no longer lists it as the player's to decide
     assert not any(u.finding_id == tie["id"]
                    for u in outcome.order_plan.resolution.left_for_operator)
+
+
+# ------------------------------------------------ keep both (item 28)
+def overlap(findings):
+    """The mock's warning: ascension and stratagems #5900 touch one thing."""
+    return next(f for f in findings if f["kind"] == INCOMPATIBLE and f["severity"] == "warning")
+
+
+def keep(finding, mod):
+    return next(o for o in finding["options"]
+                if o["action"] == KEEP_BOTH and o["mod"] == mod)
+
+
+def line_of(text, mod, number):
+    return next(n for n, line in enumerate(text.splitlines())
+                if line.lower().startswith("~" + mod + "\\") and f" #{number} " in line + " ")
+
+
+def test_a_warning_offers_keeping_both_each_way_and_an_error_does_not(tmp_path):
+    _outcome, findings = report(tmp_path)
+    assert {o["mod"] for o in overlap(findings)["options"] if o["action"] == KEEP_BOTH} == {
+        "ascension", "stratagems"}
+    errors = [f for f in findings if f["kind"] == INCOMPATIBLE and f["severity"] == "error"]
+    assert errors and not any(o["action"] == KEEP_BOTH for f in errors for o in f["options"])
+
+
+def test_keeping_both_installs_the_chosen_side_last_and_keeps_both(tmp_path):
+    _outcome, findings = report(tmp_path)
+    finding = overlap(findings)
+    outcome, after = report(tmp_path, decisions=write(tmp_path, [
+        {"finding": finding["id"], "choose": keep(finding, "stratagems")["id"]}]))
+    text = planned(tmp_path)
+    assert line_of(text, "ascension", 0) < line_of(text, "stratagems", 5900)
+    resolution = outcome.order_plan.resolution
+    assert not resolution.removed
+    assert [a.finding_id for a in resolution.accepted] == [finding["id"]]
+    again = next(f for f in after if f["id"] == finding["id"])
+    assert again["suppressed"].startswith("accepted in decisions.json: keep both, stratagems")
+    assert outcome.order_plan.verified
+
+
+def test_keeping_both_the_other_way_round_is_planned_or_said_to_contradict(tmp_path):
+    """The mock's rules install ascension before stratagems #5900: choosing
+    ascension last contradicts them, and the plan says so - never silently."""
+    _outcome, findings = report(tmp_path)
+    finding = overlap(findings)
+    outcome, _after = report(tmp_path, decisions=write(tmp_path, [
+        {"finding": finding["id"], "choose": keep(finding, "ascension")["id"]}]))
+    plan = outcome.order_plan
+    assert plan.cycles or not plan.verified
+
+
+def test_a_keep_both_decision_whose_finding_is_gone_makes_no_rule():
+    from iemod_fetch.conflicts import ConflictReport
+    from iemod_fetch.resolution import keep_both_rules
+    assert keep_both_rules(ConflictReport(), Decisions(
+        {"conflict-0123456789abcdef": "option-0123456789abcdef"}, {})) == []
 
 
 def test_a_stale_decision_is_reported_not_applied(tmp_path):

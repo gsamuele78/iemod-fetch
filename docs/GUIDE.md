@@ -723,7 +723,11 @@ it, with their cost; write your answer in a `decisions.json`
    {"finding": "conflict-d8821540fb81dfcd", "accept": "tested together, works"}]}
 ```
 
-`choose` removes exactly that option's components from the plan; `accept`
+`choose` removes exactly that option's components from the plan - unless the
+option is a `keep-both`: offered for a conflict graded below `error`
+(two components touching the same thing), it keeps both and installs the one
+it names last, so what they share is left as that one makes it; the plan is
+made again with that order, and a rule it contradicts is reported. `accept`
 keeps both sides and the report shows the finding as accepted, with your
 reason. Decisions are applied before `--resolve-conflicts`, which never
 overrides them, and the plan is re-checked afterwards. A decision whose finding
