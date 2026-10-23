@@ -5,7 +5,7 @@ from iemod_fetch import api
 
 
 class PendingPage(QWidget):
-    def __init__(self, name: str, game_page) -> None:
+    def __init__(self, name: str, game_page, milestone: str = "M3") -> None:
         super().__init__()
         self.game_page = game_page
         self.text = QLabel()
@@ -15,7 +15,7 @@ class PendingPage(QWidget):
         layout.addWidget(self.text)
         layout.addStretch(1)
         self.text.setText(
-            f"This phase arrives in a later update of the wizard (milestone M3). "
+            f"This phase arrives in a later update of the wizard (milestone {milestone}). "
             f"The project is saved in {api.PROJECT_FILE} in the project folder: "
             f"iemod-fetch run there uses the same game folders and languages, so "
             f"the command line can carry on from here.")

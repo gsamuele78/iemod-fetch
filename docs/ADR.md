@@ -1914,3 +1914,129 @@ decisions.json holds (ADR-0033).
   amendment, 2026-10-22), so they do not stay in the file for ever - only
   those the current, finished check calls stale, and none when no rule was
   checked (with no community data every decision would look stale).
+
+---
+
+## ADR-0039 — The wizard downloads through the command line's run, and with no manifest the community catalogue is the source
+
+**Status**: accepted
+**Date**: 2026-10-22
+
+### Context
+
+Phases 4 and 5 of the wizard (GUI-AUDIT item 18) are BWS-NG's Download and
+Extraction. Two facts shaped them.
+
+1. In the engine they are **one step per mod**. `Runner._attempt` downloads
+   one archive, checks its sha256, unpacks it to a staging folder, checks it
+   holds the tp2 it must, and only then moves it into the target. Extraction
+   cannot start before its download ends and is not done for a mod apart from
+   its download.
+2. **A run needed a manifest** (`mod_downloads.json`). A wizard user has none:
+   they chose mods from the catalogue, not from a file. Every mod the manifest
+   lacks went to `unresolved`. With a catalogue the runner did try those mods
+   through it (ADR-0009), but the run still refused to start without a
+   manifest file.
+
+A measurement found a third fact. lcc-docs records a mod that ships several
+tp2s in one field, `EET;EET_end;EET_gui`, and the catalogue reader took that
+as one name. **EET itself was never found in the catalogue**, by the
+command line either.
+
+### Decision
+
+- **One page, "Download and extraction".** Each mod's row says which step it
+  is at: downloading (bytes of total), extracting, done, already there,
+  failed, no download found, cancelled. Splitting it into two pages would
+  show a sequence the engine does not have. The phase list becomes Game and
+  folders, Mod selection, Install order, Download and extraction,
+  Installation (M4).
+- **A new progress event**, `mod_extracting`, is emitted when a download is
+  complete and verified and its archive is being unpacked. It is additive to
+  events schema v1: a consumer that ignores unknown events is unaffected.
+- **`api.download_selection(folder, on_event, cancel, only)`** is the run
+  `iemod-fetch --config FOLDER/iemod-fetch.ini --selection
+  FOLDER/selection.json` makes in FOLDER. `api.project_settings(folder)`
+  builds those settings. The project ini's values go over the defaults, and
+  its paths (target, manifest, catalogue, rules, ...) are read relative to the
+  project. The selection is what is wanted: a WeiDU log or a list named in
+  the ini is ignored. It is always a real download, never `check_only` or
+  `dry_run`.
+- **With no manifest, the community catalogue is the download source.**
+  `Settings.manifest = None` (a project ini without `manifest`) gives an
+  empty manifest, and every mod is found through lcc-docs from the data
+  cache, then trusted-owner discovery. A candidate must still contain the
+  right tp2. With neither a manifest nor a catalogue, the run stops with
+  "no download source". The command line's default `mod_downloads.json`
+  becomes optional in the same way: when that file is absent and a
+  catalogue is present, the catalogue is the source, so the wizard and the
+  command line agree in the same project. A manifest named on purpose
+  (`-m FILE`) must exist; a typo is an error, never a silent switch. (Typing
+  `-m mod_downloads.json` is the default itself, and is read the same way.)
+- **What only a plan uses** (`language_preference`, `bgee_dir`,
+  `bg2ee_dir`, `decisions`, ...) is refused without `--plan-order` only when
+  given on the command line with a value the config file does not hold. An
+  EET plan given one game folder warns that the folders were not checked.
+  The wizard's project ini holds the game folders
+  and languages for every run in the project, and a BG:EE or BG2:EE project
+  names one folder. Before this, every command-line run in a wizard project,
+  and the wizard's own download, stopped on them. The download clears them,
+  and the ini's `all_manifest_entries` and `only`: the selection is what is
+  fetched.
+- **A multi-tp2 catalogue record is found by each of its tp2s.** When several
+  records share a tp2, the one whose repository is named after the mod wins
+  (EET over EET_Android).
+- **Nothing starts until the player clicks Download**, because it uses the
+  network and the disk.
+  - **Cancel** stops the downloads at their next chunk; what finished stays.
+  - **Running again resumes**: a mod already there and verified is skipped.
+  - **"Retry the failed"** runs `only` those mods.
+  - **Next** is enabled once every mod is done or already there.
+  - **Back** is locked while a download runs.
+  - A **new selection** starts the phase again; a mod added since was never
+    downloaded.
+- **The run's events** come from its worker threads. They reach the page
+  through a queued Qt signal, and each mod's byte count at most ten times a
+  second, so a fast network cannot flood the window. Quitting cancels a
+  running download before the application waits for its threads.
+
+### Consequences
+
+- The wizard and the command line fetch the same mods from the same sources
+  into the same folder. Stopping in one and carrying on in the other works,
+  because the state is the target folder.
+- Measured on the supplied 145-mod EET WeiDU.log against lcc-docs alone
+  (2026-10-22):
+  - 138 mods have a candidate: 114 a GitHub repository, 1 a direct archive
+    link, 23 only a landing page.
+  - 7 have none. Their WeiDU folder is named otherwise in lcc-docs
+    (`questpack` / `d0questpack`, `Reflections` / `Reflections_of_Destiny`,
+    a typo `Brislelick`), or their record carries no URL.
+  - Before the multi-tp2 fix, EET was among the misses.
+  - The supplied manifest covers 135.
+  - How many candidates hold the right mod can only be measured by
+    downloading them. That needs the GitHub API and the mod sites, which a
+    session sandbox cannot reach: its proxy refuses every repository the
+    session was not given, and the forum hosts. `download-sources.yml` makes
+    the measurement on GitHub's runners. Its first run (2026-10-22):
+    - **catalogue only**: 135 of 145 mods resolved to a candidate (86 a
+      release asset, 28 a branch snapshot, 20 a landing-page link, 1 a
+      direct archive); 10 not: 5 that lcc-docs names otherwise, 2 records
+      with no URL, 3 landing pages that answer 403 to a script
+      (gibberlings3.net, shsforums.net, nexusmods.com);
+    - **with the manifest**: 139 of 145;
+    - **20 real downloads** of the catalogue's candidates: 14 installed, each
+      archive holding the tp2 it must; 4 were over the run's 300 MB cap
+      (BGGO, Autumn's Twilight, Classic Movies, Aura: big, not wrong); 2
+      failed because downloads.weaselmods.net answered its download link with
+      an HTML page, not the archive. About 20 of the log's mods are
+      WeaselMods'; that is the next defect to fix, with the manifest too.
+  - Measuring in the sandbox anyway found three defects, fixed here: a mod
+    the catalogue could not resolve said only "entry has no url and no
+    github repository"; a link typed with accents crashed the mod; a bare
+    403 was called a rate limit.
+- Landing pages are the weakest source: a scrape can find no archive. Those
+  mods come back as "No download found", which the player can retry or fix
+  with a manifest entry.
+- `--list-mods` now lists EET, EET_end and EET_gui separately. Before, they
+  appeared as one key that no tp2 had.

@@ -118,6 +118,35 @@ def _release(exc: urllib.error.HTTPError) -> None:
         exc.close()
 
 
+def ascii_url(url: str) -> str:
+    """
+    `url` as http.client can send it. A catalogue may hold a link as a person
+    typed it (`.../BG2_Mes_créations`); http.client refuses non-ASCII and the
+    mod failed with an internal error before its other sources were tried. The
+    host is IDNA-encoded, the rest percent-encoded; what is already encoded
+    stays as it is.
+    """
+    if url.isascii():
+        return url
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        host = urllib.parse.quote(host, safe="")
+    netloc = host + (f":{parts.port}" if parts.port else "")
+    if parts.username:
+        user = urllib.parse.quote(parts.username, safe="")
+        if parts.password:
+            user += ":" + urllib.parse.quote(parts.password, safe="")
+        netloc = f"{user}@{netloc}"
+    keep = "/%:@!$&'()*+,;=~-._"
+    return urllib.parse.urlunsplit((
+        parts.scheme, netloc, urllib.parse.quote(parts.path, safe=keep),
+        urllib.parse.quote(parts.query, safe=keep + "?"),
+        urllib.parse.quote(parts.fragment, safe=keep + "?")))
+
+
 class HttpClient:
     def __init__(self, token: Optional[str] = None, allow_http: bool = False,
                  timeout: int = DEFAULT_TIMEOUT, max_bytes: int = DEFAULT_MAX_BYTES,
@@ -156,6 +185,7 @@ class HttpClient:
     # -- transport ---------------------------------------------------------
     def open(self, url: str, method: str = "GET", extra_headers: Optional[dict] = None):
         self.check_url(url)
+        url = ascii_url(url)
         headers = self.headers_for(url)
         headers.update(extra_headers or {})
         req = urllib.request.Request(url, headers=headers, method=method)

@@ -14,6 +14,8 @@
     {"properties": {"event": {"const": "download_progress"}, "folder": {"type": "string"},
                     "bytes": {"type": "integer"}, "total": {"type": ["integer", "null"]}},
      "required": ["folder", "bytes", "total"]},
+    {"properties": {"event": {"const": "mod_extracting"}, "folder": {"type": "string"}},
+     "required": ["folder"]},
     {"properties": {"event": {"const": "mod_finished"}, "folder": {"type": "string"},
                     "status": {"enum": ["ok", "skipped", "planned", "manual", "conflict",
                                         "failed", "cancelled"]},

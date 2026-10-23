@@ -110,7 +110,8 @@ def build_parser() -> argparse.ArgumentParser:
                           "mods already installed)")
     out.add_argument("--events", metavar="PATH",
                      help="write progress as JSON lines (schema 1: run_started, "
-                          "mod_started, download_progress, mod_finished, "
+                          "mod_started, download_progress, mod_extracting, "
+                          "mod_finished, "
                           "run_finished) for a UI or a log collector; '-' for "
                           "stdout, best with -q")
     out.add_argument("--list-mods", metavar="PATH",

@@ -208,38 +208,47 @@ class SupplementaryCatalogue:
             if not tp2 or tp2.lower() == "non-weidu":
                 catalogue.skipped += 1
                 continue
-            folder = tp2.replace("\\", "/").split("/")[0]
-            key = normalize_key(folder)
-            if not key:
+            # One mod may ship several tp2s, listed `EET;EET_end;EET_gui`: each
+            # is findable by its own name (read as one, EET was never found).
+            folders = [part.replace("\\", "/").split("/")[0].strip()
+                       for part in tp2.split(";")]
+            # a tp2 listed twice in one record is one entry
+            folders = list({normalize_key(f): f for f in reversed(folders)
+                            if normalize_key(f)}.values())[::-1]
+            if not folders:
                 catalogue.skipped += 1
                 continue
-
-            urls = item.get("urls") or []
-            entry = CatalogueEntry(
-                tp2=folder,
-                name=str(item.get("name") or folder),
-                urls=tuple(u for u in urls if isinstance(u, str)),
-                safe=item.get("safe") if isinstance(item.get("safe"), int) else None,
-                status=tuple(s for s in (item.get("status") or []) if isinstance(s, str)),
-                last_update=item.get("last_update") or None,
-                games=tuple(g for g in (item.get("games") or []) if isinstance(g, str)),
-                categories=tuple(c for c in (item.get("categories") or [])
-                                 if isinstance(c, str)),
-                embedded_in=(item.get("embedded_in")
-                             if isinstance(item.get("embedded_in"), int) else None),
-                requires=tuple((item.get("compatibilities") or {}).get("requires") or ()),
-                conflicts=tuple((item.get("compatibilities") or {}).get("conflicts") or ()),
-                origin=name,
-            )
-            catalogue.by_key.setdefault(key, []).append(entry)
-            # A mod is also findable by the repository it lives in, which is how
-            # an entry gets found when neither the WeiDU folder nor the manifest
-            # key matches its catalogue tp2.
-            for url in entry.urls:
-                repo = repo_from_url(url)
-                if repo:
-                    catalogue.by_repo.setdefault(repo.lower(), entry)
+            for folder in folders:
+                catalogue._add(item, folder, name)
         return catalogue
+
+    def _add(self, item: dict, folder: str, name: str) -> None:
+        """One tp2 of a catalogue record, findable by its name and by its repository."""
+        urls = item.get("urls") or []
+        entry = CatalogueEntry(
+            tp2=folder,
+            name=str(item.get("name") or folder),
+            urls=tuple(u for u in urls if isinstance(u, str)),
+            safe=item.get("safe") if isinstance(item.get("safe"), int) else None,
+            status=tuple(s for s in (item.get("status") or []) if isinstance(s, str)),
+            last_update=item.get("last_update") or None,
+            games=tuple(g for g in (item.get("games") or []) if isinstance(g, str)),
+            categories=tuple(c for c in (item.get("categories") or [])
+                             if isinstance(c, str)),
+            embedded_in=(item.get("embedded_in")
+                         if isinstance(item.get("embedded_in"), int) else None),
+            requires=tuple((item.get("compatibilities") or {}).get("requires") or ()),
+            conflicts=tuple((item.get("compatibilities") or {}).get("conflicts") or ()),
+            origin=name,
+        )
+        self.by_key.setdefault(normalize_key(folder), []).append(entry)
+        # A mod is also findable by the repository it lives in, which is how
+        # an entry gets found when neither the WeiDU folder nor the manifest
+        # key matches its catalogue tp2.
+        for url in entry.urls:
+            repo = repo_from_url(url)
+            if repo:
+                self.by_repo.setdefault(repo.lower(), entry)
 
     def __len__(self) -> int:
         return sum(len(v) for v in self.by_key.values())
@@ -250,11 +259,16 @@ class SupplementaryCatalogue:
         for candidate in candidates:
             if not candidate:
                 continue
-            entries = self.by_key.get(normalize_key(candidate))
+            key = normalize_key(candidate)
+            entries = self.by_key.get(key)
             if entries:
-                # A resolvable entry beats a bare forum link.
+                # A resolvable entry beats a bare forum link, and a repository
+                # named after the mod beats one that is not (EET's own over
+                # EET_Android, which ships the same tp2s).
                 with_repo = [e for e in entries if e.github]
-                return (with_repo or entries)[0]
+                named = [e for e in with_repo
+                         if normalize_key(str(e.github).split("/", 1)[1]) == key]
+                return (named or with_repo or entries)[0]
         return None
 
     def lookup_repo(self, repo: Optional[str]) -> Optional[CatalogueEntry]:

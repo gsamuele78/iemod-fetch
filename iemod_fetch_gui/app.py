@@ -26,7 +26,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     from .pages.mods import wait_for_loaders
     from .window import MainWindow
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    app.aboutToQuit.connect(wait_for_loaders)
     window = MainWindow(os.path.abspath(args.project))
+    # A download still running is cancelled first, so the wait below is short.
+    app.aboutToQuit.connect(window.download.stop)
+    app.aboutToQuit.connect(wait_for_loaders)
     window.show()
     return int(app.exec())
