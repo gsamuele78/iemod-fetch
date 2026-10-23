@@ -47,6 +47,18 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **A newer GitHub release is offered for a copy from elsewhere, and taken on
+  request** (GUI-AUDIT M7 item 59, ADR-0039 amendment). When a mod comes from
+  an author's site or a forum post and krion64's release scan names a newer
+  release of the repository called like the mod, the run says so beside the
+  mod and in its JSON record (`newer`: version, installed, repo, date, url).
+  `--take-newer FOLDER` (repeatable; `all` for every one offered; `take_newer`
+  in the ini) installs that release over the copy on disk, kept in
+  `.backup/`; if GitHub cannot give it, the copy is left as it is. Measured:
+  Ascension from a Beamdog thread (v1.5 BETA) is offered 2.1.0 from
+  Gibberlings3/Ascension (krion64 knows it as InfinityMods/Ascension, renamed);
+  finchnpc is offered nothing, its only scanned repository being a fork
+  (RoxanneSHS/Finch v53).
 - **A game folder's backup and restore** (GUI-AUDIT M4 item 21, ADR-0042):
   `--backup GAME_DIR [--backup-to DIR]` copies `override/`, the
   `lang/*/dialog*.tlk` and the root's files with their sha256 and lists every
