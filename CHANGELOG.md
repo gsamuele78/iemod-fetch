@@ -60,6 +60,13 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A contradiction in the order rules no longer breaks rules outside it**
+  (GUI-AUDIT M7 item 42). When the sort got stuck it reported every unit left
+  as the cycle and released the first in priority even if it was not in the
+  cycle: with A and B ordered after each other and "C after A", C was placed
+  before A, and the cycle was reported as A, B, C and D. Now the real cycle is
+  found (the strongly connected part nothing else holds back), reported once,
+  and the unit released is one of its own.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
   by its first word (`www`): krion64's place for it was never found, and a
   Sorting Order line naming it ordered nothing.
