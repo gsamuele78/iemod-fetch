@@ -2486,6 +2486,33 @@ it; a wizard build on 3.15 has not been run.
   Windows (PEP 686), which a green build has to show is harmless here.
 - Bundled libraries make their security fixes ours to ship.
 
+### Amendment (2026-10-23): filelock adopted, at 3.x
+
+The defect, measured first (`tests/test_datalock.py`, fails on main): two
+refreshes of one data folder - the wizard at start and `--update-data` - shared
+the `<source>.new` staging folder. The second wiped the first's download (the
+first failed with `No such file or directory`), and the first, saving its
+manifest last, erased the entry the second had just written: the folder held
+a copy the manifest no longer named.
+
+**Decision**: `datasync.refresh` holds `filelock.FileLock(<data dir>/.lock)`
+from reading the manifest to saving it; another refresh waits up to 300 s,
+then reports every source `failed` and touches nothing. Readers take no lock:
+the copy they read is swapped in by renames. **filelock 3.32.7**, the last
+3.x (2026-09-16), not 4.x: 4.0.0 came out the next day and had twenty
+releases in its first month, so Dependabot holds the major version until
+it settles. MIT, pure Python, imports only the standard library.
+
+**Alternatives**: `fcntl.flock` and `msvcrt.locking` by hand - twenty lines,
+but two code paths to test where only one runs in CI's Linux job, and the
+Windows half (byte-range locks; `LK_LOCK` retries ten times a second apart, no timeout of one's choosing) is the part
+filelock exists to get right. Rejected for the reason this ADR adopts
+libraries at all.
+
+**Consequences**: one more library in the .pyz and the bundles (its MIT
+licence file shipped; no source offer needed, unlike MPL's). A refresh never
+blocked by another one in the same folder now can wait, at most five minutes.
+
 ---
 
 ## ADR-0044 — lcc-docs' dates as a second update signal, never as a version

@@ -25,6 +25,15 @@ it when a run starts, at most once per `max_age_hours`:
 6. what changed is recorded: counts before and after, mods added and removed,
    versions and catalogue statuses that moved. An update is never silent.
 
+The wizard and the CLI refresh the same folder, and may do so at once. A
+refresh holds `<data dir>/.lock` (filelock, ADR-0043) from reading the manifest
+to saving it, so two refreshes take turns instead of sharing one staging
+folder and saving over each other's manifest - measured: the second one wiped
+the first's download, and the manifest saved last forgot an update. The lock
+is the operating system's (flock, LockFileEx) and goes with the process that
+held it, so a crash leaves nothing to clean up. Readers do not take it: what
+they read is swapped in by renames.
+
 Offline, or when GitHub refuses, the last good copy is used and the run says
 how old it is. Nothing is bundled: the data keeps its own licence (lcc-docs and
 krion64 MIT, BWS-NG GPL-3.0), is fetched by the user's own run, and is read as
@@ -42,6 +51,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from collections.abc import Callable, Sequence
 
+from filelock import FileLock, Timeout
+
 from .atomic import write_text
 from .catalogues import CatalogueSet
 from .errors import ModFetchError
@@ -54,6 +65,8 @@ from .rules import RuleSet
 API = "https://api.github.com/repos"
 RAW = "https://raw.githubusercontent.com"
 MANIFEST = "sources.json"
+LOCK = ".lock"
+LOCK_WAIT = 300             # seconds a refresh waits for another one to finish
 MAX_FILE_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_AGE_HOURS = 24
 COLLAPSE = 0.5              # a count below half the last good one is refused
@@ -345,14 +358,31 @@ def _changes(entry: dict, metrics: dict[str, int], facts: dict[str, str]) -> dic
 
 def refresh(client, data_dir: str, sources: Sequence[Source] = SOURCES,
             max_age_hours: float = DEFAULT_MAX_AGE_HOURS, force: bool = False,
-            now: float | None = None, workers: int = 8) -> list[SyncResult]:
+            now: float | None = None, workers: int = 8,
+            wait: float = LOCK_WAIT) -> list[SyncResult]:
     """
     Bring the cache up to date; never raises for one source failing.
 
     A source that cannot be refreshed keeps its last good copy and reports
-    `failed` with the reason; the others are still refreshed.
+    `failed` with the reason; the others are still refreshed. Another refresh
+    of the same folder is waited for, up to `wait` seconds; past that every
+    source reports `failed` and keeps its last good copy.
     """
     os.makedirs(data_dir, exist_ok=True)
+    try:
+        with FileLock(os.path.join(data_dir, LOCK), timeout=wait):
+            return _refresh(client, data_dir, sources, max_age_hours, force, now, workers)
+    except Timeout:
+        manifest = load_manifest(data_dir)
+        return [SyncResult(s.name, "failed", (manifest.get(s.name) or {}).get("commit", ""),
+                           (manifest.get(s.name) or {}).get("date", ""),
+                           detail=f"another refresh of {data_dir} has not finished "
+                                  f"after {wait:g} s")
+                for s in sources]
+
+
+def _refresh(client, data_dir: str, sources: Sequence[Source], max_age_hours: float,
+             force: bool, now: float | None, workers: int) -> list[SyncResult]:
     manifest = load_manifest(data_dir)
     stamp = time.time() if now is None else now
     results = []

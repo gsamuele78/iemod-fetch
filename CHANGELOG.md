@@ -112,6 +112,13 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **Two refreshes of the community data at once no longer break each other**
+  (GUI-AUDIT M6 item 39). The wizard refreshing at start and `--update-data`
+  shared one staging folder: one failed with `No such file or directory`, and
+  the manifest saved last forgot the other's update. A refresh now holds
+  `<data dir>/.lock` (filelock 3.32.7, MIT, pinned by hash; ADR-0043
+  amendment); a second one waits up to five minutes, then keeps the last
+  good copy and says another refresh has not finished.
 - **A download link that ends on a GitHub repository's page takes that
   repository's release** (GUI-AUDIT M7 item 55). baldurs-gate.de's resource
   `/download` answers 301 to `github.com/<owner>/<repo>/releases`, an HTML

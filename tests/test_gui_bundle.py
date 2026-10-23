@@ -52,7 +52,11 @@ def test_the_folder_carries_the_licences(tmp_path, monkeypatch):
     assert (folder / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
     assert sorted(os.listdir(folder / "licenses")) == ["GPL-3.0-only.txt",
                                                        "LGPL-3.0-only.txt",
+                                                       "filelock-LICENSE",
                                                        "publicsuffixlist-LICENSE"]
+    # MIT asks for its text and notice, which the licence file is: no source offer
+    assert "MIT License" in (folder / "licenses" / "filelock-LICENSE").read_text(encoding="utf-8")
+    assert not (folder / "NOTICE-filelock.txt").exists()
     # the runtime library's own licence, MPL-2.0 (ADR-0043)
     mpl = (folder / "licenses" / "publicsuffixlist-LICENSE").read_text(encoding="utf-8")
     assert "Mozilla Public License" in mpl
