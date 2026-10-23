@@ -47,6 +47,14 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Deselect knowing who needs it** (GUI-AUDIT M5b item 34). Unticking a
+  component that chosen ones need - its own mod's `requires`, or a dependency
+  rule the last check found satisfied - asks first: untick those too, keep
+  it, or untick it alone. **Resolve for this component** chooses its missing
+  prerequisites (one alternative of an "any one of", never every target)
+  and then keeps it against the error incompatibilities naming it; warnings
+  stay the player's, and nothing is done before the player confirms.
+  `api.selection_conflicts` gives `needs`, the dependencies satisfied now.
 - **The order page's row panel, and "Ignore..."** (GUI-AUDIT M5b item 33).
   Under the list, every order rule on the selected row: what it must come
   after or before, the rule as written, its source - red where broken,

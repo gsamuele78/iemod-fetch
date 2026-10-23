@@ -62,7 +62,7 @@ from . import bio, choices, limits, pi, premeta, sortorder
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
-from .rules import ORDER, Context, Install, RuleSet, check_all, load_suppressions
+from .rules import DEPENDS, ORDER, Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
 from .selection import Install as SelectionInstall
 from .selection import one_line_label, tp2_problem
@@ -906,7 +906,8 @@ def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
     Returns {"findings": [...], "stale": [decided ids no finding has; none
     when no rule was checked],
     "rules_checked": n, "planned": bool, "problem": None or why decisions.json
-    could not be read}.
+    could not be read, "needs": the dependencies the selection satisfies now,
+    [{"chosen": [[tp2, n]], "on": [[[tp2, n]] per alternative], "rule"}]}.
 
     Each mod's own metadata ini (Before/After) is used for the mods not staged
     yet when it is in the data cache; `fetch_metadata` fetches the missing ones
@@ -919,8 +920,9 @@ def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
                              decided) as (settings, analysis, ruleset, plan):
         # Named by role even with no plan: the ids are then the ones a planned
         # run gives, so a decision saved now still matches once there is one.
-        report = build_conflict_report(_judged_installs(settings, analysis, True),
-                                       ruleset, analysis.context, plan)
+        installs = _judged_installs(settings, analysis, True)
+        report = build_conflict_report(installs, ruleset, analysis.context, plan)
+        needs = _needs(installs, ruleset, analysis.context, chosen)
     findings = []
     for finding in report.findings:
         entry = finding.as_dict()
@@ -944,7 +946,37 @@ def selection_conflicts(game: str, chosen: Sequence[tuple[str, int]],
     stale = (sorted((set(decided["choose"]) | set(decided["accept"])) - known)
              if report.rules_checked else [])
     return {"findings": findings, "stale": stale, "rules_checked": report.rules_checked,
-            "planned": plan is not None, "problem": decided["problem"]}
+            "planned": plan is not None, "problem": decided["problem"], "needs": needs}
+
+
+def _needs(installs, ruleset, context, chosen) -> list[dict]:
+    """
+    Every dependency rule the selection satisfies now, as chosen pairs: the
+    components that need (`chosen`) and, per alternative, what they need
+    (`on`) - so unticking a component tells at once who is left without what
+    it needs (GUI-AUDIT M5b item 34). A rule already broken is a finding.
+    """
+    include_optional = bool(context and context.include_optional)
+    out = []
+    for install in installs:
+        for rule in ruleset.rules:
+            if rule.kind != DEPENDS or (rule.optional and not include_optional):
+                continue
+            hit = install.matched(rule.left)
+            if not hit:
+                continue
+            alternatives = []
+            for spec in rule.right:
+                met = install.matched(spec)
+                if met:
+                    alternatives.append(_covered(spec.mod, sorted(met), False, chosen))
+            alternatives = [a for a in alternatives if a]
+            needing = _covered(rule.left.mod, sorted(hit), False, chosen)
+            if alternatives and needing:
+                out.append({"chosen": needing, "on": alternatives,
+                            "rule": f"{rule.left} needs "
+                                    + " or ".join(str(spec) for spec in rule.right)})
+    return out
 
 
 @contextlib.contextmanager

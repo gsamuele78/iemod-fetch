@@ -198,3 +198,52 @@ def test_two_pre_eet_logs_are_refused_not_merged(tmp_path):
     with pytest.raises(ConfigError, match="more than one log is not the EET install"):
         api._log_roles([os.path.join(MOCK, "WeiDU.log") + ":EET",
                         os.path.join(MOCK, "WeiDU-BGEE.log") + ":BGEE", f"{second}:BGEE"])
+
+
+# ------------------------------- who needs what (GUI-AUDIT M5b item 34)
+def test_the_check_lists_the_dependencies_the_selection_satisfies(tmp_path):
+    needs = conflicts(tmp_path)["needs"]
+    # EET_end's own tp2 requires the EET core, which is chosen
+    assert {"chosen": [["EET_end/EET_end.tp2", 0]], "on": [[["eet/EET.tp2", 0]]],
+            "rule": "eetend(0) needs eet(0)"} in needs
+
+
+def test_any_one_of_lists_each_alternative_the_selection_has(tmp_path):
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "dependencies.json").write_text(json.dumps({"rules": [
+        {"rule": "ascension(-):ub(-)|stratagems(-)|notchosen(-)", "severity": "error"}]}))
+    result = api.selection_conflicts("EET", CHOSEN, folder=str(tmp_path),
+                                     rules=RULES + [str(rules)], order_catalogue=KRION,
+                                     target=os.path.join(MOCK, "Mods"),
+                                     data_dir=str(tmp_path / "no-cache"))
+    need = next(n for n in result["needs"] if n["rule"].startswith("ascension"))
+    assert need["chosen"] == [["ascension/Ascension.tp2", 0]]
+    # an alternative not chosen is not listed; each chosen one is, whole
+    assert [sorted({tuple(p)[0] for p in alt}) for alt in need["on"]] == [
+        ["ub/setup-ub.tp2"], ["stratagems/setup-stratagems.tp2"]]
+
+
+def test_a_dependency_already_broken_is_a_finding_not_a_need(tmp_path):
+    without = [key for key in CHOSEN if not key[0].lower().startswith("eet/")]
+    result = conflicts(tmp_path, chosen=without)
+    assert not any(n["rule"] == "eetend(0) needs eet(0)" for n in result["needs"])
+    assert any(f["kind"] == "depends" for f in result["findings"])
+
+
+def test_an_optional_dependency_is_a_need_only_when_optional_ones_count():
+    """Review of #81: a soft dependency ("can also integrate with") is no
+    reason to ask before unticking - unless optional ones are reported."""
+    from iemod_fetch.rules import DEPENDS, Context, Install, ModSpec, Rule, RuleSet
+    install = Install(components={"addon": {0}, "base": {0}})
+    rule = Rule(DEPENDS, ModSpec("addon", "addon", frozenset({0})),
+                (ModSpec("base", "base", None),), optional=True)
+    hard = Rule(DEPENDS, ModSpec("addon", "addon", frozenset({0})),
+                (ModSpec("base", "base", frozenset({0})),))
+    chosen = [("addon/addon.tp2", 0), ("base/base.tp2", 0)]
+    assert api._needs([install], RuleSet(rules=[rule]), Context(), chosen) == []
+    with_optional = api._needs([install], RuleSet(rules=[rule]),
+                               Context(include_optional=True), chosen)
+    assert [n["chosen"] for n in with_optional] == [[["addon/addon.tp2", 0]]]
+    assert api._needs([install], RuleSet(rules=[hard]), Context(), chosen)[0]["on"] == [
+        [["base/base.tp2", 0]]]
