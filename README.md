@@ -542,9 +542,10 @@ $ python3 iemod-fetch.pyz --update-data
 
 `--no-update-data` stays offline, `--no-default-data` uses only the flags,
 `--data-dir` moves the cache. The wizard and the CLI share it: a refresh
-holds `<data dir>/.lock`, and a second one waits for the first (up to five
-minutes, then it keeps the last good copy and says so). The lock goes with
-the program that held it, so a crash leaves nothing to clean up. The pinned WeiDU and mod_installer used by the
+with something to do holds `<data dir>/.lock`. While another program holds
+it, `--update-data` waits (up to five minutes) and an ordinary run goes on at
+once with the last good copy, saying so. The lock goes with the program that
+held it. The pinned WeiDU and mod_installer used by the
 test suite are watched the same way, weekly, by `upstream-versions.yml`.
 
 GitHub's answers (each mod's latest release, the data's HEAD) are kept beside

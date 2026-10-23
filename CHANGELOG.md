@@ -117,8 +117,10 @@ Python API, which is internal.
   shared one staging folder: one failed with `No such file or directory`, and
   the manifest saved last forgot the other's update. A refresh now holds
   `<data dir>/.lock` (filelock 3.32.7, MIT, pinned by hash; ADR-0043
-  amendment); a second one waits up to five minutes, then keeps the last
-  good copy and says another refresh has not finished.
+  amendment) when it has something to do. Meanwhile `--update-data` waits up
+  to five minutes; an ordinary run uses the last good copy at once and says
+  another program is refreshing it; a run whose data is fresh is not
+  affected.
 - **A download link that ends on a GitHub repository's page takes that
   repository's release** (GUI-AUDIT M7 item 55). baldurs-gate.de's resource
   `/download` answers 301 to `github.com/<owner>/<repo>/releases`, an HTML

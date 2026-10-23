@@ -118,7 +118,7 @@ def test_the_archive_carries_its_runtime_libraries_and_uses_them(pyz, tmp_path):
             "from iemod_fetch.net import same_site; "
             "print(same_site('https://a.github.io/', 'https://b.github.io/')); "
             "from iemod_fetch.datasync import refresh; "
-            "print(refresh(None, sys.argv[2], ())); "
+            "print(refresh(None, sys.argv[2], (), force=True)); "
             "print(sys.modules['filelock'].__file__)")
     out = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(pyz),
                           str(tmp_path / "data")],
