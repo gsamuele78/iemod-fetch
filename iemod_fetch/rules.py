@@ -711,6 +711,8 @@ def check(install: Install, ruleset: RuleSet,
 
 # The player's own Sorting Order file (sortorder.py): outranks every other order.
 SORTING_ORDER = "SortingOrder"
+# The order rules the player's "keep both" decisions make (resolution.py, item 28).
+DECIDED_ORDER = "decisions.json"
 
 
 def _applicable(ruleset: RuleSet, context: Context) -> list[Rule]:
@@ -721,13 +723,14 @@ def _applicable(ruleset: RuleSet, context: Context) -> list[Rule]:
     cannot be stale about itself. When a developer fixes an ordering problem and
     updates the ini, that correction arrives with the next download - which is
     the only self-updating channel available here. The player's own Sorting
-    Order is not a community rule: it stays, and a contradiction is reported.
+    Order and "keep both" decisions are not community rules: they stay, and a
+    contradiction is reported (review of #72).
     """
     if not context.mods_with_own_ini:
         return ruleset.rules
     return [rule for rule in ruleset.rules
             if not (rule.kind == ORDER
-                    and rule.origin not in ("mod ini", SORTING_ORDER)
+                    and rule.origin not in ("mod ini", SORTING_ORDER, DECIDED_ORDER)
                     and rule.left.mod in context.mods_with_own_ini)]
 
 

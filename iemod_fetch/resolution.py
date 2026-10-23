@@ -29,12 +29,12 @@ from dataclasses import dataclass, field, replace
 from collections.abc import Set
 
 from .contract import SCHEMA_VERSION
-from .conflicts import (DESELECT, INSTALL, SUBCOMPONENT_ORIGIN, ConflictReport,
-                        Finding, Side)
+from .conflicts import (DESELECT, INSTALL, KEEP_BOTH, SUBCOMPONENT_ORIGIN,
+                        ConflictReport, Finding, Side, finding_options)
 from .decisions import Decisions
 from .errors import ConfigError
 from .naming import normalize_key
-from .rules import INCOMPATIBLE, RuleSet
+from .rules import DECIDED_ORDER, INCOMPATIBLE, ORDER, ModSpec, Rule, RuleSet
 
 
 @dataclass
@@ -195,10 +195,37 @@ def apply_decisions(plan, report: ConflictReport, decisions: Decisions,
             continue
         finding = by_id[finding_id]
         option = next((o for o in finding.options if o.id(finding_id) == option_id), None)
+        if option is None and finding.last_blocked and any(
+                o.id(finding_id) == option_id
+                for o in finding_options(replace(finding, last_blocked=()))):
+            # A "keep both" this way round is not offered: a rule says the
+            # other side goes first, or must not coexist (review of #72).
+            result.left_for_operator.append(Unresolved(
+                finding.log, _describe(finding),
+                "the \"keep both\" order you chose is not offered: a rule puts "
+                + ", ".join(finding.last_blocked) + " first or forbids the pair",
+                finding_id=finding_id))
+            continue
         if option is None:
             raise ConfigError(f"decisions: {option_id} is not an option of {finding_id}; "
                               f"its options are "
                               f"{[o.id(finding_id) for o in finding.options]}")
+        if option.action == KEEP_BOTH:
+            # The order rule keep_both_rules made placed it - unless the plan
+            # could not keep it (a cycle with other rules): then it is the
+            # player's again, never recorded as settled (review of #72).
+            pair = {finding.left.key, finding.right.key if finding.right else ""}
+            broken = next((v for v in plan.residual if v.rule is not None
+                           and v.rule.origin == DECIDED_ORDER and set(v.mods) == pair), None)
+            if broken is not None:
+                result.left_for_operator.append(Unresolved(
+                    finding.log, _describe(finding),
+                    f"you chose to {option.description}, but the plan could not keep "
+                    f"that order: {broken.summary}", finding_id=finding_id))
+            else:
+                result.accepted.append(Accepted(finding.log, _describe(finding),
+                                                option.description, finding_id))
+            continue
         if option.action == INSTALL:
             result.left_for_operator.append(Unresolved(
                 finding.log, _describe(finding),
@@ -448,3 +475,33 @@ def resolve_refusals(plan, constraints, games=None, ruleset=None,
     if ruleset is not None:
         plan.reverify(ruleset, context)
     return result
+
+
+def keep_both_rules(report: ConflictReport, decisions: Decisions) -> list[Rule]:
+    """
+    The order rules the player's "keep both" choices make (GUI-AUDIT item 28,
+    ADR-0033 amendment): the side chosen to win installs after the other,
+    component for component as the finding names them. Plan with these on top
+    of the rule set, then apply the decisions to the plan as before; a choice
+    whose finding is gone makes no rule.
+    """
+    by_id = {finding.id: finding for finding in report.findings}
+    rules = []
+    for finding_id, option_id in sorted(decisions.choose.items()):
+        finding = by_id.get(finding_id)
+        if finding is None or finding.right is None:
+            continue
+        option = next((o for o in finding.options if o.id(finding_id) == option_id), None)
+        if option is None or option.action != KEEP_BOTH:
+            continue
+        first, last = ((finding.left, finding.right) if finding.left.key == option.before
+                       else (finding.right, finding.left))
+        rules.append(Rule(kind=ORDER, left=_spec(last), right=(_spec(first),),
+                          direction="after", origin=DECIDED_ORDER, severity="warning",
+                          message=f"your decision: {option.description}"))
+    return rules
+
+
+def _spec(side: Side) -> ModSpec:
+    numbers = frozenset(n for n, _label in side.components)
+    return ModSpec(side.key, side.mod, None if side.whole_mod or not numbers else numbers)

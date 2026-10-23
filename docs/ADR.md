@@ -1536,6 +1536,50 @@ run. A reorder is not offered as a decision on a finding the plan could not
 settle: `--decisions` applies a reorder only by sorting, which already failed
 for it, so recording it would mark the finding settled and change nothing.
 
+**Amended 2026-10-23 (GUI-AUDIT item 28, the owner's decision): keep both,
+one installed last.** Two components that touch the same thing, where no rule
+says they must not coexist, had only "deselect one side". An incompatibility
+graded below `error` - krion64's partial and soft conflicts, its overlap
+advisories, BWS-NG's warnings - now also offers, each way round, "keep both,
+X installed last (its changes win)" (`conflicts.KEEP_BOTH`; the schema's
+action enum gains `keep-both`). Never for an `error`: a hard incompatibility
+is not an overwrite an order can settle. Never between components of one mod.
+
+Context: `--decisions` applied a choice only by removing components; an
+order chosen by the player had nowhere to go, because a run plans before it
+reads the decisions. Decision: a chosen "keep both" becomes an order rule
+(`resolution.keep_both_rules`, origin `decisions.json`): the winner after the
+loser, component for component as the finding names them. The run plans,
+builds the conflict report, turns the chosen options into rules, plans again
+with them on top of the rule set (`api._plan_with_decided_order`), and only
+then applies the rest of the decisions; finding ids do not depend on the
+order, so they still match. The finding is then recorded as accepted, with
+the option's own words as the reason, and is no longer outstanding. The
+wizard does the same: `selection_plan` and `selection_conflicts` read the
+project's `decisions.json`.
+
+Not offered both ways where a rule already says which way (review of #72):
+a tp2's one-sided FORBID_COMPONENT makes an error order rule and a warning
+incompatibility, so only the forbidden side may go last; and a pair an error
+incompatibility also covers (BWS-NG hard where krion64 is soft) is not an
+overwrite to order, so it offers none. A decision for a way round that is
+not offered goes back to the player with the reason.
+
+Consequences: a "keep both" that contradicts another rule is not hidden -
+the plan reports the contradiction (a cycle, or a rule it could not keep),
+and a kept order the plan could not keep is left to the player, never
+recorded as accepted. The decided rules are the player's, like the Sorting
+Order: a mod's own ini does not set them aside. Not every incompatibility
+below error is an overwrite (stacked experience, a script bug); "its changes
+win" is then only the order, which is the player's to judge - and two
+decisions are not checked against each other. A command-line run applies
+them with `--decisions`; the project's ini does not name the file. The rule is re-made every run from the
+current findings; a decision whose finding is gone makes no rule and is
+reported stale, as before. What "its changes win" means is WeiDU's own
+semantics - the later install's copy of a shared file stays - not a merge;
+whether that is what the player wants is theirs to judge, which is why it is
+an option and never a recommendation.
+
 ---
 
 ## ADR-0034 — Engine limits are checked against primary sources, and warned on, never blocked
