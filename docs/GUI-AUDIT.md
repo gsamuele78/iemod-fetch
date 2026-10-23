@@ -192,6 +192,30 @@ run can be stopped and resumed, or finished from the command line.
 | M3 | A pytest-qt test, run offscreen on Windows, Linux and macOS, goes through phases 1-5 on a fixture EET selection: picks components, resolves a conflict, reorders, downloads from a local fixture server, cancels and resumes.<br>The `selection.json` it saves is byte-identical to the CLI's for the same choices.<br>The window never blocks for more than 100 ms during a download.<br>The `.pyz` stays standard-library only, and the PyInstaller build starts on all three OSes. |
 | M4 | The mock EET plan installs end to end from the GUI on Windows and Linux runners with the real WeiDU and mod_installer.<br>Cancelling mid-install, then resuming, finishes with the same WeiDU.log as an uninterrupted run.<br>A prompt without a recorded answer stops and asks; it is never answered by guess.<br>Restoring the backup gives back the game folder as it was. |
 
+**M3 so far.** `tests/gui/test_m3_end_to_end.py` drives the real main window,
+offscreen, through phases 1-4 on a fixture EET selection: the project's ini,
+components chosen and a conflict resolved, a mod reordered, then the real
+download from a loopback `http.server`, cancelled while a mod is still
+arriving (the page says so, nothing half-installed is in the target) and
+resumed (only what was not done is fetched again). The catalogue, the
+conflict check and the planner are injected there - the real ones fetch
+community data - and tested against the command line on their own. Phase 5 is installation
+now (item 18), so it belongs to M4. What each criterion stands at:
+
+- Phases 1-4 offscreen: CI's GUI job runs it on Linux and Windows (a gate),
+  and `macos.yml`'s GUI job on macOS (informational, as all of macOS is since
+  its runners stopped starting on 2026-10-21).
+- `selection.json` byte-identical to `api.save_selection`'s for the same
+  choices: **met** (asserted in the same run).
+- Never blocked for 100 ms during a download: **met on Linux** - the longest
+  gap of a 10 ms timer during both downloads is 11-16 ms, 32 ms with every
+  core busy; the same assertion holds on every OS CI runs it on.
+- The `.pyz` standard-library only: kept by the `stdlib-only` CI job.
+- The PyInstaller build starts on all three OSes: **met** (item 20,
+  ADR-0040). In #42's CI the Linux and Windows bundles were built, unzipped
+  and started with `--check` by the release rehearsal, and the macOS one by
+  `release-macos.yml`'s.
+
 Gates that apply throughout: pytest, ruff, mypy, import-linter, bandit,
 actionlint, zizmor, and the real-WeiDU job. A UI change is the same pull
 request process as any other.

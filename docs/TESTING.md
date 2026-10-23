@@ -124,6 +124,20 @@ because the double was written to raise `IncompleteRead`.
 Borrowed from the download tests of Born2BSalty's Infinity Orchestrator, which
 serve fixtures over a loopback TCP listener for the same reason.
 
+**The wizard end to end.** `tests/gui/test_m3_end_to_end.py` is the M3
+validation run: the real main window, offscreen, through phases 1-4 on a
+fixture EET selection - the project's ini saved, components chosen and a
+conflict resolved, `selection.json` compared byte for byte with what
+`api.save_selection` writes for the same choices, a mod dragged, then the real
+`api.download_selection` and `HttpClient` against a loopback `http.server`.
+One mod trickles in as a slow mirror does; the player cancels it, the page
+says so and the target holds only the mods that finished; Download again
+fetches only the rest. A 10 ms timer measures the event loop during both
+downloads and the test fails on a gap of 100 ms or more (11-16 ms on Linux,
+32 ms with every core busy). The catalogue, the conflict check and the planner
+are injected (the real ones fetch community data), and a socket guard fails
+the test on any connection but to 127.0.0.1.
+
 **Against the real GitHub.** Two workflows go further and ask GitHub itself,
 because a double of a third-party API is only what its author believes it
 does. `community-data.yml` refreshes the three community sources from nothing.
@@ -338,7 +352,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,254 collected (7 run the real WeiDU, 78 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,255 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 58 modules |

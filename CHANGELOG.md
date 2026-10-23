@@ -55,6 +55,15 @@ Python API, which is internal.
   the fetch and weekly. A repository gone, or one repository's own error,
   fails it; only a quota or network failure is inconclusive.
 
+- **The M3 validation test** (`tests/gui/test_m3_end_to_end.py`): the real
+  main window, offscreen, from the game folders to every mod downloaded on a
+  fixture EET selection - a conflict resolved, a mod reordered, the
+  `selection.json` byte-identical to the command line's, the real download
+  from a loopback mirror cancelled mid-file (nothing half-installed) and
+  resumed (only the rest fetched again), the event loop never held for
+  100 ms, no connection but loopback. The wizard's tests now run on macOS
+  too, informational like the rest of `macos.yml`.
+
 ### Fixed
 - **WeaselMods downloads** (about 20 mods of an EET build). Its package pages
   draw the download button by script, so no link on the page was the file:
