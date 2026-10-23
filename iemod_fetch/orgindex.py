@@ -19,6 +19,7 @@ register in. This is a different mechanism with a different trust boundary:
 Name similarity narrows the field. Owner allowlist plus tp2 verification is
 what makes it safe.
 """
+import contextlib
 import json
 import os
 import time
@@ -27,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from collections.abc import Sequence
 
+from .atomic import write_text
 from .errors import ModFetchError
 from .naming import normalize_key
 from .plan import _strip_prefix
@@ -120,15 +122,8 @@ class OwnerIndex:
                    "owners": {(repos[0].owner if repos else owner):
                               [r.name for r in repos]
                               for owner, repos in self._repos.items()}}
-        try:
-            os.makedirs(os.path.dirname(os.path.abspath(self.cache_path)) or ".",
-                        exist_ok=True)
-            tmp = self.cache_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh)
-            os.replace(tmp, self.cache_path)
-        except OSError:
-            pass                       # a cold cache is slow, not wrong
+        with contextlib.suppress(OSError):   # a cold cache is slow, not wrong
+            write_text(self.cache_path, json.dumps(payload))
 
     # ------------------------------------------------------------ fetching
     def repos_for(self, owner: str) -> list[RepoRef]:

@@ -82,6 +82,17 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **Every saved file goes through one atomic write** (GUI-AUDIT M7 item 46).
+  Eight places wrote `<file>.tmp` and renamed it over the file: one temp
+  name for every writer, so two runs saving the same state, report or cache
+  wrote into the same temp, and five of them left it behind when the write
+  failed. `iemod_fetch.atomic.write_text` gives each write a temp of its own,
+  removes it on failure and keeps the file's permissions (a new file is
+  readable by its owner only, as the config already was); the install state
+  is still flushed to disk, now its folder too on Linux and macOS. The
+  `--conflict-report` file, written in place before, goes through it too. A
+  missing parent folder of the report, the config or the data manifest is
+  now created, as it already was for the others.
 - **A wrong catalogue download no longer hides the catalogue's other sources**
   (GUI-AUDIT M7 item 54). With the catalogue alone (`-m ''`), lcc-docs' direct
   links go first, and for 8 of the 145 mods of an EET log that link is a

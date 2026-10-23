@@ -11,11 +11,11 @@ A pinned manifest is not a different format: it is the same
 so it stays readable by anything that reads the original.
 """
 import json
-import os
 import posixpath
 import time
 import urllib.parse
 
+from .atomic import write_text
 from .errors import ManifestError
 from .manifest import KNOWN_FIELDS, Manifest
 from .report import Record, Status
@@ -109,9 +109,4 @@ def build_pinned_manifest(manifest: Manifest, records: list[Record],
 
 
 def write_pinned_manifest(path: str, payload: dict) -> None:
-    tmp = path + ".tmp"
-    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    os.replace(tmp, path)
+    write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")

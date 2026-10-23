@@ -42,6 +42,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from collections.abc import Callable, Sequence
 
+from .atomic import write_text
 from .catalogues import CatalogueSet
 from .errors import ModFetchError
 from .freshness import parse_release_cache
@@ -178,10 +179,7 @@ def load_manifest(data_dir: str) -> dict[str, dict]:
 
 def _save_manifest(data_dir: str, manifest: dict[str, dict]) -> None:
     path = os.path.join(data_dir, MANIFEST)
-    with open(path + ".tmp", "w", encoding="utf-8") as fh:
-        json.dump(manifest, fh, indent=2, sort_keys=True)
-        fh.write("\n")
-    os.replace(path + ".tmp", path)
+    write_text(path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
 
 def _wanted(source: Source, path: str) -> bool:

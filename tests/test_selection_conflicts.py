@@ -176,7 +176,7 @@ def test_decisions_are_saved_whole_and_read_back(tmp_path):
     assert api.load_decisions(str(tmp_path)) == {
         "choose": {"conflict-a": "option-b"}, "accept": {"conflict-c": "why"},
         "problem": None}
-    assert not (tmp_path / (api.DECISIONS_FILE + ".tmp")).exists()
+    assert not [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
 
 
 @pytest.mark.parametrize("choose, accept", [({"x": "option-b"}, {}),

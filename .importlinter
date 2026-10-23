@@ -177,6 +177,7 @@ source_modules =
     iemod_fetch_gui
 forbidden_modules =
     iemod_fetch.archives
+    iemod_fetch.atomic
     iemod_fetch.auth
     iemod_fetch.available
     iemod_fetch.bio
