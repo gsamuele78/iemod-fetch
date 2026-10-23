@@ -11,7 +11,7 @@ One folder, not one file: Qt is LGPL-3.0, and its libraries stay separate
 files beside the program, which a user may replace with their own build of
 Qt (LGPL-3.0 section 4). The folder carries this project's licence, the LGPL
 and GPL texts and NOTICE-Qt.txt, which says where Qt's and PySide6's source
-is. The command-line `.pyz` stays standard-library only; this is the wizard.
+is. The command line has its own bundle, built the same way: cli_bundle.py.
 
 The zip is unpacked again and the program in it started with --check
 (offscreen): a build, or a zip, that cannot open its window fails here, not on
@@ -94,22 +94,27 @@ def build(work: str) -> str:
             "--paths", ROOT]
     for module in EXCLUDE:
         args += ["--exclude-module", module]
-    # the runtime's libraries (ADR-0043) with their data and metadata: the
-    # Public Suffix List is a data file PyInstaller does not see by itself;
-    # the pinned version, as build.py checks for the .pyz
-    for name, pinned in RUNTIME_PINS.items():
-        installed = importlib.metadata.version(name)
-        if installed != pinned:
-            raise SystemExit(f"{name} {installed} is installed, requirements/runtime.txt "
-                             f"pins {pinned}")
-    for name in RUNTIME:
-        args += ["--collect-data", name, "--copy-metadata", name]
+    args += runtime_args()
     subprocess.run(args + [entry], check=True, cwd=work)
     folder = os.path.join(work, "out", NAME)
     if platform.system() == "Darwin" and os.path.isdir(os.path.join(work, "out",
                                                                      NAME + ".app")):
         folder = os.path.join(work, "out", NAME + ".app")
     return folder
+
+
+def runtime_args() -> list[str]:
+    """The runtime's libraries (ADR-0043) with their data and metadata: the
+    Public Suffix List is a data file PyInstaller does not see by itself. The
+    pinned version, as build.py checks for the .pyz."""
+    args = []
+    for name, pinned in RUNTIME_PINS.items():
+        installed = importlib.metadata.version(name)
+        if installed != pinned:
+            raise SystemExit(f"{name} {installed} is installed, requirements/runtime.txt "
+                             f"pins {pinned}")
+        args += ["--collect-data", name, "--copy-metadata", name]
+    return args
 
 
 def executable(folder: str) -> str:
@@ -126,6 +131,17 @@ def add_licences(folder: str) -> None:
     os.makedirs(licences, exist_ok=True)
     for name in sorted(os.listdir(os.path.join(ROOT, "packaging", "licenses"))):
         shutil.copy(os.path.join(ROOT, "packaging", "licenses", name), licences)
+    add_runtime_licences(target)
+    with open(os.path.join(target, "NOTICE-Qt.txt"), "w", encoding="utf-8") as fh:
+        fh.write(notice(versions()))
+
+
+def add_runtime_licences(target: str) -> None:
+    """The runtime's libraries (ADR-0043): each one's licence file under
+    licenses/, and for an MPL-2.0 one the NOTICE that says where its source is.
+    The wizard's bundle and the command line's (cli_bundle.py) both carry them."""
+    licences = os.path.join(target, "licenses")
+    os.makedirs(licences, exist_ok=True)
     for name in RUNTIME:                     # publicsuffixlist MPL-2.0, filelock MIT
         dist = importlib.metadata.distribution(name)
         if dist.metadata.get("License-Expression") == "MPL-2.0":
@@ -141,8 +157,6 @@ def add_licences(folder: str) -> None:
                     entry.name.startswith(("LICENSE", "COPYING")):
                 shutil.copy(str(entry.locate()),
                             os.path.join(licences, f"{name}-{entry.name}"))
-    with open(os.path.join(target, "NOTICE-Qt.txt"), "w", encoding="utf-8") as fh:
-        fh.write(notice(versions()))
 
 
 def sign(folder: str) -> None:
@@ -186,9 +200,9 @@ def unpack(path: str, into: str) -> None:
                 os.chmod(target, mode & 0o777)
 
 
-def pack(folder: str, dist: str) -> str:
+def pack(folder: str, dist: str, name: str = NAME) -> str:
     os.makedirs(dist, exist_ok=True)
-    path = os.path.join(dist, f"{NAME}-{tag()}.zip")
+    path = os.path.join(dist, f"{name}-{tag()}.zip")
     base = os.path.dirname(folder)
     # Links stay links: a macOS .app's frameworks (Versions/Current) would lose
     # their layout and signature as copies, and Linux's links to Qt's libraries

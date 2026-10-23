@@ -45,8 +45,10 @@ review fixes are in and nothing merged later is. Then, in order:
    `__version__` matches the tag; records `SHA256SUMS`; writes a CycloneDX SBOM;
    and builds the wizard without Python (ADR-0040): a PyInstaller folder on
    Linux and Windows, started once unzipped with `--check`,
-   zipped as `iemod-fetch-gui-<os>-<arch>.zip` and added to `SHA256SUMS`. The
-   macOS bundle is `release-macos.yml`'s, which the release starts for its tag
+   zipped as `iemod-fetch-gui-<os>-<arch>.zip` and added to `SHA256SUMS`; the
+   command line the same way, run once unzipped with `--version` and `--help`,
+   as `iemod-fetch-cli-<os>-<arch>.zip` (`packaging/cli_bundle.py`). The
+   macOS bundles are `release-macos.yml`'s, which the release starts for its tag
    (job `macos-bundle`): usually minutes later, else at its six-hourly check, it
    is built from the tag, attested and attached with its own `.sha256`;
 3. attests build provenance through Sigstore keyless signing;

@@ -47,6 +47,17 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The command line as a program that needs no Python** (GUI-AUDIT M6 item
+  36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
+  macOS's own `python3` are older. Each release now carries
+  `iemod-fetch-cli-<os>-<arch>.zip` for Linux, Windows and macOS: a
+  PyInstaller folder (one folder, not one file, which unpacks itself on
+  every start and is what Windows antivirus software flags most), with the
+  runtime's libraries and their licences, no Qt. Each is unzipped and run
+  with `--version` and `--help` before it is published, attested, and listed
+  in `SHA256SUMS` (macOS: its own `.sha256`). Measured locally: 14.7 MB,
+  built in 14 s; run with an empty environment and no Python on `PATH`, it
+  took the data folder's lock and reached GitHub through a proxy over TLS.
 - **Choosing mods by kind** (GUI-AUDIT M5 item 26, ADR-0041 decision 4).
   lcc-docs' categories and BWS-NG's are one taxonomy spelled two ways
   (`Quête`, `quest`); `iemod_fetch/kinds.py` maps both onto one vocabulary.
