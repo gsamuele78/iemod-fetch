@@ -134,6 +134,31 @@ def test_the_players_own_order_supersedes_a_place_by_kind(qtbot, tmp_path):
     assert "placed by kind" not in widget.summary.text()
 
 
+def test_a_mod_split_into_components_is_saved_one_line_each(qtbot, tmp_path):
+    """M5b item 30: split a mod, then each component is a row of its own."""
+    calls = []
+
+    def planner(game, chosen, labels, folder):
+        calls.append(1)
+        tweaks = dict(unit("cdtweaks"), components=[["cdtweaks/cdtweaks.tp2", n, ""]
+                                                     for n in (10, 20, 30)])
+        return {"phases": [{"role": "EET", "title": "EET",
+                            "units": [unit("eet"), tweaks, unit("stratagems")]}],
+                "cycles": [], "violations": [], "planned": True, "custom": False}
+    widget, _planner = page(qtbot, tmp_path, planner)
+    view = widget.tabs.widget(0)
+    view.setCurrentRow(0)
+    assert not widget.split.isEnabled()              # one component: nothing to split
+    view.setCurrentRow(1)
+    assert widget.split.isEnabled()
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.split.click()
+    lines = (tmp_path / api.INSTALL_ORDER_FILE).read_text().splitlines()
+    assert [line for line in lines if not line.startswith("//")] == [
+        "eet *", "cdtweaks 10", "cdtweaks 20", "cdtweaks 30", "stratagems *"]
+    assert len(calls) == 2                           # planned again
+
+
 def test_dragging_saves_the_order_the_cli_reads_and_plans_again(qtbot, tmp_path):
     widget, planner = page(qtbot, tmp_path)
     calls = planner.calls

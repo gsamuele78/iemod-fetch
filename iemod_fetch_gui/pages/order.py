@@ -15,7 +15,9 @@ project - a Project Infinity Sorting Order file, which the command line reads
 with --sorting-order (the project's ini names it) - and plans again: the
 player's order goes on top of the rules, and where it contradicts one the
 contradiction is shown, never silently won either way. "Use the computed
-order" deletes the file.
+order" deletes the file. "Split into components" turns the selected mod into
+one row per component, so a single component can be dragged on its own (M5b
+item 30); its lines are written `tp2 n`, as the command line reads them.
 """
 import os
 from collections.abc import Callable
@@ -64,14 +66,21 @@ class OrderPage(QWidget):
         self._generation = 0
 
         self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(lambda _index: self._can_split())
         self.summary = _plain("The order is planned once the mods are chosen.")
         self.problems = _plain("")
         self.problems.setStyleSheet("color: #b00020")
         self.reset = QPushButton("Use the computed order")
         self.reset.setToolTip(f"Forget the order set by hand ({api.INSTALL_ORDER_FILE})")
         self.reset.clicked.connect(self._reset)
+        self.split = QPushButton("Split into components")
+        self.split.setToolTip("One row per component of the selected mod, to move "
+                              "one of them on its own")
+        self.split.setEnabled(False)
+        self.split.clicked.connect(self._split)
         bar = QHBoxLayout()
         bar.addWidget(self.summary, 1)
+        bar.addWidget(self.split)
         bar.addWidget(self.reset)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>3. Install order</h2>"))
@@ -136,6 +145,7 @@ class OrderPage(QWidget):
 
     def show_result(self, result: dict) -> None:
         self.result = result
+        self.split.setEnabled(False)            # the rows it would split are gone
         current = self.tabs.currentIndex()
         self.tabs.clear()
         if not result.get("planned"):
@@ -206,6 +216,7 @@ class OrderPage(QWidget):
             item.setToolTip("\n".join(tips))
             widget.addItem(item)
         widget.model().rowsMoved.connect(lambda *_args: self._reordered())
+        widget.currentItemChanged.connect(lambda *_args: self._can_split())
         return widget
 
     # ---------------------------------------------------------- reordering
@@ -224,6 +235,38 @@ class OrderPage(QWidget):
             QMessageBox.critical(self, "Cannot save the install order", str(exc))
         # Planned again either way: the list must show what is saved, not
         # the drag that could not be.
+        self._generation += 1
+        self._plan()
+
+    def _selected(self) -> tuple[QListWidget | None, int]:
+        widget = self.tabs.currentWidget()
+        if not isinstance(widget, QListWidget) or widget.currentRow() < 0:
+            return None, -1
+        return widget, widget.currentRow()
+
+    def _can_split(self) -> None:
+        widget, row = self._selected()
+        unit = widget.item(row).data(ROLE) if widget is not None else None
+        self.split.setEnabled(isinstance(unit, dict) and len(unit["components"]) > 1)
+
+    def _split(self) -> None:
+        """The selected mod as one row per component, in its order; saved,
+        so the plan names each component on its own line from now on."""
+        widget, row = self._selected()
+        if widget is None:
+            return
+        unit = widget.item(row).data(ROLE)
+        if len(unit["components"]) < 2:
+            return
+        phases = self.phases()
+        units = phases[self.tabs.currentIndex()]
+        units[row:row + 1] = [dict(unit, components=[component], split=True)
+                              for component in unit["components"]]
+        self.split.setEnabled(False)
+        try:
+            api.save_install_order(self.project_dir, phases)
+        except Exception as exc:
+            QMessageBox.critical(self, "Cannot save the install order", str(exc))
         self._generation += 1
         self._plan()
 

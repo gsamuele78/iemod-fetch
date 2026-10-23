@@ -214,7 +214,9 @@ whole order is saved as `install-order.txt`, a Project Infinity Sorting Order
 file, and the project's ini names it (read relative to the ini), so
 `iemod-fetch --config PROJECT/iemod-fetch.ini --selection PROJECT/selection.json
 --plan-order PLAN` plans the same order. Your order goes on top of the rules;
-where it contradicts one, that is shown, not silently won. *Use the computed
+where it contradicts one, that is shown, not silently won. *Split into
+components* turns the selected mod into one row per component, so one of them
+can be dragged on its own (saved as `tp2 n` lines). *Use the computed
 order* forgets it. Answers to WeiDU prompts come with the
 install step (M4): only BWS-NG describes prompts as data, for 4 components
 (ADR-0036).
@@ -522,7 +524,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,569 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,571 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -766,7 +768,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,569, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,571, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

@@ -315,3 +315,37 @@ def test_a_broken_cached_sequence_does_not_block_the_plan(tmp_path):
                           data_dir=str(tmp_path / "no-cache"))
     warned: list = []
     assert api._eet_sequences(cached, warned) is None and "cannot be read" in warned[0]
+
+
+def test_after_a_split_and_a_move_the_wizard_and_the_command_line_agree(tmp_path):
+    """M5b item 30, its acceptance test: eefixpack split into its components
+    and #1 moved just after the EET core - the page and --plan-order give the
+    same order, component for component."""
+    phases = [p["units"] for p in plan(tmp_path)["phases"]]
+    eet = phases[1]
+    fix = next(u for u in eet if u["key"] == "eefixpack")
+    at = eet.index(fix)
+    parts = [dict(fix, components=[c], split=True) for c in fix["components"]]
+    eet[at:at + 1] = parts
+    eet.remove(parts[1])
+    eet.insert(eet.index(next(u for u in eet if u["key"] == "eet")) + 1, parts[1])
+    wanted = [(c[0].split("/")[0].lower(), c[1]) for u in eet for c in u["components"]]
+    api.save_install_order(str(tmp_path), phases)
+
+    shown = plan(tmp_path)
+    page = [(c[0].split("/")[0].lower(), c[1])
+            for u in next(p for p in shown["phases"] if p["title"] == "EET")["units"]
+            for c in u["components"]]
+    assert page == wanted and not shown["violations"]
+    api.save_selection(str(tmp_path), "EET", CHOSEN, order_catalogue=KRION)
+    api.run(api.Settings(
+        selection=str(tmp_path / api.SELECTION_FILE),
+        sorting_order=str(tmp_path / api.INSTALL_ORDER_FILE),
+        check_only=True, quiet=True, manifest=os.path.join(HERE, "data", "mod_downloads.json"),
+        target=os.path.join(MOCK, "Mods"), rules=[os.path.join(MOCK, "rules")],
+        order_catalogue=KRION, plan_order=str(tmp_path / "plan"),
+        data_dir=str(tmp_path / "no-cache"), no_update_data=True, no_default_data=True))
+    written = [(line[1:].split("\\")[0].lower(), int(line.split("#")[2].split()[0]))
+               for line in (tmp_path / "plan" / "WeiDU.log").read_text().splitlines()
+               if line.startswith("~")]
+    assert written == page
