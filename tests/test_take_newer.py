@@ -9,6 +9,8 @@ import io
 import json
 import zipfile
 
+import pytest
+
 from test_discovery_end_to_end import WEIDU, CATALOGUE, DiscoveryStub, make, run
 
 FORUM = "https://forums.beamdog.com/uploads/FileUpload/2c/93c3.zip"
@@ -302,3 +304,16 @@ def test_a_github_snapshot_is_not_offered_its_own_release(tmp_path, monkeypatch)
     assert stub.downloaded == [snapshot]
     assert not record(tmp_path)["newer"]
     assert "--take-newer" not in out
+
+
+@pytest.mark.parametrize("url,origin,github", [
+    ("https://codeload.github.com/o/r/zip/refs/tags/v2.0", None, True),
+    ("https://api.github.com/repos/o/r/zipball/v2.0", None, True),   # a state saved without origin
+    ("https://www.shsforums.net/files/file/1-mod/", None, False),
+    ("https://example.org/mod.zip", "release-asset", True),
+])
+def test_a_copy_reads_as_from_github_by_its_host_or_its_origin(url, origin, github):
+    """Review of #63: a page that is not GitHub keeps its offer (`v3.1fr`
+    over `v3.0` is still newer: test_versions)."""
+    from iemod_fetch.runner import _from_github
+    assert _from_github(url, origin) is github
