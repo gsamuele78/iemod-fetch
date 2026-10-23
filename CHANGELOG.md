@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **A game folder's backup and restore** (GUI-AUDIT M4 item 21, ADR-0042):
+  `--backup GAME_DIR [--backup-to DIR]` copies `override/`, the
+  `lang/*/dialog*.tlk` and the root's files with their sha256 and lists every
+  other file; `--verify-backup` checks the copies; `--restore-backup BACKUP`
+  shows what a restore would do and, with `--apply`, does it. A restore
+  deletes nothing: what is in the way is moved into the backup's
+  `displaced-<time>/`, and what it cannot put back is named. `api.backup_game`,
+  `api.plan_restore`, `api.restore_backup`, `api.list_backups`.
 - `tools/order_sources_benchmark.py` (GUI-AUDIT M5 item 25, ADR-0041): what
   krion64 (the Infinity Mod Forge), BWS-NG and lcc-docs say about a mod's kind
   and install place, measured against each other and against a WeiDU.log.

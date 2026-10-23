@@ -2246,3 +2246,62 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
   fixtures are written by hand to its schema.
 - Measured figures go stale; the workflow's summary keeps them current, and
   this ADR records the day they were taken.
+
+## ADR-0042 — A game folder's backup before installing, and a restore that deletes nothing
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+GUI-AUDIT M4 item 21: before mods are installed, the game folder is backed up,
+and the backup can be restored. Until now the tool never wrote into a game
+folder: it plans, fetches into `Mods/` and writes installer scripts for
+mod_installer (ADR-0006, ADR-0022). A restore is the first operation that
+changes a game folder, so it is held to ADR-0007's rule: nothing is deleted.
+
+Infinity Mod Runner (MIT, a shipped Tauri installer) was read first. Its
+selective backup copies `override/`, the root's `.ids`/`.bcs` and `chitin.key`
+and the WeiDU logs; it records the top-level entries that existed, so a
+restore can remove the side folders a mod creates; its restore deletes what
+was added; its verification compares the file count and the total size, not
+the contents. The EE games' `lang/*/dialog*.tlk`, which WeiDU changes, are
+handled apart.
+
+### Decision
+
+- **What is copied** is what WeiDU changes: `override/`, every
+  `lang/*/dialog*.tlk`, and every file at the folder's root (`chitin.key`, an
+  older game's `dialog.tlk`, `WeiDU.log`, `weidu.conf`, the executable). Each
+  copy's size and **sha256** are in the backup's manifest.
+- **Everything else is listed** - every file's path and size - so a restore
+  knows what an install ADDED anywhere (a mod folder, a new BIFF in `data/`)
+  and what it CHANGED that was not copied.
+- A backup is written as `<name>.partial` and renamed when complete: a backup
+  that exists is whole. It may not be inside the game folder.
+- **A restore deletes nothing.** It verifies the backup first (every sha256;
+  a damaged backup restores nothing), then MOVES what is in the way - files
+  added since, and the current version of each file it puts back - into
+  `<backup>/displaced-<time>/` under its own path, then copies the backup's
+  files back and checks each against its sha256. Only folders it emptied
+  itself, and that the backup did not have, are removed.
+- **What cannot be restored is said**: a listed, not copied, file that is
+  missing or of another size is named, and the command line exits 1.
+- **A restore cut short is finished by running it again**: the plan is made
+  from what is on disk.
+- On the command line, `--restore-backup` shows the plan and changes nothing
+  without `--apply`. `--backup`, `--verify-backup` and `--restore-backup` run
+  before anything else and never reach the network.
+
+### Consequences
+
+- `displaced-*` folders grow inside the backup folder and are the player's to
+  prune, as `Mods/.backup/` is (ADR-0007).
+- A backup made after EET's conversion holds its large `override/`; the
+  guide recommends backing up the BG2:EE folder before the conversion.
+- A changed file outside the copied set (a mod writing into `data/` or
+  `movies/`) is detected by its size, not its content: a same-size change is
+  not seen. The copied set is where WeiDU writes; widening it is a measured
+  change, not a guess.
+- The wizard's Backup phase (item 21's page) uses `api.backup_game`,
+  `api.plan_restore` and `api.restore_backup`; that page is the next step.
