@@ -2060,6 +2060,15 @@ command line either.
     refused: for some mods a forum post is the only copy left, and the same
     tp2 check still gates it. When a downloaded archive is not the mod, each
     of the entry's other sources gets its turn (GUI-AUDIT M7 items 54, 58).
+    And a copy from anywhere but GitHub is compared with the latest release
+    krion64's daily scan names for the repository called like the mod (a
+    fork is never offered); when that release is newer by
+    `versions.compare_published` - never on versions it cannot rank - the
+    record carries it as `newer` and the run tells the player to re-run
+    with `--take-newer FOLDER` (or `all`). Offered, not taken: the player
+    decides, as ADR-0005 wants, and a front end can make it a button. Taken,
+    it is that release or nothing: the catalogue's other sources would only
+    bring back the copy being replaced (item 59).
 - Landing pages are the weakest source: a scrape can find no archive. Those
   mods come back as "No download found", which the player can retry or fix
   with a manifest entry.

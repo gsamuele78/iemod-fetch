@@ -616,6 +616,25 @@ The formats are `schemas/mods-v1.schema.json` and
 `schemas/components-v1.schema.json`; the GUI reads the same through
 `iemod_fetch.api` (`list_mods`, `describe_mods`).
 
+### A copy from elsewhere, a newer release on GitHub
+
+When a mod comes from somewhere other than GitHub - an author's site, a forum
+post - and krion64's release scan names a newer release of the repository
+called like the mod, the run says so beside the mod and in its JSON record
+(`newer`), and takes nothing unasked:
+
+```
+[+] ascension: installed Setup-Ascension.tp2 (4,128,497 bytes, v1.5 BETA)
+    ^ GitHub has a newer release: 2.1.0 (Gibberlings3/Ascension, 2025-05-18);
+      this copy declares v1.5 BETA. To install it instead: --take-newer ascension
+```
+
+`--take-newer FOLDER` (repeatable, or `all` for every one offered) installs
+that release over the copy on disk, which is kept in `.backup/`. Only that
+release: if GitHub cannot give it, the mod is left as it is. It passes the
+same tp2 check as any download. No offer is made when the versions cannot be
+ranked, or from a repository named otherwise than the mod (a fork).
+
 ## Planning the install order
 
 ```bash
