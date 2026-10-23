@@ -2,12 +2,11 @@
 import argparse
 import os
 import sys
-from typing import List, Optional
 
 from iemod_fetch import api
 
 
-def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="iemod-fetch-gui",
         description="The iemod-fetch wizard. Its project folder holds the "
@@ -22,7 +21,7 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     from PySide6.QtWidgets import QApplication
 

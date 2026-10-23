@@ -37,7 +37,7 @@ numbers then only stand in for components the game does not have yet.
 """
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from collections.abc import Iterable, Mapping, Sequence
 
 from .naming import normalize_key
 from .ordering import tp2_key
@@ -52,8 +52,8 @@ class Limit:
     cap: int
     base: int
     source: str
-    forge_cap: Optional[int] = None     # what Infinity Mod Forge uses, if different
-    forge_base: Optional[int] = None
+    forge_cap: int | None = None     # what Infinity Mod Forge uses, if different
+    forge_base: int | None = None
 
 
 KITS = Limit("kits", "kits (KITLIST.2DA)", 256, 40,
@@ -77,7 +77,7 @@ class Tally:
     cap: int
     base: int
     added: int = 0
-    by: List[Tuple[str, int, int]] = field(default_factory=list)   # (mod, component, n)
+    by: list[tuple[str, int, int]] = field(default_factory=list)   # (mod, component, n)
     source: str = ""
     note: str = ""
     checked: bool = True        # False: the counts are not reliable enough to warn on
@@ -88,7 +88,7 @@ class Tally:
         return self.base + self.added
 
     @property
-    def severity(self) -> Optional[str]:
+    def severity(self) -> str | None:
         if not self.checked:
             return None
         if self.total > self.cap:
@@ -108,11 +108,11 @@ class Tally:
 @dataclass
 class LimitsReport:
     install: str
-    tallies: List[Tally] = field(default_factory=list)
+    tallies: list[Tally] = field(default_factory=list)
     components: int = 0           # chosen components
-    unknown_mods: List[str] = field(default_factory=list)   # mods krion64 has no record of
+    unknown_mods: list[str] = field(default_factory=list)   # mods krion64 has no record of
     eeex: bool = False
-    measured_from: Optional[str] = None     # the game folder the tables were read from
+    measured_from: str | None = None     # the game folder the tables were read from
     unlevelled_spells: int = 0    # krion64 counts them but not by level: not checked
 
     def as_dict(self) -> dict:
@@ -146,9 +146,9 @@ class LimitsReport:
 @dataclass(frozen=True)
 class Measured:
     """What the game folder holds now; None where a table could not be read."""
-    kits: Optional[int] = None                       # the last kit number in use
-    spell_slots: Optional[Dict[str, int]] = None     # "w1".."p7" -> slots taken of 50
-    spell_states: Optional[int] = None               # ids 0-255 in SPLSTATE.IDS
+    kits: int | None = None                       # the last kit number in use
+    spell_slots: dict[str, int] | None = None     # "w1".."p7" -> slots taken of 50
+    spell_states: int | None = None               # ids 0-255 in SPLSTATE.IDS
 
 
 _ROW_NUMBER = re.compile(r"[\r\n]([0-9]+)(?=\s|$)")
@@ -157,7 +157,7 @@ _IDS_LINE = re.compile(r"^[ \t]*(0x[0-9a-fA-F]+|[0-9]+)[ \t]+\S", re.MULTILINE)
 _SPELL_FILE = {"p": "sppr", "w": "spwi"}
 
 
-def kits_in_use(kitlist: str) -> Optional[int]:
+def kits_in_use(kitlist: str) -> int | None:
     """
     The last kit number KITLIST.2DA holds - WeiDU's get_next_kit_number less
     one: the first free `N * *` row of an extended kitlist, else the number
@@ -170,7 +170,7 @@ def kits_in_use(kitlist: str) -> Optional[int]:
     return int(rows[-1]) if rows else None
 
 
-def ids_numbers(text: str) -> List[int]:
+def ids_numbers(text: str) -> list[int]:
     """The numbers an IDS file assigns (its header line is not one), read as
     WeiDU's lexer reads it: any line ending, comments skipped."""
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
@@ -182,14 +182,14 @@ def ids_numbers(text: str) -> List[int]:
     return out
 
 
-def spell_slots_taken(spell_ids: str, add_spell_ids: Optional[str],
-                      spell_files: Iterable[str]) -> Dict[str, int]:
+def spell_slots_taken(spell_ids: str, add_spell_ids: str | None,
+                      spell_files: Iterable[str]) -> dict[str, int]:
     """
     Per wizard/priest level, how many of the 50 slots ADD_SPELL would skip:
     an id in SPELL.IDS or ADD_SPELL.IDS, or a SPWI/SPPR file already in the
     game (add_spell.tpa, TB#ADD_SPELL_FIND_SLOT).
     """
-    taken: Set[Tuple[str, int, int]] = set()     # ("w" or "p", level, slot)
+    taken: set[tuple[str, int, int]] = set()     # ("w" or "p", level, slot)
     for text in (spell_ids, add_spell_ids or ""):
         for number in ids_numbers(text):
             kind, level, slot = number // 1000, number // 100 % 10, number % 100
@@ -201,7 +201,7 @@ def spell_slots_taken(spell_ids: str, add_spell_ids: Optional[str],
             for slot in range(1, SPELL_SLOTS + 1):
                 if f"{prefix}{level}{slot:02d}" in files:
                     taken.add((letter, level, slot))
-    out: Dict[str, int] = {}
+    out: dict[str, int] = {}
     for letter, level, _slot in taken:
         if level >= 1 and (letter == "w" or level <= 7):
             out[f"{letter}{level}"] = out.get(f"{letter}{level}", 0) + 1
@@ -212,7 +212,7 @@ def spell_states_in_use(splstate_ids: str) -> int:
     return len({n for n in ids_numbers(splstate_ids) if 0 <= n <= 255})
 
 
-def _index(records: Iterable[dict]) -> Dict[str, Dict[int, dict]]:
+def _index(records: Iterable[dict]) -> dict[str, dict[int, dict]]:
     """
     krion64 records -> tp2 key -> component number -> component.
 
@@ -222,7 +222,7 @@ def _index(records: Iterable[dict]) -> Dict[str, Dict[int, dict]]:
     a component with no `wp`. Malformed records and components are skipped:
     these counts are advice and never stop the report.
     """
-    out: Dict[str, Dict[int, dict]] = {}
+    out: dict[str, dict[int, dict]] = {}
     for record in records:
         if not isinstance(record, dict) or not isinstance(record.get("co"), list):
             continue
@@ -245,11 +245,11 @@ def _index(records: Iterable[dict]) -> Dict[str, Dict[int, dict]]:
     return out
 
 
-def engine_limits(install: str, chosen: Sequence[Tuple[str, int]],
+def engine_limits(install: str, chosen: Sequence[tuple[str, int]],
                   records: Iterable[dict], eeex: bool = False,
-                  measured: Optional[Measured] = None,
-                  installed: Iterable[Tuple[str, int]] = (),
-                  measured_from: Optional[str] = None) -> LimitsReport:
+                  measured: Measured | None = None,
+                  installed: Iterable[tuple[str, int]] = (),
+                  measured_from: str | None = None) -> LimitsReport:
     """
     The three tables for one install. `chosen` is (tp2 key, component number)
     in install order; `records` krion64's per-mod records. With `measured`
@@ -282,7 +282,7 @@ def engine_limits(install: str, chosen: Sequence[Tuple[str, int]],
         states.base, states.measured = measured.spell_states, True
         states.source = "measured: ids 0-255 in SPLSTATE.IDS; " + SPELL_STATES.source
     slots = measured.spell_slots
-    levels: Dict[str, Tally] = {
+    levels: dict[str, Tally] = {
         level: Tally(f"{'wizard' if level[0] == 'w' else 'priest'} level {level[1]} spells "
                      f"(SPELL.IDS)", SPELL_SLOTS, slots.get(level, 0) if slots is not None
                      else base,

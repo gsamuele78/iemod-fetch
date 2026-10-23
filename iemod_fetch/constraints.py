@@ -21,7 +21,7 @@ enforces it. Read here:
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from collections.abc import Iterable
 
 from .naming import normalize_key
 from .rules import DEPENDS, INCOMPATIBLE, ORDER, ModSpec, Rule
@@ -33,17 +33,17 @@ _MAX_TP2_BYTES = 8 * 1024 * 1024
 
 @dataclass
 class EetMergeRules:
-    allowed: Set[str] = field(default_factory=set)          # BG:EE mods EET imports
-    wrong_components: Set[Tuple[str, int]] = field(default_factory=set)
+    allowed: set[str] = field(default_factory=set)          # BG:EE mods EET imports
+    wrong_components: set[tuple[str, int]] = field(default_factory=set)
     source: str = ""
 
 
 @dataclass
 class ModConstraints:
-    by_mod: Dict[str, Dict[int, Tp2Component]] = field(default_factory=dict)
-    missing: List[str] = field(default_factory=list)        # no staged tp2
+    by_mod: dict[str, dict[int, Tp2Component]] = field(default_factory=dict)
+    missing: list[str] = field(default_factory=list)        # no staged tp2
     unread: int = 0                                         # predicates not understood
-    eet: Optional[EetMergeRules] = None
+    eet: EetMergeRules | None = None
 
     def summary(self) -> str:
         count = sum(len(c) for c in self.by_mod.values())
@@ -56,7 +56,7 @@ class ModConstraints:
         return text
 
 
-def _find(root: str, name: str) -> Optional[str]:
+def _find(root: str, name: str) -> str | None:
     """A file or directory under `root`, matched case-insensitively."""
     direct = os.path.join(root, name)
     if os.path.exists(direct):
@@ -70,7 +70,7 @@ def _find(root: str, name: str) -> Optional[str]:
     return None
 
 
-def _find_tp2(mod_dir: str, tp2_file: str) -> Optional[str]:
+def _find_tp2(mod_dir: str, tp2_file: str) -> str | None:
     for dirpath, _dirnames, filenames in os.walk(mod_dir):
         for name in filenames:
             if name.lower() == tp2_file.lower():
@@ -78,18 +78,18 @@ def _find_tp2(mod_dir: str, tp2_file: str) -> Optional[str]:
     return None
 
 
-def _read(path: str) -> Optional[str]:
+def _read(path: str) -> str | None:
     try:
         if os.path.getsize(path) > _MAX_TP2_BYTES:
             return None
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             return fh.read()
     except OSError:
         return None
 
 
 def load_constraints(mods_dir: str,
-                     mods: Iterable[Tuple[str, str, str]]) -> ModConstraints:
+                     mods: Iterable[tuple[str, str, str]]) -> ModConstraints:
     """`mods` is (key, folder, tp2 file) per planned mod; read each staged tp2."""
     result = ModConstraints()
     for key, folder, tp2_file in mods:
@@ -109,7 +109,7 @@ def load_constraints(mods_dir: str,
     return result
 
 
-def tp2_rules(constraints: ModConstraints) -> List[Rule]:
+def tp2_rules(constraints: ModConstraints) -> list[Rule]:
     """
     The staged mods' own constraints as rules.
 
@@ -125,7 +125,7 @@ def tp2_rules(constraints: ModConstraints) -> List[Rule]:
                   for mod, components in constraints.by_mod.items()
                   for number, component in components.items()
                   for other, refused in component.forbids}
-    rules: List[Rule] = []
+    rules: list[Rule] = []
     for mod, components in constraints.by_mod.items():
         for number, component in components.items():
             me = ModSpec(mod, mod, frozenset({number}))
@@ -179,7 +179,7 @@ _WRONG = re.compile(
     r'COUNT_REGEXP_INSTANCES\s+"\^~[^"]*?([\w-]+)\\\.TP2~ #\[0-9\]\+ #(\d+)', re.IGNORECASE)
 
 
-def eet_merge_rules(eet_dir: str) -> Optional[EetMergeRules]:
+def eet_merge_rules(eet_dir: str) -> EetMergeRules | None:
     """EET's merge check, read from a staged EET mod directory; None if absent."""
     table = _find(os.path.join(eet_dir, "tbl"), "compatibility.tbl") \
         if os.path.isdir(os.path.join(eet_dir, "tbl")) else None

@@ -14,7 +14,6 @@ layer honestly pure, and makes these testable without a client at all.
 """
 import re
 import urllib.parse
-from typing import Optional
 
 ARCHIVE_EXT = (".iemod", ".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz",
                ".7z", ".rar")
@@ -44,7 +43,7 @@ def unwrap_redirect(url: str) -> str:
     return url
 
 
-def repo_from_url(url: str) -> Optional[str]:
+def repo_from_url(url: str) -> str | None:
     """Extract owner/repo from a github.com URL. Returns None for profile URLs."""
     parsed = urllib.parse.urlparse(url or "")
     if parsed.hostname not in ("github.com", "www.github.com"):

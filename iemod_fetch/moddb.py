@@ -21,7 +21,6 @@ import glob
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from .errors import ConfigError
 from .naming import normalize_key
@@ -31,24 +30,24 @@ _MAX_BYTES = 4 * 1024 * 1024
 
 @dataclass
 class ModFile:
-    filename: Optional[str] = None
-    download: Optional[str] = None
-    sha256: Optional[str] = None
-    size: Optional[int] = None
+    filename: str | None = None
+    download: str | None = None
+    sha256: str | None = None
+    size: int | None = None
 
 
 @dataclass
 class ModRecord:
     key: str
-    name: Optional[str] = None
-    version: Optional[str] = None
-    files: List[ModFile] = field(default_factory=list)
-    games: List[str] = field(default_factory=list)
-    homepage: Optional[str] = None
+    name: str | None = None
+    version: str | None = None
+    files: list[ModFile] = field(default_factory=list)
+    games: list[str] = field(default_factory=list)
+    homepage: str | None = None
     origin: str = "mod database"
 
     @property
-    def best_file(self) -> Optional[ModFile]:
+    def best_file(self) -> ModFile | None:
         """A file with both a URL and a digest beats one with only a URL."""
         for candidates in (
                 [f for f in self.files if f.download and f.sha256],
@@ -60,14 +59,14 @@ class ModRecord:
 
 @dataclass
 class ModDatabase:
-    records: Dict[str, ModRecord] = field(default_factory=dict)
+    records: dict[str, ModRecord] = field(default_factory=dict)
     origin: str = "mod database"
     skipped: int = 0
 
     def __len__(self) -> int:
         return len(self.records)
 
-    def get(self, *names) -> Optional[ModRecord]:
+    def get(self, *names) -> ModRecord | None:
         for name in names:
             if name:
                 found = self.records.get(normalize_key(name))
@@ -76,7 +75,7 @@ class ModDatabase:
         return None
 
     @classmethod
-    def load(cls, path: str, origin: Optional[str] = None) -> "ModDatabase":
+    def load(cls, path: str, origin: str | None = None) -> ModDatabase:
         """Load a directory of per-mod JSON files (or a single one)."""
         if os.path.isdir(path):
             paths = sorted(glob.glob(os.path.join(path, "*.json")))
@@ -107,11 +106,11 @@ def _label(path: str) -> str:
     return parts[-1] if parts else "mod database"
 
 
-def _read(path: str, origin: str) -> Optional[ModRecord]:
+def _read(path: str, origin: str) -> ModRecord | None:
     try:
         if os.path.getsize(path) > _MAX_BYTES:
             return None
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
     except (OSError, ValueError):
         return None

@@ -22,14 +22,14 @@ Never guessed:
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 from .errors import ConfigError
 from .tp2 import read_mod_tp2
 
 # canonical code -> every spelling seen in tp2 LANGUAGE declarations and in
 # what an operator would type. Lower-case, without accents where tp2s vary.
-_ALIASES: Dict[str, Tuple[str, ...]] = {
+_ALIASES: dict[str, tuple[str, ...]] = {
     "en_US": ("english", "american", "en", "en_us", "en_gb", "en-us", "en-gb",
               "eng", "anglais", "englisch", "inglese", "ingles"),
     "it_IT": ("italian", "italiano", "it", "it_it", "ita"),
@@ -52,7 +52,7 @@ _ALIASES: Dict[str, Tuple[str, ...]] = {
     "sv_SE": ("swedish", "svenska", "sv", "sv_se"),
 }
 # Every language a preference can name: (code, English name), for a UI's list.
-LANGUAGES: Tuple[Tuple[str, str], ...] = tuple(
+LANGUAGES: tuple[tuple[str, str], ...] = tuple(
     (code, names[0].capitalize()) for code, names in _ALIASES.items())
 _LOOKUP = {alias: code for code, names in _ALIASES.items() for alias in names}
 _FOLD = str.maketrans("àáâãäçèéêëìíîïñòóôõöùúûüčěřšž", "aaaaaceeeeiiiinooooouuuucersz")
@@ -62,7 +62,7 @@ def _fold(text: str) -> str:
     return text.strip().lower().translate(_FOLD)
 
 
-def canonical(text: str) -> Optional[str]:
+def canonical(text: str) -> str | None:
     """The language a name, code or language path means; None if unknown."""
     folded = _fold(text or "")
     if not folded:
@@ -81,10 +81,10 @@ def canonical(text: str) -> Optional[str]:
     return None
 
 
-def parse_preferences(value) -> List[str]:
+def parse_preferences(value) -> list[str]:
     """`it_IT, english` -> ['it_IT', 'en_US']; an unknown language is an error."""
     items = value if isinstance(value, (list, tuple)) else str(value).split(",")
-    out: List[str] = []
+    out: list[str] = []
     for item in (str(i).strip() for i in items):
         if not item:
             continue
@@ -98,13 +98,13 @@ def parse_preferences(value) -> List[str]:
     return out
 
 
-def _declared(decl: Tuple[str, str]) -> Optional[str]:
+def _declared(decl: tuple[str, str]) -> str | None:
     display, directory = decl
     return canonical(directory) or canonical(display)
 
 
-def choose_language(decls: Sequence[Tuple[str, str]],
-                    preferences: Sequence[str]) -> Optional[Tuple[int, str]]:
+def choose_language(decls: Sequence[tuple[str, str]],
+                    preferences: Sequence[str]) -> tuple[int, str] | None:
     """(WeiDU language index, code) of the first preferred language offered."""
     offered = [_declared(d) for d in decls]
     for wanted in preferences:
@@ -116,18 +116,18 @@ def choose_language(decls: Sequence[Tuple[str, str]],
 @dataclass
 class Change:
     mod: str
-    old: Tuple[int, ...]
+    old: tuple[int, ...]
     new: int
     code: str
 
 
 @dataclass
 class LanguageReport:
-    preferences: List[str]
-    changed: List[Change] = field(default_factory=list)
-    kept: List[str] = field(default_factory=list)                   # already right
-    no_match: List[Tuple[str, List[str]]] = field(default_factory=list)
-    unread: List[str] = field(default_factory=list)
+    preferences: list[str]
+    changed: list[Change] = field(default_factory=list)
+    kept: list[str] = field(default_factory=list)                   # already right
+    no_match: list[tuple[str, list[str]]] = field(default_factory=list)
+    unread: list[str] = field(default_factory=list)
 
     def render(self) -> str:
         lines = [(f"LANGUAGE PREFERENCE: {' > '.join(self.preferences)} "
@@ -150,7 +150,7 @@ class LanguageReport:
         return "\n".join(lines)
 
 
-def _find_dir(root: str, name: str) -> Optional[str]:
+def _find_dir(root: str, name: str) -> str | None:
     """`name` under `root`, matched case-insensitively (Linux staging dirs)."""
     direct = os.path.join(root, name)
     if os.path.isdir(direct):
@@ -168,7 +168,7 @@ def apply_language_preference(plan, mods_dir: str,
                               preferences: Sequence[str]) -> LanguageReport:
     """Rewrite each planned line's `#lang` to the first preferred language."""
     report = LanguageReport(preferences=list(preferences))
-    cache: Dict[Tuple[str, str], Optional[list]] = {}
+    cache: dict[tuple[str, str], list | None] = {}
     for units in plan.logs.values():
         for unit in units:
             if not unit.lines:

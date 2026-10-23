@@ -710,7 +710,7 @@ make audit      # bandit · pip-audit
 | Tests | 1,325, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
-| ruff | clean |
+| ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 7, all kept |
 | Runtime dependencies | 0 |

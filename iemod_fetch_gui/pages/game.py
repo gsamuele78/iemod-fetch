@@ -7,7 +7,6 @@ languages to install in. The folders are checked as WeiDU's GAME_IS sees them
 they are what the game needs. Leaving the phase saves the project's
 iemod-fetch.ini, which the command line reads too.
 """
-from typing import Dict, List, Optional
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog, QFormLayout,
@@ -45,7 +44,7 @@ class FolderRow(QWidget):
         if folder:
             self.edit.setText(folder)
 
-    def path(self) -> Optional[str]:
+    def path(self) -> str | None:
         return self.edit.text().strip() or None
 
 
@@ -56,12 +55,12 @@ class GamePage(QWidget):
         super().__init__()
         self.project_dir = project_dir
         self.result: dict = {"ok": False, "problems": [], "notes": []}
-        self.load_problem: Optional[str] = None
+        self.load_problem: str | None = None
 
         self.game_buttons = QButtonGroup(self)
         games = QGroupBox("Game")
         games_layout = QVBoxLayout(games)
-        self.radios: Dict[str, QRadioButton] = {}
+        self.radios: dict[str, QRadioButton] = {}
         for code, text in GAMES.items():
             radio = QRadioButton(f"{code} - {text}")
             self.radios[code] = radio
@@ -112,11 +111,11 @@ class GamePage(QWidget):
         self._load()
 
     # ------------------------------------------------------------ state
-    def game(self) -> Optional[str]:
+    def game(self) -> str | None:
         return next((code for code, radio in self.radios.items() if radio.isChecked()),
                     None)
 
-    def language_preference(self) -> List[str]:
+    def language_preference(self) -> list[str]:
         out = [self.preferred.currentData()]
         if self.fallback.currentData() and self.fallback.currentData() not in out:
             out.append(self.fallback.currentData())
@@ -138,7 +137,7 @@ class GamePage(QWidget):
         self.check()
 
     @staticmethod
-    def _select(combo: QComboBox, code: Optional[str]) -> None:
+    def _select(combo: QComboBox, code: str | None) -> None:
         index = combo.findData(code)
         combo.setCurrentIndex(max(index, 0))
 

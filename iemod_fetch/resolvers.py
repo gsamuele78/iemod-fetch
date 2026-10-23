@@ -14,7 +14,6 @@ import sys
 import urllib.parse
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import List, Optional
 
 from .errors import InsecureURL, ModFetchError, NetworkError  # noqa: F401
 from .manifest import ModSource
@@ -39,7 +38,7 @@ def _platform_family(platform: str) -> str:
     return "lin"
 
 
-def _asset_platform(name: str) -> Optional[str]:
+def _asset_platform(name: str) -> str | None:
     lowered = name.lower()
     for family, prefixes in _PLATFORM_PREFIXES.items():
         if lowered.startswith(prefixes):
@@ -88,17 +87,17 @@ class Candidate:
     url: str
     filename: str
     origin: str                       # release-asset | source-snapshot | direct | page-link
-    version: Optional[str] = None
-    sha256: Optional[str] = None
+    version: str | None = None
+    sha256: str | None = None
     offsite: bool = False
 
 
 @dataclass
 class Resolution:
-    candidate: Optional[Candidate] = None
+    candidate: Candidate | None = None
     reason: str = ""
-    alternatives: List[Candidate] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    alternatives: list[Candidate] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -111,7 +110,7 @@ class GitHubResolver:
     """Resolves a release asset via the REST API. No name guessing, no search."""
 
     def __init__(self, client, allow_exe: bool = False,
-                 platform: Optional[str] = None):
+                 platform: str | None = None):
         self.client = client
         self.allow_exe = allow_exe
         self.platform = _platform_family(platform or sys.platform)
@@ -178,7 +177,7 @@ class GitHubResolver:
         return res
 
     def _default_branch_snapshot(self, repo: str,
-                                source: ModSource) -> Optional[Resolution]:
+                                source: ModSource) -> Resolution | None:
         """Archive of the repository's default branch, for repos with no releases."""
         try:
             meta = self.client.get_json(f"https://api.github.com/repos/{repo}")

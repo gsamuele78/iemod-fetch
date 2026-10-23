@@ -18,7 +18,7 @@ A finding the planned install order already settles is counted, not listed as
 work. Everything shown is third-party text (rules, mod names), so it is set as
 plain text, never as markup.
 """
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
@@ -36,7 +36,7 @@ def plain(text: str) -> QLabel:
     return label
 
 
-def side_text(side: Optional[dict]) -> str:
+def side_text(side: dict | None) -> str:
     if not side:
         return ""
     if side.get("whole_mod") or not side.get("components"):
@@ -46,7 +46,7 @@ def side_text(side: Optional[dict]) -> str:
     return f"{side['mod']} {shown}" + (f", +{more} more" if more > 0 else "")
 
 
-def open_findings(result: dict) -> List[dict]:
+def open_findings(result: dict) -> list[dict]:
     """The findings that are still the player's: not settled by the plan, not decided."""
     return [f for f in result.get("findings") or []
             if not f.get("fixed_by_plan") and not f.get("decision")]
@@ -64,7 +64,7 @@ class ConflictsPanel(QWidget):
         super().__init__()
         self.result: dict = {}
         # Set by the page: whether the list can choose these components of a mod.
-        self.can_choose: Callable[[str, List[int]], bool] = lambda _key, _numbers: False
+        self.can_choose: Callable[[str, list[int]], bool] = lambda _key, _numbers: False
         self.summary = plain("Not checked yet.")
         self.again = QPushButton("Check again")
         self.again.clicked.connect(self.check.emit)
@@ -82,7 +82,7 @@ class ConflictsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(top)
         layout.addWidget(scroll, 1)
-        self.buttons: Dict[str, QPushButton] = {}     # option id (or "accept:" id) -> button
+        self.buttons: dict[str, QPushButton] = {}     # option id (or "accept:" id) -> button
 
     def busy(self) -> None:
         self.summary.setText("Checking the selection against the rules...")
@@ -127,7 +127,7 @@ class ConflictsPanel(QWidget):
         for finding in order + decided:
             self.rows.insertWidget(self.rows.count() - 1, self._row(finding))
 
-    def _stale(self, ids: List[str]) -> QWidget:
+    def _stale(self, ids: list[str]) -> QWidget:
         """The decisions no finding of this selection has, and a way to drop them."""
         row = QWidget()
         layout = QHBoxLayout(row)
@@ -142,7 +142,7 @@ class ConflictsPanel(QWidget):
         layout.addWidget(forget)
         return row
 
-    def _forget(self, ids: List[str]) -> None:
+    def _forget(self, ids: list[str]) -> None:
         answer = QMessageBox.question(
             self, "Forget decisions",
             f"Remove {len(ids)} decision(s) from decisions.json?\n\n" + "\n".join(ids[:10])

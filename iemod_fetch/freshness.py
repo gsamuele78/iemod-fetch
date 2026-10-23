@@ -21,7 +21,7 @@ answer is "unknown", never a guess: `update_available` is then None.
 """
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional
+from collections.abc import Iterable
 
 from .versions import compare_published
 
@@ -35,8 +35,8 @@ RELEASE = "github release"
 @dataclass(frozen=True)
 class Release:
     tag: str
-    date: Optional[str] = None
-    url: Optional[str] = None
+    date: str | None = None
+    url: str | None = None
     archived: bool = False
 
 
@@ -44,15 +44,15 @@ class Release:
 class Candidate:
     version: str
     origin: str
-    date: Optional[str] = None
-    url: Optional[str] = None
+    date: str | None = None
+    url: str | None = None
 
     def as_dict(self) -> dict:
         return {k: v for k, v in (("version", self.version), ("origin", self.origin),
                                   ("date", self.date), ("url", self.url)) if v}
 
 
-def github_repo(url: Optional[str]) -> Optional[str]:
+def github_repo(url: str | None) -> str | None:
     """`owner/repo`, lowercased, of a GitHub URL; None for anything else."""
     match = _GITHUB.search(url or "")
     if not match:
@@ -62,9 +62,9 @@ def github_repo(url: Optional[str]) -> Optional[str]:
     return f"{match.group(1)}/{repo}".lower()
 
 
-def parse_release_cache(raw) -> Dict[str, Release]:
+def parse_release_cache(raw) -> dict[str, Release]:
     """krion64's version_cache.json: {"owner/repo": {"tag", "release_date", ...}}."""
-    out: Dict[str, Release] = {}
+    out: dict[str, Release] = {}
     if not isinstance(raw, dict):
         return out
     for repo, entry in raw.items():
@@ -81,9 +81,9 @@ def parse_release_cache(raw) -> Dict[str, Release]:
     return out
 
 
-def latest(candidates: Iterable[Candidate]) -> Optional[Candidate]:
+def latest(candidates: Iterable[Candidate]) -> Candidate | None:
     """The newest candidate; on a tie or an unrankable pair, the earlier one."""
-    best: Optional[Candidate] = None
+    best: Candidate | None = None
     for candidate in candidates:
         if not candidate.version:
             continue
@@ -92,7 +92,7 @@ def latest(candidates: Iterable[Candidate]) -> Optional[Candidate]:
     return best
 
 
-def update_available(installed: Optional[str], newest: Optional[Candidate]) -> Optional[bool]:
+def update_available(installed: str | None, newest: Candidate | None) -> bool | None:
     """True / False when the versions rank; None when either is unknown."""
     if not installed or newest is None:
         return None

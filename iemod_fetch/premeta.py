@@ -25,7 +25,7 @@ import os
 import time
 import urllib.parse
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from .errors import HttpStatusError, ModFetchError, NetworkError
 from .modmeta import ModMetadata, parse_metadata_ini
@@ -51,7 +51,7 @@ class Wanted:
     repo: str                 # owner/name on GitHub
 
     @property
-    def parts(self) -> List[str]:
+    def parts(self) -> list[str]:
         """The tp2's path, split: no empty or `.` parts (`./x//y.tp2` is x/y.tp2)."""
         return [p for p in self.tp2_file.replace("\\", "/").split("/") if p not in ("", ".")]
 
@@ -68,7 +68,7 @@ def tp2_name(tp2_file: str) -> str:
     return stem[6:] if stem.lower().startswith("setup-") else stem
 
 
-def candidates(folder: str, tp2_file: str) -> List[str]:
+def candidates(folder: str, tp2_file: str) -> list[str]:
     """Where the ini may be in the repository: beside the tp2, named after it."""
     parts = [p for p in tp2_file.replace("\\", "/").split("/") if p not in ("", ".")]
     if len(parts) > 1:
@@ -101,7 +101,7 @@ class MetadataCache:
 
     def __init__(self, data_dir: str) -> None:
         self.path = os.path.join(data_dir, CACHE_FILE)
-        self.entries: Dict[str, dict] = {}
+        self.entries: dict[str, dict] = {}
         try:
             with open(self.path, encoding="utf-8") as fh:
                 loaded = json.load(fh)
@@ -110,7 +110,7 @@ class MetadataCache:
         except (OSError, ValueError):
             pass                  # no cache yet, or a broken one: start again
 
-    def get(self, mod: Wanted) -> Optional[ModMetadata]:
+    def get(self, mod: Wanted) -> ModMetadata | None:
         """The cached ini of `mod`, if it came from its repository and gives an order."""
         entry = self.entries.get(cache_key(mod)) or {}
         text = entry.get("text")
@@ -151,7 +151,7 @@ class MetadataCache:
             raise
 
 
-def _names(tp2_file: str) -> List[str]:
+def _names(tp2_file: str) -> list[str]:
     stem = os.path.splitext(os.path.basename(tp2_file.replace("\\", "/")))[0]
     names = [stem]
     if stem.lower().startswith("setup-"):
@@ -159,7 +159,7 @@ def _names(tp2_file: str) -> List[str]:
     return [name.lower() + ".ini" for name in names]
 
 
-def _raw(client, repo: str, where: str) -> Optional[str]:
+def _raw(client, repo: str, where: str) -> str | None:
     """The file's text, or None when it is not there (404). Other errors raise."""
     url = f"{RAW}/{repo}/HEAD/{urllib.parse.quote(where, safe='/')}"
     try:
@@ -171,7 +171,7 @@ def _raw(client, repo: str, where: str) -> Optional[str]:
     return bytes(data).decode("utf-8-sig", errors="replace")
 
 
-def _listed(client, repo: str, path: str) -> Optional[List[dict]]:
+def _listed(client, repo: str, path: str) -> list[dict] | None:
     """A repository folder's entries (GitHub's contents API); None if it is not there."""
     url = f"{API}/{repo}/contents" + (f"/{urllib.parse.quote(path, safe='/')}" if path else "")
     try:
@@ -183,7 +183,7 @@ def _listed(client, repo: str, path: str) -> Optional[List[dict]]:
     return [e for e in listed if isinstance(e, dict)] if isinstance(listed, list) else None
 
 
-def _find(client, repo: str, mod: Wanted) -> Tuple[Optional[str], Optional[str]]:
+def _find(client, repo: str, mod: Wanted) -> tuple[str | None, str | None]:
     """
     (text, path) of the mod's ini, or (None, None) when the repository has none.
 
@@ -235,7 +235,7 @@ def _network_down(exc: ModFetchError) -> bool:
 
 
 def fetch(client, cache: MetadataCache, wanted: Iterable[Wanted],
-          now: Optional[float] = None) -> Tuple[int, int, List[str]]:
+          now: float | None = None) -> tuple[int, int, list[str]]:
     """
     Fetch the ini of every `wanted` tp2 whose cache entry is missing or old.
     Returns (found, missing, problems). When the network is down (or the quota
@@ -245,7 +245,7 @@ def fetch(client, cache: MetadataCache, wanted: Iterable[Wanted],
     """
     now = time.time() if now is None else now
     found = missing = 0
-    problems: List[str] = []
+    problems: list[str] = []
     todo = [mod for mod in wanted if not cache.fresh(mod, now)]
     for n, mod in enumerate(todo):
         repo = mod.repo.lower()
