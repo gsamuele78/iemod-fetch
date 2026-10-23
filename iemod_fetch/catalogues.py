@@ -284,7 +284,8 @@ class CatalogueSet:
 
     @classmethod
     def load(cls, paths: Iterable[str]) -> CatalogueSet:
-        catalogues, seen = [], {}
+        catalogues: list[SupplementaryCatalogue] = []
+        seen: dict[str, int] = {}
         for path in paths or ():
             name = _label(path)
             seen[name] = seen.get(name, 0) + 1       # two catalogues, two names
