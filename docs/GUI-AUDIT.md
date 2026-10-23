@@ -216,10 +216,10 @@ the authors' metadata inis, the player's Sorting Order. Measured gaps:
   1.0.2, "1,675 components installed in 12.2 h") and the **Infinity Mod
   Forge** it reads. **krion64's site is the Infinity Mod Forge** (its README:
   "Infinity Mod Forge", formerly "EET Mod Forge"), the data this tool has
-  read since M2; the Runner fetches the same files from
-  `anprionsa.github.io/infinity-mod-forge`. One source, counted once: the
-  audit checks whether the two copies differ, and the Runner adds no
-  classification of its own.
+  read since M2. The Runner's default address for it,
+  `anprionsa.github.io/infinity-mod-forge`, answers GitHub Pages' "Site not
+  found" (checked 2026-10-23); the live Forge is `krion64.github.io`. One
+  source, counted once; the Runner adds no classification of its own.
 
 | # | Item | Size |
 |---|---|---|
