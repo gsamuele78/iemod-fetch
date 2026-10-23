@@ -2127,6 +2127,11 @@ or PySide6. Three constraints shaped it.
     waits for a macOS runner - and the six-hourly check remains for a run
     that fails or never starts. A dispatch from this session's GitHub
     integration was refused (403), which is why the release does it itself.
+    The dispatched, scheduled and hand-started runs share one concurrency
+    group and never run at once, and the upload asks again for a macOS
+    bundle first: a published one is never replaced (review of #46: two
+    runs could each build and upload, leaving a zip and a `.sha256` from
+    different builds).
 - The bundles carry no publisher signature and the macOS app is not
   notarized: Windows SmartScreen warns, and macOS refuses the downloaded app
   until the player allows it (System Settings, Privacy & Security, Open

@@ -26,11 +26,15 @@ permissions:
   contents: read
 
 concurrency:
-  # Scheduled checks replace one another (each looks at the latest release); a
-  # dispatch for a named release has its own group and is never cancelled, so a
-  # scheduled run that builds nothing cannot drop it. A rehearsal per pull request.
-  group: release-macos-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  # One group for every run that may attach (a dispatch from release.yml, the
+  # schedule, a dispatch by hand): two at once both saw no bundle and both
+  # built and uploaded one, leaving a zip and a .sha256 from different builds
+  # (review of #46). Not cancelled: a running build is never thrown away. A
+  # run still pending is replaced by a newer one, which looks at the latest
+  # release - the same tag, unless a dispatch named an older one by hand.
+  # A pull request's rehearsal has its own group.
+  group: release-macos-${{ github.event_name == 'pull_request' && github.ref || 'attach' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   target:
@@ -102,7 +106,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
+          # Asked again here, not only by `target`: a published bundle is never
+          # replaced, so one a player may have checked keeps its .sha256.
+          has=$(gh release view "$TAG" --repo "$REPOSITORY" --json assets \
+                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos"))] | length')
+          if [ "$has" != 0 ]; then
+            echo "release $TAG already has a macOS bundle; nothing uploaded"
+            exit 0
+          fi
           cd dist
           for zip in iemod-fetch-gui-*.zip; do sha256sum "$zip" > "$zip.sha256"; done
           gh release upload "$TAG" iemod-fetch-gui-*.zip iemod-fetch-gui-*.zip.sha256 \
-            --repo "$REPOSITORY" --clobber
+            --repo "$REPOSITORY"
