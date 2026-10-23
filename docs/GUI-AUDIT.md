@@ -176,6 +176,16 @@ run can be stopped and resumed, or finished from the command line.
 | 23 | Resume after a failure or cancel; the WeiDU.log is the state | M |
 | 24 | A real Windows end-to-end CI job (roadmap F) and live GitHub API contract tests (item A) | M |
 
+Infinity Mod Runner (MIT) has solved most of M4 in a shipped installer, and
+is the reference to measure against before each item is designed: per-game
+backups with a verify step (21); per-batch Retry / Skip / Stop, checkpoints,
+pause and resume, EET's two phases, per-mod timeouts (22, 23); a
+reconciliation of WeiDU's exit code with WeiDU.log after every batch that
+catches components that "succeeded" without being logged; READLN default
+answers kept as configuration; and the File Guard above. Its ideas, and its
+MIT data with attribution, may be used; its code is Rust and TypeScript and
+is not copied into a Python project.
+
 ### M5 — The order and the selection by kind of mod (after 3.0.0)
 
 Asked for on 2026-10-23: use the generic kind of each mod (interface,
@@ -202,13 +212,20 @@ the authors' metadata inis, the player's Sorting Order. Measured gaps:
 - BWS-NG's and Project Infinity's classifications are not read yet; their
   shape has to be measured first (the session sandbox cannot reach them; a
   workflow can).
+- **Infinity Mod Runner** (Anprionsa, MIT, a Tauri/Rust installer, beta
+  1.0.2, "1,675 components installed in 12.2 h") and the **Infinity Mod
+  Forge** it reads publish their data at `anprionsa.github.io/infinity-mod-forge`
+  with the same file names krion64's site has (`data/categories.json`,
+  `data/mods/*.json` with `wp` paths, `version_cache.json`, `ki` known
+  issues). Whether krion64's data is the Forge's, a copy or a fork is to be
+  measured, not assumed; if it is one source, it counts once.
 
 | # | Item | Size |
 |---|---|---|
-| 25 | **Audit, measured on GitHub's runners**: every source's classification (krion64's categories and per-component `c`, lcc-docs' categories, BWS-NG's, Project Infinity's), how many mods each covers, a mapping from each to krion64's install phases, and where they disagree. On the supplied 145-mod EET log: how many mods have no krion64 place, and how far the order by kind is from the order the player actually installed. ADR-0041 decides from these numbers. | M |
+| 25 | **Audit, measured on GitHub's runners**: every source's classification (krion64's categories and per-component `c`, the Infinity Mod Forge's and how it relates to krion64's, lcc-docs' categories, BWS-NG's, Project Infinity's), how many mods each covers, a mapping from each to krion64's install phases, and where they disagree. On the supplied 145-mod EET log: how many mods have no krion64 place, and how far the order by kind is from the order the player actually installed. ADR-0041 decides from these numbers. | M |
 | 26 | **Selection by kind**: one "kind" filter and column in phase 2, from the mapping, each mod showing which source says what; a disagreement is shown, never settled silently. | M |
 | 27 | **Order by kind for what krion64 does not place**: such a mod takes the place its kind maps to, marked "placed by kind" with its source in the order page, the plan summary and the JSON plan. It never overrides, in this order: the player's Sorting Order, the authors' inis, BWS-NG's rules, krion64's own place. | M |
-| 28 | **Exceptions per component**: a component whose kind differs from its mod's (a tweak pack's portraits, a tactical mod's kits, what goes after EET_end) is split and placed by its own kind, from krion64's and BWS-NG's per-component data; two chosen components known to overwrite the same thing (BWS-NG and krion64 conflict records, `mod-forge.json`) are reported with their order as an option, as conflicts are today. Static analysis of what a tp2 copies is not promised: WeiDU's language can compute any path. | L |
+| 28 | **Exceptions per component**: a component whose kind differs from its mod's (a tweak pack's portraits, a tactical mod's kits, what goes after EET_end) is split and placed by its own kind, from krion64's and BWS-NG's per-component data; two chosen components known to overwrite the same thing (BWS-NG and krion64 conflict records, `mod-forge.json`) are reported with their order as an option, as conflicts are today. Static analysis of what a tp2 copies is not promised: WeiDU's language can compute any path. What can be measured is what an install really overwrote: Infinity Mod Runner's *File Guard* snapshots the override folder's md5s after each batch and flags a change outside an allowlist of files several mods legitimately write (`guard_allowlist.json`); the same check belongs to M4's installation, and its findings feed this item. | L |
 | 29 | **Tests on real data**: fixtures in the shape of the real files (krion64 MIT data may be pinned; BWS-NG's is GPL and is not bundled, so its fixtures are written by hand to its schema), a weekly workflow on the live sources, the 145-mod log as a benchmark (order inversions against the player's order, before and after), and the mock EET install with the real WeiDU on a plan reordered by kind. | M |
 
 **Explicitly not planned:**
