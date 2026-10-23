@@ -218,7 +218,8 @@ class Unit:
     part: int = 0              # > 0 once a mod is split across the order
     split: bool = False        # whether this mod was split at all
     parts: int = 1             # how many parts the mod was split into
-    placed_by: str = ""        # why its kind placed it, where krion64 does not
+    placed_by: str = ""        # why BWS-NG's sequence or its kind placed it
+    placed_from: str = ""      # "BWS-NG" or "kind", where one did
     no_place: str = ""         # why its kind could not, where it was asked
 
     @property
@@ -324,6 +325,7 @@ class OrderPlan:
     # ADR-0041 decision 2: what its kind placed, and why the rest has no place
     by_kind: list[tuple[str, str, str]] = field(default_factory=list)  # name, category, why
     by_sequence: list[tuple[str, str, str]] = field(default_factory=list)  # name, category, why
+    sorting_order: bool = False   # the player's own order applies, over every place
     no_place: list[tuple[str, str, str]] = field(default_factory=list)  # log, name, why not
     blockers: list = field(default_factory=list)           # rules.Violation
     residual: list = field(default_factory=list)           # rules.Violation
@@ -440,7 +442,7 @@ def _split(units: list[Unit], rules: list, index: OrderIndex) -> list[Unit]:
                             slot=index.component(unit.key, first) or unit.slot,
                             target_log=unit.target_log, part=n, split=True,
                             parts=len(runs), placed_by=unit.placed_by,
-                            no_place=unit.no_place))
+                            placed_from=unit.placed_from, no_place=unit.no_place))
     return out
 
 
@@ -685,14 +687,22 @@ def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
     for unit in units:
         unit.slot = index.get(unit.key)
         unit.target_log = unit.source_log
+        disagree = ""
         if unit.slot is None and eet_build and unit.source_log == EET_LOG:
-            _place_by_sequence(unit, index, sequence, in_sequence, plan)
+            disagree = _place_by_sequence(unit, index, sequence, in_sequence, plan)
         if unit.slot is None and not (eet_build and unit.source_log == PRE_EET_LOG):
             hint = hints.get(unit.key)
             if hint is None and in_folder[(unit.source_log, normalize_key(unit.folder))] == 1:
                 # a catalogue names the folder; only its one tp2 may take it
                 hint = hints.get(normalize_key(unit.folder))
             _place_by_kind(unit, index, hint, plan)
+        if disagree and unit.slot is None:
+            unit.no_place = "; ".join(filter(None, (disagree, unit.no_place)))
+        elif disagree:
+            unit.placed_by += f" ({disagree})"
+            plan.by_kind[-1] = (*plan.by_kind[-1][:2], unit.placed_by)
+        if unit.no_place:
+            plan.no_place.append((unit.source_log, unit.display, unit.no_place))
         if unit.slot is None:
             plan.unranked.append(unit.display)
 
@@ -711,6 +721,7 @@ def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
             unit.target_log = wanted
 
     rules = _order_rules(ruleset, include_optional)
+    plan.sorting_order = any(rule.origin == SORTING_ORDER for rule in rules)
     units = _split(units, rules, index)
     edges, plan.edges = _edges(units, rules)
     # What a rule places - not the player's own sorting order, which ties every
@@ -737,26 +748,70 @@ def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
 
 
 def _place_by_sequence(unit: Unit, index: OrderIndex, sequence: Sequence[tuple[str, int]],
-                       at: Mapping[tuple[str, int | None], int], plan: OrderPlan) -> None:
+                       at: Mapping[tuple[str, int | None], int], plan: OrderPlan) -> str:
     """
-    Right after the nearest component before it, in BWS-NG's EET sequence,
-    that krion64 places - BWS-NG's order carried onto krion64's, before any
-    kind (ADR-0041 decision 2a). Units it puts after one anchor keep BWS-NG's
-    order among themselves.
+    After the nearest component before it, in BWS-NG's EET sequence, that
+    krion64 places - BWS-NG's order carried onto krion64's, before any kind
+    (ADR-0041 decision 2a). Units put after one anchor keep BWS-NG's order.
+
+    Limits (review of #71): what BWS-NG installs before the EET core is not
+    this install's to place. krion64 mostly places a whole mod where it
+    starts, so a neighbour counts only in its mod's first run of the
+    sequence (bws-fr-fixpack's #1, at the end, is not where krion64 puts
+    it). And both neighbours are asked: where they are in different krion64
+    categories, or there is none after it, the sequence decides nothing and
+    says so (returned, for the reason the plan gives).
     """
     first = _numbers(unit)[0] if unit.lines else None
     start = at.get((unit.key, first), at.get((unit.key, None)))
-    if start is None:
-        return
-    for mod, number in reversed(sequence[:start]):
-        anchor = index.component(mod, number) or index.get(mod)
-        if anchor is None or anchor.pre_eet or mod == unit.key:
+    core = at.get(("eet", 0))
+    if start is None or (core is not None and start < core):
+        return ""
+    runs = _first_runs(sequence)
+    before = _anchor(index, ((i, sequence[i]) for i in range(start - 1, -1, -1)),
+                     unit.key, runs)
+    after = _anchor(index, ((i, sequence[i]) for i in range(start + 1, len(sequence))),
+                    unit.key, runs)
+    if before is None:
+        return ""
+    (mod, number), anchor = before
+    if after is None:
+        return "BWS-NG places nothing krion64 knows after it"
+    if after[1].category != anchor.category:
+        return (f"BWS-NG's neighbours disagree ({mod} in {anchor.category}, "
+                f"{after[0][0]} in {after[1].category})")
+    unit.slot = Slot(category=anchor.category, rank=anchor.rank, ord=anchor.ord,
+                     pre_eet=False, after=start + 1)
+    unit.placed_by = f"placed by BWS-NG's EET sequence: after {mod} #{number}"
+    unit.placed_from = "BWS-NG"
+    plan.by_sequence.append((unit.display, anchor.category, unit.placed_by))
+    return ""
+
+
+def _anchor(index: OrderIndex, entries, own: str, runs: dict[str, range]):
+    """The first (entry, slot) of `entries` krion64 places after the core: a
+    component krion64 places itself, or one in its mod's first run."""
+    for at, (mod, number) in entries:
+        if mod == own:
             continue
-        unit.slot = Slot(category=anchor.category, rank=anchor.rank, ord=anchor.ord,
-                         pre_eet=False, after=start + 1)
-        unit.placed_by = f"placed by BWS-NG's EET sequence: after {mod} #{number}"
-        plan.by_sequence.append((unit.display, anchor.category, unit.placed_by))
-        return
+        slot = index.component(mod, number)
+        if slot is None and at in runs.get(mod, range(0)):
+            slot = index.get(mod)
+        if slot is not None and not slot.pre_eet:
+            return (mod, number), slot
+    return None
+
+
+def _first_runs(sequence: Sequence[tuple[str, int]]) -> dict[str, range]:
+    """Each mod's first unbroken run of entries in the sequence."""
+    runs: dict[str, range] = {}
+    for at, (mod, _number) in enumerate(sequence):
+        if mod not in runs:
+            end = at
+            while end < len(sequence) and sequence[end][0] == mod:
+                end += 1
+            runs[mod] = range(at, end)
+    return runs
 
 
 def bws_sequence(eet: object) -> list[tuple[str, int]]:
@@ -785,11 +840,11 @@ def _place_by_kind(unit: Unit, index: OrderIndex, hint: KindHint | None,
     if category is None or category not in index.categories:
         unit.no_place = (why if category is None else
                          f"no place: krion64 has no {category!r}")
-        plan.no_place.append((unit.source_log, unit.display, unit.no_place))
         return
     unit.slot = Slot(category=category, rank=index.categories.index(category),
                      ord=_AFTER_THE_CATEGORY, pre_eet=False)
     unit.placed_by = why
+    unit.placed_from = "kind"
     plan.by_kind.append((unit.display, category, why))
 
 
@@ -894,15 +949,18 @@ def render_plan_summary(plan: OrderPlan, directory: str, stream) -> None:
             for violation in missing:
                 print(f"    {violation.summary}", file=stream)
 
+    over = (" Your Sorting Order applies over these places." if plan.sorting_order
+            else "")
     if plan.by_sequence:
         print(f"\n  placed by BWS-NG's EET sequence ({len(plan.by_sequence)}) — krion64 "
-              f"does not place them; after the component before them there:", file=stream)
+              f"does not place them; after the component before them there.{over}",
+              file=stream)
         for name, category, why in plan.by_sequence:
             print(f"    {name:<32} {category}  ({why})", file=stream)
 
     if plan.by_kind:
         print(f"\n  placed by kind ({len(plan.by_kind)}) — krion64 does not place "
-              f"them; after its own mods in the category:", file=stream)
+              f"them; after its own mods in the category.{over}", file=stream)
         for name, category, why in plan.by_kind:
             print(f"    {name:<32} {category}  ({why})", file=stream)
 

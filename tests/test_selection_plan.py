@@ -275,16 +275,43 @@ def test_what_krion64_does_not_place_takes_the_place_its_kind_decides(tmp_path):
 
 
 def test_bws_ngs_sequence_in_the_data_cache_places_first(tmp_path):
-    """Decision 2a: games/eet.json, cached, places ascension right after the
-    EET core, before any kind would."""
+    """Decision 2a: games/eet.json, cached, places ascension after EEex, its
+    neighbour after it agreeing (ENGINE), before any kind would."""
+    import shutil
+    krion = tmp_path / "krion"
+    shutil.copytree(KRION, krion)
+    (krion / "mods" / "engine2.json").write_text(json.dumps(
+        {"t": "engine2", "c": "ENGINE", "ord": 20}), encoding="utf-8")
     games = tmp_path / "no-cache" / "bws-ng" / "data" / "games"
     games.mkdir(parents=True)
     (games / "eet.json").write_text(json.dumps({"sequences": [
-        {"game": "bg2ee", "order": ["eet:0", "ascension:0"]}]}), encoding="utf-8")
+        {"game": "bg2ee", "order": ["eet:0", "eeex:0", "ascension:0", "engine2:0"]}]}),
+        encoding="utf-8")
 
-    result = plan(tmp_path)
+    result = plan(tmp_path, order_catalogue=str(krion))
 
     eet = {u["name"].lower(): u for u in
            next(p for p in result["phases"] if p["title"] == "EET")["units"]}
-    assert eet["ascension"]["placed_by"] == "placed by BWS-NG's EET sequence: after eet #0"
+    assert eet["ascension"]["placed_by"] == "placed by BWS-NG's EET sequence: after eeex #0"
+    assert eet["ascension"]["placed_from"] == "BWS-NG"
     assert eet["ub"]["placed_by"] == ""
+
+
+def test_a_broken_cached_sequence_does_not_block_the_plan(tmp_path):
+    """Review of #71 (F2): the data cache's eet.json is warned about; one
+    given by hand still stops the run."""
+    games = tmp_path / "no-cache" / "bws-ng" / "data" / "games"
+    games.mkdir(parents=True)
+    (games / "eet.json").write_text('{"sequences": [', encoding="utf-8")
+
+    result = plan(tmp_path)
+
+    assert result["planned"]
+    by_hand = api.Settings(eet_sequence=str(games / "eet.json"),
+                           data_dir=str(tmp_path / "elsewhere"))
+    with pytest.raises(ConfigError, match="cannot read --eet-sequence"):
+        api._eet_sequences(by_hand)
+    cached = api.Settings(eet_sequence=str(games / "eet.json"),
+                          data_dir=str(tmp_path / "no-cache"))
+    warned: list = []
+    assert api._eet_sequences(cached, warned) is None and "cannot be read" in warned[0]

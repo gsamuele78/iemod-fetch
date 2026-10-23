@@ -153,8 +153,8 @@ class OrderPage(QWidget):
                  f"{sum(u['constrained'] for u in units)} placed by a rule",
                  f"{sum(u['moved'] for u in units)} moved from where they were chosen"]
         # a split mod is one mod placed by its kind, not one per part
-        placed = {u["key"]: u["placed_by"] for u in units if u.get("placed_by")}
-        by_bws = sum(why.startswith("placed by BWS-NG") for why in placed.values())
+        placed = {u["key"]: u.get("placed_from") for u in units if u.get("placed_by")}
+        by_bws = sum(source == "BWS-NG" for source in placed.values())
         if result.get("custom"):
             parts.append("your own order applies")    # over every kind's place
         else:
@@ -179,7 +179,7 @@ class OrderPage(QWidget):
         for unit in phase["units"]:
             text = unit["name"] + (f"  -  {unit['category']}" if unit["category"] else "")
             if unit.get("placed_by") and not custom:
-                text += ("  (by BWS-NG)" if unit["placed_by"].startswith("placed by BWS-NG")
+                text += ("  (by BWS-NG)" if unit.get("placed_from") == "BWS-NG"
                          else "  (by kind)")
             item = QListWidgetItem(text)
             item.setData(ROLE, unit)

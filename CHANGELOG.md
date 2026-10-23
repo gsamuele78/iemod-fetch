@@ -49,16 +49,27 @@ Python API, which is internal.
 ### Added
 - **BWS-NG's EET sequence places a mod krion64 does not, before any kind**
   (ADR-0041 decision 2a, the rest of GUI-AUDIT item 27). In the install after
-  the EET core, such a mod goes right after the nearest component before it
-  in BWS-NG's `games/eet.json` (bg2ee sequence, `--eet-sequence`, cached by
-  default) that krion64 places; several after one component keep BWS-NG's
-  order. Only then does its kind decide. A preference like the rest: rules
-  and the player's Sorting Order still win. The plan summary lists them under
-  "placed by BWS-NG's EET sequence", the order page marks "(by BWS-NG)".
-  Measured on the 2026-10-23 data: the sequence names 364 mods, 30 of which
-  krion64 does not place; it places the 26 that are mods (the other 4 are
-  WeiDU and its tools, before the EET core). Of the 12 a kind would also
-  place, the two agree on 8.
+  the EET core, such a mod goes after the nearest component before it in
+  BWS-NG's `games/eet.json` (bg2ee sequence, `--eet-sequence`, cached by
+  default) that krion64 places - after every mod krion64 gives that place;
+  several after one component keep BWS-NG's order. krion64 places a whole
+  mod where it starts, so a neighbour counts only in its mod's first run of
+  the sequence, and the neighbour after is asked too: where the two are in
+  different krion64 categories, or there is none after, the sequence
+  decides nothing and says why, and the kind is asked. What BWS-NG installs
+  before the EET core is never moved after it. A preference like the rest:
+  rules and the player's Sorting Order still win (the summary says so when
+  one applies). The plan summary lists them under "placed by BWS-NG's EET
+  sequence", the order page marks "(by BWS-NG)", `api.selection_plan` gives
+  `placed_from`. A cached `eet.json` that cannot be read is warned about and
+  places nothing; one given by hand still stops the run. Measured on the
+  2026-10-23 data, by BWS-NG's ids (a log may spell a mod otherwise and
+  then is not matched - a miss places nothing): the sequence names 364 mods,
+  30 of which krion64 does not place; 4 come before the EET core (WeiDU,
+  WeiDU64, WeiDU-FileChangeLog, EEKeeper). Of the 26 others, 16 are placed
+  by the sequence, 3 by their kind after the neighbours disagreed, 7 say why
+  they have no place; where a kind would also place one of the 16 (9), the
+  two agree on 8.
 - **A mod krion64 does not place takes the place its kind decides**
   (GUI-AUDIT M5 item 27, ADR-0041 decision 2). Interface, cosmetic, kit,
   recruitable and one-day NPC, smith and merchant mods go after krion64's own

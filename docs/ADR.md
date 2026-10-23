@@ -2267,10 +2267,15 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
    right for 97 of 132 (73%). Of 1,071 classified mods krion64 does not
    place, 445 are placed and 626 are not; on the 397 krion64 places, the
    kind names krion64's own category for 351 (88%). *BWS-NG's sequence,
-   first, done too:* the 26 mods it places that krion64 does not (30 in
-   the bg2ee sequence, 4 of them WeiDU and its tools) are placed after the
-   nearest component before them that krion64 places; where a kind would
-   also place one (12), the two agree on 8.
+   first, done too:* krion64 places a whole mod, not its components, so
+   "the nearest component before it" is read as the nearest one in its
+   mod's first run of the sequence, and the one after is asked too - where
+   the two are in different categories, or there is none after, the
+   sequence decides nothing. Of the 26 mods after the EET core krion64
+   does not place (30 in the bg2ee sequence, 4 before the core), 16 are
+   placed by the sequence, 3 by kind, 7 say why not; where a kind would
+   also place one of the 16 (9), the two agree on 8. Measured on BWS-NG's
+   ids, not on logs.
 3. **The 21% disagreement is shown, not settled**: where the plan orders two
    chosen components the other way round from BWS-NG's sequence, and no rule
    decides, the order page marks the pair "BWS-NG installs these the other

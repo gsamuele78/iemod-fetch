@@ -72,8 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--eet-sequence", metavar="PATH",
                      help="BigWorldSetup-NG data/games/eet.json: its bg2ee "
                           "sequence says which mods may go on BG2:EE before the "
-                          "EET core (default: the data cache; without it, EET's "
-                          "readme rule - only the EE Fixpack)")
+                          "EET core, and places in --plan-order a mod krion64 "
+                          "does not (default: the data cache; without it, EET's "
+                          "readme rule - only the EE Fixpack - and no such place)")
     src.add_argument("--releases", metavar="PATH",
                      help="krion64's data/version_cache.json: each mod repository's "
                           "latest GitHub release; with its sibling mods/, the "

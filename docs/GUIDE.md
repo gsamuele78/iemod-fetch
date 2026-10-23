@@ -475,7 +475,7 @@ it for every source flag you did not give:
 | BWS-NG `data/rules`, krion64 `data/mods` | `--rules` |
 | BWS-NG `data/mods` | `--mod-db` |
 | krion64 `data/` | `--order-catalogue` |
-| BWS-NG `data/games/eet.json` | `--eet-sequence` (what may precede the EET core) |
+| BWS-NG `data/games/eet.json` | `--eet-sequence` (what may precede the EET core; with `--plan-order`, the place of a mod krion64 does not place) |
 
 ```bash
 python3 iemod-fetch.pyz --update-data        # refresh now and stop; shows each commit
