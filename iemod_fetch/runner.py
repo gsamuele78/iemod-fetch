@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from dataclasses import replace as _replace
 
 from .contract import SCHEMA_VERSION
-from .errors import (Cancelled, InstallConflict, ModFetchError, NotThisMod, Unresolved,
-                     VerificationFailed)
+from .errors import (Cancelled, InstallConflict, ModFetchError, NotAnArchive, NotThisMod,
+                     Unresolved, VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
 from .naming import archive_filename, normalize_key
@@ -20,6 +20,20 @@ from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
                         repo_from_url)
 from .urls import is_forum_post
 from .versions import newer_release
+
+
+
+def _pinned(source) -> str:
+    """What pins a source to one file, if anything: a sha256, a tag, an asset."""
+    return ", ".join(f"{name} {value}" for name, value in (
+        ("sha256", source.sha256), ("release_tag", source.release_tag),
+        ("asset", source.asset)) if value)
+
+
+def _unpinned(source, repo):
+    """The same source, as a GitHub repository's latest release."""
+    return _replace(source, url=None, github=repo, release_tag=None, asset=None,
+                    sha256=None)
 
 
 @dataclass
@@ -193,9 +207,9 @@ class Runner:
                     break
                 except VerificationFailed as exc:
                     # The artefact is not this mod: the manifest's, or the
-                    # catalogue's first source - lcc-docs links forum
-                    # attachments that are save games, debug logs or another
-                    # mod's patch. Each of the catalogue's other sources gets
+                    # catalogue's first source - a file scraped from a forum
+                    # thread lcc-docs lists was a save game, debug logs or
+                    # another mod's patch. Each of the catalogue's other sources gets
                     # one turn - a source, not a URL: one that redirects to a
                     # new signed URL each time would otherwise come round
                     # forever - and the same strict check gates every one.
@@ -213,6 +227,30 @@ class Runner:
                         raise
                     candidate = alternate
                     refused.append(candidate.url)
+                except NotAnArchive as exc:
+                    # baldurs-gate.de's XenForo `/download` answers 301 to the
+                    # mod's GitHub releases page - HTML, not the file. That
+                    # page names the repository the author publishes from, so
+                    # its release is taken instead: once, and held to the same
+                    # .tp2 check (GUI-AUDIT M7 item 55).
+                    repo = repo_from_url(exc.final_url or "")
+                    if (not repo or _pinned(source)
+                            or ("github", repo.lower()) in {
+                                (k, str(v).lower()) for k, v in
+                                (s for s in skip if isinstance(s, tuple))}):
+                        raise
+                    skip.update({("github", repo), ("github", repo.lower())})
+                    probe = self.github.resolve(_unpinned(source, repo))
+                    if probe.candidate is None:
+                        # the same code as the failure it stands for: the
+                        # report's error codes are a contract (ADR-0030)
+                        raise NotAnArchive(exc.url, exc.sniff, exc.final_url, note=(
+                            f"; it leads to {repo} on GitHub, whose release could "
+                            f"not be had: {probe.reason}")) from exc
+                    resolution.warnings.append(
+                        f"{folder}: {exc.url} leads to {repo} on GitHub; its release "
+                        f"is used instead")
+                    candidate = probe.candidate
             if len(refused) > 1:
                 resolution.warnings.append(
                     f"{folder}: {', '.join(refused[:-1])} did not contain this mod; "
@@ -371,6 +409,23 @@ class Runner:
                       bytes=result.size, advisories=advisories,
                       warnings=list(resolution.warnings))
 
+    def _led_to_github(self, source, folder, landing):
+        """
+        The release of the repository a landing page redirected to (item 55) -
+        never for a source pinned to a file: a pin means that file or nothing.
+        """
+        if _pinned(source):
+            landing.reason += (f"; it is pinned to a file ({_pinned(source)}), so "
+                               f"{landing.github}'s release is not taken instead")
+            return landing
+        probe = self.github.resolve(_unpinned(source, landing.github))
+        if not probe.ok:
+            landing.reason += f"; {probe.reason}"
+            return landing
+        probe.warnings.append(f"{folder}: {source.url} leads to {landing.github} on "
+                              f"GitHub; its release is used")
+        return probe
+
     def _resolve(self, source, folder):
         """
         Catalogue first, trusted owners only as a fallback.
@@ -383,6 +438,8 @@ class Runner:
             resolution = self.github.resolve(source)
         elif source.url:
             resolution = self.landing.resolve(source)
+            if resolution.github:
+                resolution = self._led_to_github(source, folder, resolution)
         else:
             resolution = Resolution(reason="entry has no url and no github repository")
 
@@ -490,7 +547,10 @@ class Runner:
         def from_url(url, how, kind):
             if (kind, url) in skip:
                 return None
-            probe = self.landing.resolve(_replace(source, url=url, github=None))
+            src = _replace(source, url=url, github=None)
+            probe = self.landing.resolve(src)
+            if probe.github:            # a link that redirected to GitHub (item 55)
+                probe = self._led_to_github(src, folder, probe)
             if fresh(probe, (kind, url)):
                 probe.warnings.append(f"{folder}: resolved via {entry.origin} {how}-> {url}")
                 return probe

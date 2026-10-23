@@ -98,6 +98,9 @@ class Resolution:
     reason: str = ""
     alternatives: list[Candidate] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # the GitHub repository a landing page redirected to, for the caller to
+    # resolve as such (GUI-AUDIT M7 item 55)
+    github: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -330,6 +333,12 @@ class LandingPageResolver:
                     name = self._filename(resp, final_url, source)
                     return Resolution(candidate=Candidate(final_url, name, "direct",
                                                           sha256=source.sha256))
+                led = repo_from_url(final_url) if final_url != url else None
+                if led:
+                    # baldurs-gate.de's `/download` answers 301 to the mod's
+                    # GitHub releases page: the author's repository, named by
+                    # the site, whose release the caller can take
+                    return Resolution(reason=f"{url} leads to {led} on GitHub", github=led)
                 if "text/html" not in content_type and content_type:
                     return Resolution(reason=f"unexpected Content-Type {content_type!r}")
                 body = resp.read(4 * 1024 * 1024).decode("utf-8", errors="replace")
