@@ -35,10 +35,12 @@ Standard library only at runtime. One file, no dependencies.
 **Current release: 3.0.0** - the desktop wizard up to download (milestone
 M3): game and folders, mod selection with conflicts and presets, install
 order, then download and extraction with cancel and resume, also as a program
-that needs no Python (Linux and Windows zips, macOS added when built). The
-command line is unchanged: 3.0 is the plan's number for the milestone, not a
-break. Installation from the wizard is the next milestone (M4). What changed
-in each release is in [`CHANGELOG.md`](CHANGELOG.md).
+that needs no Python (Linux and Windows zips, macOS added when built). 3.0 is
+the plan's number for the milestone, not a break: the command line only gains
+(a `mod_extracting` event; with no `mod_downloads.json`, the community
+catalogue as the source) and is fixed, nothing is removed or renamed.
+Installation from the wizard is the next milestone (M4). What changed in each
+release is in [`CHANGELOG.md`](CHANGELOG.md).
 
 | Step | What happens | Flag |
 |---|---|---|
@@ -675,7 +677,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,097, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,255, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |
