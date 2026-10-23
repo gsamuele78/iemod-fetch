@@ -335,5 +335,5 @@ def test_a_legacy_russian_tra_reads_as_cyrillic(tmp_path):
 
 def test_utf8_still_comes_first(tmp_path):
     (tmp_path / "russian").mkdir()
-    (tmp_path / "russian" / "a.tra").write_bytes("@1 = ~Умные~".encode("utf-8"))
+    (tmp_path / "russian" / "a.tra").write_bytes("@1 = ~Умные~".encode())
     assert api._text_under(str(tmp_path), "russian/a.tra") == "@1 = ~Умные~"
