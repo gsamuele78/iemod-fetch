@@ -85,6 +85,17 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **`--language-preference` picks the language WeiDU means** (GUI-AUDIT M7
+  item 43). The tp2 reader took a string from `~` or `"` to the next `~` or
+  `"`, and any `LANGUAGE` word as a declaration: `~Use "smart" AI~` read as
+  `Use`, `~~~~~...~~~~~` strings not at all, and code such as
+  `iconv_path = ...` or `reload_array = ... LANGUAGE` as a language. On the
+  119 tp2s of 103 real mods, 12 language lists disagreed with WeiDU 251's
+  `--list-languages`, and 11 mods got a wrong WeiDU language number for at
+  least one of eight common languages - NTotSC's English was number 1, its
+  German; BP-BGT-Worldmap offered none. The tp2 reader now uses the scanner
+  the component names already used (moved to `iemod_fetch/weidu_lex.py`):
+  all 119 agree with WeiDU.
 - **Every saved file goes through one atomic write** (GUI-AUDIT M7 item 46).
   Eight places wrote `<file>.tmp` and renamed it over the file: one temp
   name for every writer, so two runs saving the same state, report or cache
