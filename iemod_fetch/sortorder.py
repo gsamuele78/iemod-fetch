@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from .errors import ConfigError
 from .naming import normalize_key
-from .ordering import tp2_key
+from .ordering import name_key
 from .rules import ORDER, SORTING_ORDER, ModSpec, Rule
 
 ORIGIN = SORTING_ORDER
@@ -45,12 +45,12 @@ def parse(text: str, source: str = "SortingOrder") -> List[Entry]:
         if not normalize_key(name):
             raise ConfigError(f"{source}:{number}: no tp2 name in {raw.strip()!r}")
         if rest == ["*"] or not rest:
-            out.append(Entry(tp2_key(name), name, None, number))
+            out.append(Entry(name_key(name), name, None, number))
             continue
         if not all(part.isdigit() for part in rest):
             raise ConfigError(f"{source}:{number}: expected '*' or component numbers "
                               f"after {name}, got {' '.join(rest)!r}")
-        out.append(Entry(tp2_key(name), name, tuple(int(p) for p in rest), number))
+        out.append(Entry(name_key(name), name, tuple(int(p) for p in rest), number))
     return out
 
 

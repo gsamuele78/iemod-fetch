@@ -218,7 +218,8 @@ BG2"), which matches no tp2 and so orders nothing.
 WeiDU.log]` reads krion64's (the Infinity Mod Forge's), BWS-NG's and
 lcc-docs' real files (ADR-0041). On 2026-10-23: BWS-NG's per-component EET
 sequence (3,232 components) and krion64's order disagree on 21% of the pairs
-both place; lcc-docs classifies 546 EE mods krion64 does not place; a
+both place (21.5% without the pairs krion64 ties: order within a mod is not
+compared); the sequence places 26 mods krion64 does not; lcc-docs classifies 546 EE mods krion64 does not place; a
 category maps onto one krion64 install category for 85-100% of its mods only
 for interface, cosmetic, kit, NPC and smith mods. The supplied log is the
 Forge's own output (its header), so krion64 agrees with it on all but 0.02%
@@ -365,7 +366,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,259 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,261 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 58 modules |

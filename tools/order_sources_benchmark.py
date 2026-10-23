@@ -41,9 +41,11 @@ from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from iemod_fetch.ordering import OrderIndex, tp2_key  # noqa: E402
+from iemod_fetch.ordering import OrderIndex, name_key, tp2_key  # noqa: E402
 
 Key = Tuple[str, int]                     # (tp2 key, component number)
+# BWS-NG's sequence lists WeiDU itself and its helpers; they are not mods
+TOOLS = {"weidu", "weidu64", "weidufilechangelog", "eekeeper"}
 LOG_LINE = re.compile(r"^\s*~([^~]+)~\s*#\d+\s*#(\d+)")
 
 
@@ -77,7 +79,7 @@ def krion(data_dir: str) -> dict:
                  if isinstance(co, dict) and isinstance(co.get("wp"), str)}
         names.add(str(record.get("t") or ""))
         for name in filter(None, names):
-            mods.setdefault(tp2_key(name), record.get("c"))
+            mods.setdefault(name_key(name), record.get("c"))
     return {"index": index, "mods": mods, "categories": list(index.categories),
             "apart": apart, "tags": tags, "skipped": skipped}
 
@@ -94,7 +96,7 @@ def bws(data_dir: str) -> dict:
         if not isinstance(record, dict) or not record.get("tp2"):
             skipped += 1
             continue
-        mods[tp2_key(str(record["tp2"]))] = tuple(record.get("categories") or ())
+        mods[name_key(str(record["tp2"]))] = tuple(record.get("categories") or ())
     sequence: Dict[Key, int] = {}
     eet = os.path.join(data_dir, "games", "eet.json")
     if os.path.isfile(eet):
@@ -103,7 +105,8 @@ def bws(data_dir: str) -> dict:
                 for entry in part.get("order") or []:
                     mod, _, number = str(entry).rpartition(":")
                     if mod and number.isdigit():
-                        sequence.setdefault((tp2_key(mod), int(number)), len(sequence))
+                        # a component listed twice keeps its first place
+                        sequence.setdefault((name_key(mod), int(number)), len(sequence))
     return {"mods": mods, "sequence": sequence, "skipped": skipped}
 
 
@@ -124,18 +127,25 @@ def lcc(path: str) -> dict:
         for part in re.split(r"[;,]", str(record.get("tp2") or "")):
             name = part.strip()
             if name and name.lower() != "non-weidu":
-                mods.setdefault(tp2_key(name), tuple(record.get("categories") or ()))
+                mods.setdefault(name_key(name), tuple(record.get("categories") or ()))
     return {"mods": mods}
 
 
 # ------------------------------------------------------------------ measures
 
 def disagreement(order_a: List[int], order_b: List[int]) -> Tuple[int, int]:
-    """Pairs two orders of the same items put the other way round, and pairs."""
+    """Pairs two orders of the same items put the other way round, and pairs.
+    A pair order_b ties (krion64 gives every component of a mod one place) is
+    counted, and never as reversed: see `ties` for the share without them."""
     assert len(order_a) == len(order_b)
     pairs = sorted(zip(order_a, order_b))
     values = [b for _, b in pairs]
     return _inversions(values), len(values) * (len(values) - 1) // 2
+
+
+def ties(order_b: List[int]) -> int:
+    """Pairs order_b puts at the same place."""
+    return sum(n * (n - 1) // 2 for n in collections.Counter(order_b).values())
 
 
 def _inversions(values: List[int]) -> int:
@@ -210,10 +220,20 @@ def measure(k: dict, b: dict, lc: dict, log: Optional[str]) -> dict:
                                  "lcc_docs": mapping(lc["mods"], k["mods"])}
     both = [(key, pos, krion_position(index, key)) for key, pos in b["sequence"].items()]
     both = [(key, pos, kp) for key, pos, kp in both if kp is not None]
-    inv, pairs = disagreement([pos for _, pos, _ in both],
-                              [kp[0] * 100000 + kp[1] for _, _, kp in both])
+    flat = [kp[0] * 100000 + kp[1] for _, _, kp in both]
+    inv, pairs = disagreement([pos for _, pos, _ in both], flat)
+    tied = ties(flat)
     out["bws_vs_krion64"] = {"components_both_place": len(both), "pairs": pairs,
-                             "reversed": inv, "share": round(inv / pairs, 4) if pairs else None}
+                             "reversed": inv, "share": round(inv / pairs, 4) if pairs else None,
+                             "tied_in_krion64": tied,
+                             "share_without_ties": (round(inv / (pairs - tied), 4)
+                                                    if pairs > tied else None)}
+    seq_mods = sorted({key for key, _ in b["sequence"]})
+    unplaced = [m for m in seq_mods if index.get(m) is None]
+    out["bws_sequence_mods"] = {
+        "mods": len(seq_mods),
+        "not_placed_by_krion64": [m for m in unplaced if m not in TOOLS],
+        "tools_left_out": [m for m in unplaced if m in TOOLS]}
     if log:
         head, rows = read_log(log)
         mods = list(dict.fromkeys(key for key, _ in rows))
@@ -228,7 +248,7 @@ def measure(k: dict, b: dict, lc: dict, log: Optional[str]) -> dict:
                             "mods_placed": len({rows[i][0] for i, _ in placed}),
                             "pairs": pairs, "reversed_vs_log": inv,
                             "share": round(inv / pairs, 4) if pairs else None}
-        neither = [m for m in mods if not k["mods"].get(m) and m not in b["mods"]
+        neither = [m for m in mods if index.get(m) is None
                    and not any(key[0] == m for key in b["sequence"])]
         result["mods_placed_by_neither"] = neither
         out["log"] = result
@@ -253,7 +273,12 @@ def render(result: dict, stream) -> None:
             w(f"  {cat}: {top}\n")
     bk = result["bws_vs_krion64"]
     w(f"BWS-NG sequence vs krion64 order: {bk['components_both_place']} components both "
-      f"place, {bk['reversed']} of {bk['pairs']} pairs the other way round ({bk['share']})\n")
+      f"place, {bk['reversed']} of {bk['pairs']} pairs the other way round ({bk['share']}; "
+      f"{bk['share_without_ties']} without the {bk['tied_in_krion64']} pairs krion64 ties)\n")
+    sq = result["bws_sequence_mods"]
+    w(f"BWS-NG sequence: {sq['mods']} mods; {len(sq['not_placed_by_krion64'])} krion64 does "
+      f"not place ({', '.join(sq['not_placed_by_krion64'])}); tools left out: "
+      f"{', '.join(sq['tools_left_out'])}\n")
     if "log" in result:
         lg = result["log"]
         w("log: " + " | ".join(lg["head"]) + "\n")
