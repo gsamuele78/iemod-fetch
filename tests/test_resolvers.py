@@ -165,6 +165,24 @@ def test_repo_extraction_is_exact(url, expected):
     assert repo_from_url(url) == expected
 
 
+@pytest.mark.parametrize("url,expected", [
+    # lcc-docs' links for the supplied EET log, 2026-10-23
+    ("https://forums.beamdog.com/uploads/editor/gk/qg6zo9o3fqho.zip", True),
+    ("https://forums.beamdog.com/discussion/45563/", True),
+    ("https://forums.pocketplane.net/index.php?topic=1", True),
+    ("https://www.shsforums.net/topic/57927-mod-the-picture-standard/", True),
+    ("https://www.baldursgateworld.fr/viewtopic.php?t=28812", True),
+    # an author's own download pages are not threads
+    ("https://www.shsforums.net/files/file/1084-fishing-for-trouble/", False),
+    ("https://downloads.weaselmods.net/download/alabaster-sands/?wpdmdl=593", False),
+    ("https://www.gibberlings3.net/mods/quests/ascension/", False),
+    ("https://github.com/Gibberlings3/Ascension", False),
+])
+def test_a_forum_post_is_told_from_an_authors_page(url, expected):
+    from iemod_fetch.urls import is_forum_post
+    assert is_forum_post(url) is expected
+
+
 # -------------------------------------------------------------- landing pages
 def test_offsite_advert_link_is_not_selected(fake_opener):
     """Legacy defect L12: the first matching link won, whatever host it was on."""

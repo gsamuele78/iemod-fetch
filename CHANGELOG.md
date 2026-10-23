@@ -58,6 +58,13 @@ Python API, which is internal.
   page the entry also lists was never tried. Each of the entry's sources now
   gets its turn, each downloaded once and each held to the same check; the
   warning names what was refused.
+- **A forum's file comes last, and says so** (GUI-AUDIT M7 item 58, ADR-0039
+  amendment). With GitHub out of reach - no token and 115 GitHub mods is
+  enough - Ascension came from a Beamdog thread as v1.5 BETA (its repository:
+  2.1.0) and Finch as v4.0 (v6.0), silently: the right tp2, years old. A
+  forum thread or a file attached to one is now tried after the entry's own
+  direct links, its repository and its other pages, and a mod installed from
+  one carries an advisory naming the post and the version the mod declares.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
   by its first word (`www`): krion64's place for it was never found, and a
   Sorting Order line naming it ordered nothing.

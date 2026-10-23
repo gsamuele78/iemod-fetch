@@ -18,6 +18,7 @@ from .plan import Plan, WorkItem
 from .report import Record, RunReport, Status, line_for
 from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
                         repo_from_url)
+from .urls import is_forum_post
 
 
 @dataclass
@@ -201,6 +202,11 @@ class Runner:
 
         # What the mod says about itself beats what any catalogue guessed.
         advisories = self._reconcile_with_tp2(advisories, outcome, item.game)
+        if is_forum_post(candidate.url):
+            declared = outcome.version or candidate.version or "no version"
+            advisories.append(
+                f"installed from a forum post ({candidate.url}), which may be older "
+                f"than the author's release: the mod declares {declared}")
 
         with self._lock:
             self.state.record(outcome.folder, sha256=result.sha256, url=candidate.url,
@@ -316,11 +322,13 @@ class Runner:
         Try the sources a supplementary catalogue lists, best first.
 
         A URL that is itself the archive beats a repository (no guessing which
-        release asset is meant), which beats a landing page (no scraping). All
-        three still have to pass the .tp2 check before anything is installed.
-        Why each one failed is added to `tried`, when given. A source whose
-        candidate is in `skip` - already downloaded and refused - is passed
-        over, so the next one gets its turn.
+        release asset is meant), which beats a landing page (no scraping). A
+        forum thread, or a file attached to one, comes after all of them: what
+        anyone in the thread posted is often not the mod, or an old copy of it
+        (ADR-0039 amendment). All of them still have to pass the .tp2 check
+        before anything is installed. Why each one failed is added to `tried`,
+        when given. A source whose candidate is in `skip` - already downloaded
+        and refused - is passed over, so the next one gets its turn.
         """
         def failed(where, probe):
             if tried is not None and probe.reason:
@@ -329,13 +337,21 @@ class Runner:
         def fresh(probe):
             return probe.ok and probe.candidate.url not in skip
 
-        for url in entry.direct_urls:
+        def from_url(url, how):
             probe = self.landing.resolve(_replace(source, url=url, github=None))
             if fresh(probe):
-                probe.warnings.append(
-                    f"{folder}: resolved via {entry.origin} direct download -> {url}")
-                return probe, None
+                probe.warnings.append(f"{folder}: resolved via {entry.origin} {how}-> {url}")
+                return probe
             failed(url, probe)
+            return None
+
+        direct = entry.direct_urls
+        # a repository PAGE is covered by entry.github; a direct file link is not
+        pages = [u for u in entry.http_urls if u not in direct and not repo_from_url(u)]
+
+        for url in direct:
+            if not is_forum_post(url) and (probe := from_url(url, "direct download ")):
+                return probe, None
 
         if entry.github:
             probe = self.github.resolve(_replace(source, github=entry.github))
@@ -346,16 +362,15 @@ class Runner:
                 return probe, entry.github
             failed(entry.github, probe)
 
-        direct = set(entry.direct_urls)
-        for url in entry.http_urls:
-            # a repository PAGE is covered above; a direct file link is not
-            if url in direct or repo_from_url(url):
-                continue
-            probe = self.landing.resolve(_replace(source, url=url, github=None))
-            if fresh(probe):
-                probe.warnings.append(f"{folder}: resolved via {entry.origin} -> {url}")
+        for url in pages:
+            if not is_forum_post(url) and (probe := from_url(url, "")):
                 return probe, None
-            failed(url, probe)
+        for url in direct:
+            if is_forum_post(url) and (probe := from_url(url, "forum attachment ")):
+                return probe, None
+        for url in pages:
+            if is_forum_post(url) and (probe := from_url(url, "forum thread ")):
+                return probe, None
         return None
 
     def _collect(self, report: RunReport, item: WorkItem, future) -> None:
