@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import threading
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
@@ -21,6 +22,24 @@ from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
 from .urls import is_forum_post
 from .versions import newer_release
 
+
+
+
+# A copy from GitHub, whatever the URL it came by: a release asset, or the
+# source snapshot GitHub's API serves (api.github.com/repos/O/R/zipball/...,
+# codeload.github.com). Measured on 2026-10-23: EET's snapshot was offered its
+# own release (v14.1, whose tp2 still says v14.0) because the API's URL did
+# not read as GitHub.
+_GITHUB_ORIGINS = frozenset({"release-asset", "source-snapshot"})
+_GITHUB_HOSTS = frozenset({"github.com", "www.github.com", "api.github.com",
+                           "codeload.github.com", "objects.githubusercontent.com",
+                           "release-assets.githubusercontent.com"})
+
+
+def _from_github(url, origin) -> bool:
+    if origin in _GITHUB_ORIGINS:
+        return True
+    return (urllib.parse.urlsplit(url or "").hostname or "").lower() in _GITHUB_HOSTS
 
 
 def _pinned(source) -> str:
@@ -166,7 +185,8 @@ class Runner:
                     dest = renamed
             if existing:
                 kept = self.state.get(os.path.basename(dest)) or {}
-                newer = self._newer(folder, kept.get("url"), kept.get("mod_version"))
+                newer = self._newer(folder, kept.get("url"), kept.get("mod_version"),
+                                    kept.get("origin"))
                 return Record(folder, Status.SKIPPED,
                               f"already installed and verified ({existing})",
                               source_key=source.key if source else None,
@@ -277,7 +297,7 @@ class Runner:
             advisories.append(
                 f"installed from a forum post ({candidate.url}), which may be older "
                 f"than the author's release: the mod declares {declared}")
-        newer = self._newer(folder, candidate.url, outcome.version)
+        newer = self._newer(folder, candidate.url, outcome.version, candidate.origin)
         advisories += self._offer(folder, newer)   # the name --take-newer reads
 
         with self._lock:
@@ -306,7 +326,7 @@ class Runner:
                       warnings=list(resolution.warnings), newer=newer)
 
     # ------------------------------------------------- a newer GitHub release
-    def _newer(self, folder, url, version):
+    def _newer(self, folder, url, version, origin=None):
         """
         The GitHub release to offer instead of a copy that came from elsewhere:
         the latest release of the repository named like the mod, as krion64's
@@ -316,7 +336,7 @@ class Runner:
         never taken unasked (ADR-0005, ADR-0039 amendment).
         """
         known = self.releases.get(normalize_key(folder))
-        if not known or not version or repo_from_url(url or ""):
+        if not known or not version or _from_github(url, origin):
             return None
         repo, release = known
         if not newer_release(release.tag, version):
@@ -344,7 +364,8 @@ class Runner:
         if not wanted or not (folder.lower() in wanted or "all" in wanted):
             return None
         kept = self.state.get(folder) or (self.state.get(expect_tp2) if expect_tp2 else None) or {}
-        if not self._newer(folder, kept.get("url"), kept.get("mod_version")):
+        if not self._newer(folder, kept.get("url"), kept.get("mod_version"),
+                           kept.get("origin")):
             return None
         return self.releases.get(normalize_key(folder))
 
