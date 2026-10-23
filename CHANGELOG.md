@@ -64,7 +64,8 @@ Python API, which is internal.
   (GUI-AUDIT M7 item 42). When the sort got stuck it reported every unit left
   as the cycle and released the first in priority even if it was not in the
   cycle: with A and B ordered after each other and "C after A", C was placed
-  before A, and the cycle was reported as A, B, C and D. Now the real cycle is
+  before A (D too), and two cycles were reported: all four units, then A
+  and B. Now the real cycle is
   found (the strongly connected part nothing else holds back), reported once,
   and the unit released is one of its own.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
