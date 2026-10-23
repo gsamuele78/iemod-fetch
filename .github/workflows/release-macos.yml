@@ -56,7 +56,7 @@ jobs:
           fi
           tag="${WANTED:-$(gh release view --repo "$REPOSITORY" --json tagName -q .tagName)}"
           has=$(gh release view "$tag" --repo "$REPOSITORY" --json assets \
-                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos"))] | length')
+                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos") and endswith(".zip"))] | length')
           # a release made before ADR-0040 has nothing to build it with
           if gh api "repos/$REPOSITORY/contents/packaging/gui_bundle.py?ref=$tag" --silent 2>/dev/null; then
             buildable=yes; else buildable=no; fi
@@ -109,12 +109,15 @@ jobs:
           # Asked again here, not only by `target`: a published bundle is never
           # replaced, so one a player may have checked keeps its .sha256.
           has=$(gh release view "$TAG" --repo "$REPOSITORY" --json assets \
-                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos"))] | length')
+                -q '[.assets[].name | select(startswith("iemod-fetch-gui-macos") and endswith(".zip"))] | length')
           if [ "$has" != 0 ]; then
             echo "release $TAG already has a macOS bundle; nothing uploaded"
             exit 0
           fi
           cd dist
           for zip in iemod-fetch-gui-*.zip; do sha256sum "$zip" > "$zip.sha256"; done
-          gh release upload "$TAG" iemod-fetch-gui-*.zip iemod-fetch-gui-*.zip.sha256 \
-            --repo "$REPOSITORY"
+          # The zip first, its .sha256 after: a .sha256 never stands without
+          # its zip, and only a zip counts as "attached", so a failed upload
+          # is retried by a re-run or the next check (review of #46).
+          gh release upload "$TAG" iemod-fetch-gui-*.zip --repo "$REPOSITORY"
+          gh release upload "$TAG" iemod-fetch-gui-*.zip.sha256 --repo "$REPOSITORY" --clobber
