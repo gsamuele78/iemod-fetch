@@ -17,6 +17,12 @@ Python API, which is internal.
   `python_version` and the classifiers follow it; the wizard extra needs
   PySide6 6.11 or newer. A release tag older than `.python-version` (3.0.0) is
   rebuilt on the 3.12 it was built with.
+- The code is written for 3.14 (item 38), one mechanical change: ruff's
+  pyupgrade rewrote about 1,080 annotations and imports (`Optional[X]` ->
+  `X | None`, `List` -> `list`, `typing` -> `collections.abc`), and `UP` is now
+  part of the lint; `hashlib.file_digest` hashes backups; tarfile's `data`
+  filter is used without the fallback for runtimes that lacked it. No
+  behaviour changes: the same 1,317 tests pass.
 - The weekly upstream check also watches Python (item 37): an issue when a
   newer stable Python is available, or when a place names another version than
   `.python-version`; a test holds them together.

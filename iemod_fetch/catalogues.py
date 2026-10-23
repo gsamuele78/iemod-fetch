@@ -24,7 +24,7 @@ release cadence.
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence
+from collections.abc import Iterable, Sequence
 
 from .errors import ConfigError
 from .urls import repo_from_url
@@ -46,18 +46,18 @@ class CatalogueEntry:
     tp2: str
     name: str
     urls: tuple = ()
-    safe: Optional[int] = None
+    safe: int | None = None
     status: tuple = ()
-    last_update: Optional[str] = None
+    last_update: str | None = None
     games: tuple = ()
     categories: tuple = ()
     requires: tuple = ()
     conflicts: tuple = ()
-    embedded_in: Optional[int] = None
+    embedded_in: int | None = None
     origin: str = "catalogue"
 
     @property
-    def github(self) -> Optional[str]:
+    def github(self) -> str | None:
         """The repository that best matches this mod, if the catalogue lists one."""
         repos = [r for r in (repo_from_url(u) for u in self.urls) if r]
         if not repos:
@@ -97,7 +97,7 @@ class CatalogueEntry:
         return tuple(out)
 
     @property
-    def expected_tp2(self) -> Optional[str]:
+    def expected_tp2(self) -> str | None:
         """
         The .tp2 name this mod actually ships, when the catalogue records a
         usable one.
@@ -129,7 +129,7 @@ class CatalogueEntry:
         interface = any("nterface" in c for c in self.categories)
         return interface and self.last_update < "2021-04-01"
 
-    def advisories(self) -> List[str]:
+    def advisories(self) -> list[str]:
         """Human-readable warnings this catalogue raises about the mod."""
         notes = []
         if self.embedded_in:
@@ -150,7 +150,7 @@ class CatalogueEntry:
                          + (f" (last updated {self.last_update})" if self.last_update else ""))
         return notes
 
-    def game_advisories(self, game: Optional[str]) -> List[str]:
+    def game_advisories(self, game: str | None) -> list[str]:
         """
         Warn when the catalogue does not list this mod for the game being built.
 
@@ -172,18 +172,18 @@ class CatalogueEntry:
 
 @dataclass
 class SupplementaryCatalogue:
-    by_key: Dict[str, List[CatalogueEntry]] = field(default_factory=dict)
-    by_repo: Dict[str, CatalogueEntry] = field(default_factory=dict)
+    by_key: dict[str, list[CatalogueEntry]] = field(default_factory=dict)
+    by_repo: dict[str, CatalogueEntry] = field(default_factory=dict)
     name: str = "catalogue"
     skipped: int = 0
 
     # ------------------------------------------------------------- loading
     @classmethod
-    def load(cls, path: str) -> "SupplementaryCatalogue":
+    def load(cls, path: str) -> SupplementaryCatalogue:
         try:
             if os.path.getsize(path) > _MAX_BYTES:
                 raise ConfigError(f"catalogue {path} is larger than {_MAX_BYTES} bytes")
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 raw = json.load(fh)
         except OSError as exc:
             raise ConfigError(f"cannot read catalogue {path}: {exc}") from exc
@@ -192,7 +192,7 @@ class SupplementaryCatalogue:
         return cls.from_entries(raw, name=os.path.basename(path))
 
     @classmethod
-    def from_entries(cls, raw, name: str = "catalogue") -> "SupplementaryCatalogue":
+    def from_entries(cls, raw, name: str = "catalogue") -> SupplementaryCatalogue:
         if isinstance(raw, dict):
             raw = raw.get("mods", raw.get("entries", []))
         if not isinstance(raw, list):
@@ -254,7 +254,7 @@ class SupplementaryCatalogue:
         return sum(len(v) for v in self.by_key.values())
 
     # ------------------------------------------------------------- lookup
-    def lookup(self, *candidates: Optional[str]) -> Optional[CatalogueEntry]:
+    def lookup(self, *candidates: str | None) -> CatalogueEntry | None:
         """Find an entry by any of the given names (mod folder, manifest key…)."""
         for candidate in candidates:
             if not candidate:
@@ -271,7 +271,7 @@ class SupplementaryCatalogue:
                 return (named or with_repo or entries)[0]
         return None
 
-    def lookup_repo(self, repo: Optional[str]) -> Optional[CatalogueEntry]:
+    def lookup_repo(self, repo: str | None) -> CatalogueEntry | None:
         """Find an entry by the GitHub repository it is published from."""
         return self.by_repo.get(repo.lower()) if repo else None
 
@@ -283,7 +283,7 @@ class CatalogueSet:
         self.catalogues = list(catalogues)
 
     @classmethod
-    def load(cls, paths: Iterable[str]) -> "CatalogueSet":
+    def load(cls, paths: Iterable[str]) -> CatalogueSet:
         return cls([SupplementaryCatalogue.load(p) for p in paths or ()])
 
     def __bool__(self) -> bool:
@@ -292,20 +292,20 @@ class CatalogueSet:
     def __len__(self) -> int:
         return sum(len(c) for c in self.catalogues)
 
-    def lookup(self, *candidates: Optional[str]) -> Optional[CatalogueEntry]:
+    def lookup(self, *candidates: str | None) -> CatalogueEntry | None:
         for catalogue in self.catalogues:
             hit = catalogue.lookup(*candidates)
             if hit:
                 return hit
         return None
 
-    def lookup_repo(self, repo: Optional[str]) -> Optional[CatalogueEntry]:
+    def lookup_repo(self, repo: str | None) -> CatalogueEntry | None:
         for catalogue in self.catalogues:
             hit = catalogue.lookup_repo(repo)
             if hit:
                 return hit
         return None
 
-    def find(self, folder=None, key=None, repo=None) -> Optional[CatalogueEntry]:
+    def find(self, folder=None, key=None, repo=None) -> CatalogueEntry | None:
         """Folder, then manifest key, then the repository the manifest names."""
         return self.lookup(folder, key) or self.lookup_repo(repo)

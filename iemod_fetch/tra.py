@@ -18,12 +18,12 @@ the core never touches the filesystem.
 """
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 from .languages import choose_language
 from .tp2 import _COMPONENT_START, _INLINED_FILE, _SUBCOMPONENT, component_number
 
-Reader = Callable[[str], Optional[str]]
+Reader = Callable[[str], str | None]
 
 
 # --------------------------------------------------------------- .tra files
@@ -44,7 +44,7 @@ def _skip(text: str, i: int) -> int:
     return i
 
 
-def _string(text: str, i: int) -> Tuple[Optional[str], int]:
+def _string(text: str, i: int) -> tuple[str | None, int]:
     """A WeiDU string at i: ~...~, ~~~~~...~~~~~, "...", %...%."""
     if text.startswith("~~~~~", i):
         j = text.find("~~~~~", i + 5)
@@ -59,9 +59,9 @@ _REF = re.compile(r"@(-?\d+)\s*=\s*")
 _BARE = re.compile(r"[^\s~\"%@\[\]/]+")
 
 
-def parse_tra(text: str) -> Dict[int, str]:
+def parse_tra(text: str) -> dict[int, str]:
     """`@N = ~text~ [~female text~] [[SOUND]]`, in order; later entries win."""
-    out: Dict[int, str] = {}
+    out: dict[int, str] = {}
     i, n = 0, len(text)
     while i < n:
         i = _skip(text, i)
@@ -100,7 +100,7 @@ def parse_tra(text: str) -> Dict[int, str]:
 class Language:
     name: str
     directory: str
-    tra_files: List[str] = field(default_factory=list)
+    tra_files: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -115,8 +115,8 @@ class ComponentName:
     title: str = ""              # the component's own name
     subgroup: str = ""           # its SUBCOMPONENT, resolved
     resolved: bool = True        # False when a reference had no text
-    groups: List[str] = field(default_factory=list)
-    labels: List[str] = field(default_factory=list)
+    groups: list[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list)
     forced: bool = False
     deprecated: bool = False     # WeiDU hides it from every list
 
@@ -151,8 +151,8 @@ _VERSION = re.compile(r"^[ \t]*VERSION\s+", re.IGNORECASE | re.MULTILINE)
 _BACKUP = re.compile(r"^[ \t]*BACKUP\s+", re.IGNORECASE | re.MULTILINE)
 
 
-def _strings_after(text: str, i: int, stop: int) -> List[str]:
-    values: List[str] = []
+def _strings_after(text: str, i: int, stop: int) -> list[str]:
+    values: list[str] = []
     while True:
         i = _skip(text, i)
         if i >= stop:
@@ -164,7 +164,7 @@ def _strings_after(text: str, i: int, stop: int) -> List[str]:
         i = j
 
 
-def _token(text: str, i: int, stop: int) -> Tuple[Optional[str], int]:
+def _token(text: str, i: int, stop: int) -> tuple[str | None, int]:
     """A string, or a bare word as WeiDU also accepts one."""
     i = _skip(text, i)
     if i >= stop:
@@ -176,7 +176,7 @@ def _token(text: str, i: int, stop: int) -> Tuple[Optional[str], int]:
     return (bare.group(0), i + bare.end()) if bare else (None, i)
 
 
-def languages(tp2: str) -> List[Language]:
+def languages(tp2: str) -> list[Language]:
     """
     The LANGUAGE declarations, in order: index N is the Nth.
 
@@ -230,7 +230,7 @@ def _variables(path: str, folder: str, language: Language, weidu_os: str) -> str
     return path
 
 
-def _text(token: str, strings: Dict[int, str]) -> Tuple[str, bool]:
+def _text(token: str, strings: dict[int, str]) -> tuple[str, bool]:
     token = token.strip()
     if token.startswith("@"):
         try:
@@ -255,7 +255,7 @@ def _argument(chunk: str, at: int) -> str:
 
 
 def component_names(tp2: str, language_index: int, read: Reader,
-                    folder: Optional[str] = None, weidu_os: str = "win32") -> List[ComponentName]:
+                    folder: str | None = None, weidu_os: str = "win32") -> list[ComponentName]:
     """
     Every component's name in language `language_index`, as WeiDU prints it.
 
@@ -269,7 +269,7 @@ def component_names(tp2: str, language_index: int, read: Reader,
     if folder is None:
         folder = mod_folder(tp2)
     langs = languages(tp2)
-    strings: Dict[int, str] = {}
+    strings: dict[int, str] = {}
     if 0 <= language_index < len(langs):
         language = langs[language_index]
         for path in language.tra_files:
@@ -336,7 +336,7 @@ _FORCED = re.compile(r"\bFORCED_SUBCOMPONENT\b")
 
 def _flags(chunk: str) -> str:
     """The component's flag section: BEGIN up to its first action."""
-    lines: List[str] = []
+    lines: list[str] = []
     for n, line in enumerate(chunk.split("\n")):
         word = line.strip().split(None, 1)[0].upper() if line.strip() else ""
         if n and word and not any(word.startswith(w) for w in _FLAG_WORDS) \
@@ -350,7 +350,7 @@ def _predicate_term(word: str) -> bool:
     return word in _PREDICATE_WORDS or word[0] in "!(%" or word[0].isdigit()
 
 
-def _lines_continue(lines: List[str]) -> bool:
+def _lines_continue(lines: list[str]) -> bool:
     """True while a flag's argument is still open: an unclosed ~ string or (."""
     text = "\n".join(lines)
     return text.count("~") % 2 == 1 or text.count("(") > text.count(")")

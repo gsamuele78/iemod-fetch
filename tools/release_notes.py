@@ -15,23 +15,22 @@ release creates no ref, so GITHUB_TOKEN may do it.
 import re
 import subprocess
 import sys
-from typing import List, Optional
 
 VERIFY = "\n\n### Verify this download"
 _HEADING = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 
 
-def versions(changelog: str) -> List[str]:
+def versions(changelog: str) -> list[str]:
     return _HEADING.findall(changelog)
 
 
-def section(changelog: str, version: str) -> Optional[str]:
+def section(changelog: str, version: str) -> str | None:
     match = re.search(rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)",
                       changelog, re.DOTALL | re.MULTILINE)
     return match.group(1).strip() if match else None
 
 
-def refreshed(body: str, text: str) -> Optional[str]:
+def refreshed(body: str, text: str) -> str | None:
     """The body `text` calls for, or None when it already says that."""
     cut = body.find(VERIFY)
     wanted = text + (body[cut:] if cut >= 0 else "")

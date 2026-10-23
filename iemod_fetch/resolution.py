@@ -26,7 +26,7 @@ Only the plan is edited. The operator's WeiDU logs are never touched, and the
 plan is re-checked against the same rules afterwards rather than trusted.
 """
 from dataclasses import dataclass, field, replace
-from typing import AbstractSet, Dict, List, Optional, Set, Tuple
+from collections.abc import Set
 
 from .contract import SCHEMA_VERSION
 from .conflicts import (DESELECT, INSTALL, SUBCOMPONENT_ORIGIN, ConflictReport,
@@ -41,8 +41,8 @@ from .rules import INCOMPATIBLE, RuleSet
 class Removal:
     log: str
     mod: str
-    components: Tuple[int, ...]
-    labels: Tuple[str, ...]
+    components: tuple[int, ...]
+    labels: tuple[str, ...]
     because: str            # the other side, as the report describes it
     reason: str = ""        # the rule's own explanation, if it gave one
     finding_id: str = ""    # the conflict-report finding this settles, if any
@@ -53,7 +53,7 @@ class Removal:
 class Move:
     log: str
     mod: str
-    components: Tuple[int, ...]
+    components: tuple[int, ...]
     because: str
 
 
@@ -75,13 +75,13 @@ class Accepted:
 
 @dataclass
 class ResolutionResult:
-    removed: List[Removal] = field(default_factory=list)
-    left_for_operator: List[Unresolved] = field(default_factory=list)
-    moved: List[Move] = field(default_factory=list)
-    accepted: List[Accepted] = field(default_factory=list)
-    stale_decisions: List[str] = field(default_factory=list)   # finding ids not found
+    removed: list[Removal] = field(default_factory=list)
+    left_for_operator: list[Unresolved] = field(default_factory=list)
+    moved: list[Move] = field(default_factory=list)
+    accepted: list[Accepted] = field(default_factory=list)
+    stale_decisions: list[str] = field(default_factory=list)   # finding ids not found
 
-    def extend(self, other: "ResolutionResult") -> None:
+    def extend(self, other: ResolutionResult) -> None:
         self.removed.extend(other.removed)
         self.left_for_operator.extend(other.left_for_operator)
         self.moved.extend(other.moved)
@@ -127,7 +127,7 @@ class ResolutionResult:
         }
 
 
-def _why_not(finding: Finding) -> Optional[str]:
+def _why_not(finding: Finding) -> str | None:
     """None when the rules decide this finding; otherwise the reason they do not."""
     if finding.severity != "error":
         return f"graded {finding.severity}, not error"
@@ -140,7 +140,7 @@ def _why_not(finding: Finding) -> Optional[str]:
     return None
 
 
-def _cheaper(left: Side, right: Side) -> Optional[Tuple[Side, Side]]:
+def _cheaper(left: Side, right: Side) -> tuple[Side, Side] | None:
     """
     (side to remove, side to keep) by the conflict report's own cost - pinned
     is cheaper than wholesale, fewer components cheaper than more. None on a
@@ -164,9 +164,9 @@ def _units_for(plan, log: str, key: str) -> list:
     return by_folder if len(by_folder) == 1 else []
 
 
-def _present(plan, log: str, side: Side) -> Set[int]:
+def _present(plan, log: str, side: Side) -> set[int]:
     wanted = set(side.numbers)
-    found: Set[int] = set()
+    found: set[int] = set()
     for unit in _units_for(plan, log, side.key):
         for _path, _lang, comp, _comment in unit.lines:
             if side.whole_mod or comp in wanted:
@@ -175,7 +175,7 @@ def _present(plan, log: str, side: Side) -> Set[int]:
 
 
 def apply_decisions(plan, report: ConflictReport, decisions: Decisions,
-                    ruleset: Optional[RuleSet] = None, context=None) -> ResolutionResult:
+                    ruleset: RuleSet | None = None, context=None) -> ResolutionResult:
     """
     Apply the player's decisions.json to the plan, then re-check it.
 
@@ -232,8 +232,8 @@ def apply_decisions(plan, report: ConflictReport, decisions: Decisions,
 
 
 def resolve_conflicts(plan, report: ConflictReport,
-                      ruleset: Optional[RuleSet] = None,
-                      context=None, skip: AbstractSet[str] = frozenset()) -> ResolutionResult:
+                      ruleset: RuleSet | None = None,
+                      context=None, skip: Set[str] = frozenset()) -> ResolutionResult:
     """
     Apply the rules' own remedy to every incompatibility they decide.
 
@@ -304,9 +304,9 @@ def _describe(finding: Finding) -> str:
 _EET_CORE = ("eet", 0)
 
 
-def _drop(plan, log: str, mod: str, numbers) -> Tuple[Tuple[int, ...], Tuple[str, ...]]:
+def _drop(plan, log: str, mod: str, numbers) -> tuple[tuple[int, ...], tuple[str, ...]]:
     """Remove `numbers` of `mod` from one log of the plan; what was removed."""
-    gone: List[Tuple[int, str]] = []
+    gone: list[tuple[int, str]] = []
     for unit in plan.logs.get(log, []):
         if unit.key != mod:
             continue
@@ -334,7 +334,7 @@ _FROM_BWS = ("BWS-NG's games/eet.json orders it on BG2:EE before the EET core "
              "(bg2ee sequence)")
 
 
-def before_eet_core(eet_sequences: Optional[dict]) -> Dict[str, str]:
+def before_eet_core(eet_sequences: dict | None) -> dict[str, str]:
     """
     What may go on BG2:EE before the EET core, and why.
 
@@ -360,7 +360,7 @@ def before_eet_core(eet_sequences: Optional[dict]) -> Dict[str, str]:
     return allowed
 
 
-def _move_before_core(plan, log: str, mod: str, numbers) -> Tuple[int, ...]:
+def _move_before_core(plan, log: str, mod: str, numbers) -> tuple[int, ...]:
     """Move `numbers` of `mod` to just before the EET core; what was moved."""
     units = plan.logs.get(log, [])
     core = next((i for i, unit in enumerate(units) if unit.key == _EET_CORE[0]
@@ -379,7 +379,7 @@ def _move_before_core(plan, log: str, mod: str, numbers) -> Tuple[int, ...]:
 
 
 def resolve_refusals(plan, constraints, games=None, ruleset=None,
-                     context=None, before_core: Optional[Dict[str, str]] = None
+                     context=None, before_core: dict[str, str] | None = None
                      ) -> ResolutionResult:
     """
     Make the plan one WeiDU can finish (ADR-0025).

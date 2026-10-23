@@ -23,7 +23,6 @@ scripts/manager/tp2.py in https://github.com/RiwsPy/lcc-docs (MIT,
 import os
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
 
 _MAX_TP2_BYTES = 8 * 1024 * 1024
 
@@ -61,17 +60,17 @@ _GAME_ALIASES = {
 @dataclass
 class Tp2Info:
     path: str
-    version: Optional[str] = None
-    mod_name: Optional[str] = None
-    authors: List[str] = field(default_factory=list)
-    games: List[str] = field(default_factory=list)
-    languages: List[str] = field(default_factory=list)
+    version: str | None = None
+    mod_name: str | None = None
+    authors: list[str] = field(default_factory=list)
+    games: list[str] = field(default_factory=list)
+    languages: list[str] = field(default_factory=list)
     # Every LANGUAGE declaration as (display name, language directory/code), in
     # order and WITH duplicates: WeiDU's `#lang` is the position in this list.
-    language_decls: List[Tuple[str, str]] = field(default_factory=list)
+    language_decls: list[tuple[str, str]] = field(default_factory=list)
 
     @property
-    def normalised_games(self) -> List[str]:
+    def normalised_games(self) -> list[str]:
         """The declared games mapped onto this tool's identifiers."""
         out = []
         for token in self.games:
@@ -80,7 +79,7 @@ class Tp2Info:
                 out.append(mapped)
         return out
 
-    def supports(self, game: Optional[str]) -> Optional[bool]:
+    def supports(self, game: str | None) -> bool | None:
         """
         True/False if the mod declares its games, None if it declares none.
 
@@ -129,18 +128,18 @@ def parse_tp2(content: str, path: str = "<tp2>") -> Tp2Info:
     return info
 
 
-def read_tp2(path: str) -> Optional[Tp2Info]:
+def read_tp2(path: str) -> Tp2Info | None:
     """Parse a .tp2 from disk. Returns None rather than raising on any problem."""
     try:
         if os.path.getsize(path) > _MAX_TP2_BYTES:
             return None
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             return parse_tp2(fh.read(), path=path)
     except OSError:
         return None
 
 
-def read_mod_tp2(mod_dir: str, tp2_file: str) -> Optional[Tp2Info]:
+def read_mod_tp2(mod_dir: str, tp2_file: str) -> Tp2Info | None:
     """Read the tp2 that identifies an installed mod directory."""
     direct = os.path.join(mod_dir, tp2_file)
     if os.path.isfile(direct):
@@ -204,10 +203,10 @@ _INCLUDES = {"bg1": ["BGEE", "EET", "BG", "Tutu", "BGT"], "totsc": ["BGEE", "EET
 @dataclass
 class Tp2Component:
     number: int
-    requires: List[Tuple[str, int]] = field(default_factory=list)
-    forbids: List[Tuple[str, int]] = field(default_factory=list)
-    games: List[str] = field(default_factory=list)       # only on these (all hold)
-    not_games: List[str] = field(default_factory=list)   # never on these
+    requires: list[tuple[str, int]] = field(default_factory=list)
+    forbids: list[tuple[str, int]] = field(default_factory=list)
+    games: list[str] = field(default_factory=list)       # only on these (all hold)
+    not_games: list[str] = field(default_factory=list)   # never on these
     group: str = ""                                      # SUBCOMPONENT group
     unread: int = 0                                      # predicates not understood
     game_rules: int = 0                                  # game requirements read
@@ -230,10 +229,10 @@ def _unquote(text: str) -> str:
     return text[1:-1] if text[:1] in "~\"%" and len(text) > 1 else text
 
 
-def _games(text: str, keyword: str = "GAME_IS") -> List[str]:
+def _games(text: str, keyword: str = "GAME_IS") -> list[str]:
     table = {"GAME_IS": None, "ENGINE_IS": _ENGINE, "GAME_INCLUDES": _INCLUDES}[
         keyword.upper()]
-    out: List[str] = []
+    out: list[str] = []
     for token in re.split(r"[\s,]+", _unquote(text).lower()):
         if not token:
             continue
@@ -243,7 +242,7 @@ def _games(text: str, keyword: str = "GAME_IS") -> List[str]:
     return out
 
 
-def _require_games(component: "Tp2Component", games: List[str]) -> None:
+def _require_games(component: Tp2Component, games: list[str]) -> None:
     """Every game requirement must hold, so they intersect."""
     if not games:
         return
@@ -254,7 +253,7 @@ def _require_games(component: "Tp2Component", games: List[str]) -> None:
     component.game_rules += 1
 
 
-def _number(text: str) -> Optional[int]:
+def _number(text: str) -> int | None:
     text = text.strip()
     return int(text) if text.lstrip("-").isdigit() else None
 
@@ -274,11 +273,11 @@ def component_number(chunk: str, previous: int) -> int:
     return int(designated.group(1)) if designated else previous + 1
 
 
-def parse_components(content: str) -> List[Tp2Component]:
+def parse_components(content: str) -> list[Tp2Component]:
     """Every component of a tp2 with the constraints WeiDU enforces on it."""
     clean = _INLINED_FILE.sub("", strip_comments(content))
     starts = [m.start() for m in _COMPONENT_START.finditer(clean)]
-    components: List[Tp2Component] = []
+    components: list[Tp2Component] = []
     previous = -1
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(clean)

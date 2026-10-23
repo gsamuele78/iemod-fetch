@@ -29,8 +29,8 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import (Any, Dict, FrozenSet, List, Optional, Protocol,
-                    Sequence, Tuple)
+from typing import (Any, Protocol)
+from collections.abc import Sequence
 
 from .contract import stable_id
 from .errors import ConfigError
@@ -56,7 +56,7 @@ _SPEC = re.compile(r"^\s*(?P<mod>.+?)\s*\(\s*(?P<components>[^)]*)\s*\)\s*$")
 class ModSpec:
     mod: str                                   # normalised tp2 key
     display: str                               # as written in the rule
-    components: Optional[FrozenSet] = None     # None = any component
+    components: frozenset | None = None     # None = any component
 
     def __str__(self) -> str:
         if self.components is None:
@@ -68,9 +68,9 @@ class ModSpec:
 class Rule:
     kind: str
     left: ModSpec
-    right: Tuple[ModSpec, ...]
+    right: tuple[ModSpec, ...]
     severity: str = "warning"
-    direction: Optional[str] = None            # order only: before | after
+    direction: str | None = None            # order only: before | after
     message: str = ""
     origin: str = "rules"
     optional: bool = False      # a soft/suggested dependency, not a requirement
@@ -94,7 +94,7 @@ class Violation:
     mods: tuple = ()          # normalised keys the finding involves
     stale_risk: str = ""      # why this finding may no longer apply
     suppressed: str = ""      # why it was withheld
-    rule: Optional["Rule"] = None      # the rule that fired, for drill-down
+    rule: Rule | None = None      # the rule that fired, for drill-down
     left_components: tuple = ()        # installed components on the left side
     right_components: tuple = ()       # installed components on the right side
     log: str = ""                      # which install this was found in
@@ -110,7 +110,7 @@ class Violation:
                          self.left_components, self.right_components, self.detail)
 
 
-def parse_spec(text: str) -> Optional[ModSpec]:
+def parse_spec(text: str) -> ModSpec | None:
     match = _SPEC.match(text)
     if not match:
         text = text.strip()
@@ -127,7 +127,7 @@ def parse_spec(text: str) -> Optional[ModSpec]:
     return ModSpec(normalize_key(mod), mod, frozenset(numbers) if numbers else None)
 
 
-def parse_rule(entry: dict, kind: str, origin: str) -> Optional[Rule]:
+def parse_rule(entry: dict, kind: str, origin: str) -> Rule | None:
     raw = (entry or {}).get("rule")
     if not isinstance(raw, str) or ":" not in raw:
         return None
@@ -165,7 +165,7 @@ class ComponentNote:
     """
     mod: str
     display: str
-    components: Optional[FrozenSet]
+    components: frozenset | None
     severity: str
     summary: str
     workaround: str = ""
@@ -176,19 +176,19 @@ class ComponentNote:
 
 @dataclass
 class RuleSet:
-    rules: List[Rule] = field(default_factory=list)
-    notes: List[ComponentNote] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    updated: Optional[str] = None          # newest mtime of the rule files
-    age_days: Optional[int] = None
+    rules: list[Rule] = field(default_factory=list)
+    notes: list[ComponentNote] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    updated: str | None = None          # newest mtime of the rule files
+    age_days: int | None = None
     undirected: int = 0                    # order-sensitive pairs with no direction
-    _newest: Optional[float] = None
+    _newest: float | None = None
 
     def __len__(self) -> int:
         return len(self.rules)
 
     @classmethod
-    def from_mapping(cls, payload, kind: str, origin: str) -> "RuleSet":
+    def from_mapping(cls, payload, kind: str, origin: str) -> RuleSet:
         entries = payload.get("rules", payload) if isinstance(payload, dict) else payload
         if not isinstance(entries, list):
             raise ConfigError(f"{origin}: expected a list of rules")
@@ -202,9 +202,9 @@ class RuleSet:
         return out
 
     @classmethod
-    def load_file(cls, path: str, kind: Optional[str] = None) -> "RuleSet":
+    def load_file(cls, path: str, kind: str | None = None) -> RuleSet:
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 payload = json.load(fh)
         except OSError as exc:
             raise ConfigError(f"cannot read rules {path}: {exc}") from exc
@@ -222,7 +222,7 @@ class RuleSet:
         return cls.from_mapping(payload, kind or _kind_from_filename(path), origin)
 
     @classmethod
-    def load(cls, paths: Sequence[str]) -> "RuleSet":
+    def load(cls, paths: Sequence[str]) -> RuleSet:
         """
         Load rule data, auto-detecting the shape.
 
@@ -281,7 +281,7 @@ _KRION_DEPENDENCY_SEVERITY = {"hard": "error", "soft": "warning"}
 _COMPONENT_NUMBERS = re.compile(r"#(\d+)")
 
 
-def _krion_spec(name, comps_text) -> Optional[ModSpec]:
+def _krion_spec(name, comps_text) -> ModSpec | None:
     # Community JSON is not schema-checked upstream: a `with` field can be null,
     # a number, or a list. Anything that is not a usable name is not a rule.
     if not isinstance(name, str) or not name:
@@ -309,7 +309,7 @@ _KRION_NOTE_SEVERITY = {"critical": "error", "error": "error",
                         "warning": "warning", "info": "note"}
 
 
-def _krion_notes(record: dict, origin: str) -> List[ComponentNote]:
+def _krion_notes(record: dict, origin: str) -> list[ComponentNote]:
     me = record.get("t")
     if not isinstance(me, str) or not me:
         return []
@@ -333,7 +333,7 @@ def _krion_notes(record: dict, origin: str) -> List[ComponentNote]:
     return out
 
 
-def _krion_rules(record: dict, origin: str) -> Tuple[List[Rule], int, List[ComponentNote]]:
+def _krion_rules(record: dict, origin: str) -> tuple[list[Rule], int, list[ComponentNote]]:
     """Turn one krion64 mod record into rules. Returns (rules, skipped, notes)."""
     me = record.get("t")
     if not me:
@@ -396,7 +396,7 @@ def _krion_rules(record: dict, origin: str) -> Tuple[List[Rule], int, List[Compo
     return out, skipped, _krion_notes(record, origin)
 
 
-def mod_forge_record(payload) -> Optional[dict]:
+def mod_forge_record(payload) -> dict | None:
     """
     An author's own `mod-forge.json` (Infinity Mod Forge's per-mod format, in
     the mod's repository root), as the krion64 record it is a public form of:
@@ -428,7 +428,7 @@ def mod_forge_record(payload) -> Optional[dict]:
     }
 
 
-def _forge_components(value) -> Optional[str]:
+def _forge_components(value) -> str | None:
     """krion64's "#0 #1" from what an author writes: that text, a number or a list."""
     if isinstance(value, str):
         return value
@@ -472,13 +472,13 @@ class Install:
     mod in the other, so they must never be merged before checking.
     """
     label: str = "WeiDU.log"
-    components: Dict[str, set] = field(default_factory=dict)      # key -> {index}
-    positions: Dict[str, Dict[int, int]] = field(default_factory=dict)  # key -> {comp: line}
-    display: Dict[str, str] = field(default_factory=dict)         # key -> folder name
-    labels: Dict[str, Dict[int, str]] = field(default_factory=dict)  # key -> {comp: name}
+    components: dict[str, set] = field(default_factory=dict)      # key -> {index}
+    positions: dict[str, dict[int, int]] = field(default_factory=dict)  # key -> {comp: line}
+    display: dict[str, str] = field(default_factory=dict)         # key -> folder name
+    labels: dict[str, dict[int, str]] = field(default_factory=dict)  # key -> {comp: name}
 
     @classmethod
-    def from_log(cls, parsed, label: str = "WeiDU.log") -> "Install":
+    def from_log(cls, parsed, label: str = "WeiDU.log") -> Install:
         install = cls(label=label)
         line = 0
         for key in parsed.order:
@@ -515,7 +515,7 @@ class Install:
                 line += 1
         return install
 
-    def matched(self, spec: ModSpec) -> Optional[set]:
+    def matched(self, spec: ModSpec) -> set | None:
         installed = self.components.get(spec.mod)
         if not installed:
             return None
@@ -524,7 +524,7 @@ class Install:
         overlap = installed & set(spec.components)
         return overlap or None
 
-    def lines_of(self, spec: ModSpec, components: set) -> List[int]:
+    def lines_of(self, spec: ModSpec, components: set) -> list[int]:
         """The log lines the given components of `spec` were installed at."""
         table = self.positions.get(spec.mod, {})
         return [table[c] for c in components if c in table]
@@ -551,13 +551,13 @@ class Context:
     database the rule set was built from. A rule carries no version qualifier,
     so this is the only way to notice that it predates what you have.
     """
-    installed_versions: Dict[str, str] = field(default_factory=dict)
-    baseline: Optional["ModDatabaseLike"] = None  # moddb.ModDatabase or None
-    suppressions: List[dict] = field(default_factory=list)
+    installed_versions: dict[str, str] = field(default_factory=dict)
+    baseline: ModDatabaseLike | None = None  # moddb.ModDatabase or None
+    suppressions: list[dict] = field(default_factory=list)
     mods_with_own_ini: set = field(default_factory=set)
     include_optional: bool = False                # report soft dependencies too
 
-    def baseline_version(self, key: str) -> Optional[str]:
+    def baseline_version(self, key: str) -> str | None:
         if self.baseline is None:
             return None
         record = self.baseline.get(key)
@@ -597,12 +597,12 @@ class Context:
         return ""
 
 
-def load_suppressions(path: Optional[str]) -> List[dict]:
+def load_suppressions(path: str | None) -> list[dict]:
     """User-recorded 'this rule no longer applies' decisions."""
     if not path:
         return []
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
     except OSError as exc:
         raise ConfigError(f"cannot read suppressions {path}: {exc}") from exc
@@ -615,7 +615,7 @@ def load_suppressions(path: Optional[str]) -> List[dict]:
 
 
 def check_all(installs: Sequence[Install], ruleset: RuleSet,
-              context: Optional[Context] = None) -> List[Violation]:
+              context: Context | None = None) -> list[Violation]:
     """Check each install separately and label findings by the log they came from."""
     out = []
     multiple = len(installs) > 1
@@ -629,10 +629,10 @@ def check_all(installs: Sequence[Install], ruleset: RuleSet,
 
 
 def check(install: Install, ruleset: RuleSet,
-          context: Optional[Context] = None) -> List[Violation]:
+          context: Context | None = None) -> list[Violation]:
     """Evaluate every rule against the install. Reports; never changes anything."""
     context = context or Context()
-    violations: List[Violation] = []
+    violations: list[Violation] = []
     for rule in _applicable(ruleset, context):
         left_hit = install.matched(rule.left)
         if left_hit is None:
@@ -713,7 +713,7 @@ def check(install: Install, ruleset: RuleSet,
 SORTING_ORDER = "SortingOrder"
 
 
-def _applicable(ruleset: RuleSet, context: Context) -> List[Rule]:
+def _applicable(ruleset: RuleSet, context: Context) -> list[Rule]:
     """
     Drop community ordering rules for mods that ship their own.
 
@@ -745,7 +745,7 @@ def _order_detail(install, rule, left_at, right_at, right):
     return f"{order} - {rule.message}" if rule.message else order
 
 
-def _dedupe(violations: List[Violation]) -> List[Violation]:
+def _dedupe(violations: list[Violation]) -> list[Violation]:
     seen, out = set(), []
     rank = {"error": 0, "warning": 1}
     for violation in violations:

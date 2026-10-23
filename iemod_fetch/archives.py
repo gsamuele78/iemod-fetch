@@ -15,7 +15,6 @@ import tarfile
 import zipfile
 import zlib
 from dataclasses import dataclass
-from typing import List, Optional
 
 from .errors import ExtractionError, UnsafeArchive
 
@@ -176,17 +175,9 @@ def _extract_tar(path: str, dest: str) -> None:
                 total += max(member.size, 0)
                 if total > MAX_TOTAL_BYTES:
                     raise UnsafeArchive("uncompressed size exceeds ceiling (tar bomb?)")
-            # `filter="data"` (3.12+, backported to 3.9.17+/3.10.12+/3.11.4+)
-            # is the stdlib's own hardened extraction. Where it exists it is
-            # strictly better than anything written here; where it does not, the
-            # fallback extracts one member at a time and re-checks the resolved
-            # destination, rather than trusting a bare extractall.
-            if hasattr(tarfile, "data_filter"):
-                tf.extractall(dest, filter="data")
-            else:                                    # pragma: no cover - old runtimes
-                for member in members:
-                    tf.extract(member, dest)
-                    _assert_within(dest, os.path.join(dest, member.name))
+            # `filter="data"` is the stdlib's own hardened extraction, on top of
+            # the checks above; every supported Python has it (ADR-0043).
+            tf.extractall(dest, filter="data")
     except _DAMAGED as exc:
         raise _damaged(path, exc) from exc
 
@@ -237,7 +228,7 @@ def _external_tools(kind: Kind, path: str, dest: str):
     return resolved
 
 
-def _seven_zip_listing(path: str) -> Optional[List[tuple]]:
+def _seven_zip_listing(path: str) -> list[tuple] | None:
     """
     (name, size) for every member, from `7z l -slt`. None when 7-Zip is not
     installed or cannot read the file - the caller decides what that means.
@@ -253,7 +244,7 @@ def _seven_zip_listing(path: str) -> Optional[List[tuple]]:
         return None
     if proc.returncode != 0:
         return None
-    members: List[tuple] = []
+    members: list[tuple] = []
     for line in proc.stdout.decode("utf-8", "replace").splitlines():
         if line.startswith("Path = "):          # -slt gives one key per line
             members.append((line[7:].strip(), 0))
@@ -361,7 +352,7 @@ class ArchiveEntry:
         return posixpath.basename(self.name.replace("\\", "/"))
 
 
-def list_entries(path: str) -> Optional[List[ArchiveEntry]]:
+def list_entries(path: str) -> list[ArchiveEntry] | None:
     """
     List archive member names without extracting. Returns None when the format
     needs an external tool that is not installed (caller must not treat that as

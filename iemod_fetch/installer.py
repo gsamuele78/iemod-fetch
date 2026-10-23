@@ -33,7 +33,6 @@ import os
 import re
 import stat
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from . import __version__
 from .ordering import EET_LOG, HEADER, PRE_EET_LOG
@@ -44,12 +43,12 @@ EET_CORE_COMMENT = "eet core (resource importation)"
 @dataclass
 class Installer:
     mode: str                                  # "eet" | "normal"
-    scripts: Dict[str, str] = field(default_factory=dict)
-    extra_files: Dict[str, str] = field(default_factory=dict)
-    problems: List[str] = field(default_factory=list)   # the plan cannot work
-    warnings: List[str] = field(default_factory=list)   # it can, but look first
+    scripts: dict[str, str] = field(default_factory=dict)
+    extra_files: dict[str, str] = field(default_factory=dict)
+    problems: list[str] = field(default_factory=list)   # the plan cannot work
+    warnings: list[str] = field(default_factory=list)   # it can, but look first
 
-    def write(self, directory: str) -> List[str]:
+    def write(self, directory: str) -> list[str]:
         os.makedirs(directory, exist_ok=True)
         written = []
         for name, text in {**self.extra_files, **self.scripts}.items():
@@ -68,7 +67,7 @@ def _component_name(comment: str) -> str:
     return comment.rsplit(" : ", 1)[0].strip().lower()
 
 
-def _check_eet(plan, problems: List[str]) -> bool:
+def _check_eet(plan, problems: list[str]) -> bool:
     """True when the EET log installs the EET core; records what is wrong."""
     units = plan.logs.get(EET_LOG, [])
     core = next((u for u in units if u.key == "eet"), None)
@@ -86,7 +85,7 @@ def _check_eet(plan, problems: List[str]) -> bool:
     return True
 
 
-def _missing_mods(plan, mods_dir: str) -> List[str]:
+def _missing_mods(plan, mods_dir: str) -> list[str]:
     try:
         present = {entry.lower() for entry in os.listdir(mods_dir)}
     except OSError:
@@ -101,7 +100,7 @@ def _missing_mods(plan, mods_dir: str) -> List[str]:
     return missing
 
 
-def build_installer(plan, mods_relpath: str, mods_dir: Optional[str] = None,
+def build_installer(plan, mods_relpath: str, mods_dir: str | None = None,
                     language: str = "en_US") -> Installer:
     """
     Turn an ordering.OrderPlan into installer scripts.
@@ -111,7 +110,7 @@ def build_installer(plan, mods_relpath: str, mods_dir: Optional[str] = None,
     different Windows drive); `mods_dir`, when given, is checked for every mod
     the plan installs.
     """
-    problems: List[str] = []
+    problems: list[str] = []
     is_eet = _check_eet(plan, problems)
     roles = [role for role in (PRE_EET_LOG, EET_LOG) if plan.logs.get(role)]
 

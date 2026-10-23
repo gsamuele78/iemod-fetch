@@ -7,7 +7,6 @@ a catalogue of where to obtain them.
 """
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 # Game identifiers as used by the LCC catalogue's `games` field.
 KNOWN_GAMES = ("BG", "Tutu", "BG2", "BGT", "BGEE", "SoD", "BG2EE", "EET",
@@ -46,7 +45,7 @@ class Component:
     language: int
     index: int
     comment: str = ""
-    version: Optional[str] = None     # a suffix shaped like a version (log_version)
+    version: str | None = None     # a suffix shaped like a version (log_version)
     path: str = ""       # tp2 path exactly as the log spelled it, for round-tripping
     line: int = 0        # 1-based line in the log: the true install order
 
@@ -55,9 +54,9 @@ class Component:
 class InstalledMod:
     folder: str                       # exact on-disk directory name WeiDU expects
     tp2_file: str
-    game: Optional[str] = None        # which install this log describes
-    components: List[Component] = field(default_factory=list)
-    version: Optional[str] = None     # only if the log actually recorded one
+    game: str | None = None        # which install this log describes
+    components: list[Component] = field(default_factory=list)
+    version: str | None = None     # only if the log actually recorded one
 
     @property
     def key(self) -> str:
@@ -66,13 +65,13 @@ class InstalledMod:
 
 @dataclass
 class ParsedLog:
-    mods: Dict[str, InstalledMod] = field(default_factory=dict)
-    order: List[str] = field(default_factory=list)   # install order, oldest first
-    warnings: List[str] = field(default_factory=list)
+    mods: dict[str, InstalledMod] = field(default_factory=dict)
+    order: list[str] = field(default_factory=list)   # install order, oldest first
+    warnings: list[str] = field(default_factory=list)
     component_count: int = 0
-    game: Optional[str] = None
+    game: str | None = None
 
-    def detect_game(self) -> Optional[str]:
+    def detect_game(self) -> str | None:
         """
         Infer which game this log describes from the mods it installs.
 
@@ -97,7 +96,7 @@ def _mod_from_root_tp2(tp2_file: str) -> str:
 _DIGIT = re.compile(r"\d")
 
 
-def log_version(comment: str) -> Optional[str]:
+def log_version(comment: str) -> str | None:
     """
     The version at the end of a WeiDU.log comment, or None.
 
@@ -177,7 +176,7 @@ def parse_weidu_files(paths) -> ParsedLog:
     merged = ParsedLog()
     for entry in paths:
         path, game = entry if isinstance(entry, (tuple, list)) else (entry, None)
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             parsed = parse_weidu_log(fh.read(), source=str(path))
         parsed.game = game or parsed.detect_game()
         for mod in parsed.mods.values():

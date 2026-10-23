@@ -21,7 +21,7 @@ what was given.
 """
 import json
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
 
 from .catalogues import CatalogueSet
 from .freshness import RELEASE, Candidate, Release, github_repo, latest, update_available
@@ -40,22 +40,22 @@ class AvailableMod:
     tp2: str                          # the folder name, as the first source spells it
     name: str
     in_manifest: bool = False
-    games: Tuple[str, ...] = ()
-    categories: Tuple[str, ...] = ()
-    status: Tuple[str, ...] = ()
-    safe: Optional[int] = None
-    last_update: Optional[str] = None
-    version: Optional[str] = None
+    games: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
+    status: tuple[str, ...] = ()
+    safe: int | None = None
+    last_update: str | None = None
+    version: str | None = None
     blocking: bool = False
-    advisories: List[str] = field(default_factory=list)
-    sources: List[dict] = field(default_factory=list)
-    repos: List[str] = field(default_factory=list)       # GitHub owner/repo, lowercased
-    candidates: List[Candidate] = field(default_factory=list)
-    installed: Optional[str] = None
-    latest: Optional[Candidate] = None
-    update_available: Optional[bool] = None
+    advisories: list[str] = field(default_factory=list)
+    sources: list[dict] = field(default_factory=list)
+    repos: list[str] = field(default_factory=list)       # GitHub owner/repo, lowercased
+    candidates: list[Candidate] = field(default_factory=list)
+    installed: str | None = None
+    latest: Candidate | None = None
+    update_available: bool | None = None
 
-    def _repo(self, url: Optional[str]) -> None:
+    def _repo(self, url: str | None) -> None:
         repo = github_repo(url)
         if repo and repo not in self.repos:
             self.repos.append(repo)
@@ -75,23 +75,23 @@ class AvailableMod:
                 "advisories": list(self.advisories), "sources": list(self.sources)}
 
 
-def _games(values) -> Tuple[str, ...]:
+def _games(values) -> tuple[str, ...]:
     return tuple(_GAMES[v.upper()] for v in values if isinstance(v, str)
                  and v.upper() in _GAMES)
 
 
-def _merge(found: Dict[str, AvailableMod], key: str, tp2: str, name: str) -> AvailableMod:
+def _merge(found: dict[str, AvailableMod], key: str, tp2: str, name: str) -> AvailableMod:
     if key not in found:
         found[key] = AvailableMod(key=key, tp2=tp2, name=name or tp2)
     return found[key]
 
 
-def available_mods(manifest: Optional[Manifest] = None,
-                   catalogues: Optional[CatalogueSet] = None,
-                   database: Optional[ModDatabase] = None,
-                   releases: Optional[Mapping[str, Release]] = None,
+def available_mods(manifest: Manifest | None = None,
+                   catalogues: CatalogueSet | None = None,
+                   database: ModDatabase | None = None,
+                   releases: Mapping[str, Release] | None = None,
                    versions: Sequence[ModDatabase] = (),
-                   installed: Optional[Mapping[str, str]] = None) -> List[AvailableMod]:
+                   installed: Mapping[str, str] | None = None) -> list[AvailableMod]:
     """
     One entry per mod any source knows, sorted by name.
 
@@ -99,7 +99,7 @@ def available_mods(manifest: Optional[Manifest] = None,
     more databases read only for the version they record (krion64's), and
     `installed` the installed version by mod key, from a WeiDU.log.
     """
-    found: Dict[str, AvailableMod] = {}
+    found: dict[str, AvailableMod] = {}
     for source in (manifest.sources.values() if manifest else ()):
         tp2 = source.folder or source.key
         mod = _merge(found, normalize_key(tp2), tp2, source.name)
@@ -160,7 +160,7 @@ def available_mods(manifest: Optional[Manifest] = None,
     return sorted(found.values(), key=lambda m: (m.name.lower(), m.key))
 
 
-def _by_likeness(repos: List[str], key: str) -> List[str]:
+def _by_likeness(repos: list[str], key: str) -> list[str]:
     """The repository named like the mod first: CTB's sub-mods link both
     their own repository and Check the Bodies'."""
     def rank(repo: str) -> int:
@@ -176,7 +176,7 @@ def _record_versions(mod: AvailableMod, record, origin: str) -> None:
         mod.candidates.append(Candidate(record.version, origin))
 
 
-def mods_document(mods: List[AvailableMod]) -> str:
+def mods_document(mods: list[AvailableMod]) -> str:
     """The versioned JSON a UI reads (ADR-0030)."""
     return json.dumps({"schema_version": SCHEMA_VERSION,
                        "mods": [m.as_dict() for m in mods]}, indent=2) + "\n"

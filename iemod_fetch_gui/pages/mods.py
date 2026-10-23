@@ -20,7 +20,8 @@ mods in a conflict still to decide.
 """
 import html
 import os
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
@@ -32,9 +33,9 @@ from iemod_fetch import api
 
 from .conflicts import ConflictsPanel, open_findings
 
-Loader = Callable[[str, dict], List[dict]]
-Key = Tuple[str, int]                     # (tp2, component number)
-Checker = Callable[[str, List[Key], dict, str], dict]
+Loader = Callable[[str, dict], list[dict]]
+Key = tuple[str, int]                     # (tp2, component number)
+Checker = Callable[[str, list[Key], dict, str], dict]
 ROLE = Qt.ItemDataRole.UserRole
 ALL = "All categories"
 FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available"]
@@ -60,7 +61,7 @@ def same_folder(a: str, b: str) -> bool:
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
-def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str) -> dict:
+def find_conflicts(game: str, chosen: list[Key], labels: dict, project_dir: str) -> dict:
     """The real checker: the selection's conflicts and the project's decisions."""
     project = api.load_project(project_dir)
     # The authors' own install order is fetched for what is chosen (ADR-0037):
@@ -72,7 +73,7 @@ def find_conflicts(game: str, chosen: List[Key], labels: dict, project_dir: str)
                                    sorting_order=order if os.path.isfile(order) else None)
 
 
-def load_choices(game: str, project: dict) -> List[dict]:
+def load_choices(game: str, project: dict) -> list[dict]:
     """The real loader: refresh the community data (offline keeps the last good
     copy), then every mod for `game` with its components."""
     api.update_data(api.Settings(quiet=True))
@@ -83,7 +84,7 @@ def load_choices(game: str, project: dict) -> List[dict]:
 # Threads outlive the page that started them: closing the window while the
 # catalogue loads must not destroy a running QThread (Qt aborts). Each is kept
 # here until it has finished; the application waits for them on quit.
-_RUNNING: Set[QThread] = set()
+_RUNNING: set[QThread] = set()
 
 
 def wait_for_loaders(timeout_ms: int = 60000) -> None:
@@ -147,16 +148,16 @@ class ModsPage(QWidget):
         self.load = load
         self.check = check
         self.conflicts: dict = {}
-        self._checking: Optional[QThread] = None
+        self._checking: QThread | None = None
         self._recheck = False
         self._generation = 0      # a check's result is shown only for the list it checked
         self._loading = False     # a list is on its way: the one shown is not checked
         self.game = ""              # the game the shown list is for
         self.wanted = ""            # the game asked for last
-        self.mods: List[dict] = []
-        self.items: Dict[Key, QTreeWidgetItem] = {}
-        self.exclusive: Dict[Tuple[str, str], List[QTreeWidgetItem]] = {}
-        self._thread: Optional[QThread] = None
+        self.mods: list[dict] = []
+        self.items: dict[Key, QTreeWidgetItem] = {}
+        self.exclusive: dict[tuple[str, str], list[QTreeWidgetItem]] = {}
+        self._thread: QThread | None = None
         self._updating = False
 
         self.categories = QListWidget()
@@ -268,7 +269,7 @@ class ModsPage(QWidget):
         self.items.clear()
         self.exclusive.clear()
         saved = self._saved_selection()
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for mod in mods:
             for category in mod.get("categories") or ["(none)"]:
                 counts[category] = counts.get(category, 0) + 1
@@ -285,7 +286,7 @@ class ModsPage(QWidget):
         self._count()
         self.check_conflicts()
 
-    def _mod_item(self, mod: dict, saved: Set[Key]) -> QTreeWidgetItem:
+    def _mod_item(self, mod: dict, saved: set[Key]) -> QTreeWidgetItem:
         latest = mod.get("latest") or {}
         version = mod.get("version") or ""
         if mod.get("update_available"):
@@ -332,7 +333,7 @@ class ModsPage(QWidget):
                                               []).append(child)
         return item
 
-    def _saved_selection(self) -> Set[Key]:
+    def _saved_selection(self) -> set[Key]:
         path = os.path.join(self.project_dir, api.SELECTION_FILE)
         if not os.path.isfile(path):
             return set()
@@ -364,7 +365,7 @@ class ModsPage(QWidget):
                 self._updating = False
         self._count()
 
-    def _choose(self, item: QTreeWidgetItem, seen: Set[Key]) -> None:
+    def _choose(self, item: QTreeWidgetItem, seen: set[Key]) -> None:
         """Choose `item`: clear the rest of its SUBCOMPONENT, then choose - the
         same way - every component it needs."""
         _kind, (tp2, number), component = item.data(0, ROLE)
@@ -422,7 +423,7 @@ class ModsPage(QWidget):
         if lines:
             QMessageBox.information(self, "Preset loaded", "\n\n".join(lines))
 
-    def apply_preset(self, chosen: List[Key]) -> List[Key]:
+    def apply_preset(self, chosen: list[Key]) -> list[Key]:
         """Choose exactly `chosen` (each as a click would: its SUBCOMPONENT
         cleared, what it needs chosen too); returns what the list cannot."""
         skipped = []
@@ -430,7 +431,7 @@ class ModsPage(QWidget):
         try:
             for item in self.items.values():
                 item.setCheckState(0, Qt.CheckState.Unchecked)
-            seen: Set[Key] = set()
+            seen: set[Key] = set()
             for key in chosen:
                 item = self.items.get(key)
                 if item is None or item.isDisabled():
@@ -470,7 +471,7 @@ class ModsPage(QWidget):
             return
         self.status.setText(f"Preset saved: {saved}")
 
-    def chosen(self) -> List[Key]:
+    def chosen(self) -> list[Key]:
         """(tp2, number) of every chosen component, in catalogue order."""
         return [key for key, item in self.items.items()
                 if item.checkState(0) == Qt.CheckState.Checked]
@@ -487,7 +488,7 @@ class ModsPage(QWidget):
     def is_complete(self) -> bool:
         return bool(self.chosen())
 
-    def labels(self) -> Dict[Key, str]:
+    def labels(self) -> dict[Key, str]:
         return {key: item.data(0, ROLE)[2]["name"] for key, item in self.items.items()}
 
     def save(self) -> str:
@@ -509,7 +510,7 @@ class ModsPage(QWidget):
                                    self.project_dir)
         generation = self._generation
 
-        def run() -> Tuple[int, Optional[dict], str]:
+        def run() -> tuple[int, dict | None, str]:
             # The generation travels with the result: the slots below are the
             # page's own methods, so Qt runs them on the window's thread (a
             # lambda slot would run on the worker's).
@@ -555,7 +556,7 @@ class ModsPage(QWidget):
             if item is not None:
                 item.setCheckState(0, Qt.CheckState.Unchecked)
 
-    def _mod_items(self, key: str, numbers: List[int]) -> Dict[int, QTreeWidgetItem]:
+    def _mod_items(self, key: str, numbers: list[int]) -> dict[int, QTreeWidgetItem]:
         """
         The choosable components `numbers` of the tp2 an option's key names,
         as the plan names it: `eet` is EET.tp2, not EET_end.tp2 in the same
@@ -567,7 +568,7 @@ class ModsPage(QWidget):
             tp2s = (mod or {}).get("tp2s") or []
             if len(tp2s) != 1:
                 return {}               # which of its tp2s is meant is not known
-        found: Dict[int, QTreeWidgetItem] = {}
+        found: dict[int, QTreeWidgetItem] = {}
         for tp2 in tp2s:
             for number in numbers:
                 item = self.items.get((tp2["tp2"], number))
@@ -575,7 +576,7 @@ class ModsPage(QWidget):
                     found.setdefault(number, item)
         return found
 
-    def _can_choose(self, key: str, numbers: List[int]) -> bool:
+    def _can_choose(self, key: str, numbers: list[int]) -> bool:
         return bool(numbers) and set(numbers) <= set(self._mod_items(key, numbers))
 
     def _choose_in(self, key: str, numbers: list) -> None:
@@ -623,7 +624,7 @@ class ModsPage(QWidget):
             return
         self.check_conflicts()
 
-    def _in_conflict(self) -> Set[str]:
+    def _in_conflict(self) -> set[str]:
         """Keys of the mods in a conflict still to decide."""
         tp2s = {tp2 for finding in open_findings(self.conflicts)
                 for side in (finding["left"], finding.get("right")) if side
@@ -654,7 +655,7 @@ class ModsPage(QWidget):
                 visible = visible and bool(mod.get("update_available"))
             item.setHidden(not visible)
 
-    def _show(self, item: Optional[QTreeWidgetItem]) -> None:
+    def _show(self, item: QTreeWidgetItem | None) -> None:
         if item is None:
             return
         while item.parent() is not None:

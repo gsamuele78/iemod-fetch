@@ -16,7 +16,7 @@ second, so the window stays responsive however fast the network is.
 """
 import threading
 import time
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTreeWidget,
@@ -26,7 +26,7 @@ from iemod_fetch import api
 
 from .mods import _in_thread
 
-Downloader = Callable[[str, Callable[[dict], None], threading.Event, List[str]], dict]
+Downloader = Callable[[str, Callable[[dict], None], threading.Event, list[str]], dict]
 PROGRESS_EVERY_S = 0.1
 DONE = ("ok", "skipped")
 STATES = {"ok": "Done", "skipped": "Already there", "failed": "Failed",
@@ -35,7 +35,7 @@ STATES = {"ok": "Done", "skipped": "Already there", "failed": "Failed",
 
 
 def download_project(folder: str, on_event: Callable[[dict], None],
-                     cancel: threading.Event, only: List[str]) -> dict:
+                     cancel: threading.Event, only: list[str]) -> dict:
     """The real downloader: the run the command line makes in the project."""
     return api.download_selection(folder, on_event=on_event, cancel=cancel, only=only)
 
@@ -63,12 +63,12 @@ class DownloadPage(QWidget):
         self.project_dir = project_dir
         self.download = download
         self.result: dict = {}
-        self.rows: Dict[str, QTreeWidgetItem] = {}
-        self._thread: Optional[QThread] = None
+        self.rows: dict[str, QTreeWidgetItem] = {}
+        self._thread: QThread | None = None
         self._cancel = threading.Event()
         self._lock = threading.Lock()
-        self._last: Dict[str, float] = {}
-        self._only: List[str] = []
+        self._last: dict[str, float] = {}
+        self._only: list[str] = []
         self._selection: object = None
         self._bridge = _Bridge()
         self._bridge.event.connect(self._on_event)
@@ -129,7 +129,7 @@ class DownloadPage(QWidget):
     def running(self) -> bool:
         return self._thread is not None
 
-    def start(self, only: Optional[List[str]] = None) -> None:
+    def start(self, only: list[str] | None = None) -> None:
         """Download the selection (or only the mods `only` names) in a worker thread."""
         if self.running():
             return

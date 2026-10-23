@@ -37,13 +37,12 @@ import json
 import os
 import re
 import sys
-from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from iemod_fetch.ordering import OrderIndex, name_key, tp2_key  # noqa: E402
 
-Key = Tuple[str, int]                     # (tp2 key, component number)
+Key = tuple[str, int]                     # (tp2 key, component number)
 # BWS-NG's sequence lists WeiDU itself and its helpers; they are not mods
 TOOLS = {"weidu", "weidu64", "weidufilechangelog", "eekeeper"}
 LOG_LINE = re.compile(r"^\s*~([^~]+)~\s*#\d+\s*#(\d+)")
@@ -97,7 +96,7 @@ def bws(data_dir: str) -> dict:
             skipped += 1
             continue
         mods[name_key(str(record["tp2"]))] = tuple(record.get("categories") or ())
-    sequence: Dict[Key, int] = {}
+    sequence: dict[Key, int] = {}
     eet = os.path.join(data_dir, "games", "eet.json")
     if os.path.isfile(eet):
         for part in _json(eet).get("sequences") or []:
@@ -133,7 +132,7 @@ def lcc(path: str) -> dict:
 
 # ------------------------------------------------------------------ measures
 
-def disagreement(order_a: List[int], order_b: List[int]) -> Tuple[int, int]:
+def disagreement(order_a: list[int], order_b: list[int]) -> tuple[int, int]:
     """Pairs two orders of the same items put the other way round, and pairs.
     A pair order_b ties (krion64 gives every component of a mod one place) is
     counted, and never as reversed: see `ties` for the share without them."""
@@ -143,12 +142,12 @@ def disagreement(order_a: List[int], order_b: List[int]) -> Tuple[int, int]:
     return _inversions(values), len(values) * (len(values) - 1) // 2
 
 
-def ties(order_b: List[int]) -> int:
+def ties(order_b: list[int]) -> int:
     """Pairs order_b puts at the same place."""
     return sum(n * (n - 1) // 2 for n in collections.Counter(order_b).values())
 
 
-def _inversions(values: List[int]) -> int:
+def _inversions(values: list[int]) -> int:
     """Inversions by merge sort: O(n log n) on thousands of components."""
     if len(values) < 2:
         return 0
@@ -169,13 +168,13 @@ def _inversions(values: List[int]) -> int:
     return count
 
 
-def krion_position(index: OrderIndex, key: Key) -> Optional[Tuple[int, int]]:
+def krion_position(index: OrderIndex, key: Key) -> tuple[int, int] | None:
     slot = index.component(*key) or index.get(key[0])
     return (slot.rank, slot.ord) if slot else None
 
 
-def mapping(other: Dict[str, tuple], krion_mods: Dict[str, Optional[str]]) -> dict:
-    table: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+def mapping(other: dict[str, tuple], krion_mods: dict[str, str | None]) -> dict:
+    table: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for key, categories in other.items():
         target = krion_mods.get(key)
         if target is None:
@@ -185,7 +184,7 @@ def mapping(other: Dict[str, tuple], krion_mods: Dict[str, Optional[str]]) -> di
     return {cat: dict(counter.most_common()) for cat, counter in sorted(table.items())}
 
 
-def read_log(path: str) -> Tuple[List[str], List[Key]]:
+def read_log(path: str) -> tuple[list[str], list[Key]]:
     head, rows = [], []
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -197,7 +196,7 @@ def read_log(path: str) -> Tuple[List[str], List[Key]]:
     return head, rows
 
 
-def measure(k: dict, b: dict, lc: dict, log: Optional[str]) -> dict:
+def measure(k: dict, b: dict, lc: dict, log: str | None) -> dict:
     index = k["index"]
     out: dict = {
         "krion64": {"mods": len(k["mods"]), "skipped": k["skipped"],

@@ -15,7 +15,7 @@ contradiction is shown, never silently won either way. "Use the computed
 order" deletes the file.
 """
 import os
-from typing import Callable, List, Optional, Tuple
+from collections.abc import Callable
 
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont
@@ -27,12 +27,12 @@ from iemod_fetch import api
 
 from .mods import Key, _in_thread, _target
 
-Planner = Callable[[str, List[Key], dict, str], dict]
+Planner = Callable[[str, list[Key], dict, str], dict]
 ROLE = Qt.ItemDataRole.UserRole
 RED = QColor(176, 0, 32)
 
 
-def plan_selection(game: str, chosen: List[Key], labels: dict, project_dir: str) -> dict:
+def plan_selection(game: str, chosen: list[Key], labels: dict, project_dir: str) -> dict:
     """The real planner: the run's own, on the project's data and install-order.txt."""
     project = api.load_project(project_dir)
     return api.selection_plan(game, chosen, labels, folder=project_dir,
@@ -55,8 +55,8 @@ class OrderPage(QWidget):
         self.project_dir = project_dir
         self.plan = plan
         self.result: dict = {}
-        self.wanted: Optional[Tuple[str, List[Key], dict]] = None
-        self._planning: Optional[QThread] = None
+        self.wanted: tuple[str, list[Key], dict] | None = None
+        self._planning: QThread | None = None
         self._again = False
         self._generation = 0
 
@@ -81,7 +81,7 @@ class OrderPage(QWidget):
         layout.addWidget(self.problems)
 
     # ----------------------------------------------------------- planning
-    def start(self, game: str, chosen: List[Key], labels: dict) -> None:
+    def start(self, game: str, chosen: list[Key], labels: dict) -> None:
         """Plan `chosen` for `game`, in a worker thread."""
         self.wanted = (game, list(chosen), dict(labels))
         self._generation += 1
@@ -186,7 +186,7 @@ class OrderPage(QWidget):
         return widget
 
     # ---------------------------------------------------------- reordering
-    def phases(self) -> List[List[dict]]:
+    def phases(self) -> list[list[dict]]:
         """Each tab's units, in the order shown."""
         out = []
         for index in range(self.tabs.count()):
@@ -215,6 +215,6 @@ class OrderPage(QWidget):
     def is_complete(self) -> bool:
         return bool(self.result) and self._planning is None
 
-    def order_file(self) -> Optional[str]:
+    def order_file(self) -> str | None:
         path = os.path.join(self.project_dir, api.INSTALL_ORDER_FILE)
         return path if os.path.isfile(path) else None

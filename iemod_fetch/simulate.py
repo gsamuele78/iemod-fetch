@@ -17,7 +17,7 @@ A refusal is what makes mod_installer stop partway through a long install. The
 point is to find it before the first file is copied.
 """
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from collections.abc import Iterable, Mapping, Sequence
 
 from .naming import normalize_key
 from .tp2 import Tp2Component
@@ -26,8 +26,8 @@ EET_LOG = "WeiDU.log"            # mirrors ordering.EET_LOG without importing it
 PRE_EET_LOG = "WeiDU-BGEE.log"
 EET_CORE = ("eet", 0)
 
-Constraints = Dict[str, Dict[int, Tp2Component]]
-Step = Tuple[str, int]
+Constraints = dict[str, dict[int, Tp2Component]]
+Step = tuple[str, int]
 
 
 @dataclass
@@ -40,9 +40,9 @@ class Refusal:
 
 @dataclass
 class SimulationResult:
-    installed: Dict[str, List[Step]] = field(default_factory=dict)
-    refused: List[Refusal] = field(default_factory=list)
-    unchecked: List[Tuple[str, str, int]] = field(default_factory=list)
+    installed: dict[str, list[Step]] = field(default_factory=dict)
+    refused: list[Refusal] = field(default_factory=list)
+    unchecked: list[tuple[str, str, int]] = field(default_factory=list)
 
     def render(self) -> str:
         total = sum(len(v) for v in self.installed.values())
@@ -58,7 +58,7 @@ class SimulationResult:
         return "\n".join(lines)
 
 
-def _games_of(game: str) -> Set[str]:
+def _games_of(game: str) -> set[str]:
     """What GAME_IS answers on this game, as far as the constraints use it."""
     if game == "BGEE":
         return {"BGEE", "SoD"}      # SoD content is merged into BGEE (DlcMerger)
@@ -66,7 +66,7 @@ def _games_of(game: str) -> Set[str]:
 
 
 def _check(component: Tp2Component, game: str,
-           installed: Set[Step]) -> Optional[str]:
+           installed: set[Step]) -> str | None:
     answers = _games_of(game)
     if component.games and not answers & set(component.games):
         return (f"needs game {'/'.join(component.games)}, but the game is "
@@ -83,7 +83,7 @@ def _check(component: Tp2Component, game: str,
     return None
 
 
-def _merge_refusal(eet_rules, bgee: Sequence[Step]) -> Optional[str]:
+def _merge_refusal(eet_rules, bgee: Sequence[Step]) -> str | None:
     """EET.tp2's own check of the BG:EE install it is about to import."""
     unknown = sorted({mod for mod, _n in bgee
                       if normalize_key(mod) not in eet_rules.allowed})
@@ -101,7 +101,7 @@ def _merge_refusal(eet_rules, bgee: Sequence[Step]) -> Optional[str]:
 
 
 def simulate_install(logs: Mapping[str, Sequence[Step]], constraints: Constraints,
-                     games: Optional[Dict[str, str]] = None,
+                     games: dict[str, str] | None = None,
                      eet_imports_bgee: bool = False,
                      eet_rules=None) -> SimulationResult:
     """
@@ -117,13 +117,13 @@ def simulate_install(logs: Mapping[str, Sequence[Step]], constraints: Constraint
     """
     games = dict({PRE_EET_LOG: "BGEE", EET_LOG: "BG2EE"}, **(games or {}))
     result = SimulationResult()
-    installed_on: Dict[str, Set[Step]] = {}
+    installed_on: dict[str, set[Step]] = {}
     for role in (PRE_EET_LOG, EET_LOG):
         if role not in logs:
             continue
         game = games[role]
-        installed: Set[Step] = installed_on.setdefault(role, set())
-        done: List[Step] = result.installed.setdefault(role, [])
+        installed: set[Step] = installed_on.setdefault(role, set())
+        done: list[Step] = result.installed.setdefault(role, [])
         for mod, number in logs[role]:
             component = constraints.get(mod, {}).get(number)
             if component is None:
@@ -147,7 +147,7 @@ def simulate_install(logs: Mapping[str, Sequence[Step]], constraints: Constraint
     return result
 
 
-def steps_of(units: Iterable) -> List[Step]:
+def steps_of(units: Iterable) -> list[Step]:
     """(mod, component) in plan order, from ordering.Unit-like objects."""
     return [(unit.key, comp) for unit in units
             for _path, _lang, comp, _comment in unit.lines]

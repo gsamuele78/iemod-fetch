@@ -147,6 +147,7 @@ select = [
   "PLE",    # pylint errors only
   "PLW",    # pylint warnings
   "FURB",   # modernisation
+  "UP",     # pyupgrade: the forms of the one Python in .python-version (ADR-0043)
   "T20",    # print() outside the renderers
 ]
 ignore = [

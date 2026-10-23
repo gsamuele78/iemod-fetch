@@ -27,7 +27,7 @@ import heapq
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from collections.abc import Sequence
 
 from .errors import ConfigError
 from .naming import normalize_key
@@ -90,26 +90,26 @@ class OrderIndex:
     each `data/mods/*.json` gives one mod's category (`c`) and its position
     inside it (`ord`), plus the WeiDU folders (`co[].wf`) it installs as.
     """
-    slots: Dict[str, Slot] = field(default_factory=dict)
+    slots: dict[str, Slot] = field(default_factory=dict)
     # krion64 places single components elsewhere than their mod: stratagems
     # #1500 in SPELL MODS, #4100 in POST EET (`co[].cn` + `co[].cat`).
-    component_slots: Dict[Tuple[str, int], Slot] = field(default_factory=dict)
-    categories: List[str] = field(default_factory=list)
+    component_slots: dict[tuple[str, int], Slot] = field(default_factory=dict)
+    categories: list[str] = field(default_factory=list)
     origin: str = ""
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def __len__(self) -> int:
         return len(self.slots)
 
-    def get(self, key: str) -> Optional[Slot]:
+    def get(self, key: str) -> Slot | None:
         return self.slots.get(key)
 
-    def component(self, key: str, number: int) -> Optional[Slot]:
+    def component(self, key: str, number: int) -> Slot | None:
         """Where one component belongs, when the catalogue places it apart."""
         return self.component_slots.get((key, number))
 
     @classmethod
-    def load(cls, path: str) -> "OrderIndex":
+    def load(cls, path: str) -> OrderIndex:
         """Load from a krion64 `data/` directory (or its repository root)."""
         root = path
         if not os.path.isfile(os.path.join(root, "categories.json")):
@@ -121,7 +121,7 @@ class OrderIndex:
                     "point --order-catalogue at a krion64 data directory")
 
         index = cls(origin=path)
-        with open(os.path.join(root, "categories.json"), "r",
+        with open(os.path.join(root, "categories.json"),
                   encoding="utf-8") as fh:
             payload = json.load(fh)
         categories = payload.get("categories")
@@ -133,7 +133,7 @@ class OrderIndex:
         loaded = []
         for file in sorted(glob.glob(os.path.join(root, "mods", "*.json"))):
             try:
-                with open(file, "r", encoding="utf-8") as fh:
+                with open(file, encoding="utf-8") as fh:
                     record = json.load(fh)
             except (OSError, ValueError) as exc:
                 index.warnings.append(f"{file}: unreadable ({exc})")
@@ -159,7 +159,7 @@ class OrderIndex:
                     index.component_slots.setdefault((name_key(name), number), part)
         return index
 
-    def _slot_for(self, record, rank_of: Dict[str, int], file: str):
+    def _slot_for(self, record, rank_of: dict[str, int], file: str):
         """(slot, tp2 identities, folder names) for one catalogue record."""
         if not isinstance(record, dict):
             return None
@@ -174,7 +174,7 @@ class OrderIndex:
                     pre_eet=(category == PRE_EET_CATEGORY))
 
         identities, folders = set(), set()
-        parts: Dict[int, Slot] = {}
+        parts: dict[int, Slot] = {}
         if isinstance(record.get("t"), str):
             identities.add(record["t"])
         for component in record.get("co") or ():
@@ -208,8 +208,8 @@ class Unit:
     folder: str
     source_log: str
     seq: int                                  # earliest log line, true input order
-    lines: List[Tuple[str, int, int, str]] = field(default_factory=list)
-    slot: Optional[Slot] = None
+    lines: list[tuple[str, int, int, str]] = field(default_factory=list)
+    slot: Slot | None = None
     target_log: str = ""
     part: int = 0              # > 0 once a mod is split across the order
     split: bool = False        # whether this mod was split at all
@@ -247,7 +247,7 @@ class Unit:
             return self.folder
         return f"{self.folder}/{stem}"
 
-    def render(self) -> List[str]:
+    def render(self) -> list[str]:
         out = []
         for path, lang, comp, comment in self.lines:
             line = f"~{path}~ #{lang} #{comp}"
@@ -257,7 +257,7 @@ class Unit:
         return out
 
 
-def collect_units(specs: Sequence[Tuple[str, str]]) -> Tuple[List[Unit], List[str]]:
+def collect_units(specs: Sequence[tuple[str, str]]) -> tuple[list[Unit], list[str]]:
     """
     Read the logs into orderable units.
 
@@ -267,11 +267,11 @@ def collect_units(specs: Sequence[Tuple[str, str]]) -> Tuple[List[Unit], List[st
     """
     from .weidu import parse_weidu_log
 
-    units: Dict[Tuple[str, str], Unit] = {}
-    warnings: List[str] = []
+    units: dict[tuple[str, str], Unit] = {}
+    warnings: list[str] = []
     offset = 0
     for path, role in specs:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             parsed = parse_weidu_log(fh.read(), source=str(path))
         warnings.extend(parsed.warnings)
         highest = 0
@@ -310,21 +310,21 @@ class Move:
 
 @dataclass
 class OrderPlan:
-    logs: Dict[str, List[Unit]] = field(default_factory=dict)
-    moved: List[Move] = field(default_factory=list)        # reordered within a log
-    phase_notes: List[Move] = field(default_factory=list)  # wrong log
-    cycles: List[List[str]] = field(default_factory=list)
-    unranked: List[str] = field(default_factory=list)
-    blockers: List = field(default_factory=list)           # rules.Violation
-    residual: List = field(default_factory=list)           # rules.Violation
-    warnings: List[str] = field(default_factory=list)
+    logs: dict[str, list[Unit]] = field(default_factory=dict)
+    moved: list[Move] = field(default_factory=list)        # reordered within a log
+    phase_notes: list[Move] = field(default_factory=list)  # wrong log
+    cycles: list[list[str]] = field(default_factory=list)
+    unranked: list[str] = field(default_factory=list)
+    blockers: list = field(default_factory=list)           # rules.Violation
+    residual: list = field(default_factory=list)           # rules.Violation
+    warnings: list[str] = field(default_factory=list)
     edges: int = 0
     # Units (`Unit.node`) a rule ties to another: where the rules, not the
     # catalogue's category, decide their place.
-    constrained: Set[str] = field(default_factory=set)
-    simulation: Optional[object] = None    # simulate.SimulationResult, if run
-    game_report: Optional[object] = None   # gamedir.GameReport, if folders given
-    resolution: Optional[object] = None    # resolution.ResolutionResult, if any
+    constrained: set[str] = field(default_factory=set)
+    simulation: object | None = None    # simulate.SimulationResult, if run
+    game_report: object | None = None   # gamedir.GameReport, if folders given
+    resolution: object | None = None    # resolution.ResolutionResult, if any
 
     @property
     def compliant(self) -> bool:
@@ -344,7 +344,7 @@ class OrderPlan:
             lines.extend(unit.render())
         return "\n".join(lines) + "\n"
 
-    def installs(self) -> List[Install]:
+    def installs(self) -> list[Install]:
         """The planned order, as the checker and the conflict report see a log."""
         return [_as_install(units, role) for role, units in self.logs.items()]
 
@@ -354,7 +354,7 @@ class OrderPlan:
         self.blockers = [v for v in findings if v.kind != "order"]
         self.residual = [v for v in findings if v.kind == "order"]
 
-    def write(self, directory: str) -> List[str]:
+    def write(self, directory: str) -> list[str]:
         os.makedirs(directory, exist_ok=True)
         written = []
         for role in self.logs:
@@ -365,7 +365,7 @@ class OrderPlan:
         return written
 
 
-def _order_rules(ruleset: RuleSet, include_optional: bool) -> List:
+def _order_rules(ruleset: RuleSet, include_optional: bool) -> list:
     """
     The rules that become ordering constraints.
 
@@ -380,11 +380,11 @@ def _order_rules(ruleset: RuleSet, include_optional: bool) -> List:
             and (include_optional or not rule.optional)]
 
 
-def _numbers(unit: Unit) -> List[int]:
+def _numbers(unit: Unit) -> list[int]:
     return [comp for _path, _lang, comp, _comment in unit.lines]
 
 
-def _split(units: List[Unit], rules: List, index: "OrderIndex") -> List[Unit]:
+def _split(units: list[Unit], rules: list, index: OrderIndex) -> list[Unit]:
     """
     Split a mod into contiguous parts where its components belong apart.
 
@@ -396,13 +396,13 @@ def _split(units: List[Unit], rules: List, index: "OrderIndex") -> List[Unit]:
     says otherwise, because they share the mod's catalogue position and are
     tie-broken by log line.
     """
-    named: Dict[str, List[frozenset]] = {}
+    named: dict[str, list[frozenset]] = {}
     for rule in rules:
         for spec in (rule.left, *rule.right):
             if spec.components is not None:
                 named.setdefault(spec.mod, []).append(spec.components)
 
-    out: List[Unit] = []
+    out: list[Unit] = []
     for unit in units:
         groups = named.get(unit.key, [])
 
@@ -411,7 +411,7 @@ def _split(units: List[Unit], rules: List, index: "OrderIndex") -> List[Unit]:
             return (part.rank if part else None,
                     tuple(number in group for group in groups))
 
-        runs: List[List[Tuple[str, int, int, str]]] = []
+        runs: list[list[tuple[str, int, int, str]]] = []
         last = object()
         for entry in unit.lines:
             sig = signature(entry[2])
@@ -433,7 +433,7 @@ def _split(units: List[Unit], rules: List, index: "OrderIndex") -> List[Unit]:
     return out
 
 
-def _edges(units: List[Unit], rules: List) -> Tuple[Dict[str, Set[str]], int]:
+def _edges(units: list[Unit], rules: list) -> tuple[dict[str, set[str]], int]:
     """
     Hard ordering constraints, between parts: `after -> before`, per log.
 
@@ -442,16 +442,16 @@ def _edges(units: List[Unit], rules: List) -> Tuple[Dict[str, Set[str]], int]:
     pre-EET log does not order against a mod in the EET log. A rule between two
     components of one mod is honoured too, as long as they are different parts.
     """
-    by_log: Dict[str, List[Unit]] = {}
+    by_log: dict[str, list[Unit]] = {}
     for unit in units:
         by_log.setdefault(unit.target_log, []).append(unit)
 
-    def holders(members: List[Unit], spec) -> List[Unit]:
+    def holders(members: list[Unit], spec) -> list[Unit]:
         return [u for u in members if u.key == spec.mod
                 and (spec.components is None
                      or any(n in spec.components for n in _numbers(u)))]
 
-    edges: Dict[str, Set[str]] = {}
+    edges: dict[str, set[str]] = {}
     count = 0
     for rule in rules:
         for members in by_log.values():
@@ -472,7 +472,7 @@ def _edges(units: List[Unit], rules: List) -> Tuple[Dict[str, Set[str]], int]:
     return edges, count
 
 
-def _priorities(units: List[Unit]) -> Dict[str, Tuple[int, int, int]]:
+def _priorities(units: list[Unit]) -> dict[str, tuple[int, int, int]]:
     """
     The order the catalogue wants, as a sort key per unit.
 
@@ -481,8 +481,8 @@ def _priorities(units: List[Unit]) -> Dict[str, Tuple[int, int, int]]:
     put it instead of being swept to the end. Its own sequence number breaks the
     tie, preserving the input order among unknowns.
     """
-    priorities: Dict[str, Tuple[int, int, int]] = {}
-    inherited: Dict[str, Tuple[int, int]] = {}
+    priorities: dict[str, tuple[int, int, int]] = {}
+    inherited: dict[str, tuple[int, int]] = {}
     for unit in units:
         if unit.slot is not None:
             base = (unit.slot.rank, unit.slot.ord)
@@ -493,8 +493,8 @@ def _priorities(units: List[Unit]) -> Dict[str, Tuple[int, int, int]]:
     return priorities
 
 
-def _toposort(units: List[Unit], edges: Dict[str, Set[str]],
-              priorities) -> Tuple[List[Unit], List[List[str]]]:
+def _toposort(units: list[Unit], edges: dict[str, set[str]],
+              priorities) -> tuple[list[Unit], list[list[str]]]:
     """
     Kahn's algorithm, ties broken by catalogue priority.
 
@@ -509,15 +509,15 @@ def _toposort(units: List[Unit], edges: Dict[str, Set[str]],
     """
     members = {u.node: u for u in units}
     pending = {k: {d for d in edges.get(k, ()) if d in members} for k in members}
-    dependents: Dict[str, Set[str]] = {k: set() for k in members}
+    dependents: dict[str, set[str]] = {k: set() for k in members}
     for key, deps in pending.items():
         for dep in deps:
             dependents[dep].add(key)
 
     ready = [(priorities[k], k) for k, deps in pending.items() if not deps]
     heapq.heapify(ready)
-    emitted: List[Unit] = []
-    cycles: List[List[str]] = []
+    emitted: list[Unit] = []
+    cycles: list[list[str]] = []
     left = set(members)
 
     while left:
@@ -542,7 +542,7 @@ def _toposort(units: List[Unit], edges: Dict[str, Set[str]],
     return emitted, cycles
 
 
-def _minimum_moves(before: List[str], after: List[str]) -> List[Tuple[str, int, int]]:
+def _minimum_moves(before: list[str], after: list[str]) -> list[tuple[str, int, int]]:
     """
     The smallest set of units that has to move to get from `before` to `after`.
 
@@ -575,8 +575,8 @@ def _minimum_moves(before: List[str], after: List[str]) -> List[Tuple[str, int, 
             if key not in keep and positions[key] != idx]
 
 
-def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
-               ruleset: Optional[RuleSet] = None, context=None,
+def plan_order(specs: Sequence[tuple[str, str]], index: OrderIndex,
+               ruleset: RuleSet | None = None, context=None,
                include_optional: bool = False,
                reassign_phase: bool = False) -> OrderPlan:
     """
@@ -635,7 +635,7 @@ def plan_order(specs: Sequence[Tuple[str, str]], index: OrderIndex,
     return plan
 
 
-def _as_install(units: List[Unit], label: str) -> Install:
+def _as_install(units: list[Unit], label: str) -> Install:
     """Present the planned order to the checker exactly as a log would be."""
     install = Install(label=label)
     line = 0
@@ -653,7 +653,7 @@ def _as_install(units: List[Unit], label: str) -> Install:
     return install
 
 
-def _verify(plan: OrderPlan, ruleset: RuleSet, context) -> List:
+def _verify(plan: OrderPlan, ruleset: RuleSet, context) -> list:
     """
     Check the PLAN, not the input.
 
