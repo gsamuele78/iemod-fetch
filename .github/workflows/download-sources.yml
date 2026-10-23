@@ -10,7 +10,8 @@ name: Download sources
 
 on:
   pull_request:
-    paths: ["tools/download_measure.py", ".github/workflows/download-sources.yml"]
+    paths: ["tools/download_measure.py", "tools/landing_probe.py",
+            "iemod_fetch/resolvers.py", ".github/workflows/download-sources.yml"]
   schedule:
     - cron: "29 4 * * 1"
   workflow_dispatch:
@@ -46,6 +47,12 @@ jobs:
           python -m iemod_fetch -w tests/data/WeiDU.log -m '' -t mods-real $only \
             --no-discovery --no-update-data --no-gh-cli --no-git-credential -q \
             --max-bytes 314572800 --json-report real.json || true
+      - name: What the landing pages give (diagnosis)
+        run: |
+          python tools/landing_probe.py \
+            https://downloads.weaselmods.net/download/alabaster-sands/ \
+            https://downloads.weaselmods.net/download/the-bloodied-stings-of-barovia/ \
+            https://www.gibberlings3.net/files/file/702-a-mod-for-the-orderly/ || true
       - name: Summary
         run: |
           python tools/download_measure.py dry-catalogue.json dry-manifest.json \

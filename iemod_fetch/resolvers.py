@@ -279,6 +279,15 @@ class _LinkExtractor(HTMLParser):
 
 
 
+def _same_page(link: str, page_url: str) -> bool:
+    """The link is the page it is on (fragment and trailing slash aside)."""
+    def key(url):
+        parts = urllib.parse.urlsplit(url)
+        return (parts.scheme.lower(), (parts.hostname or "").lower(),
+                parts.path.rstrip("/") or "/", parts.query)
+    return key(link) == key(page_url)
+
+
 class LandingPageResolver:
     """
     Scrapes a mod's landing page for its download link.
@@ -347,6 +356,8 @@ class LandingPageResolver:
         scored = []
         for raw_link, text in parser.links:
             link = unwrap_redirect(raw_link)
+            if _same_page(link, page_url):
+                continue          # the page itself: downloading it gives the page
             score = self._score(link, text)
             if score <= 0:
                 continue

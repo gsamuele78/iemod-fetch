@@ -369,3 +369,15 @@ def test_a_refusal_is_not_called_a_rate_limit(status, headers, said):
                                                         status, "Forbidden")})
     res = GitHubResolver(client).resolve(src(github="o/r"))
     assert not res.ok and said in res.reason and "set GH_TOKEN" not in res.reason
+
+
+def test_a_link_to_the_page_itself_is_never_the_download(fake_opener):
+    # Measured on the real site (download-sources.yml, 2026-10-22): a WeaselMods
+    # page links to itself, `/download/<its slug>/`, which scored on the slug and
+    # was "downloaded" - an HTML page, not the archive
+    page = "https://downloads.weaselmods.net/download/alabaster-sands/"
+    body = weasel_page(extra=b'<a href="/download/alabaster-sands/#top">Download</a>'
+                             b'<a href="https://downloads.weaselmods.net/download/'
+                             b'alabaster-sands">Alabaster Sands</a>')
+    res = LandingPageResolver(landing(page, body)).resolve(src(key="AlabasterSands", url=page))
+    assert not res.ok and "scored high enough" in res.reason
