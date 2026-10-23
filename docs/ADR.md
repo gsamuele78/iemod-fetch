@@ -2115,8 +2115,9 @@ or PySide6. Three constraints shaped it.
 
 ### Consequences
 
-- The Linux zip measured 60 MB; Qt modules the wizard does not use are
-  excluded to keep it there.
+- The Linux zip measured 60 MB locally and 83 MB in the 3.0.0 release (the
+  runner's PySide6 wheel is bigger); the Windows one 48 MB. Qt modules the
+  wizard does not use are excluded to keep them there.
 - A macOS bundle reaches a release up to six hours after it, or never while
   the runners do not start; the release says so in its notes.
 - The bundles carry no publisher signature and the macOS app is not

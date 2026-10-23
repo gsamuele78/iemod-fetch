@@ -39,7 +39,9 @@ that needs no Python (Linux and Windows zips, macOS added when built). 3.0 is
 the plan's number for the milestone, not a break: the command line only gains
 (a `mod_extracting` event; with no `mod_downloads.json`, the community
 catalogue as the source) and is fixed, nothing is removed or renamed.
-Installation from the wizard is the next milestone (M4). What changed in each
+Installation from the wizard is the next milestone (M4); then M5, the order
+and the selection by kind of mod for what krion64 does not place
+([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
 | Step | What happens | Flag |

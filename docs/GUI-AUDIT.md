@@ -165,7 +165,7 @@ run can be stopped and resumed, or finished from the command line.
 | 17 | **Done** (ADR-0038): one tab per install - for EET the BG:EE phase and EET, split by krion64's categories in the saved selection too - in the run's planned order; bold where a rule places a mod, red where an order rule still objects, with the rule; drag to reorder, saved as `install-order.txt` (Project Infinity Sorting Order) and named in the project's ini, so the CLI plans the same order (checked by a test). **3. Install order**: one tab per EET phase, drag to reorder, entries the rules place marked (bold, still movable: a move that breaks a rule is shown), violations marked | M |
 | 18 | **Done** (ADR-0039): one page, "Download and extraction" - one step per mod in the engine - with a row per mod (downloading, bytes of total, extracting, done, failed, no download found, cancelled), cancel, resume, "Retry the failed"; it runs the CLI's own run in the project (`api.download_selection`), and with no manifest lcc-docs is the download source (138 of 145 mods of the supplied log have a candidate). Phase 5 is now Installation (M4). **4. Download** and **5. Extraction**: progress per mod and in bytes from the event stream, cancel, retry of the failed ones | M |
 | 19 | **Done**: *Load preset...* and *Save preset...* on the mod selection page; a preset is a selection.json byte for byte as the project's (a test compares them), and a WeiDU.log, a BIO share code or a Project Infinity list loads too, told apart by what the file holds and matched to the list ignoring case and `setup-`; what the list lacks is named, never guessed (`api.import_selection`, `api.export_selection`). Presets: save and load `selection.json`, import from WeiDU.log, BIO code and PI csv | S |
-| 20 | **Done** (ADR-0040): `packaging/gui_bundle.py`, a `gui` job in the release workflow - Linux and Windows; macOS by `release-macos.yml`, attached after the release when its runner starts - one folder (Qt replaceable, LGPL-3.0), started once offscreen with `--check`, zipped deterministically, attested and in SHA256SUMS, with the LGPL/GPL texts and `NOTICE-Qt.txt`; the Linux zip is 60 MB. PyInstaller build per OS in the release workflow, attested, with the Qt LGPL notice | M |
+| 20 | **Done** (ADR-0040): `packaging/gui_bundle.py`, a `gui` job in the release workflow - Linux and Windows; macOS by `release-macos.yml`, attached after the release when its runner starts - one folder (Qt replaceable, LGPL-3.0), started once offscreen with `--check`, zipped deterministically, attested and in SHA256SUMS, with the LGPL/GPL texts and `NOTICE-Qt.txt`; in the 3.0.0 release the Linux zip is 83 MB and the Windows one 48 MB (60 MB measured locally: the runner's PySide6 wheel is bigger). PyInstaller build per OS in the release workflow, attested, with the Qt LGPL notice | M |
 
 ### M4 — Backup and installation (v3.x)
 
@@ -175,6 +175,41 @@ run can be stopped and resumed, or finished from the command line.
 | 22 | **6. Installation**: drives mod_installer (EET mode) or WeiDU directly, streams the output into the window, recognises prompts and answers them only from a recorded answer file (`@wlb-inputs` style); otherwise it asks the player | L |
 | 23 | Resume after a failure or cancel; the WeiDU.log is the state | M |
 | 24 | A real Windows end-to-end CI job (roadmap F) and live GitHub API contract tests (item A) | M |
+
+### M5 — The order and the selection by kind of mod (after 3.0.0)
+
+Asked for on 2026-10-23: use the generic kind of each mod (interface,
+graphics, portraits and sound, quests, NPCs and banter, items and spells,
+kits, AI and tactics, tweaks, maps, after EET_end...) in the selection and in
+the order, as Project Infinity, krion64 and BWS-NG classify them, with the
+exceptions where one component must go elsewhere.
+
+What exists in 3.0.0: the order **is** already by kind where krion64 knows
+the mod - its 26 categories, in install order (`PRE EET BGEE MODS`, `ENGINE`,
+`INTERFACE`, `GRAPHICS`, ... `TACTICAL MODS`, `PORTRAITS`, `EET FINALIZATION`,
+`POST EET`), with its position inside the category, and a mod split where
+krion64 files one component elsewhere (ADR-0038). Rules then move it: BWS-NG's,
+the authors' metadata inis, the player's Sorting Order. Measured gaps:
+
+- krion64 places 813 mods; lcc-docs lists 1,148 for the EE games (2,151 in
+  all). A mod krion64 does not know keeps the place of the mod before it in
+  the input - from the wizard, a place that depends on the selection's order,
+  not on what the mod is.
+- lcc-docs has its own 17 categories (Gameplay 403, Kit 262, recruitable NPC
+  232, spells and items 225, quest 225, portrait and sound 172, ...) and the
+  selection page filters by them; they are not install phases and are not
+  mapped to krion64's.
+- BWS-NG's and Project Infinity's classifications are not read yet; their
+  shape has to be measured first (the session sandbox cannot reach them; a
+  workflow can).
+
+| # | Item | Size |
+|---|---|---|
+| 25 | **Audit, measured on GitHub's runners**: every source's classification (krion64's categories and per-component `c`, lcc-docs' categories, BWS-NG's, Project Infinity's), how many mods each covers, a mapping from each to krion64's install phases, and where they disagree. On the supplied 145-mod EET log: how many mods have no krion64 place, and how far the order by kind is from the order the player actually installed. ADR-0041 decides from these numbers. | M |
+| 26 | **Selection by kind**: one "kind" filter and column in phase 2, from the mapping, each mod showing which source says what; a disagreement is shown, never settled silently. | M |
+| 27 | **Order by kind for what krion64 does not place**: such a mod takes the place its kind maps to, marked "placed by kind" with its source in the order page, the plan summary and the JSON plan. It never overrides, in this order: the player's Sorting Order, the authors' inis, BWS-NG's rules, krion64's own place. | M |
+| 28 | **Exceptions per component**: a component whose kind differs from its mod's (a tweak pack's portraits, a tactical mod's kits, what goes after EET_end) is split and placed by its own kind, from krion64's and BWS-NG's per-component data; two chosen components known to overwrite the same thing (BWS-NG and krion64 conflict records, `mod-forge.json`) are reported with their order as an option, as conflicts are today. Static analysis of what a tp2 copies is not promised: WeiDU's language can compute any path. | L |
+| 29 | **Tests on real data**: fixtures in the shape of the real files (krion64 MIT data may be pinned; BWS-NG's is GPL and is not bundled, so its fixtures are written by hand to its schema), a weekly workflow on the live sources, the 145-mod log as a benchmark (order inversions against the player's order, before and after), and the mock EET install with the real WeiDU on a plan reordered by kind. | M |
 
 **Explicitly not planned:**
 - Copying any BIO, BWS-NG or mod_installer code.
@@ -191,6 +226,7 @@ run can be stopped and resumed, or finished from the command line.
 | M2 | `describe` gives the right component names in English and one other language for a fixture set of real tp2/tra pairs (EET, SCS, BG1NPC).<br>Every conflict in the fixture EET plan has at least one option, and applying it leaves the plan free of that conflict.<br>A BIO share code goes through import and export without losing anything. |
 | M3 | A pytest-qt test, run offscreen on Windows, Linux and macOS, goes through phases 1-5 on a fixture EET selection: picks components, resolves a conflict, reorders, downloads from a local fixture server, cancels and resumes.<br>The `selection.json` it saves is byte-identical to the CLI's for the same choices.<br>The window never blocks for more than 100 ms during a download.<br>The `.pyz` stays standard-library only, and the PyInstaller build starts on all three OSes. |
 | M4 | The mock EET plan installs end to end from the GUI on Windows and Linux runners with the real WeiDU and mod_installer.<br>Cancelling mid-install, then resuming, finishes with the same WeiDU.log as an uninterrupted run.<br>A prompt without a recorded answer stops and asks; it is never answered by guess.<br>Restoring the backup gives back the game folder as it was. |
+| M5 | Every mod of the 145-mod log has a place: from krion64, or from its kind with the source named; none is placed silently.<br>On that log the order by kind has no more inversions against the player's order than 3.0.0's, measured and published.<br>Each source's classification is read from its real files by a weekly workflow, and a change in its shape fails that workflow, not a player's run.<br>A plan reordered by kind installs with the real WeiDU in the mock EET job. |
 
 **M3, as released in 3.0.0.** `tests/gui/test_m3_end_to_end.py` drives the real main window,
 offscreen, through phases 1-4 on a fixture EET selection: the project's ini,
