@@ -981,8 +981,9 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
         if plan is None:
             return {"phases": [], "cycles": [], "violations": [], "planned": False,
                     "custom": custom}
-        moved = {move.key for move in plan.moved}
-        bad = {key for violation in plan.residual for key in violation.mods}
+        # per unit, not per mod: a split mod's other parts are neither moved
+        # nor wrong because one part is (review of #74)
+        moved = {(move.key, move.display) for move in plan.moved}
         phases = []
         for role in (PRE_EET_LOG, EET_LOG):
             units = plan.logs.get(role)
@@ -1002,14 +1003,28 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
                 "placed_by": unit.placed_by,
                 "placed_from": unit.placed_from,
                 "no_place": unit.no_place,
-                "moved": unit.key in moved,
+                "moved": (unit.key, unit.display) in moved,
                 # what an order rule still finds wrong; a cycle names every
                 # unit left when it was broken, so it is reported, not marked
-                "flagged": unit.key in bad,
+                "flagged": _flagged(unit, plan.residual),
             } for unit in units]})
         return {"phases": phases, "cycles": [list(c) for c in plan.cycles],
                 "violations": [v.summary for v in plan.residual],
                 "planned": True, "custom": custom}
+
+
+def _flagged(unit, violations) -> bool:
+    """Whether an order rule the plan could not keep names this unit: its
+    mod, and - where the violation says which - one of its components."""
+    numbers = {line[2] for line in unit.lines}
+    for violation in violations:
+        for at, key in enumerate(violation.mods[:2]):
+            if key != unit.key:
+                continue
+            named = violation.left_components if at == 0 else violation.right_components
+            if not named or numbers & set(named):
+                return True
+    return False
 
 
 def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
@@ -1021,6 +1036,12 @@ def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
     """
     lines = ["// Install order set in the iemod-fetch wizard (Project Infinity",
              "// Sorting Order format). Delete this file to use the computed order."]
+    # A tp2 in both installs is written with its numbers in each: `*` would
+    # name it whole in both (review of #74).
+    seen: dict[str, set[int]] = {}
+    for index, units in enumerate(phases):
+        for unit in units:
+            seen.setdefault(unit["tp2"].lower(), set()).add(index)
     for units in phases:
         for unit in units:
             # A tp2 name may hold spaces (`Setup-Unofficial Item Pack.tp2`); its
@@ -1029,7 +1050,8 @@ def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
             if not normalize_key(name):
                 raise ConfigError(f"cannot write {unit['tp2']!r} as a sorting order line")
             numbers = " ".join(str(c[1]) for c in unit["components"])
-            lines.append(f"{name} {numbers}" if unit.get("split") else f"{name} *")
+            whole = not unit.get("split") and len(seen[unit["tp2"].lower()]) == 1
+            lines.append(f"{name} *" if whole else f"{name} {numbers}")
     text = "\n".join(lines) + "\n"
     sortorder.parse(text, source="the wizard's install order")   # refuse before writing
     # The project's ini names it first, so the command line uses it too: if

@@ -349,3 +349,28 @@ def test_after_a_split_and_a_move_the_wizard_and_the_command_line_agree(tmp_path
                for line in (tmp_path / "plan" / "WeiDU.log").read_text().splitlines()
                if line.startswith("~")]
     assert written == page
+
+
+def test_a_rule_broken_by_one_part_marks_that_part_not_the_mod():
+    """Review of #74: after a split, one part's violation marked every part."""
+    from types import SimpleNamespace
+    from iemod_fetch.rules import Violation
+    part = lambda n: SimpleNamespace(key="eefixpack", lines=[("p", 0, n, "")])  # noqa: E731
+    wrong = Violation("order", "error", "eefixpack #1 must go after eet",
+                      mods=("eefixpack", "eet"), left_components=(1,))
+    assert api._flagged(part(1), [wrong])
+    assert not api._flagged(part(0), [wrong])
+    whole = Violation("order", "error", "eefixpack after eet", mods=("eet", "eefixpack"))
+    assert api._flagged(part(0), [whole])
+
+
+def test_a_tp2_in_both_installs_is_written_with_its_numbers(tmp_path):
+    """Review of #74: `*` would name it whole in both."""
+    unit = lambda tp2, numbers, split=False: {  # noqa: E731
+        "tp2": tp2, "split": split, "components": [[tp2, n, ""] for n in numbers]}
+    api.save_install_order(str(tmp_path), [
+        [unit("eefixpack/setup-eefixpack.tp2", [0]), unit("bg1ub/bg1ub.tp2", [0])],
+        [unit("EET/EET.tp2", [0]), unit("eefixpack/setup-eefixpack.tp2", [1, 2])]])
+    lines = [line for line in (tmp_path / api.INSTALL_ORDER_FILE).read_text().splitlines()
+             if not line.startswith("//")]
+    assert lines == ["eefixpack 0", "bg1ub *", "EET *", "eefixpack 1 2"]

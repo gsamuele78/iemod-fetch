@@ -49,10 +49,12 @@ Python API, which is internal.
 ### Added
 - **Split a mod on the order page and move one component** (GUI-AUDIT M5b
   item 30). *Split into components* turns the selected mod into one row per
-  component, so a single component can be dragged on its own. The order is
-  saved with `tp2 n` lines - the Sorting Order the command line already
-  reads - and planned again; the page and `--plan-order` give the same order,
-  component for component.
+  component, so a single component can be dragged on its own; *Join the
+  parts* puts them back in one row. The order is saved with `tp2 n` lines -
+  the Sorting Order the command line already reads - and planned again; the
+  page and `--plan-order` give the same order, component for component. A
+  split part is marked moved or wrong on its own, and a tp2 in both installs
+  is saved with its numbers in each.
 - **The command line as a program that needs no Python** (GUI-AUDIT M6 item
   36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
   macOS's own `python3` are older. Each release now carries

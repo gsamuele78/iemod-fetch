@@ -15,7 +15,7 @@ from PySide6.QtCore import QModelIndex  # noqa: E402
 from PySide6.QtWidgets import QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
-from iemod_fetch_gui.pages.order import RED, OrderPage  # noqa: E402
+from iemod_fetch_gui.pages.order import RED, ROLE, OrderPage  # noqa: E402
 
 PHASES = {"BG:EE before the conversion": ["bg1ub"],
           "EET": ["eet", "ub", "ascension", "EET_end"]}
@@ -224,3 +224,117 @@ def test_a_plan_for_a_previous_selection_never_lands(qtbot, tmp_path):
                         "custom": False}, ""))
     qtbot.waitUntil(lambda: widget._planning is None, timeout=5000)
     assert widget.tabs.count() == 2
+
+
+# --------------------------------------------- review follow-ups (#74)
+def lines_of(folder):
+    return [line for line in (folder / api.INSTALL_ORDER_FILE).read_text().splitlines()
+            if not line.startswith("//")]
+
+
+class Slow:
+    """A planner that answers from the saved order, and waits for `gate`
+    once it is set - as a plan fetching metadata may, for seconds."""
+
+    def __init__(self):
+        import threading
+        self.gate = None
+        self.event = threading.Event
+
+    def __call__(self, game, chosen, labels, folder):
+        if self.gate is not None:
+            self.gate.wait(5)
+        units = [unit("eet"),
+                 dict(unit("cdtweaks"), components=[["cdtweaks/cdtweaks.tp2", n, ""]
+                                                    for n in (10, 20, 30)]),
+                 unit("stratagems")]
+        return {"phases": [{"role": "EET", "title": "EET", "units": units}],
+                "cycles": [], "violations": [], "planned": True, "custom": False}
+
+
+def test_a_drag_while_the_plan_is_made_keeps_the_split(qtbot, tmp_path):
+    """Review of #74 (blocking): the split is in the list at once, so a drag
+    before the plan comes back saves it rather than the mod whole."""
+    planner = Slow()
+    widget, _planner = page(qtbot, tmp_path, planner)
+    planner.gate = planner.event()
+    view = widget.tabs.widget(0)
+    view.setCurrentRow(1)
+    widget.split.click()                             # the plan now waits on the gate
+    assert [view.item(r).data(ROLE)["components"][0][1] for r in (1, 2, 3)] == [10, 20, 30]
+    assert not widget.split.isEnabled() and not widget.join.isEnabled()
+    view.model().moveRow(QModelIndex(), 4, QModelIndex(), 0)       # stratagems to the top
+    assert lines_of(tmp_path) == ["stratagems *", "eet *", "cdtweaks 10", "cdtweaks 20",
+                                  "cdtweaks 30"]
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        planner.gate.set()
+
+
+def test_the_parts_of_a_split_mod_are_joined_again(qtbot, tmp_path):
+    """Review of #74: one split undone, the other moves kept."""
+    widget, _planner = page(qtbot, tmp_path, Slow())
+    view = widget.tabs.widget(0)
+    view.setCurrentRow(1)
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.split.click()
+    assert lines_of(tmp_path)[1:4] == ["cdtweaks 10", "cdtweaks 20", "cdtweaks 30"]
+    # the Slow planner answers the mod whole again; put the parts back on screen
+    view = widget.tabs.widget(0)                     # the plan rebuilt the tab
+    view.takeItem(1)
+    for offset, number in enumerate((10, 20, 30)):
+        view.insertItem(1 + offset, widget._item(dict(
+            unit("cdtweaks"), split=True, components=[["cdtweaks/cdtweaks.tp2", number, ""]])))
+    view.setCurrentRow(0)
+    view.setCurrentRow(2)
+    assert widget.join.isEnabled()
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.join.click()
+    assert lines_of(tmp_path) == ["eet *", "cdtweaks *", "stratagems *"]
+
+
+def test_split_and_drag_on_the_real_planner_agree_with_the_command_line(qtbot, tmp_path):
+    """Review of #74 (acceptance on the real path): the run's own planner,
+    Split on eefixpack, its #1 dragged just after the EET core, then
+    --plan-order with the same selection and order - row for row."""
+    here = os.path.join(os.path.dirname(__file__), os.pardir)
+    mock = os.path.join(here, "data", "eetmock")
+    krion = os.path.join(here, "data", "krion")
+    from test_selection_plan import CHOSEN
+
+    def real(game, chosen, labels, folder):
+        return api.selection_plan(game, chosen, labels, folder=folder,
+                                  order_catalogue=krion, rules=[os.path.join(mock, "rules")],
+                                  target=os.path.join(mock, "Mods"),
+                                  data_dir=os.path.join(folder, "no-cache"))
+    widget = OrderPage(str(tmp_path), plan=real)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.start("EET", CHOSEN, {})
+    widget.tabs.setCurrentIndex(1)
+    view = widget.tabs.widget(1)
+    rows = lambda: [view.item(r).data(ROLE) for r in range(view.count())]  # noqa: E731
+    view.setCurrentRow(next(r for r, u in enumerate(rows()) if u["key"] == "eefixpack"))
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.split.click()
+    view = widget.tabs.widget(1)
+    source = next(r for r, u in enumerate(rows()) if u["key"] == "eefixpack"
+                  and u["components"][0][1] == 1)
+    core = next(r for r, u in enumerate(rows()) if u["key"] == "eet")
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        view.model().moveRow(QModelIndex(), source, QModelIndex(), core + 1)
+    view = widget.tabs.widget(1)
+    page_order = [(c[0].split("/")[0].lower(), c[1]) for u in rows() for c in u["components"]]
+    assert page_order.index(("eefixpack", 1)) == page_order.index(("eet", 0)) + 1
+
+    api.save_selection(str(tmp_path), "EET", CHOSEN, order_catalogue=krion)
+    api.run(api.Settings(
+        selection=str(tmp_path / api.SELECTION_FILE),
+        sorting_order=str(tmp_path / api.INSTALL_ORDER_FILE),
+        check_only=True, quiet=True, manifest=os.path.join(here, "data", "mod_downloads.json"),
+        target=os.path.join(mock, "Mods"), rules=[os.path.join(mock, "rules")],
+        order_catalogue=krion, plan_order=str(tmp_path / "plan"),
+        data_dir=str(tmp_path / "no-cache"), no_update_data=True, no_default_data=True))
+    written = [(line[1:].split("\\")[0].lower(), int(line.split("#")[2].split()[0]))
+               for line in (tmp_path / "plan" / "WeiDU.log").read_text().splitlines()
+               if line.startswith("~")]
+    assert written == page_order

@@ -78,14 +78,20 @@ class OrderPage(QWidget):
                               "one of them on its own")
         self.split.setEnabled(False)
         self.split.clicked.connect(self._split)
+        self.join = QPushButton("Join the parts")
+        self.join.setToolTip("The selected mod's parts in this tab as one row again")
+        self.join.setEnabled(False)
+        self.join.clicked.connect(self._join)
         bar = QHBoxLayout()
         bar.addWidget(self.summary, 1)
         bar.addWidget(self.split)
+        bar.addWidget(self.join)
         bar.addWidget(self.reset)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>3. Install order</h2>"))
         layout.addWidget(_plain(
-            "Drag a mod to change where it is installed. Bold: a rule places it. "
+            "Drag a mod - or, split, one of its components - to change where it is "
+            "installed. Bold: a rule places it. "
             "Red: a rule says it is in the wrong place. Your order is kept in "
             f"{api.INSTALL_ORDER_FILE}, which the command line uses too."))
         layout.addLayout(bar)
@@ -109,6 +115,8 @@ class OrderPage(QWidget):
             return
         self._again = False
         self.summary.setText("Planning the install order...")
+        self.split.setEnabled(False)
+        self.join.setEnabled(False)
         self.completeChanged.emit(False)        # Next waits for this plan
         plan, (game, chosen, labels) = self.plan, self.wanted
         generation, folder = self._generation, self.project_dir
@@ -137,6 +145,7 @@ class OrderPage(QWidget):
 
     def _finished(self) -> None:
         self._planning = None
+        self._can_split()
         if self._again:
             self._plan()
             return
@@ -146,6 +155,7 @@ class OrderPage(QWidget):
     def show_result(self, result: dict) -> None:
         self.result = result
         self.split.setEnabled(False)            # the rows it would split are gone
+        self.join.setEnabled(False)
         current = self.tabs.currentIndex()
         self.tabs.clear()
         if not result.get("planned"):
@@ -159,7 +169,7 @@ class OrderPage(QWidget):
                                                 f"({len(phase['units'])})")
         self.tabs.setCurrentIndex(max(0, min(current, self.tabs.count() - 1)))
         units = [u for p in result["phases"] for u in p["units"]]
-        parts = [f"{len(units)} mod(s) in order",
+        parts = [f"{len({u['key'] for u in units})} mod(s) in order",
                  f"{sum(u['constrained'] for u in units)} placed by a rule",
                  f"{sum(u['moved'] for u in units)} moved from where they were chosen"]
         # a split mod is one mod placed by its kind, not one per part
@@ -185,39 +195,42 @@ class OrderPage(QWidget):
         widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         widget.setDefaultDropAction(Qt.DropAction.MoveAction)
         widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        custom = bool(self.result and self.result.get("custom"))
         for unit in phase["units"]:
-            text = unit["name"] + (f"  -  {unit['category']}" if unit["category"] else "")
-            if unit.get("placed_by") and not custom:
-                text += ("  (by BWS-NG)" if unit.get("placed_from") == "BWS-NG"
-                         else "  (by kind)")
-            item = QListWidgetItem(text)
-            item.setData(ROLE, unit)
-            components = ", ".join(f"#{c[1]}" for c in unit["components"][:12])
-            tips = [f"Components: {components}"]
-            if unit["constrained"]:
-                font = QFont(item.font())
-                font.setBold(True)
-                item.setFont(font)
-                tips.append("A rule places it relative to another mod.")
-            if unit.get("placed_by") and custom:
-                tips.append("krion64 does not place it; its kind would ("
-                            + unit["placed_by"] + "), but your own order applies.")
-            elif unit.get("placed_by"):
-                tips.append("krion64 does not place it: " + unit["placed_by"] + ".")
-            elif unit.get("no_place"):
-                tips.append("krion64 does not place it, and it stays where it was "
-                            "chosen - " + unit["no_place"] + ".")
-            if unit["moved"]:
-                tips.append("Moved from where it was chosen, by the rules.")
-            if unit["flagged"]:
-                item.setForeground(QBrush(RED))
-                tips.append("An order rule says it is in the wrong place (see below).")
-            item.setToolTip("\n".join(tips))
-            widget.addItem(item)
+            widget.addItem(self._item(unit))
         widget.model().rowsMoved.connect(lambda *_args: self._reordered())
         widget.currentItemChanged.connect(lambda *_args: self._can_split())
         return widget
+
+    def _item(self, unit: dict) -> QListWidgetItem:
+        custom = bool(self.result and self.result.get("custom"))
+        text = unit["name"] + (f"  -  {unit['category']}" if unit["category"] else "")
+        if unit.get("placed_by") and not custom:
+            text += ("  (by BWS-NG)" if unit.get("placed_from") == "BWS-NG"
+                     else "  (by kind)")
+        item = QListWidgetItem(text)
+        item.setData(ROLE, unit)
+        components = ", ".join(f"#{c[1]}" for c in unit["components"][:12])
+        tips = [f"Components: {components}"]
+        if unit["constrained"]:
+            font = QFont(item.font())
+            font.setBold(True)
+            item.setFont(font)
+            tips.append("A rule places it relative to another mod.")
+        if unit.get("placed_by") and custom:
+            tips.append("krion64 does not place it; its kind would ("
+                        + unit["placed_by"] + "), but your own order applies.")
+        elif unit.get("placed_by"):
+            tips.append("krion64 does not place it: " + unit["placed_by"] + ".")
+        elif unit.get("no_place"):
+            tips.append("krion64 does not place it, and it stays where it was "
+                        "chosen - " + unit["no_place"] + ".")
+        if unit["moved"]:
+            tips.append("Moved from where it was chosen, by the rules.")
+        if unit["flagged"]:
+            item.setForeground(QBrush(RED))
+            tips.append("An order rule says it is in the wrong place (see below).")
+        item.setToolTip("\n".join(tips))
+        return item
 
     # ---------------------------------------------------------- reordering
     def phases(self) -> list[list[dict]]:
@@ -245,30 +258,58 @@ class OrderPage(QWidget):
         return widget, widget.currentRow()
 
     def _can_split(self) -> None:
+        """Split and Join act on the rows shown, and only once they are the
+        plan's: while a plan is under way they wait (review of #74)."""
         widget, row = self._selected()
         unit = widget.item(row).data(ROLE) if widget is not None else None
-        self.split.setEnabled(isinstance(unit, dict) and len(unit["components"]) > 1)
+        if widget is None or self._planning is not None or not isinstance(unit, dict):
+            self.split.setEnabled(False)
+            self.join.setEnabled(False)
+            return
+        self.split.setEnabled(len(unit["components"]) > 1)
+        self.join.setEnabled(bool(unit.get("split"))
+                             and len(self._parts(widget, unit["key"])) > 1)
+
+    @staticmethod
+    def _parts(widget: QListWidget, key: str) -> list[int]:
+        """The rows of `widget` that are split parts of the mod `key`."""
+        return [row for row in range(widget.count())
+                if widget.item(row).data(ROLE)["key"] == key
+                and widget.item(row).data(ROLE).get("split")]
 
     def _split(self) -> None:
-        """The selected mod as one row per component, in its order; saved,
-        so the plan names each component on its own line from now on."""
+        """The selected mod as one row per component, in its order - put in
+        the list first and saved from it, as a drag is, so a drag or another
+        split before the plan comes back keeps it (review of #74)."""
         widget, row = self._selected()
         if widget is None:
             return
         unit = widget.item(row).data(ROLE)
         if len(unit["components"]) < 2:
             return
-        phases = self.phases()
-        units = phases[self.tabs.currentIndex()]
-        units[row:row + 1] = [dict(unit, components=[component], split=True)
-                              for component in unit["components"]]
-        self.split.setEnabled(False)
-        try:
-            api.save_install_order(self.project_dir, phases)
-        except Exception as exc:
-            QMessageBox.critical(self, "Cannot save the install order", str(exc))
-        self._generation += 1
-        self._plan()
+        widget.takeItem(row)
+        for offset, component in enumerate(unit["components"]):
+            widget.insertItem(row + offset,
+                              self._item(dict(unit, components=[component], split=True)))
+        self._reordered()
+
+    def _join(self) -> None:
+        """The selected mod's parts in this tab as one row again, where its
+        first part is, components in the order shown; the other mods stay."""
+        widget, row = self._selected()
+        if widget is None:
+            return
+        unit = widget.item(row).data(ROLE)
+        rows = self._parts(widget, unit["key"])
+        if len(rows) < 2:
+            return
+        parts = [widget.item(r).data(ROLE) for r in rows]
+        for r in reversed(rows):
+            widget.takeItem(r)
+        whole = dict(parts[0], split=False,
+                     components=[c for part in parts for c in part["components"]])
+        widget.insertItem(rows[0], self._item(whole))
+        self._reordered()
 
     def _reset(self) -> None:
         try:
