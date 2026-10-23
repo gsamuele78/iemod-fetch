@@ -100,20 +100,21 @@ def test_links_in_a_macos_app_stay_links(tmp_path, monkeypatch):
         assert prefix + "Versions/Current/QtCore" not in entries     # not a copy
 
 
-def test_elsewhere_a_link_is_zipped_as_its_file(tmp_path, monkeypatch):
-    # Review of #42: Linux's _internal holds links to Qt's libraries; Python's
-    # zipfile and Windows unzip a link as a small text file, and Qt then fails
-    # to load ("file too short")
+def test_linux_links_stay_links_and_unpack_as_links(tmp_path, monkeypatch):
+    # Review of #42: following them doubled Qt in the zip (60 to 89 MB), and a
+    # library replaced as NOTICE-Qt.txt says still loaded from its other copy
     monkeypatch.setattr(bundle, "tag", lambda: "linux-x86_64")
+    monkeypatch.setattr(bundle.platform, "system", lambda: "Linux")
     folder = program(tmp_path)
     links(folder / "_internal")
     path = bundle.pack(str(folder), str(tmp_path / "dist"))
     with zipfile.ZipFile(path) as zf:
         prefix = f"{bundle.NAME}/_internal/QtCore.framework/"
-        for info in zf.infolist():
-            assert not stat.S_ISLNK(info.external_attr >> 16), info.filename
-        assert zf.read(prefix + "QtCore") == b"qt"
-        assert zf.read(prefix + "Versions/Current/QtCore") == b"qt"
+        assert stat.S_ISLNK(zf.getinfo(prefix + "QtCore").external_attr >> 16)
+    bundle.unpack(path, str(tmp_path / "unpacked"))
+    unpacked = tmp_path / "unpacked" / bundle.NAME / "_internal" / "QtCore.framework"
+    assert os.path.islink(unpacked / "QtCore")
+    assert (unpacked / "QtCore").read_bytes() == b"qt"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="file modes are POSIX")

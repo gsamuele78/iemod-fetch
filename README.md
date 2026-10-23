@@ -128,7 +128,9 @@ iemod-fetch-gui --project ~/eet-build      # the folder that keeps the project
 
 **Without Python** (ADR-0040): from the next release, each GitHub release
 carries `iemod-fetch-gui-<os>-<arch>.zip` for Linux and Windows; a macOS zip
-is added when GitHub's macOS runner built it. Unzip it and run `iemod-fetch-gui` inside; it is
+is added within hours, when GitHub's macOS runner built it. Unzip it (with
+`unzip` or your desktop's archive tool, which keep its links) and run
+`iemod-fetch-gui` inside; it is
 attested and listed in `SHA256SUMS` like the other assets. It is one folder,
 not one file, so Qt's libraries stay separate and replaceable (Qt is
 LGPL-3.0; the licence texts and `NOTICE-Qt.txt` are in the folder). It is not

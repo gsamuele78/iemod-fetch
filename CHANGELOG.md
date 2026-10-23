@@ -22,7 +22,8 @@ Python API, which is internal.
   `api.export_selection`.
 - **The wizard without Python** (GUI-AUDIT item 20, ADR-0040): the release
   workflow builds it with PyInstaller as one folder per OS - Linux and
-  Windows, macOS apart and attached when built - unzips it and starts it once offscreen
+  Windows (macOS by `release-macos.yml`, attached after the release when
+  its runner starts) - unzips it and starts it once offscreen
   (`iemod-fetch-gui --check`), zips it deterministically as
   `iemod-fetch-gui-<os>-<arch>.zip`, attests it and lists it in SHA256SUMS.
   The folder carries the LGPL-3.0 and GPL-3.0 texts and `NOTICE-Qt.txt`

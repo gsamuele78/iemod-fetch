@@ -2087,17 +2087,22 @@ or PySide6. Three constraints shaped it.
   through the normal shutdown path and prints `ok`. A build or a zip that
   cannot start fails the release, not a player's machine.
 - The zip, `iemod-fetch-gui-<os>-<arch>.zip`, is deterministic (sorted
-  entries, fixed timestamps): the same folder gives the same bytes. Outside
-  a macOS `.app` it holds no symbolic links: a link is stored as the file it
-  leads to, because Python's `zipfile`, Windows and some unzip tools turn a
-  link into a small text file and Qt then fails to load.
+  entries, fixed timestamps): the same folder gives the same bytes. Symbolic
+  links stay links (a `.app`'s frameworks, Linux's names for Qt's libraries):
+  as copies they made the Linux zip 89 MB instead of 60 MB and left two files
+  to replace for one library. `unzip` and desktop archive tools restore them;
+  Python's `zipfile.extractall` does not, and the program then fails to load
+  Qt. Windows builds hold no links.
 - The release workflow builds it, PyInstaller pinned, in a `gui` job on
-  **ubuntu-latest and windows-latest**, which the release needs, and in a
-  separate **`gui-macos`** job that nothing the release needs waits on. A
-  runner that never starts leaves a job queued, not failed, so
-  `continue-on-error` would not be enough. When it did build, `publish-macos`
-  attests the macOS zip and attaches it, with its own `.sha256`, to the
-  release already published. The zips are attested with the other
+  **ubuntu-latest and windows-latest**. **macOS is a workflow of its own**,
+  `release-macos.yml`: a runner that never starts leaves a job queued, not
+  failed, and a queued job in `release.yml` kept its run - and with it the
+  `release` concurrency group, so the next release too - waiting;
+  `continue-on-error` does not help. Every six hours it looks at the latest
+  release and, when that has no macOS bundle and its tag has the packaging
+  script, builds it from the tag, attests it and attaches it with its own
+  `.sha256`; `workflow_dispatch` does it for a named release. A schedule, not
+  `workflow_run`: nothing from another run is trusted. The zips are attested with the other
   assets (build provenance), listed in `SHA256SUMS` and attached to the
   GitHub release. They are not uploaded to PyPI.
 - On macOS the build is a `.app`; its Qt frameworks hold symbolic links
@@ -2110,8 +2115,10 @@ or PySide6. Three constraints shaped it.
 
 ### Consequences
 
-- The Linux zip measured 89 MB; Qt modules the wizard does not use are
+- The Linux zip measured 60 MB; Qt modules the wizard does not use are
   excluded to keep it there.
+- A macOS bundle reaches a release up to six hours after it, or never while
+  the runners do not start; the release says so in its notes.
 - The bundles carry no publisher signature and the macOS app is not
   notarized: Windows SmartScreen warns, and macOS refuses the downloaded app
   until the player allows it (System Settings, Privacy & Security, Open

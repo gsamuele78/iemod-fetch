@@ -16,8 +16,9 @@ is. The command-line `.pyz` stays standard-library only; this is the wizard.
 The zip is unpacked again and the program in it started with --check
 (offscreen): a build, or a zip, that cannot open its window fails here, not on
 a player's machine. On macOS the .app is signed again, ad hoc, once the licence
-files are in it, and its framework links stay links in the zip; elsewhere the
-zip holds no links, which not every unzip tool restores.
+files are in it. Links stay links in the zip (a .app's frameworks, Linux's
+library names), as `unzip` and desktop archive tools restore them: copies would
+double Qt's size and leave two files to replace for one library.
 """
 import argparse
 import os
@@ -135,38 +136,41 @@ def check(folder: str, work: str) -> None:
 
 
 def unpack(path: str, into: str) -> None:
-    """Unzip as a player would: ditto for a .app (links kept), otherwise a plain
-    unzip that restores the files' modes, so the program stays executable."""
+    """Unzip as a player would: ditto on macOS; elsewhere as `unzip` does, links
+    made again and the files' modes restored, so the program stays executable."""
     os.makedirs(into, exist_ok=True)
     if platform.system() == "Darwin":
         subprocess.run(["ditto", "-x", "-k", path, into], check=True)
         return
     with zipfile.ZipFile(path) as zf:
         for info in zf.infolist():
+            mode = info.external_attr >> 16
+            target = os.path.join(into, *info.filename.split("/"))
+            if stat.S_ISLNK(mode):
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                os.symlink(zf.read(info).decode("utf-8"), target)
+                continue
             zf.extract(info, into)
-            mode = (info.external_attr >> 16) & 0o777
-            if mode:
-                os.chmod(os.path.join(into, info.filename), mode)
+            if mode & 0o777:
+                os.chmod(target, mode & 0o777)
 
 
 def pack(folder: str, dist: str) -> str:
     os.makedirs(dist, exist_ok=True)
     path = os.path.join(dist, f"{NAME}-{tag()}.zip")
     base = os.path.dirname(folder)
-    # A macOS .app's Qt frameworks are links (Versions/Current): kept as links,
-    # or its layout and signature break. Elsewhere a link is stored as the file
-    # it leads to: Python's zipfile, Windows and some unzip tools make a link a
-    # small text file, and the program then fails to load Qt.
-    keep_links = folder.endswith(".app")
+    # Links stay links: a macOS .app's frameworks (Versions/Current) would lose
+    # their layout and signature as copies, and Linux's links to Qt's libraries
+    # would become second copies - the zip 48% bigger, and a library replaced
+    # in one place still loaded from the other. Windows builds hold none.
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for here, dirs, files in os.walk(folder, followlinks=not keep_links):
+        for here, dirs, files in os.walk(folder):
             dirs.sort()
-            if keep_links:
-                for name in [d for d in dirs if os.path.islink(os.path.join(here, d))]:
-                    link(zf, os.path.join(here, name), base)
+            for name in [d for d in dirs if os.path.islink(os.path.join(here, d))]:
+                link(zf, os.path.join(here, name), base)
             for name in sorted(files):
                 full = os.path.join(here, name)
-                if keep_links and os.path.islink(full):
+                if os.path.islink(full):
                     link(zf, full, base)
                     continue
                 info = zipfile.ZipInfo.from_file(full, os.path.relpath(full, base))
