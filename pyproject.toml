@@ -146,7 +146,7 @@ select = [
   "S",      # bandit rules that are cheap to check at lint time
   "PLE",    # pylint errors only
   "PLW",    # pylint warnings
-  "FURB",   # modernisation that does not break 3.9
+  "FURB",   # modernisation
   "T20",    # print() outside the renderers
 ]
 ignore = [

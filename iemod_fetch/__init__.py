@@ -11,5 +11,6 @@ PYTHON = (3, 14)
 if sys.version_info < PYTHON:
     raise SystemExit(
         f"iemod-fetch needs Python {PYTHON[0]}.{PYTHON[1]} or newer; this is "
-        f"{sys.version.split()[0]}. Install it from python.org, or use the release's "
-        f"bundle, which carries its own Python.")
+        f"{sys.version.split()[0]}. Install it from python.org (or with uv: "
+        f"`uv python install 3.14`), or use the wizard's release bundle, which carries "
+        f"its own Python.")

@@ -118,7 +118,8 @@ for why, `docs/ADR.md` for the design decisions, `docs/GUIDE.md` to use it.
 ## Install
 
 Python **3.14** (ADR-0043: one version, the one in `.python-version`; an
-older Python is told so and stops). The release bundles carry their own Python.
+older Python is told so and stops). The wizard's release bundle carries its own
+Python; a command-line bundle is planned for 4.0.0 (GUI-AUDIT item 36).
 
 ```bash
 # One file, no dependencies — on Python 3.14.

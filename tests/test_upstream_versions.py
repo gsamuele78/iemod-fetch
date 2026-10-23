@@ -70,6 +70,17 @@ def test_a_workflow_that_names_its_own_python_is_a_disagreement(tmp_path):
                                  encoding="utf-8")
     wrong = python_disagreements(python_places(str(tmp_path)))
     assert wrong == ["x.yml python-version: 3.12 (.python-version says 3.14)"]
+    # the forms the repository used, and others (review of #50)
+    for line, seen in (('with: { python-version: "3.12" }', "3.12"),
+                       ("with: { python-version: '3.12', cache: pip }", "3.12"),
+                       ('python-version: "3.12"   # pinned', "3.12"),
+                       ('python-version: ["3.12"]', "3.12"),
+                       ("python-version: 3.13", "3.13")):
+        (flows / "x.yml").write_text(f"        {line}\n", encoding="utf-8")
+        assert python_places(str(tmp_path))["x.yml python-version"] == seen, line
+    (flows / "x.yml").write_text('python-version: "3.12"\npython-version: "3.14"\n',
+                                 encoding="utf-8")
+    assert python_places(str(tmp_path))["x.yml python-version"] == "several"
 
 
 def test_the_newest_python_is_the_newest_stable_final_minor():

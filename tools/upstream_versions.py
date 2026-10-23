@@ -97,6 +97,7 @@ def verdicts(pins: Dict[str, str], latest: Dict[str, str]) -> List[Verdict]:
 
 # ------------------------------------------------------------------ Python
 MANIFEST = "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json"
+_WORKFLOW_PYTHON = re.compile(r"""python-version\s*:\s*\[?\s*["']?([^"'\s,}\]#]+)""")
 _STABLE = re.compile(r"^3\.(\d+)\.(\d+)$")
 
 
@@ -130,10 +131,16 @@ def python_places(root: str = ".") -> Dict[str, str]:
     one("iemod_fetch.PYTHON", r"^PYTHON\s*=\s*\((3),\s*(\d+)\)",
         read(os.path.join("iemod_fetch", "__init__.py")),
         lambda m: f"{m.group(1)}.{m.group(2)}")
-    for path in sorted(glob.glob(os.path.join(root, ".github", "workflows", "*.yml"))):
-        for m in re.finditer(r'python-version:\s*["\']?([\w.${}\[\] ]+?)["\']?\s*$',
-                             read(os.path.relpath(path, root)), re.MULTILINE):
-            found[f"{os.path.basename(path)} python-version"] = m.group(1)
+    flows = glob.glob(os.path.join(root, ".github", "workflows", "*.y*ml")) + \
+        glob.glob(os.path.join(root, ".github", "actions", "**", "*.y*ml"), recursive=True)
+    for path in sorted(flows):
+        # any form: `python-version: "3.12"`, in a flow mapping
+        # (`with: { python-version: '3.12', cache: pip }`), followed by a
+        # comment, or as a list; never `python-version-file:` (review of #50)
+        values = set(_WORKFLOW_PYTHON.findall(read(os.path.relpath(path, root))))
+        if values:
+            found[f"{os.path.basename(path)} python-version"] = \
+                values.pop() if len(values) == 1 else "several"
     return found
 
 

@@ -148,6 +148,11 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.decide.outputs.sha }}
+      # A commit made before .python-version existed was built on 3.12
+      # (ADR-0043); a dispatch for such a version builds it on 3.12 again.
+      - name: The Python this commit was built with
+        shell: bash
+        run: test -f .python-version || echo 3.12 > .python-version
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
 
@@ -207,6 +212,11 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.decide.outputs.sha }}
+      # A commit made before .python-version existed was built on 3.12
+      # (ADR-0043); a dispatch for such a version builds it on 3.12 again.
+      - name: The Python this commit was built with
+        shell: bash
+        run: test -f .python-version || echo 3.12 > .python-version
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
       - name: Qt's system libraries (Linux)

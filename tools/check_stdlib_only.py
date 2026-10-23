@@ -20,16 +20,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "iemod_fetch"
 
-# `sys.stdlib_module_names` exists from 3.10. Below that, fall back to the set
-# this package actually uses — enumerated, so a new import is still caught.
-STDLIB = getattr(sys, "stdlib_module_names", None) or frozenset({
-    "abc", "argparse", "ast", "base64", "collections", "configparser",
-    "contextlib", "dataclasses", "datetime", "enum", "fnmatch", "functools",
-    "glob", "hashlib", "html", "http", "io", "itertools", "json", "logging",
-    "os", "pathlib", "posixpath", "random", "re", "shutil", "socket", "ssl",
-    "string", "subprocess", "sys", "tarfile", "tempfile", "textwrap", "time",
-    "typing", "urllib", "uuid", "warnings", "zipapp", "zipfile",
-})
+STDLIB = sys.stdlib_module_names
 
 
 def top_level_imports(path: pathlib.Path):

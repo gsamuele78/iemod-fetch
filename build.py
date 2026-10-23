@@ -4,7 +4,8 @@ Build a single-file executable `iemod-fetch.pyz`.
 
 Restores the original script's best property - copy one file next to the game
 install and run it - without giving up a testable package layout (ADR-0001).
-The archive is pure Python with no dependencies, so it runs on any CPython 3.9+.
+The archive is pure Python with no dependencies; it runs on the CPython of
+.python-version (3.14, ADR-0043) and tells an older one so.
 
     python3 build.py                    # -> ./iemod-fetch.pyz
     python3 build.py -o /tmp/foo.pyz    # elsewhere
