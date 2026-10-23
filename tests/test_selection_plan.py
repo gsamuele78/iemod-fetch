@@ -405,3 +405,36 @@ def test_a_keep_both_decision_in_the_project_orders_the_wizards_plan(tmp_path):
     after = order()
 
     assert (after.index(("ub", 0)) < after.index(("cdtweaks", 2370))) is not ub_first
+
+
+def test_moved_and_flagged_are_marked_per_part_through_the_real_plan(tmp_path):
+    """Review of #74: with marks per mod, every part of a split mod was moved
+    or red when one was. cdtweaks is split by the catalogue: only its #4010
+    is moved. eefixpack split by hand, #1 put before the EET core against a
+    rule that wants it after: only #1 is flagged."""
+    rows = {u["name"]: u for u in next(p for p in plan(tmp_path)["phases"]
+                                       if p["title"] == "EET")["units"]}
+    assert rows["cdtweaks #4010"]["moved"] and not rows["cdtweaks #2370"]["moved"]
+
+    after = tmp_path / "after"
+    after.mkdir()
+    (after / "order.json").write_text(json.dumps(
+        [{"rule": "eefixpack(1):eet", "direction": "after", "severity": "error"}]))
+    rules = [os.path.join(MOCK, "rules"), str(after)]
+    phases = [p["units"] for p in plan(tmp_path, rules=rules)["phases"]]
+    eet = phases[1]
+    pieces = [u for u in eet if u["key"] == "eefixpack"]    # the rule may split it already
+    at = eet.index(pieces[0])
+    for piece in pieces:
+        eet.remove(piece)
+    parts = {c[1]: dict(pieces[0], components=[c], split=True)
+             for piece in pieces for c in piece["components"]}
+    eet[at:at] = [parts[0], parts[2]]
+    eet.insert(0, parts[1])                    # #1 first: before the EET core
+    api.save_install_order(str(tmp_path), phases)
+
+    shown = plan(tmp_path, rules=rules)
+    flagged = {u["name"]: u["flagged"] for u in next(
+        p for p in shown["phases"] if p["title"] == "EET")["units"] if u["key"] == "eefixpack"}
+    assert shown["violations"]
+    assert flagged == {"eefixpack #1": True, "eefixpack #0": False, "eefixpack #2": False}
