@@ -47,6 +47,14 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Split a mod on the order page and move one component** (GUI-AUDIT M5b
+  item 30). *Split into components* turns the selected mod into one row per
+  component, so a single component can be dragged on its own; *Join the
+  parts* puts them back in one row. The order is saved with `tp2 n` lines -
+  the Sorting Order the command line already reads - and planned again; the
+  page and `--plan-order` give the same order, component for component. A
+  split part is marked moved or wrong on its own, and a tp2 in both installs
+  is saved with its numbers in each.
 - **The kinds and the places, checked every night on the live data**
   (GUI-AUDIT M5 item 29, ADR-0041 decision 5). `tools/places_check.py`, run by
   the community-data workflow on what it has just fetched, fails when
