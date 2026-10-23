@@ -229,3 +229,19 @@ def test_with_no_manifest_a_failed_mod_says_what_the_catalogue_tried(project):
     assert "o/eefixpack" in details["eefixpack"]
     assert "no url and no github" not in details["eefixpack"]
     assert details["ghost"] == "no manifest entry, and the catalogue does not list this mod"
+
+
+def test_take_newer_reaches_the_run_and_each_record_carries_its_offer(project, monkeypatch):
+    """GUI-AUDIT item 59: the wizard's button is the command line's --take-newer."""
+    folder, _ = project
+    seen = {}
+    real_run = api.run
+
+    def spy(settings, **kw):
+        seen["take_newer"] = settings.take_newer
+        return real_run(settings, **kw)
+
+    monkeypatch.setattr(api, "run", spy)
+    result = api.download_selection(str(folder), take_newer=["DlcMerger"])
+    assert seen["take_newer"] == ["DlcMerger"]
+    assert all("newer" in r for r in result["records"])

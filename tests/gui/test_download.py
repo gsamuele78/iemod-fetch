@@ -11,6 +11,8 @@ import pytest
 pytest.importorskip("PySide6")
 pytest.importorskip("pytestqt")
 
+from PySide6.QtCore import Qt  # noqa: E402
+
 from iemod_fetch_gui.pages.download import DownloadPage  # noqa: E402
 from iemod_fetch_gui.window import PHASES, MainWindow  # noqa: E402
 
@@ -209,3 +211,53 @@ def test_back_waits_for_a_running_download(qtbot, tmp_path):
         assert main.current == 3
         main.download.stop()
     assert main.back.isEnabled()
+
+
+# ------------------------------------------- a newer GitHub release (item 59)
+OFFER = {"version": "2.1.0", "installed": "v1.5 BETA", "repo": "Gibberlings3/Ascension",
+         "date": "2025-05-18", "url": None}
+
+
+class Offering(Fake):
+    """`ascension` came from a forum post; GitHub has 2.1.0 until it is taken."""
+
+    def __init__(self):
+        super().__init__(mods=("ascension", "ub"))
+        self.taken = []
+
+    def __call__(self, folder, on_event, cancel, only, take_newer=None):
+        self.taken.append(list(take_newer or []))
+        result = super().__call__(folder, on_event, cancel, only)
+        for rec in result["records"]:
+            rec["newer"] = (dict(OFFER) if rec["folder"] == "ascension"
+                            and "ascension" not in (take_newer or []) else None)
+        return result
+
+
+def test_a_newer_release_is_offered_and_taken_only_when_ticked(qtbot, tmp_path):
+    fake = Offering()
+    widget = page(qtbot, tmp_path, fake)
+    run(qtbot, widget)
+    row = widget.rows["ascension"]
+    assert "2.1.0 (Gibberlings3/Ascension)" in row.text(4)
+    assert "v1.5 BETA" in row.toolTip(4)
+    assert row.checkState(4) == Qt.CheckState.Unchecked
+    assert widget.rows["ub"].data(4, Qt.ItemDataRole.CheckStateRole) is None
+    assert "GitHub has a newer release" in widget.summary.text()
+    assert not widget.newer_button.isEnabled()        # nothing ticked, nothing taken
+
+    row.setCheckState(4, Qt.CheckState.Checked)
+    assert widget.newer_button.isEnabled()
+    with qtbot.waitSignal(widget.finished, timeout=5000):
+        widget.newer_button.click()
+
+    assert fake.calls[-1] == ["ascension"] and fake.taken[-1] == ["ascension"]
+    assert row.text(4) == "" and row.data(4, Qt.ItemDataRole.CheckStateRole) is None
+    assert not widget.newer_button.isEnabled()
+
+
+def test_a_plain_download_never_asks_for_a_newer_release(qtbot, tmp_path):
+    fake = Offering()
+    widget = page(qtbot, tmp_path, fake)
+    run(qtbot, widget)
+    assert fake.taken == [[]]

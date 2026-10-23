@@ -640,6 +640,10 @@ on every run. It passes the
 same tp2 check as any download. No offer is made when the versions cannot be
 ranked, or from a repository named otherwise than the mod (a fork).
 
+In the wizard, the download page shows each offer under *Newer release* with
+a box to tick; *Install the ticked newer releases* runs the same take for the
+ticked mods only.
+
 ## Planning the install order
 
 ```bash

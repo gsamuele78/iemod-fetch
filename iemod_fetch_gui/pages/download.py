@@ -10,7 +10,9 @@ a row per mod says which it is at.
 Nothing starts until the player asks: it is the network and the disk. Cancel
 stops the downloads at their next chunk; what finished stays. Running again
 resumes - a mod already there and verified is skipped - and "Retry the failed"
-runs only those. The run's events come from its worker threads; they reach the
+runs only those. A mod from somewhere else than GitHub whose GitHub release is
+newer gets a box in "Newer release" (GUI-AUDIT item 59): nothing is replaced
+until the player ticks it and asks, as --take-newer does on the command line. The run's events come from its worker threads; they reach the
 page through a queued signal, and a mod's byte count at most ten times a
 second, so the window stays responsive however fast the network is.
 """
@@ -26,8 +28,10 @@ from iemod_fetch import api
 
 from .mods import _in_thread
 
-Downloader = Callable[[str, Callable[[dict], None], threading.Event, list[str]], dict]
+# (folder, on_event, cancel, only) - and take_newer=[...] when the player asks
+Downloader = Callable[..., dict]
 PROGRESS_EVERY_S = 0.1
+DETAIL, NEWER = 3, 4                            # the table's columns
 DONE = ("ok", "skipped")
 STATES = {"ok": "Done", "skipped": "Already there", "failed": "Failed",
           "manual": "No download found", "conflict": "Not installed (conflict)",
@@ -35,9 +39,11 @@ STATES = {"ok": "Done", "skipped": "Already there", "failed": "Failed",
 
 
 def download_project(folder: str, on_event: Callable[[dict], None],
-                     cancel: threading.Event, only: list[str]) -> dict:
+                     cancel: threading.Event, only: list[str],
+                     take_newer: list[str] | None = None) -> dict:
     """The real downloader: the run the command line makes in the project."""
-    return api.download_selection(folder, on_event=on_event, cancel=cancel, only=only)
+    return api.download_selection(folder, on_event=on_event, cancel=cancel, only=only,
+                                  take_newer=take_newer or ())
 
 
 def _size(count: int) -> str:
@@ -79,22 +85,29 @@ class DownloadPage(QWidget):
         self.start_button = QPushButton("Download")
         self.cancel_button = QPushButton("Cancel")
         self.retry_button = QPushButton("Retry the failed")
+        self.newer_button = QPushButton("Install the ticked newer releases")
         self.start_button.clicked.connect(self._start_all)
         self.cancel_button.clicked.connect(self.stop)
         self.retry_button.clicked.connect(self.retry)
+        self.newer_button.clicked.connect(self.take_newer)
         self.cancel_button.setEnabled(False)
         self.retry_button.setEnabled(False)
+        self.newer_button.setEnabled(False)
         self.table = QTreeWidget()
         self.table.setRootIsDecorated(False)
-        self.table.setHeaderLabels(["Mod", "State", "Downloaded", "Detail"])
+        self.table.setHeaderLabels(["Mod", "State", "Downloaded", "Detail",
+                                    "Newer release"])
         self.table.setColumnWidth(0, 200)
         self.table.setColumnWidth(1, 150)
         self.table.setColumnWidth(2, 140)
+        self.table.setColumnWidth(DETAIL, 320)
+        self.table.itemChanged.connect(lambda *_: self._buttons())
 
         buttons = QHBoxLayout()
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.retry_button)
+        buttons.addWidget(self.newer_button)
         buttons.addStretch(1)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>4. Download and extraction</h2>"))
@@ -129,8 +142,13 @@ class DownloadPage(QWidget):
     def running(self) -> bool:
         return self._thread is not None
 
-    def start(self, only: list[str] | None = None) -> None:
-        """Download the selection (or only the mods `only` names) in a worker thread."""
+    def start(self, only: list[str] | None = None,
+              take_newer: list[str] | None = None) -> None:
+        """
+        Download the selection (or only the mods `only` names) in a worker
+        thread; `take_newer` names mods whose offered GitHub release replaces
+        the copy there.
+        """
         if self.running():
             return
         self._cancel = threading.Event()
@@ -145,9 +163,11 @@ class DownloadPage(QWidget):
         download, folder, cancel = self.download, self.project_dir, self._cancel
         forward = self._forward
 
+        asked = {"take_newer": list(take_newer)} if take_newer else {}
+
         def run():
             try:
-                return download(folder, forward, cancel, only), ""
+                return download(folder, forward, cancel, only, **asked), ""
             except Exception as exc:        # shown on the page, never a crash
                 return None, str(exc)
         self._thread = _in_thread(run, self._done, self._failed, self._finished)
@@ -162,6 +182,18 @@ class DownloadPage(QWidget):
                   if item.data(0, Qt.ItemDataRole.UserRole) not in DONE]
         if failed:
             self.start(failed)
+
+    def ticked(self) -> list[str]:
+        """The mods whose newer GitHub release the player ticked."""
+        return [folder for folder, item in self.rows.items()
+                if item.data(NEWER, Qt.ItemDataRole.CheckStateRole) is not None
+                and item.checkState(NEWER) == Qt.CheckState.Checked]
+
+    def take_newer(self) -> None:
+        """Install the ticked mods' newer releases, over their copies (kept aside)."""
+        ticked = self.ticked()
+        if ticked:
+            self.start(ticked, take_newer=ticked)
 
     def stop(self) -> None:
         """Cancel the run: the downloads stop at their next chunk."""
@@ -185,7 +217,7 @@ class DownloadPage(QWidget):
     def _row(self, folder: str) -> QTreeWidgetItem:
         item = self.rows.get(folder)
         if item is None:
-            item = QTreeWidgetItem([folder, "Waiting", "", ""])
+            item = QTreeWidgetItem([folder, "Waiting", "", "", ""])
             self.rows[folder] = item
             self.table.addTopLevelItem(item)
         return item
@@ -212,8 +244,25 @@ class DownloadPage(QWidget):
     def _finish_row(self, item: QTreeWidgetItem, status: str, detail: str) -> None:
         item.setData(0, Qt.ItemDataRole.UserRole, status)
         item.setText(1, STATES.get(status, status))
-        item.setText(3, detail)
-        item.setToolTip(3, detail)
+        item.setText(DETAIL, detail)
+        item.setToolTip(DETAIL, detail)
+
+    def _offer(self, item: QTreeWidgetItem, newer: dict | None) -> None:
+        """A box to tick for a newer GitHub release, or none."""
+        self.table.blockSignals(True)
+        if newer:
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(NEWER, Qt.CheckState.Unchecked)
+            item.setText(NEWER, f"{newer.get('version')} ({newer.get('repo')})")
+            item.setToolTip(NEWER, f"GitHub has {newer.get('version')} "
+                                   f"({newer.get('date') or 'no date'}); this copy "
+                                   f"declares {newer.get('installed')}. Tick it and "
+                                   f"install to replace the copy, which is kept aside.")
+        else:
+            item.setData(NEWER, Qt.ItemDataRole.CheckStateRole, None)
+            item.setText(NEWER, "")
+            item.setToolTip(NEWER, "")
+        self.table.blockSignals(False)
 
     def _done(self, outcome: tuple) -> None:
         result, problem = outcome
@@ -229,6 +278,7 @@ class DownloadPage(QWidget):
         for record in result["records"]:            # the report is the authority
             item = self._row(record["folder"])
             self._finish_row(item, record["status"], record["detail"])
+            self._offer(item, record.get("newer"))
             if record.get("bytes"):
                 item.setText(2, _size(int(record["bytes"])))
         self.result = result
@@ -238,6 +288,10 @@ class DownloadPage(QWidget):
         text = ", ".join(parts) if parts else "nothing to download"
         if result.get("cancelled"):
             text = "Cancelled: " + text
+        offers = sum(1 for record in result["records"] if record.get("newer"))
+        if offers:
+            text += (f". {offers} mod(s) came from elsewhere and GitHub has a newer "
+                     f"release: tick it under \"Newer release\" to install it")
         self.summary.setText(text + ".")
 
     def _failed(self, message: str) -> None:
@@ -255,6 +309,7 @@ class DownloadPage(QWidget):
         self.cancel_button.setEnabled(busy)
         self.retry_button.setEnabled(not busy and any(
             item.data(0, Qt.ItemDataRole.UserRole) not in DONE for item in self.rows.values()))
+        self.newer_button.setEnabled(not busy and bool(self.ticked()))
 
     def is_complete(self) -> bool:
         """Every mod of the selection is there: downloaded now or before."""

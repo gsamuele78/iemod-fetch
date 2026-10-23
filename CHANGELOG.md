@@ -47,6 +47,12 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The wizard offers a newer GitHub release, and takes it on request**
+  (GUI-AUDIT M7 item 59). The download page shows a mod's offer under "Newer
+  release" with a box to tick; "Install the ticked newer releases" runs the
+  command line's `--take-newer` for the ticked mods only - nothing is
+  replaced unasked. `api.download_selection` takes `take_newer` and each
+  record carries `newer`.
 - **A newer GitHub release is offered for a copy from elsewhere, and taken on
   request** (GUI-AUDIT M7 item 59, ADR-0039 amendment). When a mod comes from
   an author's site or a forum post and krion64's release scan names a newer
