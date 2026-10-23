@@ -50,8 +50,10 @@ Python API, which is internal.
   a compatibility patch, another mod. The .tp2 check refused it and the retry
   asked the catalogue again, getting the same attachment, so the repository or
   page the entry also lists was never tried. Each of the entry's sources now
-  gets its turn, each downloaded once and each held to the same check; the
-  warning names what was refused.
+  gets its turn - one turn per source, not per URL, so a link that redirects
+  to a new signed URL each time cannot loop - each held to the same check;
+  the warning names what was refused, and when every source is refused the
+  failure names each one.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
   by its first word (`www`): krion64's place for it was never found, and a
   Sorting Order line naming it ordered nothing.

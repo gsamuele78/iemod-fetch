@@ -166,18 +166,27 @@ class Runner:
 
         try:
             refused = [candidate.url]
+            skip = {candidate.url}      # what was refused, and each source used
             while True:
                 try:
                     result, outcome = self._attempt(source, folder, candidate, expect_tp2)
                     break
-                except VerificationFailed:
+                except VerificationFailed as exc:
                     # The artefact is not this mod: the manifest's, or the
                     # catalogue's first source - lcc-docs links forum
                     # attachments that are save games, debug logs or another
                     # mod's patch. Each of the catalogue's other sources gets
-                    # its turn; the same strict check gates every one.
-                    alternate = self._catalogue_alternate(source, folder, entry, refused)
+                    # one turn - a source, not a URL: one that redirects to a
+                    # new signed URL each time would otherwise come round
+                    # forever - and the same strict check gates every one.
+                    if self.cancel.is_set():
+                        raise Cancelled("cancelled") from exc
+                    alternate = self._catalogue_alternate(source, folder, entry, skip)
                     if alternate is None:
+                        if len(refused) > 1:
+                            raise VerificationFailed(
+                                f"none of the {len(refused)} sources tried contained this "
+                                f"mod: {', '.join(refused)}") from exc
                         raise
                     candidate = alternate
                     refused.append(candidate.url)
@@ -304,42 +313,56 @@ class Runner:
                 f"{', '.join(info.normalised_games)} - not {game}")
         return kept
 
-    def _catalogue_alternate(self, source, folder, entry, used):
-        """The catalogue's best candidate whose URL is none of those in `used`."""
+    def _catalogue_alternate(self, source, folder, entry, skip: set):
+        """The catalogue's best candidate from a source not used yet, whose URL
+        was not refused; the source and the URL join `skip`."""
         if not entry:
             return None
-        probe = self._probe_catalogue(source, folder, entry, skip=used)
-        return probe[0].candidate if probe else None
+        used: list = []
+        probe = self._probe_catalogue(source, folder, entry, skip=skip, used=used)
+        if not probe:
+            return None
+        candidate = probe[0].candidate
+        skip.update(used)
+        skip.add(candidate.url)
+        return candidate
 
-    def _probe_catalogue(self, source, folder, entry, tried=None, skip=()):
+    def _probe_catalogue(self, source, folder, entry, tried=None, skip=(), used=None):
         """
         Try the sources a supplementary catalogue lists, best first.
 
         A URL that is itself the archive beats a repository (no guessing which
         release asset is meant), which beats a landing page (no scraping). All
         three still have to pass the .tp2 check before anything is installed.
-        Why each one failed is added to `tried`, when given. A source whose
-        candidate is in `skip` - already downloaded and refused - is passed
-        over, so the next one gets its turn.
+        Why each one failed is added to `tried`, when given. A source in
+        `skip`, or whose candidate is - used already, or downloaded and
+        refused - is passed over, so the next one gets its turn; the source
+        returned is added to `used`, when given.
         """
         def failed(where, probe):
             if tried is not None and probe.reason:
                 tried.append(f"{where}: {probe.reason}")
 
-        def fresh(probe):
-            return probe.ok and probe.candidate.url not in skip
+        def fresh(probe, slot):
+            if slot in skip or not probe.ok or probe.candidate.url in skip:
+                return False
+            if used is not None:
+                used.append(slot)
+            return True
 
         for url in entry.direct_urls:
+            if ("direct", url) in skip:
+                continue
             probe = self.landing.resolve(_replace(source, url=url, github=None))
-            if fresh(probe):
+            if fresh(probe, ("direct", url)):
                 probe.warnings.append(
                     f"{folder}: resolved via {entry.origin} direct download -> {url}")
                 return probe, None
             failed(url, probe)
 
-        if entry.github:
+        if entry.github and ("github", entry.github) not in skip:
             probe = self.github.resolve(_replace(source, github=entry.github))
-            if fresh(probe):
+            if fresh(probe, ("github", entry.github)):
                 probe.warnings.append(
                     f"{folder}: resolved via {entry.origin} -> {entry.github}; it will "
                     f"only be installed if it contains {folder}.tp2 or setup-{folder}.tp2")
@@ -349,10 +372,10 @@ class Runner:
         direct = set(entry.direct_urls)
         for url in entry.http_urls:
             # a repository PAGE is covered above; a direct file link is not
-            if url in direct or repo_from_url(url):
+            if url in direct or repo_from_url(url) or ("page", url) in skip:
                 continue
             probe = self.landing.resolve(_replace(source, url=url, github=None))
-            if fresh(probe):
+            if fresh(probe, ("page", url)):
                 probe.warnings.append(f"{folder}: resolved via {entry.origin} -> {url}")
                 return probe, None
             failed(url, probe)
