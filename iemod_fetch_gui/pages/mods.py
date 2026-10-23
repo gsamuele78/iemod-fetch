@@ -23,10 +23,10 @@ import os
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QSplitter, QTabWidget,
-                               QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+                               QSplitter, QTabWidget, QTextBrowser, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
 
@@ -176,9 +176,19 @@ class ModsPage(QWidget):
         self.status = QLabel("Loading the mod list...")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
 
+        self.load_preset = QPushButton("Load preset...")
+        self.load_preset.setToolTip("Choose what a saved selection, a WeiDU.log, a BIO "
+                                    "share code or a Project Infinity list chooses")
+        self.load_preset.clicked.connect(self._load_preset)
+        self.save_preset = QPushButton("Save preset...")
+        self.save_preset.setToolTip("Save this choice as a selection.json, to load "
+                                    "again or give to the command line (--selection)")
+        self.save_preset.clicked.connect(self._save_preset)
         bar = QHBoxLayout()
         bar.addWidget(self.search, 1)
         bar.addWidget(self.filter)
+        bar.addWidget(self.load_preset)
+        bar.addWidget(self.save_preset)
         middle = QWidget()
         middle_layout = QVBoxLayout(middle)
         middle_layout.setContentsMargins(0, 0, 0, 0)
@@ -345,6 +355,64 @@ class ModsPage(QWidget):
             needed_item = self.items.get((tp2, needed))
             if needed_item is not None and not needed_item.isDisabled():
                 self._choose(needed_item, seen)
+
+    # ------------------------------------------------------------ presets
+    def _load_preset(self) -> None:
+        path, _kind = QFileDialog.getOpenFileName(
+            self, "Load a preset", self.project_dir,
+            "Presets (*.json *.log *.txt *.csv *.bio);;All files (*)")
+        if not path:
+            return
+        try:
+            project = api.load_project(self.project_dir)
+            preset = api.import_selection(path, self.game, sorted({k[0] for k in self.items}),
+                                          target=_target(project))
+        except Exception as exc:        # not a preset, unreadable: say so, change nothing
+            QMessageBox.critical(self, "Cannot load the preset", str(exc))
+            return
+        skipped = self.apply_preset([tuple(pair) for pair in preset["chosen"]])
+        lines = list(preset["notes"])
+        missing = preset["unmatched"] + [f"{tp2} #{number}" for tp2, number in skipped]
+        if missing:
+            lines.append(f"{len(missing)} component(s) are not in the list for "
+                         f"{self.game} and were left out: " + ", ".join(missing[:10])
+                         + (", ..." if len(missing) > 10 else ""))
+        if lines:
+            QMessageBox.information(self, "Preset loaded", "\n\n".join(lines))
+
+    def apply_preset(self, chosen: List[Key]) -> List[Key]:
+        """Choose exactly `chosen` (each as a click would: its SUBCOMPONENT
+        cleared, what it needs chosen too); returns what the list cannot."""
+        skipped = []
+        self._updating = True
+        try:
+            for item in self.items.values():
+                item.setCheckState(0, Qt.CheckState.Unchecked)
+            seen: Set[Key] = set()
+            for key in chosen:
+                item = self.items.get(key)
+                if item is None or item.isDisabled():
+                    skipped.append(key)
+                    continue
+                self._choose(item, seen)
+        finally:
+            self._updating = False
+        self._count()
+        return skipped
+
+    def _save_preset(self) -> None:
+        path, _kind = QFileDialog.getSaveFileName(
+            self, "Save the choice as a preset", self.project_dir, "Selection (*.json)")
+        if not path:
+            return
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        try:
+            saved = api.export_selection(path, self.game, self.chosen(), self.labels())
+        except Exception as exc:
+            QMessageBox.critical(self, "Cannot save the preset", str(exc))
+            return
+        self.status.setText(f"Preset saved: {saved}")
 
     def chosen(self) -> List[Key]:
         """(tp2, number) of every chosen component, in catalogue order."""

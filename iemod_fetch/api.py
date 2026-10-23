@@ -20,6 +20,7 @@ subclasses, each with a stable `code` (errors.py).
 import contextlib
 import json
 import os
+import re
 import stat
 import struct
 import sys
@@ -67,7 +68,7 @@ from .tp2 import read_mod_tp2
 from .urls import repo_from_url
 from . import tra
 from .contract import SCHEMA_VERSION
-from .weidu import ParsedLog, parse_weidu_files, split_log_spec
+from .weidu import ParsedLog, parse_weidu_files, parse_weidu_log, split_log_spec
 from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
@@ -77,7 +78,8 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "selection_plan", "save_install_order", "reset_install_order",
-           "INSTALL_ORDER_FILE", "project_settings", "download_selection"]
+           "INSTALL_ORDER_FILE", "project_settings", "download_selection",
+           "import_selection", "export_selection"]
 
 
 # The command line's -m default. Unlike a manifest named on purpose, it may be
@@ -580,6 +582,88 @@ def save_selection(folder: str, game: str, chosen: Sequence[Tuple[str, int]],
                                                _order_index(data_dir, order_catalogue)))
     parse_selection(text, source="the wizard's selection")      # refuse before writing
     return _write_whole(folder, SELECTION_FILE, text)
+
+
+def export_selection(path: str, game: str, chosen: Sequence[Tuple[str, int]],
+                     labels: Optional[dict] = None, data_dir: Optional[str] = None,
+                     order_catalogue: Optional[str] = None) -> str:
+    """
+    A preset (GUI-AUDIT item 19): the choice written as a selection.json at
+    `path`, exactly as save_selection writes the project's, so either can be
+    loaded back - or given to the command line with --selection.
+    """
+    text = selection_to_json(_wizard_selection(game, chosen, labels,
+                                               _order_index(data_dir, order_catalogue)))
+    parse_selection(text, source="the wizard's preset")
+    folder, name = os.path.split(os.path.abspath(path))
+    return _write_whole(folder, name, text)
+
+
+def import_selection(path: str, game: str, known_tp2s: Sequence[str] = (),
+                     target: Optional[str] = None, data_dir: Optional[str] = None,
+                     order_catalogue: Optional[str] = None) -> dict:
+    """
+    A preset to choose from (GUI-AUDIT item 19): a selection.json, a WeiDU.log,
+    a BIO share code or a Project Infinity list, told apart by what the file
+    holds. Its components are matched to the catalogue's tp2s (`known_tp2s`,
+    as the wizard lists them): by path ignoring case, else by tp2 name - a log
+    may spell `SETUP-EEFIXPACK.TP2` where the list has `eefixpack/setup-
+    eefixpack.tp2`. A PI list's labels are resolved through the staged tp2s
+    under `target`, then krion64's records, as --pi-list does.
+
+    Returns {"kind": "selection" | "weidu-log" | "bio-code" | "pi-list",
+    "games": [install games, in order], "chosen": [[tp2, number]] in the
+    preset's order, "unmatched": ["tp2 #n" the list does not have],
+    "notes": [...]}.
+    """
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read(_MAX_TEXT_BYTES + 1)
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    if len(data) > _MAX_TEXT_BYTES:
+        raise ConfigError(f"{path}: larger than {_MAX_TEXT_BYTES} bytes, not a preset")
+    text = _decode_text(data).lstrip("\ufeff")
+    head = text.lstrip()
+    notes: List[str] = []
+    if head.startswith("{"):
+        kind, selection = "selection", parse_selection(text, source=path)
+    elif head.startswith(bio.PREFIX):
+        kind, selection = "bio-code", bio.decode_share_code(head).to_selection()
+    elif re.search(r"^\s*~[^~\r\n]+~\s*#\d+\s*#\d+", text, re.MULTILINE):
+        parsed = parse_weidu_log(text, source=path)
+        kind = "weidu-log"
+        selection = selection_from_logs([(parsed.game or parsed.detect_game() or game,
+                                          parsed)])
+    else:
+        kind = "pi-list"
+        index = pi.index_from_described(
+            describe_mods(target) if target and os.path.isdir(target) else [])
+        order = order_catalogue or datasync.data_paths(
+            data_dir or datasync.default_data_dir()).order_catalogue
+        krion = os.path.join(order, "mods") if order else None
+        if krion and os.path.isdir(krion):
+            pi.add_krion(index, _json_records(krion))
+        selection, pi_notes = pi.selection_from_pi(pi.parse_pi_list(text), game, index)
+        notes += pi_notes
+    games = [install.game.upper() for install in selection.installs]
+    expected = {"EET", "BGEE"} if game.upper() == "EET" else {game.upper()}
+    if set(games) - expected:
+        notes.append(f"the preset is for {', '.join(games)}; the project is {game.upper()}")
+    by_path = {tp2.lower(): tp2 for tp2 in known_tp2s}
+    by_name: dict = {}
+    for tp2 in known_tp2s:
+        by_name.setdefault(tp2_key(tp2), tp2)
+    chosen, unmatched = [], []
+    for install in selection.installs:
+        for choice in install.components:
+            known = by_path.get(choice.tp2.lower()) or by_name.get(tp2_key(choice.tp2))
+            if known or not known_tp2s:
+                chosen.append([known or choice.tp2, choice.component])
+            else:
+                unmatched.append(f"{choice.tp2} #{choice.component}")
+    return {"kind": kind, "games": games, "chosen": chosen, "unmatched": unmatched,
+            "notes": notes}
 
 
 def _order_index(data_dir: Optional[str], order_catalogue: Optional[str] = None):

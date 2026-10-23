@@ -9,6 +9,15 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **Presets** in the wizard's mod selection (GUI-AUDIT item 19): *Save
+  preset...* writes the choice as a selection.json (the same bytes as the
+  project's, so `--selection` reads it); *Load preset...* chooses what a
+  selection.json, a WeiDU.log, a BIO share code or a Project Infinity list
+  chooses - told apart by the file's content - matched to the list ignoring
+  case and spelling, each component chosen as a click would (its
+  SUBCOMPONENT cleared, what it needs chosen). What the list does not have
+  is named in a message, never guessed. `api.import_selection`,
+  `api.export_selection`.
 - **The wizard's download and extraction** (phase 4, ADR-0039): a row per mod
   (downloading with bytes, extracting, done, already there, failed, no
   download found, cancelled), *Download*, *Cancel*, *Retry the failed*;
