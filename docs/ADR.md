@@ -2617,8 +2617,8 @@ another machine leaves behind.
 
 ### Amendment (2026-10-23, later): filelock 4.2.4, for CVE-2026-112940
 
-**Context**: CVE-2026-112940 (CVSS 3.1 7.1, published the same evening; fixed
-in 4.2.1) is in filelock 3.20.4-4.2.0: `ReadWriteLock` and
+**Context**: CVE-2026-112940 (CVSS 3.1 7.1, fixed in 4.2.1; first seen here
+when pip-audit failed on 2026-10-23) is in filelock 3.20.4-4.2.0: `ReadWriteLock` and
 `AsyncReadWriteLock`, the SQLite reader/writer locks, let another local user
 who can create or rename entries in the lock's directory make SQLite write into, create
 or unlink the lock user's files. iemod-fetch uses only `FileLock`, so the path
@@ -2636,11 +2636,13 @@ on-disk protocol, also unused here. Measured on 3.14: the suite and
 `tests/test_datalock.py` (two refreshes on one folder; a second process
 holding the lock) pass unchanged; `import filelock` takes 37 ms instead of
 79 ms, since 4.2 loads the lock types other than `FileLock` on first use.
-Dependabot holds the next major version for a move by hand, in both of
-its pip entries: the root one reads pyproject's dependencies too, and had no
-hold - it pushed a 3 -> 4 branch of its own. #76, the 3 -> 4.2.1 pull request
-from the `/requirements` entry, came the evening of the advisory despite that
-entry's hold, so a security fix can still arrive as a pull request.
+Dependabot's version updates hold the next major version for a move by
+hand, in both of its pip entries: the root one reads pyproject's
+dependencies too, and had no hold - it opened #68 (3 -> 4.2.4) two minutes
+after #66 changed dependabot.yml. #76 (3 -> 4.2.1, the first fixed version,
+outside the weekly schedule and the runtime group) came from the
+`/requirements` entry despite its hold: evidently a security update, which
+that hold does not stop.
 
 **Consequences**: Python 3.11 or newer for filelock, below the 3.14 the
 project requires. A later 4.x is a Dependabot pull request like any other
