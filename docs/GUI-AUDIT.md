@@ -262,7 +262,7 @@ by running the candidates.
 | 36 | **Done** but the CLI bundle (`.python-version`, the workflows, pyproject, `iemod_fetch.PYTHON`). **The platform**: `.python-version` (3.14) read by every workflow instead of 20 literal versions in 10 workflows, two test matrices and four settings in `pyproject.toml`; `requires-python = ">=3.14"`; ruff, mypy and the classifiers on it; tests on it, on Linux and Windows (macOS informational). The CLI also ships as a PyInstaller bundle beside the wizard, so a player needs no Python of their own. Breaking: 4.0.0, with a migration note. | M |
 | 37 | **Done** (`tools/upstream_versions.py`). **The weekly check** (ADR-0028's `upstream-versions.yml`): the newest stable from actions/python-versions' manifest, and every place that names the version compared; an issue when they disagree or a newer Python is out, and the move made by hand once a full build - wizard and CLI bundles, all tests - passes on the newer one (a pull request opened by a workflow's token would start no CI to prove it). Dependabot cannot do it (verified in dependabot-core: it never touches `python-version`). Next candidate: 3.15, after its build is green - it makes UTF-8 the default on Windows (PEP 686). | S |
 | 38 | **Done**. **Mechanical modernisation**, alone in its PR: ruff `UP` rewrites about 890 `Optional`/`List`/... annotations (522 UP006 and 371 UP045 at py314) and 140 typing imports; `hashlib.file_digest`; `datetime.fromisoformat`; tarfile's data filter without the fallback; `PySide6>=6.11`. | S |
-| 39 | **Libraries adopted**, each with a test that fails before it, pinned by hash, scanned by pip-audit: **filelock** (MIT: a lock around the shared data folder, which the GUI and the CLI both write) and **publicsuffixlist** (MPL-2.0, unmodified, licence shipped: `a.github.io` and `b.github.io` are different sites, which the offsite check gets wrong today). **urllib3** only if keep-alive is measured to matter. | M |
+| 39 | **publicsuffixlist: done** (net.py, carried in the .pyz and the bundles, `requirements/runtime.txt`); filelock next. **Libraries adopted**, each with a test that fails before it, pinned by hash, scanned by pip-audit: **filelock** (MIT: a lock around the shared data folder, which the GUI and the CLI both write) and **publicsuffixlist** (MPL-2.0, unmodified, licence shipped: `a.github.io` and `b.github.io` are different sites, which the offsite check gets wrong today). **urllib3** only if keep-alive is measured to matter. | M |
 | 40 | **7-Zip in the bundles** (about half of lcc-docs' direct download links - 150 of 290 - are .rar, .7z or .exe), after a licence review of the unRAR clause. | S |
 
 Rejected, with the measurement: charset-normalizer (it reads short Cyrillic
@@ -275,7 +275,7 @@ keyring, py7zr (LGPL, compiled dependencies, no RAR).
 
 | # | Defect, reproduced | Fix |
 |---|---|---|
-| 41 | **Security**: `same_site("https://modder.github.io/m/", "https://attacker.github.io/x.zip")` is true (`registrable_suffix` reduces both to `github.io`), so a link to another user's page escapes the offsite gate. | item 39 |
+| 41 | **Done** (item 39). **Security**: `same_site("https://modder.github.io/m/", "https://attacker.github.io/x.zip")` is true (`registrable_suffix` reduces both to `github.io`), so a link to another user's page escapes the offsite gate. | item 39 |
 | 42 | **Order**: a stuck sort reports every remaining unit as the cycle and forces the top one even outside it; with A<->B, "C after A" is broken. | `graphlib`: the real cycle, released from inside it |
 | 43 | **tp2**: `~Use "smart" AI~` is read as `Use `; `~~~~~` strings are not read. | reuse `tra.py`'s scanner; real WeiDU as the oracle |
 | 44 | **.tra**: non-UTF-8 Russian, Polish, Japanese and Chinese text decoded as cp1252 (or latin-1), silently. | after UTF-8, the code page of the language folder |
@@ -344,7 +344,7 @@ now (item 18), so it belongs to M4. What each criterion stands at:
 - Never blocked for 100 ms during a download: **met on Linux** - the longest
   gap of a 10 ms timer during both downloads is 11-16 ms, 32 ms with every
   core busy; the same assertion holds on every OS CI runs it on.
-- The `.pyz` standard-library only: kept by the `stdlib-only` CI job.
+- The `.pyz` standard-library only: kept by the `stdlib-only` CI job until 4.0.0; since ADR-0043 it carries its runtime libraries inside, checked by the same job.
 - The PyInstaller build starts on all three OSes: **met** (item 20,
   ADR-0040). In #42's CI the Linux and Windows bundles were built, unzipped
   and started with `--check` by the release rehearsal, and the macOS one by

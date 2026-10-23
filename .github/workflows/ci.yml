@@ -134,19 +134,21 @@ jobs:
         run: python -m iemod_fetch_gui --version
 
   stdlib-only:
-    name: Runs with nothing installed
+    name: Runs with only its runtime libraries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
+      - name: The runtime's libraries, by hash (ADR-0043)
+        run: pip install --require-hashes -r requirements/runtime.txt
 
-      # ADR-0002 is a promise to the operator, so it is checked the way the
-      # operator experiences it: a bare interpreter, no pip install, no venv.
+      # What the operator gets is checked the way they get it: the interpreter
+      # and the runtime's hash-pinned libraries (ADR-0043), nothing else.
       # `pytest` is the only thing added, and the property tests skip themselves
       # when Hypothesis is absent rather than failing.
-      - name: Import and run the CLI with only the standard library
+      - name: Import and run the CLI with only its runtime libraries
         run: |
           python -c "import iemod_fetch, iemod_fetch.cli; print(iemod_fetch.__version__)"
           python -m iemod_fetch --help > /dev/null
@@ -171,6 +173,8 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
+      - name: The runtime's libraries, by hash (ADR-0043)
+        run: pip install --require-hashes -r requirements/runtime.txt
       - name: WeiDU, verified against its pinned digest
         run: |
           mkdir -p "$RUNNER_TEMP/weidu"
@@ -200,6 +204,8 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
+      - name: The runtime's libraries, by hash (ADR-0043)
+        run: pip install --require-hashes -r requirements/runtime.txt
 
       - name: Build
         run: python build.py

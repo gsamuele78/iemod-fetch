@@ -44,8 +44,10 @@ jobs:
         with: { python-version-file: .python-version }
       - run: pip install pip-audit
 
-      # The shipped tool has no runtime dependency at all (ADR-0002), so this
-      # audits the developer toolchain — the only supply chain there is.
+      # What ships inside the .pyz and the bundles (ADR-0043), exactly as pinned.
+      - name: Audit the runtime's libraries
+        run: pip-audit --strict --desc -r requirements/runtime.txt --require-hashes --no-deps --disable-pip
+
       - name: Audit the developer toolchain
         run: |
           pip install -e ".[dev]"

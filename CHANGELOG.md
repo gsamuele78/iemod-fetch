@@ -23,6 +23,17 @@ Python API, which is internal.
   part of the lint; `hashlib.file_digest` hashes backups; tarfile's `data`
   filter is used without the fallback for runtimes that lacked it. No
   behaviour changes: the same 1,317 tests pass.
+- **Fixed (security): two users' GitHub Pages were one site** (items 39 and
+  41). `same_site` reduced both `modder.github.io` and `attacker.github.io` to
+  `github.io`, so a landing page's link to another user's page escaped the
+  offsite gate (`--accept-offsite`). The site is now the registrable domain by
+  the **Public Suffix List** (publicsuffixlist, MPL-2.0 - the first runtime
+  library, ADR-0043), private suffixes included (github.io, gitlab.io...); an
+  address is its own site. The library is pinned by version and hash in
+  `requirements/runtime.txt`, carried inside the `.pyz` (318 KB, from 198) -
+  copied from the hash-checked installation, two builds still byte-identical -
+  and the bundles with its licence, audited by pip-audit, bumped by
+  Dependabot in a group of its own.
 - The weekly upstream check also watches Python (item 37): an issue when a
   newer stable Python is available, or when a place names another version than
   `.python-version`; a test holds them together.
