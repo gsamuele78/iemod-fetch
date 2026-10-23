@@ -178,7 +178,11 @@ last good community data. Components come from the mod's own tp2 once it is
 downloaded, else from krion64's records - which have 1,471 of the 1,529
 components WeiDU lists for 105 real mods (ADR-0035) - and each mod says which.
 Choosing one of a SUBCOMPONENT's options clears the others, and a component
-brings the ones it needs. A mod whose components nobody describes cannot be
+brings the ones it needs; unticking one that chosen ones need asks first -
+untick those too, keep it, or untick it alone. *Resolve for this component*
+chooses what it is missing (one alternative of an "any one of") and keeps it
+against the errors that name it, after showing what it would do; warnings stay
+yours. A mod whose components nobody describes cannot be
 chosen yet, and says so. Next writes `selection.json`, which the CLI reads
 with `--selection`.
 
@@ -531,7 +535,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,641 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,652 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -775,7 +779,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,641, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,652, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

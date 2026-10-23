@@ -20,6 +20,16 @@ The conflicts tab checks the selection against the rules a run uses, shortly
 after each change and in a worker thread too (api.selection_conflicts, ADR-0033);
 its buttons change the tree or write decisions.json. "Conflicts only" shows the
 mods in a conflict still to decide.
+
+Unticking a component that chosen ones need - its own mod's components that
+require it, and the dependency rules the last check found satisfied - asks
+first (GUI-AUDIT M5b item 34): untick those too (and what needs them), keep
+it, or untick it alone. A mod unticked whole asks once for all its
+components. "Resolve for this component" does what BWS-NG's auto-resolve
+does, narrower: it chooses the selected component's missing prerequisites -
+one alternative of an "any one of", never every one - then keeps it against
+the error incompatibilities that name it, deselecting their other side; a
+warning stays the player's. What it would do is shown first.
 """
 import html
 import os
@@ -191,6 +201,7 @@ class ModsPage(QWidget):
         self.tree.setColumnWidth(0, 420)
         self.tree.itemChanged.connect(self._changed)
         self.tree.currentItemChanged.connect(lambda item, _old: self._show(item))
+        self.tree.currentItemChanged.connect(lambda _item, _old: self._can_resolve())
         self.details = QTextBrowser()
         self.details.setOpenLinks(False)          # catalogue text is third-party
         self.panel = ConflictsPanel()
@@ -220,11 +231,18 @@ class ModsPage(QWidget):
                                     "again or give to the command line (--selection)")
         self.save_preset.clicked.connect(self._save_preset)
         self._presets(False)                # until a list is shown
+        self.resolve = QPushButton("Resolve for this component")
+        self.resolve.setToolTip("Choose what the selected component needs, then keep it "
+                                "against the errors that name it - shown before it is done")
+        self.resolve.setEnabled(False)
+        self.resolve.clicked.connect(self._resolve)
+        self._unticked: set[Key] = set()    # unticked by the player, not yet asked about
         bar = QHBoxLayout()
         bar.addWidget(self.search, 1)
         bar.addWidget(self.filter)
         bar.addWidget(self.load_preset)
         bar.addWidget(self.save_preset)
+        bar.addWidget(self.resolve)
         middle = QWidget()
         middle_layout = QVBoxLayout(middle)
         middle_layout.setContentsMargins(0, 0, 0, 0)
@@ -384,6 +402,11 @@ class ModsPage(QWidget):
                 self._choose(item, set())
             finally:
                 self._updating = False
+        else:
+            # a whole mod unticks its components one by one: asked once, after
+            if not self._unticked:
+                QTimer.singleShot(0, self._guard_untick)
+            self._unticked.add(data[1])
         self._count()
 
     def _choose(self, item: QTreeWidgetItem, seen: set[Key]) -> None:
@@ -401,6 +424,154 @@ class ModsPage(QWidget):
             needed_item = self.items.get((tp2, needed))
             if needed_item is not None and not needed_item.isDisabled():
                 self._choose(needed_item, seen)
+
+    # ------------------------------------- who needs it (M5b item 34)
+    def _checked(self) -> set[Key]:
+        return {key for key, item in self.items.items()
+                if item.checkState(0) == Qt.CheckState.Checked}
+
+    def dependents(self, removed: set[Key]) -> list[Key]:
+        """
+        The chosen components left without what they need once `removed` are
+        unticked, and what needs those in turn: the same mod's components that
+        require one, and the dependency rules the last check found satisfied
+        whose every alternative goes.
+        """
+        chosen = self._checked() - removed
+        gone, found = set(removed), []
+        changed = True
+        while changed:
+            changed = False
+            for key in sorted(chosen - gone):
+                item = self.items[key]
+                _kind, (tp2, _number), component = item.data(0, ROLE)
+                lost = any((tp2, needed) in gone for needed in component["requires"])
+                for need in (self.conflicts or {}).get("needs") or ():
+                    if key not in {tuple(pair) for pair in need["chosen"]}:
+                        continue
+                    if not any(tuple(pair) not in gone and tuple(pair) in chosen
+                               for alternative in need["on"] for pair in alternative):
+                        lost = True
+                if lost:
+                    gone.add(key)
+                    found.append(key)
+                    changed = True
+        return found
+
+    def _guard_untick(self) -> None:
+        removed = {key for key in self._unticked
+                   if key in self.items
+                   and self.items[key].checkState(0) == Qt.CheckState.Unchecked}
+        self._unticked.clear()
+        if not removed:
+            return
+        needing = self.dependents(removed)
+        if not needing:
+            return
+        answer = self.ask_dependents([self._name(k) for k in sorted(removed)],
+                                     [self._name(k) for k in needing])
+        self._updating = True
+        try:
+            if answer == "all":
+                for key in needing:
+                    self.items[key].setCheckState(0, Qt.CheckState.Unchecked)
+            elif answer == "keep":
+                for key in removed:
+                    self.items[key].setCheckState(0, Qt.CheckState.Checked)
+        finally:
+            self._updating = False
+        self._count()
+
+    def ask_dependents(self, removed: list[str], needing: list[str]) -> str:
+        """"all" (untick those too), "keep" (tick it again) or "only"."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Others need it")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(f"{', '.join(removed)}: needed by {len(needing)} chosen "
+                    f"component(s):\n\n" + "\n".join(needing[:20])
+                    + ("\n..." if len(needing) > 20 else ""))
+        everything = box.addButton("Untick those too", QMessageBox.ButtonRole.AcceptRole)
+        keep = box.addButton("Keep it", QMessageBox.ButtonRole.RejectRole)
+        box.addButton("Untick it alone", QMessageBox.ButtonRole.DestructiveRole)
+        box.exec()
+        clicked = box.clickedButton()
+        return "all" if clicked is everything else "keep" if clicked is keep else "only"
+
+    def _name(self, key: Key) -> str:
+        item = self.items.get(key)
+        mod = item.parent() if item is not None else None
+        while mod is not None and mod.parent() is not None:
+            mod = mod.parent()
+        prefix = mod.text(0) if mod is not None else key[0]
+        return f"{prefix} {item.text(0) if item is not None else f'#{key[1]}'}"
+
+    def resolution(self, key: Key) -> tuple[list[tuple[str, list]], list[list], list[str]]:
+        """
+        What "Resolve for this component" would do for `key`: the prerequisites
+        to choose (mod key, numbers), the pairs to deselect, and what it leaves
+        to the player, with why.
+        """
+        add: list[tuple[str, list]] = []
+        remove: list[list] = []
+        left: list[str] = []
+        for finding in open_findings(self.conflicts or {}):
+            sides = [finding["left"], finding.get("right")]
+            mine = [side for side in sides if side
+                    and [key[0], key[1]] in [list(p) for p in side.get("chosen") or ()]]
+            if not mine:
+                continue
+            if finding["kind"] == "depends" and mine[0] is finding["left"]:
+                install = next((o for o in finding["options"] if o["action"] == "install"),
+                               None)
+                if install and self._can_choose(install["key"], install["components"]):
+                    add.append((install["key"], install["components"]))
+                else:
+                    left.append(f"{finding['left']['mod']} needs "
+                                f"{(finding.get('right') or {}).get('mod', '?')}: "
+                                "not in the list to choose")
+            elif finding["kind"] == "incompatible" and finding.get("right"):
+                other = sides[1] if mine[0] is sides[0] else sides[0]
+                if finding["severity"] == "error":
+                    remove += [list(p) for p in other.get("chosen") or ()
+                               if list(p) not in remove]
+                else:
+                    left.append(f"{finding['severity']}: {other['mod']} - a warning "
+                                "is yours to decide")
+        return add, remove, left
+
+    def _can_resolve(self) -> None:
+        item = self.tree.currentItem()
+        data = item.data(0, ROLE) if item is not None else None
+        self.resolve.setEnabled(bool(
+            data and data[0] == "component" and item.checkState(0) == Qt.CheckState.Checked
+            and any(self.resolution(data[1]))))
+
+    def _resolve(self) -> None:
+        item = self.tree.currentItem()
+        data = item.data(0, ROLE) if item is not None else None
+        if not data or data[0] != "component":
+            return
+        add, remove, left = self.resolution(data[1])
+        lines = [f"Choose {key} #{', #'.join(map(str, numbers))}" for key, numbers in add]
+        lines += [f"Deselect {self._name((tp2, number))}" for tp2, number in remove]
+        lines += [f"Left to you: {text}" for text in left]
+        if not (add or remove) or not self.confirm_resolve("\n".join(lines)):
+            return
+        for key, numbers in add:
+            self._choose_in(key, numbers)
+        self._updating = True                 # the player asked for exactly this
+        try:
+            for tp2, number in remove:
+                target = self.items.get((tp2, number))
+                if target is not None:
+                    target.setCheckState(0, Qt.CheckState.Unchecked)
+        finally:
+            self._updating = False
+        self._count()
+
+    def confirm_resolve(self, text: str) -> bool:
+        answer = QMessageBox.question(self, "Resolve for this component", text)
+        return bool(answer == QMessageBox.StandardButton.Yes)
 
     # ------------------------------------------------------------ presets
     def _presets(self, enabled: bool) -> None:
@@ -563,6 +734,7 @@ class ModsPage(QWidget):
         self.tabs.setTabText(1, f"Conflicts ({waiting})" if waiting else "Conflicts")
         if self.filter.currentText() == "Conflicts only":
             self.apply_filter()
+        self._can_resolve()
 
     def _check_finished(self) -> None:
         self._checking = None
@@ -573,11 +745,17 @@ class ModsPage(QWidget):
 
     def deselect(self, pairs: list) -> None:
         """Untick the chosen (tp2, number) `pairs` (a conflict option, a fix
-        on the order page)."""
-        for tp2, number in pairs:
-            item = self.items.get((tp2, number))
-            if item is not None:
-                item.setCheckState(0, Qt.CheckState.Unchecked)
+        on the order page): asked for by the player, so not asked about again;
+        a dependency it breaks is the next check's finding."""
+        self._updating = True
+        try:
+            for tp2, number in pairs:
+                item = self.items.get((tp2, number))
+                if item is not None:
+                    item.setCheckState(0, Qt.CheckState.Unchecked)
+        finally:
+            self._updating = False
+        self._count()
 
     def _mod_items(self, key: str, numbers: list[int]) -> dict[int, QTreeWidgetItem]:
         """

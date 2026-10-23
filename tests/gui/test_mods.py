@@ -14,7 +14,7 @@ pytest.importorskip("pytestqt")
 from PySide6.QtCore import Qt  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
-from iemod_fetch_gui.pages.mods import ModsPage  # noqa: E402
+from iemod_fetch_gui.pages.mods import ROLE, ModsPage  # noqa: E402
 from iemod_fetch_gui.window import MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
 
@@ -322,3 +322,157 @@ def test_an_eet_build_saved_in_two_phases_is_chosen_again(qtbot, tmp_path):
     assert [i.game for i in saved.installs] == ["BGEE", "EET"]
     widget = page(qtbot, tmp_path)
     assert widget.chosen() == [(TP2, 0)]
+
+
+# ----------------------------------- who needs it (GUI-AUDIT M5b item 34)
+ADDON, OTHER = "addon/addon.tp2", "other/other.tp2"
+WITH_ADDONS = MODS + [
+    {"key": "addon", "name": "An addon", "games": ["EET"], "categories": ["Quests"],
+     "status": [], "advisories": [],
+     "tp2s": [{"tp2": ADDON, "origin": "krion64", "components": [component(0, "Addon")]}]},
+    {"key": "other", "name": "Another mod", "games": ["EET"], "categories": ["Tweaks"],
+     "status": [], "advisories": [],
+     "tp2s": [{"tp2": OTHER, "origin": "krion64", "components": [component(0, "Other")]}]}]
+
+
+def needing(*needs):
+    """A check that finds no conflict and the dependencies `needs` satisfied."""
+    def check(game, chosen, labels, folder):
+        return dict(no_check(), needs=[
+            {"chosen": [list(who)], "on": [[list(p) for p in alt] for alt in on], "rule": ""}
+            for who, on in needs if who in chosen])
+    return check
+
+
+def guarded(qtbot, folder, check, chosen, answer):
+    widget = ModsPage(str(folder), load=lambda game, project: json.loads(json.dumps(
+        WITH_ADDONS)), check=check)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.loaded, timeout=5000):
+        widget.start("EET")
+    for key in chosen:
+        check_(widget, key)
+    with qtbot.waitSignal(widget.checked, timeout=5000):    # checked as it now is
+        widget.timer.stop()
+        widget.check_conflicts()
+    asked = []
+    widget.ask_dependents = lambda removed, needs: asked.append((removed, needs)) or answer
+    return widget, asked
+
+
+check_ = check
+
+
+def test_unticking_what_its_own_mod_needs_asks_and_can_untick_those_too(qtbot, tmp_path):
+    widget, asked = guarded(qtbot, tmp_path, no_check, [(TP2, 20)], "all")
+    assert widget.chosen() == [(TP2, 0), (TP2, 20)]           # #20 brought #0
+    check_(widget, (TP2, 0), on=False)
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    assert len(asked) == 1 and "#20" in asked[0][1][0]
+    assert widget.chosen() == []
+
+
+def test_keep_ticks_it_again_and_alone_leaves_the_others(qtbot, tmp_path):
+    widget, asked = guarded(qtbot, tmp_path, no_check, [(TP2, 20)], "keep")
+    check_(widget, (TP2, 0), on=False)
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    assert widget.chosen() == [(TP2, 0), (TP2, 20)]
+    widget.ask_dependents = lambda *_args: "only"
+    check_(widget, (TP2, 0), on=False)
+    qtbot.wait(50)
+    assert widget.chosen() == [(TP2, 20)]
+
+
+def test_a_rule_another_mod_needs_it_by_is_asked_about_and_followed(qtbot, tmp_path):
+    # the other mod needs it, and the addon (listed first) needs the other mod
+    check = needing(((OTHER, 0), [[(TP2, 0)]]), ((ADDON, 0), [[(OTHER, 0)]]))
+    widget, asked = guarded(qtbot, tmp_path, check, [(TP2, 0), (ADDON, 0), (OTHER, 0)],
+                            "all")
+    check_(widget, (TP2, 0), on=False)
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    assert [name.split(" #")[0] for name in asked[0][1]] == ["Another mod", "An addon"]
+    assert widget.chosen() == []
+
+
+def test_another_alternative_still_chosen_asks_nothing(qtbot, tmp_path):
+    check = needing(((ADDON, 0), [[(TP2, 0)], [(TP2, 10)]]))     # any one of the two
+    widget, asked = guarded(qtbot, tmp_path, check, [(TP2, 0), (TP2, 10), (ADDON, 0)],
+                            "all")
+    check_(widget, (TP2, 0), on=False)
+    qtbot.wait(50)
+    assert asked == [] and (ADDON, 0) in widget.chosen()
+
+
+def test_a_mod_unticked_whole_asks_once(qtbot, tmp_path):
+    check = needing(((ADDON, 0), [[(TP2, 0)]]))
+    widget, asked = guarded(qtbot, tmp_path, check, [(TP2, 0), (TP2, 10), (ADDON, 0)],
+                            "keep")
+    mod = next(widget.tree.topLevelItem(r) for r in range(widget.tree.topLevelItemCount())
+               if widget.tree.topLevelItem(r).data(0, ROLE)[1] == "bg1ub")
+    mod.setCheckState(0, Qt.CheckState.Unchecked)
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    qtbot.wait(50)
+    assert len(asked) == 1 and len(asked[0][0]) == 2              # #0 and #10, once
+    assert set(widget.chosen()) == {(TP2, 0), (TP2, 10), (ADDON, 0)}
+
+
+def resolving(severity):
+    """The addon needs bg1ub #0 (or #20) and clashes with the other mod."""
+    def side(key, path, number):
+        return {"mod": key, "components": [number], "whole_mod": False, "key": key,
+                "chosen": [[path, number]]}
+
+    def check(game, chosen, labels, folder):
+        findings = []
+        if (ADDON, 0) in chosen and (TP2, 0) not in chosen:
+            findings.append({
+                "id": "conflict-dep", "kind": "depends", "severity": "error",
+                "left": side("addon", ADDON, 0),
+                "right": {"mod": "bg1ub", "components": [0], "whole_mod": False,
+                          "key": "bg1ub", "chosen": []},
+                "fixed_by_plan": None, "decision": None, "reason": "", "remedy": "",
+                "options": [{"id": "option-i", "action": "install", "key": "bg1ub",
+                             "mod": "bg1ub", "components": [0], "whole_mod": False,
+                             "applicable": True, "recommended": False, "cost": 0,
+                             "description": "install bg1ub", "chosen": []}]})
+        if (ADDON, 0) in chosen and (OTHER, 0) in chosen:
+            findings.append({
+                "id": "conflict-inc", "kind": "incompatible", "severity": severity,
+                "left": side("addon", ADDON, 0), "right": side("other", OTHER, 0),
+                "fixed_by_plan": None, "decision": None, "reason": "", "remedy": "",
+                "options": []})
+        return dict(no_check(), findings=findings, rules_checked=2)
+    return check
+
+
+def test_resolve_chooses_what_it_needs_then_keeps_it_against_an_error(qtbot, tmp_path):
+    widget, _asked = guarded(qtbot, tmp_path, resolving("error"), [(ADDON, 0), (OTHER, 0)],
+                             "only")
+    widget.tree.setCurrentItem(widget.items[(ADDON, 0)])
+    assert widget.resolve.isEnabled()
+    shown = []
+    widget.confirm_resolve = lambda text: shown.append(text) or True
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.resolve.click()
+    assert shown == ["Choose bg1ub #0\nDeselect Another mod #0  Other"]
+    # one alternative chosen, not every target; the other side deselected
+    assert widget.chosen() == [(TP2, 0), (ADDON, 0)]
+
+
+def test_resolve_leaves_a_warning_to_the_player_and_does_nothing_unconfirmed(
+        qtbot, tmp_path):
+    widget, _asked = guarded(qtbot, tmp_path, resolving("warning"),
+                             [(ADDON, 0), (OTHER, 0)], "only")
+    widget.tree.setCurrentItem(widget.items[(ADDON, 0)])
+    shown = []
+    widget.confirm_resolve = lambda text: shown.append(text) or False
+    widget.resolve.click()
+    assert shown[0].splitlines() == [
+        "Choose bg1ub #0", "Left to you: warning: other - a warning is yours to decide"]
+    assert widget.chosen() == [(ADDON, 0), (OTHER, 0)]           # not confirmed
+
+
+def test_resolve_is_off_where_there_is_nothing_to_resolve(qtbot, tmp_path):
+    widget, _asked = guarded(qtbot, tmp_path, resolving("error"), [(TP2, 10)], "only")
+    widget.tree.setCurrentItem(widget.items[(TP2, 10)])
+    assert not widget.resolve.isEnabled()
