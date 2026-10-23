@@ -2336,6 +2336,12 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
 5. **M5's validation** is restated: the plan's places are compared with
    BWS-NG's sequence (independent of krion64), not with a Forge-written log;
    and a plan placed by kind installs with the real WeiDU in the mock EET job.
+   *Done (GUI-AUDIT item 29):* `tools/places_check.py`, nightly in the
+   community-data workflow, fails on a category the tables do not map or a
+   sequence that lost its shape, and measures the 146-mod log against
+   BWS-NG's sequence (9,380 of 123,753 pairs the other way round, 7.6%, with
+   and without the places - the log is the Forge's own); the mock EET job
+   installs a plan reordered by kind with the real WeiDU.
 
 ### Consequences
 
@@ -2345,10 +2351,12 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
   placed. Names without `.tp2` (catalogue titles, folders, Sorting Order
   lines) now go through `ordering.name_key`.
 - The mapping table is data in the repository (`iemod_fetch/kinds.py`,
-  item 26). A weekly workflow checking it against the live sources - a source
-  that changes its categories or its shape failing that workflow, not a run -
-  is not built yet: it is left for item 29. Until then a new label shows as
-  it is and makes no disagreement.
+  item 26). It is checked every night against the live sources
+  (`tools/places_check.py` in the community-data workflow, item 29): an
+  unmapped category, a krion64 category a kind places into gone, a
+  `games/eet.json` without its bg2ee sequence, or a count under its floor
+  fails that workflow, not a run. In a run a new label shows as it is and
+  makes no disagreement.
 - BWS-NG's data is GPL-3.0 and is read at run time from the user's data cache,
   as the rest of it already is (ADR-0036); nothing of it is bundled, and test
   fixtures are written by hand to its schema.

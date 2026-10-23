@@ -330,6 +330,36 @@ To repeat it: append `tools/bio_interop_test.rs` to BIO's
 `src/core/app/modlist_share.rs`, then
 `IEMOD_CODE_IN=ours.bio cargo test --lib iemod_interop -- --nocapture`.
 
+### Kinds and install places, on the live data (GUI-AUDIT item 29)
+
+`tools/places_check.py DATA_DIR [--log WeiDU.log]` runs every night in the
+community-data workflow, on the data it has just fetched:
+
+* it **fails** when lcc-docs or BWS-NG use a category `iemod_fetch/kinds.py`
+  does not map (it would show raw and place nothing), when krion64 loses a
+  category a kind places into, when BWS-NG's `games/eet.json` no longer has a
+  bg2ee sequence with the EET core, or when a count falls under its floor
+  (more than 1,500 mods with a kind, 300 placed by kind, one by the
+  sequence). Mutated copies of the real data - krion64 renaming QUEST MODS
+  BG2, lcc-docs renaming its `categories` key - fail it; the job summary is
+  written on the night it fails, with the upstream text escaped;
+* it counts what places the mods with a kind that krion64 does not place.
+  On the 2026-10-23 data: 1,071 such mods; 15 by BWS-NG's sequence, 436 by
+  kind, 620 with no place (each with its reason);
+* with the 146-mod log it plans the EET install without and with those
+  places, and counts the pairs of components ordered the other way round
+  from BWS-NG's sequence - the independent judge ADR-0041 decision 5 names:
+  9,380 of 123,753 (7.6%) both times. The log is the Forge's, so krion64
+  places all of it but one portrait pack no source classifies: the places
+  change nothing there, and the check says so rather than claiming a gain.
+
+The mock EET job installs a plan reordered by kind with the real WeiDU
+(`test_real_weidu_installs_a_plan_reordered_by_kind`): ub and ascension,
+which the test catalogue does not place, become BG2 quests, ub moves ahead of
+stratagems and cdtweaks, and WeiDU installs every component. BWS-NG's files
+are GPL and never bundled: the fixtures written in its shape are made up
+(`tests/test_places_check.py`, `tests/test_place_by_kind.py`).
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
@@ -366,7 +396,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,586 collected (7 run the real WeiDU, 88 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,597 collected (8 run the real WeiDU, 88 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
