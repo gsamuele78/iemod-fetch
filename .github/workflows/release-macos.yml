@@ -25,10 +25,11 @@ permissions:
   contents: read
 
 concurrency:
-  # A newer release supersedes an older one still waiting for a runner; a
-  # forgotten one can be attached later with workflow_dispatch.
-  group: release-macos-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
-  cancel-in-progress: true
+  # Scheduled checks replace one another (each looks at the latest release); a
+  # dispatch for a named release has its own group and is never cancelled, so a
+  # scheduled run that builds nothing cannot drop it. A rehearsal per pull request.
+  group: release-macos-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   target:
