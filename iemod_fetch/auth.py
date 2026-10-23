@@ -18,6 +18,7 @@ import sys
 import time
 from dataclasses import dataclass
 
+from .childenv import child_env
 from .errors import ConfigError, ModFetchError
 
 # Shapes GitHub issues: classic PAT, OAuth app, user-to-server, server-to-server,
@@ -52,7 +53,8 @@ class Credential:
 def _from_gh_cli() -> str | None:
     try:
         out = subprocess.run(["gh", "auth", "token"], stdout=subprocess.PIPE,
-                             stderr=subprocess.DEVNULL, timeout=15, check=False)
+                             stderr=subprocess.DEVNULL, timeout=15, check=False,
+                             env=child_env())
     except (OSError, subprocess.TimeoutExpired):
         return None
     if out.returncode != 0:
@@ -78,7 +80,7 @@ def _from_git_credential(host: str = "github.com") -> str | None:
                "-c", "credential.interactive=false",
                "-c", "credential.guiPrompt=false",
                "credential", "fill"]
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
+    env = child_env({"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"})
     try:
         proc = subprocess.run(command,
                               input=f"protocol=https\nhost={host}\n\n".encode(),

@@ -47,6 +47,26 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The command line as a program that needs no Python** (GUI-AUDIT M6 item
+  36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
+  macOS's own `python3` are older. Each release now carries
+  `iemod-fetch-cli-<os>-<arch>.zip` for Linux, Windows and macOS: a
+  PyInstaller folder (one folder, not one file, which unpacks itself on
+  every start and is what Windows antivirus software flags most), with the
+  runtime's libraries and their licences, no Qt. Each is unzipped and run
+  with `--version` and `--help` before it is published, attested, and listed
+  in `SHA256SUMS` (macOS: its own `.sha256`). Linux is built on Ubuntu 22.04,
+  not the latest runner: setup-python's 3.14 for 24.04 needs glibc 2.38, and
+  the bundle would not have started on Debian 12 (review of #70). The build
+  stops if any bundled file needs a glibc newer than 2.35, and the zip is run
+  once more inside `debian:12`. On Linux and macOS, programs it starts (git,
+  gh, 7-Zip, unrar) get the system's library path back, not the bundle's
+  (`childenv.py`), so they load their own OpenSSL; on Windows they still see
+  the bundle's DLL folder after their own (GUI-AUDIT row 61). Python's LICENSE.txt ships with it. Measured
+  locally, with a standalone Python (glibc 2.17): 14.7 MB, built in 14 s; run
+  with an empty environment and no Python on `PATH`, it took the data
+  folder's lock and reached GitHub through a proxy over TLS. The size of the
+  CI build, which carries the system's OpenSSL, is not measured here.
 - **BWS-NG's EET sequence places a mod krion64 does not, before any kind**
   (ADR-0041 decision 2a, the rest of GUI-AUDIT item 27). In the install after
   the EET core, such a mod goes after the nearest component before it in

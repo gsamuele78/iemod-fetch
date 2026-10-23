@@ -121,8 +121,15 @@ for why, `docs/ADR.md` for the design decisions, `docs/GUIDE.md` to use it.
 ## Install
 
 Python **3.14** (ADR-0043: one version, the one in `.python-version`; an
-older Python is told so and stops). The wizard's release bundle carries its own
-Python; a command-line bundle is planned for 4.0.0 (GUI-AUDIT item 36).
+older Python is told so and stops). Where the system's Python is older
+(Ubuntu 22.04 and 24.04, Debian 12 and 13, macOS's own `python3`), take a
+release bundle, which carries its own: `iemod-fetch-cli-<os>-<arch>.zip` for
+the command line (Linux x86_64 with glibc 2.35 or newer, Windows x86_64, macOS
+on Apple silicon), `iemod-fetch-gui-...` for the wizard. Unzip it and run
+`iemod-fetch` inside the folder; it is attested and in `SHA256SUMS` like the
+other assets, and not signed by a publisher (see below). On macOS, a zip
+downloaded with a browser is quarantined: `xattr -dr com.apple.quarantine
+iemod-fetch` once, in the folder you unzipped it to.
 
 ```bash
 # One file, its one library inside — on Python 3.14.
@@ -515,7 +522,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,554 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,569 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -759,9 +766,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,554, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,569, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
-| mypy | clean, 62 modules |
+| mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 7, all kept |
