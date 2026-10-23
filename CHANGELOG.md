@@ -43,6 +43,15 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A wrong catalogue download no longer hides the catalogue's other sources**
+  (GUI-AUDIT M7 item 54). With the catalogue alone (`-m ''`), lcc-docs' direct
+  links go first, and for 8 of the 145 mods of an EET log that link is a
+  Beamdog forum attachment which is not the mod - a save game, `.debug` logs,
+  a compatibility patch, another mod. The .tp2 check refused it and the retry
+  asked the catalogue again, getting the same attachment, so the repository or
+  page the entry also lists was never tried. Each of the entry's sources now
+  gets its turn, each downloaded once and each held to the same check; the
+  warning names what was refused.
 - A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
   by its first word (`www`): krion64's place for it was never found, and a
   Sorting Order line naming it ordered nothing.

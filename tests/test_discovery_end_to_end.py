@@ -347,6 +347,61 @@ def test_the_retry_does_not_lower_the_bar(tmp_path, monkeypatch):
     assert not (tmp_path / "Mods" / "EndlessBG1").exists()
 
 
+def test_a_wrong_forum_attachment_gives_way_to_the_catalogues_repository(
+        tmp_path, monkeypatch):
+    """
+    Measured on 2026-10-23 with the catalogue alone: lcc-docs links Beamdog
+    forum attachments that are a save game (Foundling), two .debug logs
+    (ntotsc), a compatibility patch (IHateUndead) or another mod (A7's
+    GolemConstruction -> SoDGolemFix). As a direct link each one went first,
+    failed the .tp2 check, and the repository the same entry lists was never
+    tried: the retry probed the catalogue again and got the same attachment.
+    """
+    attachment = "https://forums.beamdog.com/uploads/editor/nd/82qpx7xj78an.zip"
+    asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
+    stub = DiscoveryStub(
+        owners={},
+        releases={"Gibberlings3/EndlessBG1": {"tag_name": "v1", "assets": [
+            {"name": "m.zip", "browser_download_url": asset}]}},
+        blobs={attachment: zip_bytes("FnP_kit_compatibility"),
+               asset: zip_bytes("EndlessBG1")})
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json",
+                     "--no-discovery", "--json-report", "r.json"])
+
+    assert code == 0, out
+    assert (tmp_path / "Mods" / "EndlessBG1" / "EndlessBG1.tp2").exists()
+    assert stub.downloaded == [attachment, asset]
+    warnings = json.loads((tmp_path / "r.json").read_text())["warnings"]
+    assert any(attachment in w and "did not contain this mod" in w for w in warnings)
+
+
+def test_every_catalogue_source_is_tried_once_and_the_bar_stays(tmp_path, monkeypatch):
+    """Two wrong sources and no right one: each downloaded once, then it fails."""
+    attachment = "https://forums.beamdog.com/uploads/editor/gk/qg6zo9o3fqho.zip"
+    asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
+    stub = DiscoveryStub(
+        owners={},
+        releases={"Gibberlings3/EndlessBG1": {"tag_name": "v1", "assets": [
+            {"name": "m.zip", "browser_download_url": asset}]}},
+        blobs={attachment: zip_bytes("000000001-Quick-Save"),
+               asset: zip_bytes("SomeOtherMod")})
+    make(tmp_path, monkeypatch, stub, WEIDU, CATALOGUE)
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [attachment, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+
+    code, out = run(["-w", "WeiDU.log", "-t", "Mods", "-c", "lcc.json", "--no-discovery"])
+
+    assert code == 1
+    assert stub.downloaded == [attachment, asset]
+    assert not (tmp_path / "Mods" / "EndlessBG1").exists()
+
+
 def test_the_catalogue_supplies_the_renamed_tp2_automatically(tmp_path, monkeypatch):
     """
     Real case: the log says `Reflections`, the mod ships `Reflections_of_Destiny`,
