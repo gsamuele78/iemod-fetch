@@ -2292,6 +2292,12 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
 5. **M5's validation** is restated: the plan's places are compared with
    BWS-NG's sequence (independent of krion64), not with a Forge-written log;
    and a plan placed by kind installs with the real WeiDU in the mock EET job.
+   *Done (GUI-AUDIT item 29):* `tools/places_check.py`, nightly in the
+   community-data workflow, fails on a category the tables do not map or a
+   sequence that lost its shape, and measures the 146-mod log against
+   BWS-NG's sequence (9,380 of 123,753 pairs the other way round, 7.6%, with
+   and without the places - the log is the Forge's own); the mock EET job
+   installs a plan reordered by kind with the real WeiDU.
 
 ### Consequences
 

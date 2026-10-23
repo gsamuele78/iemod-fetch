@@ -47,6 +47,15 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The kinds and the places, checked every night on the live data**
+  (GUI-AUDIT M5 item 29, ADR-0041 decision 5). `tools/places_check.py`, run by
+  the community-data workflow on what it has just fetched, fails when
+  lcc-docs or BWS-NG start using a category `kinds.py` does not map, or when
+  BWS-NG's `games/eet.json` loses its bg2ee sequence - in the workflow, not
+  in a player's run where it would quietly place nothing. It prints what the
+  sequence and the kind place, and measures a log's plan against BWS-NG's
+  order, without and with those places. The mock EET job now also installs a
+  plan reordered by kind with the real WeiDU.
 - **The command line as a program that needs no Python** (GUI-AUDIT M6 item
   36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
   macOS's own `python3` are older. Each release now carries

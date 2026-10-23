@@ -10,7 +10,8 @@ name: Community data
 
 on:
   pull_request:
-    paths: ["iemod_fetch/datasync.py", ".github/workflows/community-data.yml"]
+    paths: ["iemod_fetch/datasync.py", "iemod_fetch/kinds.py", "tools/places_check.py",
+            ".github/workflows/community-data.yml"]
   schedule:
     - cron: "41 3 * * *"
   workflow_dispatch:
@@ -80,3 +81,17 @@ jobs:
         run: |
           python -m iemod_fetch --list-mods mods.json -m absent.json --no-update-data
           python -c "import json; n = len(json.load(open('mods.json'))['mods']); print(n, 'mods'); assert n > 1500"
+
+      # GUI-AUDIT item 29: the kinds and the places on the live data. A new
+      # category in lcc-docs or BWS-NG, or a games/eet.json whose shape moved,
+      # fails here - not in a player's run, where it would place nothing.
+      - name: The kinds and the places still hold
+        run: |
+          python tools/places_check.py "$IEMOD_DATA_DIR" --log tests/data/WeiDU.log \
+            --json places.json
+          {
+            echo "### Kinds and places (ADR-0041)"
+            echo '```json'
+            cat places.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

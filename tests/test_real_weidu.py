@@ -189,6 +189,49 @@ def test_real_weidu_installs_the_resolved_plan_completely(tmp_path):
     shutil.rmtree(tmp_path / "games", ignore_errors=True)
 
 
+def test_real_weidu_installs_a_plan_reordered_by_kind(tmp_path):
+    """
+    GUI-AUDIT item 29: the test catalogue does not place ub or ascension;
+    with a QUEST MODS BG2 category and lcc-docs calling both a BG2 quest,
+    their kind moves ub ahead of stratagems and cdtweaks (item 27) - and the
+    real WeiDU still installs that plan to the last component.
+    """
+    import json
+    krion = tmp_path / "krion"
+    shutil.copytree(KRION, krion)
+    categories = json.loads((krion / "categories.json").read_text(encoding="utf-8"))
+    names = list(categories["categories"])
+    names.insert(names.index("ENGINE") + 1, "QUEST MODS BG2")
+    categories["categories"] = {n: categories["categories"].get(n, {}) for n in names}
+    (krion / "categories.json").write_text(json.dumps(categories), encoding="utf-8")
+    lcc = tmp_path / "lcc-docs" / "db" / "mods.json"
+    lcc.parent.mkdir(parents=True)
+    lcc.write_text(json.dumps([
+        {"tp2": mod, "name": mod, "categories": ["Quête"], "games": ["BG2EE"], "urls": []}
+        for mod in ("ub", "ascension")]), encoding="utf-8")
+
+    def plan(folder, *extra):
+        out = io.StringIO()
+        cli.main(["--check-only", "-m", MANIFEST,
+                  "-w", os.path.join(MOCK, "WeiDU.log") + ":EET",
+                  "-w", os.path.join(MOCK, "WeiDU-BGEE.log") + ":BGEE",
+                  "-t", MODS, "--order-catalogue", str(krion), "--plan-order", str(folder),
+                  "--rules", os.path.join(MOCK, "rules"), "--resolve-conflicts",
+                  "--no-update-data", "--no-default-data", *extra], stream=out)
+        return out.getvalue(), [_key(t) for t, _c in log_steps(str(folder / EET_LOG))]
+
+    _out, plain = plan(tmp_path / "plain")
+    summary, by_kind = plan(tmp_path / "plan", "--catalogue", str(lcc))
+    assert "placed by kind (2)" in summary
+    assert by_kind != plain and by_kind.index("ub") < by_kind.index("stratagems")
+    logs = {PRE_EET_LOG: str(tmp_path / "plan" / PRE_EET_LOG),
+            EET_LOG: str(tmp_path / "plan" / EET_LOG)}
+    installed, refused = install(tmp_path / "games", logs)
+    assert refused == set()
+    for role, path in logs.items():
+        assert installed[role] == [(_key(t), c) for t, c in log_steps(path)]
+
+
 MOD_INSTALLER = os.environ.get("IEMOD_MOD_INSTALLER", "")
 if os.environ.get("IEMOD_REQUIRE_REAL") and not os.path.isfile(MOD_INSTALLER):
     raise RuntimeError("IEMOD_REQUIRE_REAL is set but IEMOD_MOD_INSTALLER is not a file")
