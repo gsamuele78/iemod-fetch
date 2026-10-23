@@ -205,7 +205,8 @@ class ConflictsPanel(QWidget):
         elif action == "keep-both":
             button.setToolTip("Keep both; this one is installed after the other, so "
                               "what they both change is left as it makes it. Saved in "
-                              "decisions.json; the install order follows it.")
+                              "decisions.json: the wizard's install order follows it, "
+                              "and a command-line run with --decisions.")
             button.clicked.connect(lambda _c=False, f=finding, o=option["id"]:
                                    self.decide.emit(f, o, ""))
         elif action == "install":

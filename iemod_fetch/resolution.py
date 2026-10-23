@@ -30,14 +30,11 @@ from collections.abc import Set
 
 from .contract import SCHEMA_VERSION
 from .conflicts import (DESELECT, INSTALL, KEEP_BOTH, SUBCOMPONENT_ORIGIN,
-                        ConflictReport, Finding, Side)
+                        ConflictReport, Finding, Side, finding_options)
 from .decisions import Decisions
 from .errors import ConfigError
 from .naming import normalize_key
-from .rules import INCOMPATIBLE, ORDER, ModSpec, Rule, RuleSet
-
-# The origin of the order rules the player's "keep both" decisions make.
-DECIDED_ORDER = "decisions.json"
+from .rules import DECIDED_ORDER, INCOMPATIBLE, ORDER, ModSpec, Rule, RuleSet
 
 
 @dataclass
@@ -198,15 +195,36 @@ def apply_decisions(plan, report: ConflictReport, decisions: Decisions,
             continue
         finding = by_id[finding_id]
         option = next((o for o in finding.options if o.id(finding_id) == option_id), None)
+        if option is None and finding.last_blocked and any(
+                o.id(finding_id) == option_id
+                for o in finding_options(replace(finding, last_blocked=()))):
+            # A "keep both" this way round is not offered: a rule says the
+            # other side goes first, or must not coexist (review of #72).
+            result.left_for_operator.append(Unresolved(
+                finding.log, _describe(finding),
+                "the \"keep both\" order you chose is not offered: a rule puts "
+                + ", ".join(finding.last_blocked) + " first or forbids the pair",
+                finding_id=finding_id))
+            continue
         if option is None:
             raise ConfigError(f"decisions: {option_id} is not an option of {finding_id}; "
                               f"its options are "
                               f"{[o.id(finding_id) for o in finding.options]}")
         if option.action == KEEP_BOTH:
-            # The order rule keep_both_rules made placed it; what is left is
-            # the record that both were kept on purpose.
-            result.accepted.append(Accepted(finding.log, _describe(finding),
-                                            option.description, finding_id))
+            # The order rule keep_both_rules made placed it - unless the plan
+            # could not keep it (a cycle with other rules): then it is the
+            # player's again, never recorded as settled (review of #72).
+            pair = {finding.left.key, finding.right.key if finding.right else ""}
+            broken = next((v for v in plan.residual if v.rule is not None
+                           and v.rule.origin == DECIDED_ORDER and set(v.mods) == pair), None)
+            if broken is not None:
+                result.left_for_operator.append(Unresolved(
+                    finding.log, _describe(finding),
+                    f"you chose to {option.description}, but the plan could not keep "
+                    f"that order: {broken.summary}", finding_id=finding_id))
+            else:
+                result.accepted.append(Accepted(finding.log, _describe(finding),
+                                                option.description, finding_id))
             continue
         if option.action == INSTALL:
             result.left_for_operator.append(Unresolved(

@@ -56,8 +56,11 @@ Python API, which is internal.
   it becomes an order rule: the plan is made again with it, and the finding
   is recorded as accepted with that reason. A choice that contradicts
   another rule is reported by the plan, never hidden. A hard (`error`)
-  incompatibility does not offer it. The conflict report's option `action`
-  gains `keep-both`. Measured first: the rest of item 28 was already there
+  incompatibility does not offer it, nor does a pair an error also covers, and
+  where a tp2's FORBID_COMPONENT already orders the pair only that way round
+  is offered; a kept order the plan could not keep goes back to the player.
+  The conflict report's option `action` gains `keep-both`, and a
+  decisions.json naming one is refused by an older iemod-fetch. Measured first: the rest of item 28 was already there
   (krion64's per-component categories split 242 components) or has no data
   (BWS-NG classifies no component on its own).
 - **The command line as a program that needs no Python** (GUI-AUDIT M6 item

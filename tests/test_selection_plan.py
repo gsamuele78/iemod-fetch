@@ -318,22 +318,31 @@ def test_a_broken_cached_sequence_does_not_block_the_plan(tmp_path):
 
 
 def test_a_keep_both_decision_in_the_project_orders_the_wizards_plan(tmp_path):
-    """Item 28: the wizard's decisions.json "keep both, ascension last"
-    becomes an order rule of the plan - here against the mock's own rule
-    (ascension before stratagems #5900), which the plan then says."""
-    before = plan(tmp_path)
-    assert not before["violations"] and not before["cycles"]
+    """Item 28: the project's decisions.json "keep both, X last" is an order
+    rule of the wizard's plan - here on ub and cdtweaks #2370, which nothing
+    else orders, so the decision alone moves them (review of #72, H3)."""
+    overlap = tmp_path / "overlap"
+    overlap.mkdir()
+    (overlap / "incompatibilities.json").write_text(json.dumps({"rules": [
+        {"rule": "ub(0):cdtweaks(2370)", "severity": "warning", "description": "same file"}]}))
+    rules = [os.path.join(MOCK, "rules"), str(overlap)]
+
+    def order():
+        units = next(p for p in plan(tmp_path, rules=rules)["phases"]
+                     if p["title"] == "EET")["units"]
+        return [(c[0].split("/")[0].lower(), c[1]) for u in units for c in u["components"]]
+    before = order()
+    ub_first = before.index(("ub", 0)) < before.index(("cdtweaks", 2370))
     found = api.selection_conflicts("EET", CHOSEN, folder=str(tmp_path),
-                                    order_catalogue=KRION,
-                                    rules=[os.path.join(MOCK, "rules")],
+                                    order_catalogue=KRION, rules=rules,
                                     target=os.path.join(MOCK, "Mods"),
                                     data_dir=str(tmp_path / "no-cache"))
-    overlap = next(f for f in found["findings"]
-                   if f["kind"] == "incompatible" and f["severity"] == "warning")
-    last = next(o for o in overlap["options"]
-                if o["action"] == "keep-both" and o["mod"] == "ascension")
-    api.save_decisions(str(tmp_path), choose={overlap["id"]: last["id"]})
+    pair = next(f for f in found["findings"] if f["kind"] == "incompatible"
+                and {f["left"]["mod"], f["right"]["mod"]} == {"ub", "cdtweaks"})
+    last = next(o for o in pair["options"] if o["action"] == "keep-both"
+                and o["mod"] == ("ub" if ub_first else "cdtweaks"))
+    api.save_decisions(str(tmp_path), choose={pair["id"]: last["id"]})
 
-    after = plan(tmp_path)
+    after = order()
 
-    assert after["violations"] or after["cycles"]
+    assert (after.index(("ub", 0)) < after.index(("cdtweaks", 2370))) is not ub_first

@@ -26,7 +26,8 @@ def settings(tmp_path, **extra):
         check_only=True, quiet=True, manifest=os.path.join(HERE, "data", "mod_downloads.json"),
         weidu_log=[os.path.join(MOCK, "WeiDU.log") + ":EET",
                    os.path.join(MOCK, "WeiDU-BGEE.log") + ":BGEE"],
-        target=os.path.join(MOCK, "Mods"), rules=[os.path.join(MOCK, "rules")],
+        target=os.path.join(MOCK, "Mods"),
+        rules=extra.pop("rules", [os.path.join(MOCK, "rules")]),
         order_catalogue=os.path.join(HERE, "data", "krion"),
         plan_order=str(tmp_path / "plan"), conflict_report=str(tmp_path / "conflicts.json"),
         no_update_data=True, no_default_data=True, **extra)
@@ -129,10 +130,13 @@ def line_of(text, mod, number):
                 if line.lower().startswith("~" + mod + "\\") and f" #{number} " in line + " ")
 
 
-def test_a_warning_offers_keeping_both_each_way_and_an_error_does_not(tmp_path):
+def test_a_warning_offers_keeping_both_only_the_way_weidu_allows(tmp_path):
+    """Review of #72 (B1): ascension's tp2 FORBIDs stratagems #5900, which
+    makes an error order rule (ascension first) and this warning - so only
+    "stratagems last" is offered. An error offers no "keep both"."""
     _outcome, findings = report(tmp_path)
-    assert {o["mod"] for o in overlap(findings)["options"] if o["action"] == KEEP_BOTH} == {
-        "ascension", "stratagems"}
+    assert [o["mod"] for o in overlap(findings)["options"] if o["action"] == KEEP_BOTH] == [
+        "stratagems"]
     errors = [f for f in findings if f["kind"] == INCOMPATIBLE and f["severity"] == "error"]
     assert errors and not any(o["action"] == KEEP_BOTH for f in errors for o in f["options"])
 
@@ -152,15 +156,96 @@ def test_keeping_both_installs_the_chosen_side_last_and_keeps_both(tmp_path):
     assert outcome.order_plan.verified
 
 
-def test_keeping_both_the_other_way_round_is_planned_or_said_to_contradict(tmp_path):
-    """The mock's rules install ascension before stratagems #5900: choosing
-    ascension last contradicts them, and the plan says so - never silently."""
-    _outcome, findings = report(tmp_path)
-    finding = overlap(findings)
+def test_the_way_round_weidu_refuses_is_left_to_the_player_not_accepted(tmp_path):
+    """Review of #72 (B1): a decision for "ascension last" - not offered -
+    is the player's again, with why; the plan keeps the tp2's order."""
+    from dataclasses import replace
+    from iemod_fetch.conflicts import finding_options
+    outcome, findings = report(tmp_path)
+    finding = next(f for f in outcome.conflict_report.findings
+                   if f.id == overlap(findings)["id"])
+    refused = next(o for o in finding_options(replace(finding, last_blocked=()))
+                   if o.action == KEEP_BOTH and o.mod == "ascension")
     outcome, _after = report(tmp_path, decisions=write(tmp_path, [
-        {"finding": finding["id"], "choose": keep(finding, "ascension")["id"]}]))
-    plan = outcome.order_plan
-    assert plan.cycles or not plan.verified
+        {"finding": finding.id, "choose": refused.id(finding.id)}]))
+    resolution = outcome.order_plan.resolution
+    assert [u.finding_id for u in resolution.left_for_operator
+            if "not offered" in u.why] == [finding.id]
+    assert finding.id not in [a.finding_id for a in resolution.accepted]
+    assert outcome.order_plan.verified and not outcome.order_plan.cycles
+
+
+OVERLAP = {"rules": [{"rule": "ub(0):cdtweaks(2370)", "severity": "warning",
+                      "description": "both write the same file"}]}
+
+
+def overlap_rules(tmp_path):
+    rules = tmp_path / "overlap"
+    rules.mkdir(exist_ok=True)
+    (rules / "incompatibilities.json").write_text(json.dumps(OVERLAP))
+    return [os.path.join(MOCK, "rules"), str(rules)]
+
+
+def test_keeping_both_moves_the_chosen_side_last_on_its_own(tmp_path):
+    """Review of #72 (H3): no other rule orders ub and cdtweaks #2370; the
+    side the plan puts first, chosen to go last, moves after the other."""
+    rules = overlap_rules(tmp_path)
+    _outcome, findings = report(tmp_path, rules=rules)
+    text = planned(tmp_path)
+    ub_first = line_of(text, "ub", 0) < line_of(text, "cdtweaks", 2370)
+    first = "ub" if ub_first else "cdtweaks"
+    finding = next(f for f in findings if f["kind"] == INCOMPATIBLE
+                   and {f["left"]["mod"], f["right"]["mod"]} == {"ub", "cdtweaks"})
+    outcome, _after = report(tmp_path, rules=rules, decisions=write(tmp_path, [
+        {"finding": finding["id"], "choose": keep(finding, first)["id"]}]))
+    text = planned(tmp_path)
+    assert (line_of(text, "ub", 0) < line_of(text, "cdtweaks", 2370)) is not ub_first
+    assert [a.finding_id for a in outcome.order_plan.resolution.accepted] == [finding["id"]]
+    assert outcome.order_plan.verified
+
+
+def test_a_kept_order_the_plan_broke_is_left_to_the_player():
+    """Review of #72 (H1): when the decided rule is in the plan's residual
+    (a cycle broke it), the finding is not recorded as accepted."""
+    from iemod_fetch.conflicts import ConflictReport
+    from iemod_fetch.ordering import OrderPlan
+    from iemod_fetch.resolution import apply_decisions
+    from iemod_fetch.rules import DECIDED_ORDER, ModSpec, Rule, Violation
+    finding = Finding(kind=INCOMPATIBLE, severity="warning", log="WeiDU.log",
+                      left=Side("a", "a", ((1, ""),)), right=Side("b", "b", ((2, ""),)))
+    option = next(o for o in finding.options if o.action == KEEP_BOTH and o.mod == "b")
+    rule = Rule(kind="order", left=ModSpec("b", "b"), right=(ModSpec("a", "a"),),
+                direction="after", origin=DECIDED_ORDER)
+    plan = OrderPlan(residual=[Violation("order", "warning", "b must go after a",
+                                         mods=("b", "a"), rule=rule)])
+    result = apply_decisions(plan, ConflictReport(findings=[finding]),
+                             Decisions({finding.id: option.id(finding.id)}, {}))
+    assert not result.accepted
+    assert [u.finding_id for u in result.left_for_operator] == [finding.id]
+
+
+def test_keep_both_is_never_offered_within_one_mod_or_over_an_error_pair():
+    """Review of #72 (H3, M1)."""
+    from iemod_fetch.conflicts import _block_keep_both
+    from iemod_fetch.rules import RuleSet
+    same = Finding(kind=INCOMPATIBLE, severity="warning", log="WeiDU.log",
+                   left=Side("a", "a", ((1, ""),)), right=Side("a", "a", ((2, ""),)))
+    assert not [o for o in same.options if o.action == KEEP_BOTH]
+    soft = Finding(kind=INCOMPATIBLE, severity="warning", log="WeiDU.log",
+                   left=Side("a", "a", ((1, ""),)), right=Side("b", "b", ((2, ""),)))
+    hard = Finding(kind=INCOMPATIBLE, severity="error", log="WeiDU.log",
+                   left=Side("b", "b", ((2, ""),)), right=Side("a", "a", ((1, ""),)))
+    _block_keep_both([soft, hard], RuleSet())
+    assert not [o for o in soft.options if o.action == KEEP_BOTH]
+
+
+def test_a_decided_order_survives_a_mods_own_ini():
+    """Review of #72 (H2): the community's order rules give way to a mod's
+    own ini; the player's "keep both" order does not."""
+    from iemod_fetch.rules import DECIDED_ORDER, Context, ModSpec, Rule, RuleSet, _applicable
+    rule = Rule(kind="order", left=ModSpec("a", "a"), right=(ModSpec("b", "b"),),
+                direction="after", origin=DECIDED_ORDER)
+    assert _applicable(RuleSet(rules=[rule]), Context(mods_with_own_ini={"a"})) == [rule]
 
 
 def test_a_keep_both_decision_whose_finding_is_gone_makes_no_rule():

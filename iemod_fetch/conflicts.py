@@ -91,6 +91,10 @@ class Finding:
     # The log's own file name, when `log` is the plan's role for it: the id
     # keeps the role (what --decisions matches), the reader sees the file.
     shown_log: str = ""
+    # Sides that may not be installed last when both are kept (item 28): an
+    # error order rule puts them first, or an error incompatibility covers
+    # the same pair, so "keep both" that way is not offered.
+    last_blocked: tuple[str, ...] = ()
 
     @property
     def rank(self) -> int:
@@ -230,7 +234,47 @@ def _keep_both(finding: Finding) -> list[Option]:
     return [Option(KEEP_BOTH, last.mod, last.key, last.numbers, last.whole_mod, 0, True,
                    False, f"keep both, {last.mod} installed last (its changes win)",
                    before=first.key)
-            for first, last in ((left, right), (right, left))]
+            for first, last in ((left, right), (right, left))
+            if last.key not in finding.last_blocked]
+
+
+def _overlap(side: Side, components) -> bool:
+    """Whether a rule naming `components` (None: any) covers this side."""
+    return components is None or side.whole_mod or bool(set(side.numbers) & set(components))
+
+
+def _block_keep_both(findings: list[Finding], ruleset: RuleSet) -> None:
+    """
+    What "keep both" may not offer (review of #72). A tp2's one-sided
+    FORBID_COMPONENT makes an error order rule and a warning incompatibility:
+    keeping both with the forbidding side last is what WeiDU refuses. And a
+    pair an error incompatibility also covers - BWS-NG hard, krion64 soft -
+    is not an overwrite to order at all.
+    """
+    errors = [f for f in findings if f.kind == INCOMPATIBLE and f.severity == "error"
+              and f.right is not None]
+    orders = [r for r in ruleset.rules if r.kind == ORDER and r.severity == "error"
+              and r.direction in ("before", "after")]
+    for finding in findings:
+        left, right = finding.left, finding.right
+        if finding.kind != INCOMPATIBLE or finding.severity == "error" or right is None:
+            continue
+        sides = {left.key: left, right.key: right}
+        blocked = set()
+        for error in errors:
+            pair = (error.left, error.right) if error.right is not None else ()
+            if ({side.key for side in pair} == set(sides) and error.log == finding.log
+                    and all(set(sides[s.key].numbers) & set(s.numbers) or s.whole_mod
+                            or sides[s.key].whole_mod for s in pair)):
+                blocked |= set(sides)
+        for rule in orders:
+            for spec in rule.right:
+                first, last = (rule.left, spec) if rule.direction == "before" else (spec, rule.left)
+                if ({first.mod, last.mod} == set(sides) and first.mod != last.mod
+                        and _overlap(sides[first.mod], first.components)
+                        and _overlap(sides[last.mod], last.components)):
+                    blocked.add(first.mod)
+        finding.last_blocked = tuple(sorted(blocked))
 
 
 @dataclass
@@ -411,6 +455,7 @@ def build_conflict_report(installs: Sequence[Install], ruleset: RuleSet,
             first=(right.key if right is not None and rule.direction != "before"
                    else left.key) if rule.kind == ORDER else ""))
 
+    _block_keep_both(report.findings, ruleset)
     report.findings.extend(_known_issues(installs, ruleset))
     report.findings.extend(_subcomponent_clashes(installs))
     report.findings.sort(key=lambda f: (f.rank, f.kind, f.left.mod))

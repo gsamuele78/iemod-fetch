@@ -1558,9 +1558,22 @@ the option's own words as the reason, and is no longer outstanding. The
 wizard does the same: `selection_plan` and `selection_conflicts` read the
 project's `decisions.json`.
 
+Not offered both ways where a rule already says which way (review of #72):
+a tp2's one-sided FORBID_COMPONENT makes an error order rule and a warning
+incompatibility, so only the forbidden side may go last; and a pair an error
+incompatibility also covers (BWS-NG hard where krion64 is soft) is not an
+overwrite to order, so it offers none. A decision for a way round that is
+not offered goes back to the player with the reason.
+
 Consequences: a "keep both" that contradicts another rule is not hidden -
 the plan reports the contradiction (a cycle, or a rule it could not keep),
-as any two rules that disagree. The rule is re-made every run from the
+and a kept order the plan could not keep is left to the player, never
+recorded as accepted. The decided rules are the player's, like the Sorting
+Order: a mod's own ini does not set them aside. Not every incompatibility
+below error is an overwrite (stacked experience, a script bug); "its changes
+win" is then only the order, which is the player's to judge - and two
+decisions are not checked against each other. A command-line run applies
+them with `--decisions`; the project's ini does not name the file. The rule is re-made every run from the
 current findings; a decision whose finding is gone makes no rule and is
 reported stale, as before. What "its changes win" means is WeiDU's own
 semantics - the later install's copy of a shared file stays - not a merge;
