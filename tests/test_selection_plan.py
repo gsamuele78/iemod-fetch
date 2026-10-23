@@ -238,3 +238,37 @@ def test_a_path_the_player_wrote_is_put_back_and_never_reset(tmp_path, monkeypat
     with pytest.raises(OSError):
         api.save_install_order(str(tmp_path), [p["units"] for p in plan(tmp_path)["phases"]])
     assert "sorting_order = my-order.txt" in (tmp_path / api.PROJECT_FILE).read_text()
+
+
+# ---------------------------------------------- the place by kind (item 27)
+def test_what_krion64_does_not_place_takes_the_place_its_kind_decides(tmp_path):
+    """ub and ascension are not in the test catalogue: lcc-docs, in the data
+    cache, says ub is a BG1 quest and ascension gameplay."""
+    import shutil
+    krion = tmp_path / "krion"
+    shutil.copytree(KRION, krion)
+    categories = json.loads((krion / "categories.json").read_text(encoding="utf-8"))
+    names_ = list(categories["categories"])
+    names_.insert(names_.index("ENGINE") + 1, "QUEST MODS BG1")
+    categories["categories"] = {name: categories["categories"].get(name, {})
+                                for name in names_}
+    (krion / "categories.json").write_text(json.dumps(categories), encoding="utf-8")
+    lcc = tmp_path / "no-cache" / "lcc-docs" / "db"
+    lcc.mkdir(parents=True)
+    (lcc / "mods.json").write_text(json.dumps([
+        {"tp2": "ub", "name": "Unfinished Business", "categories": ["Quête"],
+         "games": ["BGEE"], "urls": []},
+        {"tp2": "ascension", "name": "Ascension", "categories": ["Gameplay"],
+         "games": ["BG2EE"], "urls": []}]), encoding="utf-8")
+
+    result = plan(tmp_path, order_catalogue=str(krion))
+
+    eet = {u["name"].lower(): u for u in
+           next(p for p in result["phases"] if p["title"] == "EET")["units"]}
+    assert eet["ub"]["category"] == "QUEST MODS BG1"
+    assert eet["ub"]["placed_by"] == "placed by kind: quest, 73% (lcc-docs)"
+    assert eet["ascension"]["placed_by"] == ""
+    assert eet["ascension"]["no_place"] == "no place: its kind does not decide one (gameplay)"
+    order = names(result, "EET")
+    first_tweak = next(n for n, name in enumerate(order) if name.startswith("cdtweaks"))
+    assert order.index("ub") < first_tweak          # QUEST MODS BG1 before PRE-TACTICAL

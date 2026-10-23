@@ -47,6 +47,24 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **A mod krion64 does not place takes the place its kind decides**
+  (GUI-AUDIT M5 item 27, ADR-0041 decision 2). Interface, cosmetic, kit,
+  recruitable and one-day NPC, smith and merchant mods go after krion64's own
+  mods in the category their kind maps to (84-100% of the mods krion64 places
+  agree), and a quest after BG1's or BG2's quests by the games it lists
+  (73%); every kind the sources give must decide, and decide the same place.
+  Gameplay, tactics, patches, utilities, conversions and spell-and-item mods
+  decide nothing: such a mod stays where it was chosen, and the plan says why.
+  A placement is a preference, as krion64's is - the player's Sorting Order,
+  the authors' inis and BWS-NG's rules still decide over it - and only after
+  the EET core. The plan summary lists what its kind placed and why the rest
+  has no place; the wizard's order page marks "(by kind)" with the source,
+  and `api.selection_plan` gives `placed_by` and `no_place`. Measured on the
+  2026-10-23 data: of 1,071 mods with a kind that krion64 does not place, 445
+  are placed (139 kits, 121 NPCs, 72 quests, 48 smiths, 38 cosmetic, 27
+  interface), 626 are not; on the 397 krion64 places whose kind decides, the
+  kind says krion64's category for 351 (88%). The supplied 146-mod log is the
+  Forge's own: krion64 places all but a portrait pack no source classifies.
 - **Choosing mods by kind** (GUI-AUDIT M5 item 26, ADR-0041 decision 4).
   lcc-docs' categories and BWS-NG's are one taxonomy spelled two ways
   (`Quête`, `quest`); `iemod_fetch/kinds.py` maps both onto one vocabulary.

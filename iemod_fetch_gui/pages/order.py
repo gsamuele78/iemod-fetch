@@ -5,7 +5,9 @@ The chosen components as the run will install them: planned by the same
 planner as --plan-order (krion64's categories, then every order rule, the
 authors' own inis included), one tab per install - for EET, BG:EE before the
 conversion and EET itself. A mod a rule places is marked; one an order rule
-still finds wrong is marked in red, with the rule.
+still finds wrong is marked in red, with the rule. A mod krion64 does not
+place takes the place its kind decides, marked "by kind" with its source, or
+says why it has none (item 27, ADR-0041).
 
 Dragging a mod writes the whole order shown as `install-order.txt` in the
 project - a Project Infinity Sorting Order file, which the command line reads
@@ -148,6 +150,7 @@ class OrderPage(QWidget):
         units = [u for p in result["phases"] for u in p["units"]]
         parts = [f"{len(units)} mod(s) in order",
                  f"{sum(u['constrained'] for u in units)} placed by a rule",
+                 f"{sum(bool(u.get('placed_by')) for u in units)} placed by kind",
                  f"{sum(u['moved'] for u in units)} moved from where they were chosen"]
         if result.get("custom"):
             parts.append("your own order applies")
@@ -166,6 +169,8 @@ class OrderPage(QWidget):
         widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         for unit in phase["units"]:
             text = unit["name"] + (f"  -  {unit['category']}" if unit["category"] else "")
+            if unit.get("placed_by"):
+                text += "  (by kind)"
             item = QListWidgetItem(text)
             item.setData(ROLE, unit)
             components = ", ".join(f"#{c[1]}" for c in unit["components"][:12])
@@ -175,6 +180,11 @@ class OrderPage(QWidget):
                 font.setBold(True)
                 item.setFont(font)
                 tips.append("A rule places it relative to another mod.")
+            if unit.get("placed_by"):
+                tips.append("krion64 does not place it: " + unit["placed_by"] + ".")
+            elif unit.get("no_place"):
+                tips.append("krion64 does not place it, and it stays where it was "
+                            "chosen - " + unit["no_place"] + ".")
             if unit["moved"]:
                 tips.append("Moved from where it was chosen, by the rules.")
             if unit["flagged"]:

@@ -88,6 +88,24 @@ def test_a_rule_placed_mod_is_bold(qtbot, tmp_path):
     assert view.item(3).font().bold() and not view.item(1).font().bold()
 
 
+def test_a_mod_its_kind_placed_says_so_and_one_it_could_not_says_why(qtbot, tmp_path):
+    """Item 27: krion64 does not place newui or tweak; newui's kind decides."""
+    def planner(game, chosen, labels, folder):
+        units = [unit("eet"),
+                 dict(unit("newui"), category="INTERFACE",
+                      placed_by="placed by kind: interface, 92% / 100% (lcc-docs)"),
+                 dict(unit("tweak"), category="",
+                      no_place="no place: its kind does not decide one (gameplay)")]
+        return {"phases": [{"role": "EET", "title": "EET", "units": units}],
+                "cycles": [], "violations": [], "planned": True, "custom": False}
+    widget, _planner = page(qtbot, tmp_path, planner)
+    view = widget.tabs.widget(0)
+    assert view.item(1).text() == "newui  -  INTERFACE  (by kind)"
+    assert "placed by kind: interface, 92% / 100% (lcc-docs)" in view.item(1).toolTip()
+    assert "does not decide one (gameplay)" in view.item(2).toolTip()
+    assert "1 placed by kind" in widget.summary.text()
+
+
 def test_dragging_saves_the_order_the_cli_reads_and_plans_again(qtbot, tmp_path):
     widget, planner = page(qtbot, tmp_path)
     calls = planner.calls
