@@ -145,4 +145,4 @@ def test_a_cancelled_download_stops_and_leaves_no_file(server, tmp_path):
         _client().download(_url(server), str(tmp_path / "m.zip"), cancel=cancel)
     assert not (tmp_path / "m.zip").exists()
     assert not (tmp_path / "m.zip.part").exists()
-    assert len(server.hits) == 1                       # not retried
+    assert server.hits == []         # cancelled before it starts: not even sent (#61)

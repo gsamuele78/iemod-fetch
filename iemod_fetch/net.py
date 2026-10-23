@@ -7,9 +7,12 @@ Policy (ADR-0003):
     dropped on every cross-host redirect, including GitHub's own CDN;
   * responses are size-capped and streamed to a temporary file, then verified by
     content sniffing and (when known) sha256 before anything is extracted;
-  * retries honour Retry-After and never retry a deterministic 4xx.
+  * retries honour Retry-After (seconds or an HTTP date) and never retry a
+    deterministic 4xx - but for GitHub's secondary rate limit, a 403 or 429
+    that GitHub's docs say to wait out and retry (GUI-AUDIT item 45).
 """
 import contextlib
+import email.utils
 import errno
 import functools
 import hashlib
@@ -59,6 +62,7 @@ DEFAULT_TIMEOUT = 45
 _CHUNK = 64 * 1024
 _PROGRESS_STEP = 256 * 1024     # a progress bar needs a few updates, not thousands
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+_MAX_WAIT = 300.0               # seconds; a longer Retry-After is not waited out
 # Errors from the local filesystem, which no amount of retrying will fix.
 _LOCAL_ERRNOS = {errno.ENOSPC, errno.EACCES, errno.EPERM, errno.EROFS,
                  errno.ENAMETOOLONG, getattr(errno, "EDQUOT", errno.ENOSPC)}
@@ -178,6 +182,9 @@ class HttpClient:
         self.max_bytes = max_bytes
         self.retries = max(1, retries)
         self._sleep = sleep
+        # The run's cancel event (Runner sets it): a wait between retries ends
+        # when it is set, so Cancel never waits out a rate limit (review of #61).
+        self.cancel = None
         self._opener = urllib.request.build_opener(SafeRedirectHandler(allow_http))
 
     # -- policy ------------------------------------------------------------
@@ -212,22 +219,35 @@ class HttpClient:
         req = urllib.request.Request(url, headers=headers, method=method)
         return self._opener.open(req, timeout=self.timeout)
 
-    def _with_retries(self, url: str, action: Callable[[], _T]) -> _T:
+    def _with_retries(self, url: str, action: Callable[[], _T], cancel=None) -> _T:
+        stop = cancel if cancel is not None else self.cancel
         last: BaseException | None = None
         for attempt in range(1, self.retries + 1):
+            if stop is not None and stop.is_set():
+                raise Cancelled(f"{url}: cancelled")
             try:
                 return action()
             except urllib.error.HTTPError as exc:
                 last = exc
-                # The error owns the response socket. Only its status and
-                # headers are used, so release the connection now rather than
-                # whenever the exception is garbage-collected.
+                secondary = self._secondary_limit(url, exc)
+                # The error owns the response socket. Only its status, headers
+                # and the start of its body are used, so release the connection
+                # now rather than whenever the exception is garbage-collected.
                 _release(exc)
-                if exc.code not in _RETRYABLE_STATUS:
+                spent = self._rate_limit_reason(exc)
+                # A spent hourly quota resets up to an hour away, a 429 as much
+                # as a 403: GitHub's docs say wait for the reset, not retry
+                if (exc.code not in _RETRYABLE_STATUS and not secondary) or spent:
                     raise HttpStatusError(url, exc.code,
-                                          self._rate_limit_reason(exc)
-                                          or exc.reason or "") from exc
-                delay = self._retry_after(exc) or self._backoff(attempt)
+                                          spent or exc.reason or "") from exc
+                asked = self._retry_after(exc, cap=math.inf)
+                if secondary and asked is not None and asked > _MAX_WAIT:
+                    # retrying sooner than GitHub asks prolongs the limit
+                    raise HttpStatusError(url, exc.code,
+                                          f"GitHub's secondary rate limit: it asks to wait "
+                                          f"{asked:.0f} s; run again later") from exc
+                delay = self._retry_after(exc) or (
+                    self._secondary_backoff(attempt) if secondary else self._backoff(attempt))
             except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
                     http.client.HTTPException) as exc:
                 # IncompleteRead - a transfer cut short - is an HTTPException,
@@ -240,22 +260,66 @@ class HttpClient:
                 delay = self._backoff(attempt)
             if attempt == self.retries:
                 break
-            self._sleep(delay)
+            self._wait(url, delay, stop)
         raise NetworkError(f"{url}: giving up after {self.retries} attempts: {last}") from last
 
+    def _wait(self, url: str, delay: float, stop) -> None:
+        """Sleep `delay`, or less if the run is cancelled meanwhile."""
+        if stop is not None and self._sleep is time.sleep and hasattr(stop, "wait"):
+            if stop.wait(delay):
+                raise Cancelled(f"{url}: cancelled")
+            return
+        self._sleep(delay)
+        if stop is not None and stop.is_set():
+            raise Cancelled(f"{url}: cancelled")
+
     @staticmethod
-    def _retry_after(exc) -> float | None:
+    def _retry_after(exc, cap: float = 300.0) -> float | None:
         value = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
         if not value:
             return None
         try:
             seconds = float(value)
         except (TypeError, ValueError):
-            return None          # an HTTP-date, or junk: fall back to backoff
+            # RFC 9110 allows an HTTP date too: wait until then
+            try:
+                when = email.utils.parsedate_to_datetime(value)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                return None      # junk: fall back to backoff
+            if when.tzinfo is None:
+                return None
+            seconds = when.timestamp() - time.time()
         # Server input: NaN or a negative value would make time.sleep raise.
         if math.isnan(seconds):
             return None
-        return min(max(seconds, 0.0), 300.0)
+        return min(max(seconds, 0.0), cap)
+
+    @staticmethod
+    def _secondary_limit(url: str, exc) -> bool:
+        """
+        GitHub's secondary rate limit: a 403 or 429 from GitHub while the
+        hourly quota is not spent, with a Retry-After or GitHub's own words in
+        the body. GitHub's docs say to wait and retry it; a 403 that is a real
+        refusal has neither, and an exhausted quota (X-RateLimit-Remaining 0,
+        reset up to an hour away) still stops at once with its own message.
+        """
+        if exc.code not in (403, 429) or host_of(url) not in GITHUB_AUTH_HOSTS:
+            return False
+        headers = getattr(exc, "headers", None) or {}
+        if headers.get("X-RateLimit-Remaining") == "0":
+            return False
+        if headers.get("Retry-After"):
+            return True
+        body = b""
+        with contextlib.suppress(OSError, AttributeError, KeyError, ValueError,
+                                 http.client.HTTPException):
+            body = exc.read(4096) or b""
+        return b"secondary rate limit" in body.lower()
+
+    @staticmethod
+    def _secondary_backoff(attempt: int) -> float:
+        """GitHub: at least one minute, then longer each time."""
+        return float(min(60 * 2 ** (attempt - 1), _MAX_WAIT))
 
     @staticmethod
     def _rate_limit_reason(exc) -> str | None:
@@ -389,7 +453,7 @@ class HttpClient:
                 if os.path.exists(part):
                     os.remove(part)
 
-        return self._with_retries(url, action)
+        return self._with_retries(url, action, cancel)
 
 
 def sha256_file(path: str) -> str:
