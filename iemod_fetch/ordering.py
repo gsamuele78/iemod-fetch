@@ -62,6 +62,15 @@ def tp2_key(tp2_file: str) -> str:
     return normalize_key(stem)
 
 
+def name_key(name: str) -> str:
+    """
+    tp2_key for a name that may lack `.tp2`: a catalogue title or a folder.
+    tp2_key strips one extension, which for "www.urstuff2athkatla" would be
+    ".urstuff2athkatla"; the name is taken as a tp2 name first.
+    """
+    return tp2_key(name if name.lower().endswith(".tp2") else name + ".tp2")
+
+
 # --------------------------------------------------------------- the catalogue
 @dataclass(frozen=True)
 class Slot:
@@ -140,14 +149,14 @@ class OrderIndex:
         # sending the EET core to the end of the install.
         for slot, identities, _folders, _parts in loaded:
             for name in identities:
-                index.slots.setdefault(tp2_key(name), slot)
+                index.slots.setdefault(name_key(name), slot)
         for slot, _identities, folders, _parts in loaded:
             for name in folders:
-                index.slots.setdefault(tp2_key(name), slot)
+                index.slots.setdefault(name_key(name), slot)
         for _slot, identities, folders, parts in loaded:
             for name in list(identities) + list(folders):
                 for number, part in parts.items():
-                    index.component_slots.setdefault((tp2_key(name), number), part)
+                    index.component_slots.setdefault((name_key(name), number), part)
         return index
 
     def _slot_for(self, record, rank_of: Dict[str, int], file: str):
@@ -181,11 +190,13 @@ class OrderIndex:
                 parts[number] = Slot(category=moved_to, rank=rank_of[moved_to],
                                      ord=slot.ord, pre_eet=False)
             if isinstance(component.get("wp"), str):
-                identities.add(os.path.splitext(
-                    os.path.basename(component["wp"].replace("\\", "/")))[0])
+                # the file name whole: tp2_key strips `.tp2` once, so a stem with
+                # its own dots (www.urstuff2athkatla.tp2) keeps them
+                identities.add(os.path.basename(component["wp"].replace("\\", "/")))
             if isinstance(component.get("wf"), str):
                 folders.add(component["wf"])
-        return slot, identities, folders - identities, parts
+        stems = {os.path.splitext(name)[0] for name in identities}
+        return slot, identities, folders - identities - stems, parts
 
 
 # ------------------------------------------------------------------- the units

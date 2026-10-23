@@ -8,6 +8,16 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- `tools/order_sources_benchmark.py` (GUI-AUDIT M5 item 25, ADR-0041): what
+  krion64 (the Infinity Mod Forge), BWS-NG and lcc-docs say about a mod's kind
+  and install place, measured against each other and against a WeiDU.log.
+
+### Fixed
+- A tp2 whose name has dots of its own (`www.urstuff2athkatla.tp2`) was keyed
+  by its first word (`www`): krion64's place for it was never found, and a
+  Sorting Order line naming it ordered nothing.
+
 ### Changed
 - The release starts the macOS wizard bundle's workflow for its own tag, so
   the macOS zip arrives minutes after the release instead of at the next

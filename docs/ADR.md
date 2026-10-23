@@ -2145,3 +2145,104 @@ or PySide6. Three constraints shaped it.
 - `--check` is a supported flag of `iemod-fetch-gui`, tested in CI
   (`tests/gui/test_check.py`); the bundle helpers are tested without
   PyInstaller (`tests/test_gui_bundle.py`).
+
+## ADR-0041 — A mod's install place by its kind: measured, and only where the sources agree
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+GUI-AUDIT M5 asks for the kind of a mod (interface, graphics, quests, NPCs,
+kits, AI, portraits, after EET_end...) in the selection and in the order.
+`tools/order_sources_benchmark.py` measured every source on its real files
+on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
+
+- **krion64 is the Infinity Mod Forge** (its README), so the Forge and
+  Infinity Mod Runner add no source. Its 813 mod records (846 tp2 names) sit
+  in 26 install categories, in install order, with a position inside each; 240 components
+  are filed in a category of their own (`cat`, already used to split a mod).
+  Its free tags (npc 250, story 217, tweak 124, ...) are descriptive only.
+- **BWS-NG** classifies 426 mods (430 files; WeiDU and three helpers have
+  no tp2) in 15 categories (quest, gameplay, kit, npc, npcx, smith, spell,
+  portrait, ui, ...) - lcc-docs' taxonomy - and, more useful, keeps a
+  **complete install sequence per component** for EET's BG2 phase: 3,232
+  components of 364 mods. iemod-fetch has used only its 34-entry BG1 (SoD)
+  phase, for what goes before the EET core (M2).
+- **lcc-docs** classifies 1,290 mods for the EE games in 16 categories; 546 of
+  them krion64 does not place. **Project Infinity**'s metadata ini carries a
+  `Type`, which lcc-docs reads into its categories; PI adds nothing of its own.
+- Overlap by tp2: krion64 and BWS-NG 381 mods, krion64 and lcc-docs 744.
+  BWS-NG's sequence places only **26** mods krion64 does not (its files name
+  45, 19 of them outside the sequence); 7 of the 26 are portrait packs.
+- **The two orders disagree on 21% of pairs**: of the 3,082 components both
+  BWS-NG's sequence and krion64 place, 992,309 of 4,747,821 pairs go the other
+  way round - 21.5% leaving out the 129,148 pairs krion64 ties (it gives every
+  component of a mod one place, so order within a mod is not compared). Two
+  curated orders, both installed by many players.
+- **The supplied log (146 mods, 780 components) is the Forge's own output** (its header: "Infinity
+  Mod Forge v4.1.0"): krion64 disagrees with it on 47 of 298,378 pairs
+  (0.02%), BWS-NG on 7.6%. It is not an independent player's order, and M5's
+  criterion "inversions against the player's order" measured nothing.
+- How decisively a category maps onto krion64's install categories, over the
+  mods both classify (lcc-docs / BWS-NG):
+
+  | Kind | Share to the top krion64 category |
+  |---|---|
+  | interface / ui | 92% / 100% INTERFACE |
+  | cosmetic | 90% / 92% GRAPHICS |
+  | kit | 87% / 87% KIT & CLASS MODS |
+  | recruitable NPC, one-day NPC | 85-97% NEW NPC MODS |
+  | smith and merchant | 85% / 89% ITEM ADDITION MODS |
+  | quest | 56% / 59% QUEST MODS BG2 (the rest BG1, ToB) |
+  | portrait and sound | 58% / 64% PORTRAITS (the rest MUSIC & AUDIO) |
+  | spells and items | 52% / 48% ITEM ADDITION (the rest SPELL MODS) |
+  | NPC (other), NPC expansion | 66% / 55% NPC EXPANSIONS |
+  | gameplay | 34% / 30% POST-TACTICAL TWEAKS (24 / 11 PRE-TACTICAL) |
+  | conversion | 50% / 50% POST-TACTICAL QUESTS |
+  | tactics, patch, utility | under 50% |
+
+### Decision
+
+1. **Precedence unchanged**: the player's Sorting Order, then the authors'
+   inis, then BWS-NG's rules, then krion64's place. Nothing below overrides
+   them.
+2. **A mod krion64 does not place** takes, in this order:
+   - its place in **BWS-NG's sequence**, carried onto krion64's order: right
+     after the nearest component before it that krion64 also places
+     (26 mods today);
+   - else its **kind**, only where the mapping is decisive - interface,
+     cosmetic, kit, recruitable and one-day NPCs, smith - and quests split by
+     the games the source lists (a BG1-only quest to QUEST MODS BG1); the
+     share of the measured mapping is shown with it;
+   - else no place: it stays where the selection has it, and is marked "no
+     place: its kind does not decide one" (gameplay, tactics, patches,
+     utilities, conversions, mixed spell-and-item mods). Never a guess.
+   Each placed mod names its source in the order page, the plan summary and
+   the JSON plan.
+3. **The 21% disagreement is shown, not settled**: where the plan orders two
+   chosen components the other way round from BWS-NG's sequence, and no rule
+   decides, the order page marks the pair "BWS-NG installs these the other
+   way round" - information for the player, no reorder.
+4. **The selection** gets a kind filter: lcc-docs' and BWS-NG's categories,
+   with krion64's install category and tags beside them; a disagreement
+   between sources is shown.
+5. **M5's validation** is restated: the plan's places are compared with
+   BWS-NG's sequence (independent of krion64), not with a Forge-written log;
+   and a plan placed by kind installs with the real WeiDU in the mock EET job.
+
+### Consequences
+
+- Measuring found a bug: a tp2 name with dots of its own
+  (`www.urstuff2athkatla.tp2`) was keyed `www`, because the catalogue stripped
+  an extension from a name that had none left, so such a mod was never
+  placed. Names without `.tp2` (catalogue titles, folders, Sorting Order
+  lines) now go through `ordering.name_key`.
+- The mapping table is data in the repository, regenerated by the benchmark
+  and checked by a weekly workflow against the live sources: a source that
+  changes its categories or its shape fails that workflow, not a run.
+- BWS-NG's data is GPL-3.0 and is read at run time from the user's data cache,
+  as the rest of it already is (ADR-0036); nothing of it is bundled, and test
+  fixtures are written by hand to its schema.
+- Measured figures go stale; the workflow's summary keeps them current, and
+  this ADR records the day they were taken.

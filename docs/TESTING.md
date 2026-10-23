@@ -212,6 +212,19 @@ with krion64's order and the order rules (ADR-0037). On 103 real mods: 85 inis,
 contradicting krion64. Two of the 19 name a mod by its display name ("Coran in
 BG2"), which matches no tp2 and so orders nothing.
 
+### The kind of a mod and its place: every source against the others
+
+`tools/order_sources_benchmark.py KRION_DATA BWS_DATA LCC_MODS_JSON [--log
+WeiDU.log]` reads krion64's (the Infinity Mod Forge's), BWS-NG's and
+lcc-docs' real files (ADR-0041). On 2026-10-23: BWS-NG's per-component EET
+sequence (3,232 components) and krion64's order disagree on 21% of the pairs
+both place (21.5% without the pairs krion64 ties: order within a mod is not
+compared); the sequence places 26 mods krion64 does not; lcc-docs classifies 546 EE mods krion64 does not place; a
+category maps onto one krion64 install category for 85-100% of its mods only
+for interface, cosmetic, kit, NPC and smith mods. The supplied log is the
+Forge's own output (its header), so krion64 agrees with it on all but 0.02%
+of pairs: it cannot judge krion64.
+
 ### Engine limits, measured as WeiDU measures them
 
 `tests/test_real_weidu_limits.py` checks the game-folder measurement of
@@ -353,7 +366,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,255 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,261 collected (7 run the real WeiDU, 79 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 58 modules |

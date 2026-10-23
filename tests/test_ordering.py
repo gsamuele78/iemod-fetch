@@ -20,7 +20,7 @@ import pytest
 from iemod_fetch.errors import ConfigError
 from iemod_fetch.ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, OrderPlan,
                                   _minimum_moves, collect_units, plan_order,
-                                  render_plan_summary, tp2_key)
+                                  name_key, render_plan_summary, tp2_key)
 from iemod_fetch.rules import RuleSet
 
 HERE = os.path.dirname(__file__)
@@ -406,3 +406,20 @@ def test_cli_infers_the_roles_without_explicit_game_suffixes(tmp_path):
     assert code == 0
     assert r"~eet\EET.TP2~" in (out / "WeiDU.log").read_text(encoding="utf-8")
     assert "eet" not in (out / "WeiDU-BGEE.log").read_text(encoding="utf-8").lower().split("\n")[4]
+
+
+def test_a_tp2_name_with_dots_keeps_them(tmp_path):
+    # Review of #47: the extension was stripped twice, so krion64's
+    # www.urstuff2athkatla.tp2 was keyed "www" and a WeiDU.log naming it was
+    # never placed
+    import json
+    (tmp_path / "categories.json").write_text(json.dumps({"categories": {"QUESTS": {}}}))
+    (tmp_path / "mods").mkdir()
+    (tmp_path / "mods" / "www.json").write_text(json.dumps(
+        {"t": "www.urstuff2athkatla", "c": "QUESTS", "ord": 3,
+         "co": [{"cn": 0, "wf": "www.urstuff2athkatla",
+                 "wp": "www.urstuff2athkatla\\www.urstuff2athkatla.tp2"}]}))
+    index = OrderIndex.load(str(tmp_path))
+    key = tp2_key("www.urstuff2athkatla\\www.urstuff2athkatla.tp2")
+    assert index.get(key) is not None and index.get(key).ord == 3
+    assert index.get("www") is None and index.get(name_key("www.urstuff2athkatla")) is not None
