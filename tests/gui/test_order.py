@@ -726,6 +726,8 @@ def test_an_ignored_row_is_grey_kept_in_decisions_and_red_again_once_dragged(
     view.setCurrentRow(row)
     assert widget.ignore.text() == "Stop ignoring"
     assert "Ignored, while it stays where it is: tested, works for me" in widget.panel.text()
+    # eet, the rule's other row, is not ignored: the list below still says it plainly
+    assert "(ignored:" not in widget.problems.text()
 
     with qtbot.waitSignal(widget.planned, timeout=10000):     # dragged: shown again
         view.model().moveRow(QModelIndex(), row, QModelIndex(), 0)
@@ -756,3 +758,15 @@ def test_ignoring_without_a_reason_saves_nothing(qtbot, tmp_path, monkeypatch):
     widget.tabs.widget(1).setCurrentRow(at(widget, "stratagems #5900"))
     widget.ignore.click()
     assert not (tmp_path / "project" / api.DECISIONS_FILE).exists()
+
+
+def test_a_rule_every_row_ignores_says_so_below_the_list(qtbot, tmp_path, monkeypatch):
+    widget = broken_page(qtbot, tmp_path / "project")
+    monkeypatch.setattr("iemod_fetch_gui.pages.order.QInputDialog.getText",
+                        lambda *_args: ("tested", True))
+    for name in ("stratagems #5900", "eet"):                 # both rows the rule names
+        widget.tabs.widget(1).setCurrentRow(at(widget, name))
+        with qtbot.waitSignal(widget.planned, timeout=10000):
+            widget.ignore.click()
+    assert widget.problems.text().splitlines()[0] == (
+        "[WeiDU.log] stratagems should be installed before eet (ignored: tested)")

@@ -351,7 +351,15 @@ class OrderPage(QWidget):
                 parts.insert(2, f"{by_bws} placed by BWS-NG's sequence")
         self.summary.setText("; ".join(parts) + ".")
         self.reset.setEnabled(bool(result.get("custom")))
-        lines = list(result.get("violations") or [])
+        # a rule every row it names ignores says so, as those rows do (item 33)
+        whys: dict[str, list[str]] = {}
+        for unit in units:
+            for broken in unit.get("broken") or ():
+                whys.setdefault(broken, []).append(
+                    unit["ignored"]["why"] if unit.get("ignored") else "")
+        lines = [f"{line} (ignored: {whys[line][0]})"
+                 if whys.get(line) and all(whys[line]) else line
+                 for line in result.get("violations") or []]
         lines += ["These rules contradict each other, one was set aside: "
                   + " -> ".join(cycle) for cycle in result.get("cycles") or []]
         self.problems.setText("\n".join(lines))
