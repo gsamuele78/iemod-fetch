@@ -43,6 +43,9 @@ review fixes are in and nothing merged later is. Then, in order:
    job; macOS runs in `macos.yml` and is informational, not part of the gate;
 2. builds that commit: sdist, wheel and `.pyz`, after checking that its
    `__version__` matches the tag; records `SHA256SUMS`; writes a CycloneDX SBOM;
+   and builds the wizard without Python (ADR-0040): a PyInstaller folder on
+   Linux and Windows (macOS informational), started once with `--check`,
+   zipped as `iemod-fetch-gui-<os>-<arch>.zip` and added to `SHA256SUMS`;
 3. attests build provenance through Sigstore keyless signing;
 4. **creates the tag `vX.Y.Z` and publishes the GitHub release**. The notes are
    that changelog section plus the verification commands;
@@ -143,6 +146,11 @@ gh attestation verify iemod-fetch.pyz --repo gsamuele78/iemod-fetch
 # And the build is reproducible, so it can be checked from scratch.
 git checkout v2.1.0 && python3 build.py && cmp iemod-fetch.pyz <downloaded>
 ```
+
+The wizard zips are checked the same way by digest and attestation
+(`gh attestation verify iemod-fetch-gui-linux-x86_64.zip --repo ...`). They are
+not reproducible from scratch: a PyInstaller build embeds compiled bytecode and
+the runner's Qt wheel, so only the zip's layout and timestamps are fixed.
 
 That last one is why CI builds twice and compares. Reproducibility is what turns
 a signature from "someone signed something" into "this artifact is that source".

@@ -2050,3 +2050,66 @@ command line either.
   with a manifest entry.
 - `--list-mods` now lists EET, EET_end and EET_gui separately. Before, they
   appeared as one key that no tp2 had.
+
+## ADR-0040 — The wizard ships as a PyInstaller folder per OS, zipped, attested, with Qt's LGPL notice
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+GUI-AUDIT item 20: a player should run the wizard without installing Python
+or PySide6. Three constraints shaped it.
+
+1. **Qt and PySide6 are LGPL-3.0-only.** Distributing them is allowed when
+   they stay dynamically linked, the user can replace them with their own
+   build (LGPL-3.0 section 4), the licence text travels with them, and their
+   source is offered.
+2. **The command line stays standard-library only** (ADR-0001, the `.pyz`).
+   The wizard bundle must not change what the `.pyz` holds or needs.
+3. **Runners.** GitHub's macOS runners started no job from 2026-10-21 to
+   2026-10-23; the owner made macOS informational in CI. A release must not
+   wait on them.
+
+### Decision
+
+- `packaging/gui_bundle.py` builds with PyInstaller **one folder**
+  (`--onedir --windowed`), never one file: Qt's libraries stay separate files
+  under `_internal/PySide6`, which a user can replace. A one-file build
+  unpacks to a temporary folder on every start, which makes replacing them
+  impractical.
+- The folder carries `LICENSE` (MIT), `licenses/LGPL-3.0-only.txt` and
+  `licenses/GPL-3.0-only.txt` (the SPDX texts), and `NOTICE-Qt.txt`, written
+  at build time with the Qt, PySide6, PyInstaller and Python versions really
+  bundled and where their source is.
+- Before zipping, the built program is started once with `--check`,
+  offscreen: it opens the main window, quits through the normal shutdown
+  path and prints `ok`. A build that cannot start fails the release, not a
+  player's machine.
+- The zip, `iemod-fetch-gui-<os>-<arch>.zip`, is deterministic (sorted
+  entries, fixed timestamps): the same folder gives the same bytes.
+- The release workflow builds it in a `gui` job, PyInstaller pinned, on
+  **ubuntu-latest and windows-latest**, which a release needs, and on
+  **macos-latest as informational** (`continue-on-error`): a macOS bundle is
+  attached when its runner built it, and its absence never stops a release. The zips are attested with the other
+  assets (build provenance), listed in `SHA256SUMS` and attached to the
+  GitHub release. They are not uploaded to PyPI.
+- On macOS the build is a `.app`; its Qt frameworks hold symbolic links
+  (`Versions/Current`), which the zip keeps as links, not copies. The M3
+  criterion "the PyInstaller build starts on all three OSes" is met where
+  the runners run; a release with no macOS bundle says so by its absence,
+  and macOS players can always `pip install "iemod-fetch[gui]"`.
+
+### Consequences
+
+- The Linux zip measured 89 MB; Qt modules the wizard does not use are
+  excluded to keep it there.
+- The bundles are not code-signed or notarized: Windows SmartScreen warns,
+  and macOS Gatekeeper refuses the app until the player allows it
+  (right-click, Open). Signing needs certificates the project does not have.
+- The Linux bundle needs the system's X11/Wayland and font libraries that
+  any desktop has; it is built on the runner's Ubuntu, so a much older
+  distribution may lack a newer glibc.
+- `--check` is a supported flag of `iemod-fetch-gui`, tested in CI
+  (`tests/gui/test_check.py`); the bundle helpers are tested without
+  PyInstaller (`tests/test_gui_bundle.py`).

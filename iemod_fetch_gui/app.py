@@ -16,6 +16,9 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
                         help="project folder (default: the current folder)")
     parser.add_argument("--version", action="version",
                         version=f"iemod-fetch-gui {api.__version__}")
+    parser.add_argument("--check", action="store_true",
+                        help="open the window and close it at once: proves a build "
+                             "starts, Qt included (exit 0, prints 'ok')")
     return parser.parse_args(argv)
 
 
@@ -31,4 +34,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     app.aboutToQuit.connect(window.download.stop)
     app.aboutToQuit.connect(wait_for_loaders)
     window.show()
+    if args.check:
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, app.quit)
+        code = int(app.exec())
+        sys.stdout.write("ok\n" if code == 0 else f"exit {code}\n")
+        return code
     return int(app.exec())

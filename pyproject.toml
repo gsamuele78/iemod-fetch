@@ -77,7 +77,8 @@ packages = ["iemod_fetch", "iemod_fetch_gui"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/iemod_fetch", "/iemod_fetch_gui", "/tests", "/docs", "/tools", "/legacy",
-           "/build.py", "/aliases.json", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+           "/build.py", "/packaging", "/aliases.json", "/README.md", "/LICENSE",
+           "/CHANGELOG.md"]
 
 
 # ------------------------------------------------------------------ pytest

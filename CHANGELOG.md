@@ -20,6 +20,14 @@ Python API, which is internal.
   game's WeiDU.log) is refused, replacing a choice asks first, and a preset
   never replaces the project's own files. `api.import_selection`,
   `api.export_selection`.
+- **The wizard without Python** (GUI-AUDIT item 20, ADR-0040): the release
+  workflow builds it with PyInstaller as one folder per OS - Linux and
+  Windows, macOS informational - starts it once offscreen
+  (`iemod-fetch-gui --check`), zips it deterministically as
+  `iemod-fetch-gui-<os>-<arch>.zip`, attests it and lists it in SHA256SUMS.
+  The folder carries the LGPL-3.0 and GPL-3.0 texts and `NOTICE-Qt.txt`
+  (the Qt and PySide6 versions bundled and where their source is);
+  `packaging/gui_bundle.py` builds it locally too.
 - **The wizard's download and extraction** (phase 4, ADR-0039): a row per mod
   (downloading with bytes, extracting, done, already there, failed, no
   download found, cancelled), *Download*, *Cancel*, *Retry the failed*;
