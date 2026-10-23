@@ -15,6 +15,7 @@ consecutive groups of what the selection holds, origin "SortingOrder", so the
 planner treats them as it treats any rule: they move what they name, and a
 contradiction with another rule is reported, not silently won.
 """
+import itertools
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -87,7 +88,7 @@ def rules(entries: List[Entry], chosen: Dict[str, Set[int]]) -> List[Rule]:
             groups.append((entry, frozenset(wanted)))
             placed.setdefault(entry.key, set()).update(wanted)
     out = []
-    for (first, a), (second, b) in zip(groups, groups[1:]):
+    for (first, a), (second, b) in itertools.pairwise(groups):
         out.append(Rule(
             ORDER, ModSpec(first.key, first.name, a), (ModSpec(second.key, second.name, b),),
             severity="warning", direction="before", origin=ORIGIN,

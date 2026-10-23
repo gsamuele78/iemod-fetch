@@ -182,7 +182,7 @@ class TestShellScriptRuns:
         assert proc.returncode == 0, proc.stdout.decode()
         args = (tmp_path / "args.txt").read_text().splitlines()
         assert args[0] == "eet"
-        pairs = dict(zip(args[1::2], args[2::2]))
+        pairs = dict(zip(args[1::2], args[2::2], strict=False))
         assert pairs["--bg1-game-directory"] == str(tmp_path / "BGEE")
         assert pairs["--bg2-game-directory"] == str(tmp_path / "BG2 EE")
         assert pairs["--bg1-log-file"] == str(plan_dir / "WeiDU-BGEE.log")

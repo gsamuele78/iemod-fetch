@@ -137,7 +137,7 @@ def bws_report(bws, releases_path, probe_tags):
     with open(releases_path, encoding="utf-8") as fh:
         releases = {k.lower(): v for k, v in json.load(fh).items() if isinstance(v, dict)}
     tally, pinned = collections.Counter(), []
-    for record, first in zip(bws.values(), pinned_files):
+    for record, first in zip(bws.values(), pinned_files, strict=False):
         url = first.get("download") if isinstance(first.get("download"), str) else ""
         match = RELEASE_ASSET.match(url)
         links = record.get("links") if isinstance(record.get("links"), dict) else {}

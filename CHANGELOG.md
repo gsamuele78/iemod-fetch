@@ -8,6 +8,19 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Changed (breaking: 4.0.0)
+- **One Python version: 3.14** (ADR-0043, GUI-AUDIT M6 item 36). `requires-python
+  = ">=3.14"`; an older Python stops with one sentence saying so, instead of a
+  syntax error. `.python-version` names it and every workflow reads it (20
+  literal `"3.12"`s and two test matrices gone); CI tests that one version on
+  Linux and Windows (macOS informational). ruff's target, mypy's
+  `python_version` and the classifiers follow it; the wizard extra needs
+  PySide6 6.11 or newer. A release tag older than `.python-version` (3.0.0) is
+  rebuilt on the 3.12 it was built with.
+- The weekly upstream check also watches Python (item 37): an issue when a
+  newer stable Python is available, or when a place names another version than
+  `.python-version`; a test holds them together.
+
 ### Documentation
 - **The plan after three audits** (GUI-AUDIT M5b-M8): editing the order by
   component with fixes after a manual move (measured against BWS-NG, Infinity

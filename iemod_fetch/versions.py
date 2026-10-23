@@ -49,7 +49,7 @@ def compare(left: Optional[str], right: Optional[str]) -> Optional[int]:
     a, b = parse_version(left), parse_version(right)
     if not a or not b:
         return None
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):          # the shorter decides
         if x == y:
             continue
         if isinstance(x, int) and isinstance(y, int):

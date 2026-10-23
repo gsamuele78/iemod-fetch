@@ -15,12 +15,23 @@ Upstream, read through the GitHub API:
   and release candidates are left out.
 * mod_installer: `version` in Cargo.toml on dark0dave/mod_installer's default
   branch. Its git tags stop at v12.1.1, so the version is the only signal.
+* Python (ADR-0043): the newest stable minor in actions/python-versions'
+  manifest - what setup-python can install - against .python-version; and
+  every place that names the version (requires-python, ruff, mypy, the
+  classifiers, `iemod_fetch.PYTHON`, a literal `python-version:` left in a
+  workflow) against .python-version. Dependabot never updates
+  `python-version` (dependabot-core's github_actions parser reads only
+  `uses:`), so this is where a new Python is noticed. It opens an issue,
+  never a pull request: the move is made once a full build passes on it.
 """
 import base64
+import glob
 import json
+import os
 import re
 import subprocess
 import sys
+import urllib.request
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -84,6 +95,70 @@ def verdicts(pins: Dict[str, str], latest: Dict[str, str]) -> List[Verdict]:
             and _key(latest[tool]) > _key(pins[tool])]
 
 
+# ------------------------------------------------------------------ Python
+MANIFEST = "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json"
+_STABLE = re.compile(r"^3\.(\d+)\.(\d+)$")
+
+
+def newest_python(manifest: list) -> Optional[str]:
+    """The newest minor (3.N) with a stable, final release in the manifest."""
+    minors = [int(m.group(1)) for m in
+              (_STABLE.match(str(entry.get("version", ""))) for entry in manifest
+               if entry.get("stable"))
+              if m]
+    return f"3.{max(minors)}" if minors else None
+
+
+def python_places(root: str = ".") -> Dict[str, str]:
+    """Every place that names the project's Python, and what it names
+    ("" where it names none it should, "several" where it names more than
+    one)."""
+    def read(path: str) -> str:
+        with open(os.path.join(root, path), encoding="utf-8") as fh:
+            return fh.read()
+    project = read("pyproject.toml")
+    found: Dict[str, str] = {".python-version": read(".python-version").strip()}
+
+    def one(name: str, pattern: str, text: str, form=lambda m: m.group(1)) -> None:
+        values = {form(m) for m in re.finditer(pattern, text, re.MULTILINE)}
+        found[name] = values.pop() if len(values) == 1 else ("several" if values else "")
+    one("requires-python", r'^requires-python\s*=\s*">=\s*(3\.\d+)"', project)
+    one("ruff target-version", r'^target-version\s*=\s*"py3(\d+)"', project,
+        lambda m: f"3.{m.group(1)}")
+    one("mypy python_version", r'^python_version\s*=\s*"(3\.\d+)"', project)
+    one("classifiers", r'"Programming Language :: Python :: (3\.\d+)"', project)
+    one("iemod_fetch.PYTHON", r"^PYTHON\s*=\s*\((3),\s*(\d+)\)",
+        read(os.path.join("iemod_fetch", "__init__.py")),
+        lambda m: f"{m.group(1)}.{m.group(2)}")
+    for path in sorted(glob.glob(os.path.join(root, ".github", "workflows", "*.yml"))):
+        for m in re.finditer(r'python-version:\s*["\']?([\w.${}\[\] ]+?)["\']?\s*$',
+                             read(os.path.relpath(path, root)), re.MULTILINE):
+            found[f"{os.path.basename(path)} python-version"] = m.group(1)
+    return found
+
+
+def python_disagreements(places: Dict[str, str]) -> List[str]:
+    wanted = places[".python-version"]
+    return [f"{place}: {value or 'none'} (.python-version says {wanted})"
+            for place, value in places.items() if value != wanted]
+
+
+def python_issue(pinned_python: str, newest: str) -> Optional[Tuple[str, str]]:
+    if newest and _key(newest) > _key(pinned_python):
+        body = (f"Upstream: https://www.python.org/downloads/ - "
+                f"{MANIFEST}\n\n"
+                "ADR-0043: the project moves when the whole toolchain supports it.\n\n"
+                f"1. Set `.python-version` to {newest}; requires-python, ruff's "
+                "target-version, mypy's python_version, the classifiers and "
+                "`iemod_fetch.PYTHON` with it (tests/test_upstream_versions.py holds "
+                "them together).\n"
+                "2. CI green on Linux and Windows, the wizard's bundle built and "
+                "started (`--check`), PySide6 and PyInstaller wheels for it.\n"
+                "3. Read the new version's What's New for changed defaults.\n")
+        return f"Python {newest} is available (pinned {pinned_python})", body
+    return None
+
+
 def _gh(*args: str) -> str:
     return subprocess.run(["gh", *args], capture_output=True, text=True,
                           check=True).stdout
@@ -100,6 +175,26 @@ def _upstream() -> Dict[str, str]:
             "mod_installer": version.group(1) if version else ""}
 
 
+def _python_check() -> List[Tuple[str, str]]:
+    """Issues to open about Python: disagreeing places, a newer Python."""
+    places = python_places()
+    issues = []
+    wrong = python_disagreements(places)
+    for line in wrong:
+        print(f"Python: {line}")
+    if wrong:
+        issues.append(("The project names more than one Python version",
+                       "ADR-0043: one version, `.python-version`'s.\n\n"
+                       + "\n".join(f"- {line}" for line in wrong) + "\n"))
+    with urllib.request.urlopen(MANIFEST, timeout=60) as response:   # noqa: S310
+        newest = newest_python(json.load(response))
+    print(f"Python: pinned {places['.python-version']}, newest stable {newest}")
+    issue = python_issue(places[".python-version"], newest or "")
+    if issue:
+        issues.append(issue)
+    return issues
+
+
 def main() -> int:
     with open(CI, encoding="utf-8") as fh:
         pins = pinned(fh.read())
@@ -114,7 +209,14 @@ def main() -> int:
         if open_ == "0":
             _gh("issue", "create", "--title", verdict.title, "--body", verdict.body)
             print(f"opened: {verdict.title}")
-    return 1 if behind else 0            # a red run means something to bump
+    python = _python_check()
+    for title, body in python:
+        open_ = _gh("issue", "list", "--state", "open", "--search",
+                    f'in:title "{title}"', "--json", "number", "--jq", "length").strip()
+        if open_ == "0":
+            _gh("issue", "create", "--title", title, "--body", body)
+            print(f"opened: {title}")
+    return 1 if behind or python else 0  # a red run means something to bump
 
 
 if __name__ == "__main__":

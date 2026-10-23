@@ -1,6 +1,7 @@
 """Version comparison that admits when it cannot tell."""
-import pytest
+import itertools
 
+import pytest
 from iemod_fetch.versions import compare, is_newer, parse_version
 
 
@@ -49,7 +50,7 @@ def test_the_stated_stability_order():
     branch, and the tool records the branch name as the version.
     """
     ladder = ["master", "alpha", "beta", "rc", "1.0"]
-    for older, newer in zip(ladder, ladder[1:]):
+    for older, newer in itertools.pairwise(ladder):
         assert compare(newer, older) == 1, f"{newer} should outrank {older}"
 
 

@@ -828,7 +828,7 @@ def selection_conflicts(game: str, chosen: Sequence[Tuple[str, int]],
                 entry[name]["key"] = side.key
                 entry[name]["chosen"] = _covered(side.key, side.numbers, side.whole_mod,
                                                  chosen)
-        for described, option in zip(entry["options"], finding.options):
+        for described, option in zip(entry["options"], finding.options, strict=False):
             described["key"] = option.key
             described["chosen"] = _covered(option.key, option.components,
                                            option.whole_mod, chosen)
@@ -1631,7 +1631,7 @@ def _phase_games(settings, specs):
     (`-w WeiDU.log:BG2EE`), which then decides.
     """
     games = {}
-    for spec, (_path, role) in zip(settings.weidu_log, specs):
+    for spec, (_path, role) in zip(settings.weidu_log, specs, strict=False):
         _p, game = split_log_spec(spec)
         if role == PRE_EET_LOG and game and len(specs) == 1:
             games[role] = game
@@ -1681,7 +1681,7 @@ def _conflict_report(settings, analysis: "RuleAnalysis", plan):
     judged = _judged_installs(settings, analysis, plan is not None)
     report = build_conflict_report(judged, analysis.ruleset, analysis.context, plan)
     files = {install.label: original.label
-             for install, original in zip(judged, analysis.installs)}
+             for install, original in zip(judged, analysis.installs, strict=False)}
     for finding in report.findings:
         if files.get(finding.log, finding.log) != finding.log:
             finding.shown_log = files[finding.log]
@@ -1720,7 +1720,7 @@ def _judged_installs(settings, analysis: "RuleAnalysis", by_role: bool):
         return analysis.installs
     roles = [role for _path, role in _log_roles(settings.weidu_log)]
     return [replace(install, label=role)
-            for install, role in zip(analysis.installs, roles)]
+            for install, role in zip(analysis.installs, roles, strict=False)]
 
 
 def _metadata_cache(settings) -> premeta.MetadataCache:

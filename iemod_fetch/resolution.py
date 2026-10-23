@@ -98,7 +98,7 @@ class ResolutionResult:
             lines.append("  nothing removed")
         for item in self.removed:
             shown = ", ".join(f"#{n}" + (f" {label}" if label else "")
-                              for n, label in zip(item.components, item.labels))
+                              for n, label in zip(item.components, item.labels, strict=False))
             chosen = " (your decision)" if item.by == "decision" else ""
             lines.append(f"  removed  [{item.log}] {item.mod}: {shown}{chosen}")
             lines.append(f"           conflicts with {item.because}")
