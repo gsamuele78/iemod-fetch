@@ -2246,3 +2246,145 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
   fixtures are written by hand to its schema.
 - Measured figures go stale; the workflow's summary keeps them current, and
   this ADR records the day they were taken.
+
+## ADR-0042 — A game folder's backup before installing, and a restore that deletes nothing
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+GUI-AUDIT M4 item 21: before mods are installed, the game folder is backed up,
+and the backup can be restored. Until now the tool never wrote into a game
+folder: it plans, fetches into `Mods/` and writes installer scripts for
+mod_installer (ADR-0006, ADR-0022). A restore is the first operation that
+changes a game folder, so it is held to ADR-0007's rule: nothing is deleted.
+
+Infinity Mod Runner (MIT, a shipped Tauri installer) was read first. Its
+selective backup copies `override/`, the root's `.ids`/`.bcs` and `chitin.key`
+and the WeiDU logs; it records the top-level entries that existed, so a
+restore can remove the side folders a mod creates; its restore deletes what
+was added; its verification compares the file count and the total size, not
+the contents. The EE games' `lang/*/dialog*.tlk`, which WeiDU changes, are
+handled apart.
+
+### Decision
+
+- **What is copied** is what WeiDU changes: `override/`, every
+  `lang/*/dialog*.tlk`, and every file at the folder's root (`chitin.key`, an
+  older game's `dialog.tlk`, `WeiDU.log`, `weidu.conf`, the executable). Each
+  copy's size and **sha256** are in the backup's manifest.
+- **Everything else is listed** - every file's path and size, every folder
+  (empty ones too) and every link - so a restore knows what an install ADDED
+  anywhere (a mod folder, a new BIFF in `data/`) and what it CHANGED that was
+  not copied.
+- **Links are never followed, and nothing leading elsewhere is entered**: a
+  symbolic link, a Windows junction or mount (a reparse point), a mount point
+  - also a bind mount of the same disk, read from Linux's mount table - or
+  another drive. Where a copied file or folder should be (`override/`, `lang/`,
+  a root file) one stops the backup: it would be silently incomplete. Others
+  are listed, left alone and reported; a restore that would have to move or
+  write through one - on, above or below a path to put back - stops before
+  changing anything (exit 1, also when only the plan is shown). Files mounted
+  over a file count too.
+- **Moves never use `shutil.move`**: across drives, or onto a mount, it copies
+  a folder and then deletes the source tree - which emptied a mounted folder
+  outside the game in the third review. A restore moves only files and links;
+  across drives a file is copied, its size checked, and only then removed, and
+  a copy whose source cannot be removed, or that fails part-way, is taken
+  back. A folder where the backup has a file is emptied by the moves above
+  it; its subfolders, empty by then, are moved aside as empty folders, and
+  it goes.
+- **Reparse points count as "elsewhere" only when they name another place**
+  (the name-surrogate tag: junctions, mounts, links); a OneDrive placeholder
+  or a deduplicated file holds its own content and is backed up.
+- **Folders are compared by identity, not spelling** (device and inode of each
+  parent): on macOS `~/games/bg2ee` is `~/Games/BG2EE`, and an alias or a
+  mount of the game folder - or of any folder in it - is that folder, so a
+  backup cannot be put inside it under another name.
+- **A name is what the disk says.** Files found on disk are moved by their own
+  path, whatever letters they hold (`\` and `:` are ordinary on Linux and
+  macOS: a mod unpacked from a Windows-made zip, a save named "Chapter 2:
+  ..."); only the manifest's names are checked, and on Windows those letters
+  are refused there. A backup is checked as readable, and as holding one file
+  per copy (a case-insensitive backups drive merges `X.ITM` and `x.itm`),
+  before it is renamed into place.
+- A backup is written as `<name>.partial` and renamed when complete: a backup
+  that exists is whole. It may not be inside the game folder.
+- **A restore deletes nothing.** It verifies the backup first (every sha256,
+  and the manifest's shape and paths: relative, no `..`, no drive, no
+  backslash - a damaged backup restores nothing), then MOVES what is in the
+  way - files and links added since, and the current version of each file it
+  puts back - into a `<backup>/displaced-<time>/` folder that restore made for
+  itself (never shared, nothing in it replaced), then copies the backup's
+  files back and checks each against its sha256. A folder is removed only
+  when the moves - this run's, or those of a run cut short, recorded one path
+  per line, before each move, in a journal of its own for each game folder
+  (`restore-in-progress-<hash of the folder's path>.jsonl` in the backup: by
+  path, since a drive plugged in again may change its device number), and
+  counted only if the file is in one of the backup's `displaced-` folders now
+  - left it empty and the backup did not have it: an empty folder made since,
+  or the target's own, stays.
+- **Names match exactly**: on a case-sensitive system a mod's `x.itm` beside a
+  backed-up `X.ITM` is moved aside. A listed, uncopied file whose name only
+  changed case counts as present, so it is never moved away for want of a copy.
+- **It writes only into a game folder** (one with `chitin.key`), and only into
+  the one backed up unless the caller names another (`--restore-to`).
+- **What cannot be restored is said**: a listed, not copied, file that is
+  missing or of another size is named, and the command line exits 1, both when
+  it shows the plan and when it restores.
+- **A restore cut short is finished by running it again**: the plan is made
+  from what is on disk, and the empty folders the cut run left are removed.
+- On the command line, `--restore-backup` shows the plan and changes nothing
+  without `--apply`. `--backup`, `--verify-backup` and `--restore-backup` run
+  one at a time (two together, or `--apply` without `--restore-backup`, is a
+  configuration error), before anything else, and never reach the network.
+  `--apply`, `--restore-to` or `--backup-to` without their action is a
+  configuration error (exit 2) before anything runs. A damaged or unreadable
+  backup - found before the plan is even shown - a full disk, a stop or
+  Ctrl-C exits 1 with a message.
+
+An independent review of #48 found, before merging, a restore losing a
+displaced file (two restores in one second shared a folder), a hand-edited
+manifest writing outside the game folder, a restore emptying a folder that was
+not a game, a case-only name never moved aside, and empty folders the backup
+had being removed. A second review found a restore that could never finish (a
+`\` in a mod's file name), a backup written inside its game under another
+spelling of the folder, a bind mount entered, empty folders made since being
+removed, and exit codes that disagreed with this record. Each has a test in
+`tests/test_backup.py`. Not testable here, and left as limits: a backup made
+on Linux holding `A.ITM` and `a.itm` restored onto a case-insensitive drive,
+and a name stored in one Unicode form returned in another by macOS's HFS+.
+A third review found a mount on a path to put back emptied through
+`shutil.move`, a backups folder mounted from a game folder, file mounts, a
+non-UTF-8 mount table, and a journal trusted too far; each has a test or was
+re-run against real bind mounts. Left as a limit, failing loudly: a mount
+shadowed by a later mount over its parent can make a real folder look like a
+mount, and the backup is then refused. A fourth review found a folder with
+subfolders where the backup has a file never restored, a journal of one game
+folder used in another, a part copy left behind, and the overlap refused only
+by `--apply`; each has a test. Flagged, not testable here: on btrfs
+subvolumes mounted with `subvol=` the mount table's device may differ from
+`st_dev`, so a same-disk bind mount there may go unseen. A fifth review found
+one journal per backup overwritten when two folders were cut, a journal lost
+when a drive came back with another device number, and a listed file's case
+twin kept inside a folder that had to become a file again; none lost data,
+each kept a rerun from finishing, and each has a test. Accepted, and left as a
+limit: a journal follows the folder's path, so after a restore is cut and
+the game is reinstalled at the same path, the rerun may remove empty folders
+the reinstall made under paths the cut run had emptied - only empty folders,
+never a file. Journals whose folder moved stay in the backup, small and
+unread, for the player to prune with it.
+
+### Consequences
+
+- `displaced-*` folders grow inside the backup folder and are the player's to
+  prune, as `Mods/.backup/` is (ADR-0007).
+- A backup made after EET's conversion holds its large `override/`; the
+  guide recommends backing up the BG2:EE folder before the conversion.
+- A changed file outside the copied set (a mod writing into `data/` or
+  `movies/`) is detected by its size, not its content: a same-size change is
+  not seen. The copied set is where WeiDU writes; widening it is a measured
+  change, not a guess.
+- The wizard's Backup phase (item 21's page) uses `api.backup_game`,
+  `api.plan_restore` and `api.restore_backup`; that page is the next step.

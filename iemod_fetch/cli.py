@@ -180,6 +180,26 @@ def build_parser() -> argparse.ArgumentParser:
                           "the verified findings")
     out.add_argument("-q", "--quiet", action="store_true")
 
+    bak = parser.add_argument_group(
+        "game folder backup (ADR-0042; each of these runs alone, then stops)")
+    bak.add_argument("--backup", metavar="GAME_DIR",
+                     help="back the game folder up before installing: override/, the "
+                          "lang/*/dialog*.tlk and the files at its root are copied with "
+                          "their sha256, everything else is listed")
+    bak.add_argument("--backup-to", metavar="DIR",
+                     help="where --backup writes (default: GAME_DIR-iemod-backups beside "
+                          "the game folder)")
+    bak.add_argument("--verify-backup", metavar="BACKUP",
+                     help="check every copy in a backup against its sha256")
+    bak.add_argument("--restore-backup", metavar="BACKUP",
+                     help="show what restoring the backup would do; with --apply, do it. "
+                          "Nothing is deleted: what is in the way is moved into the "
+                          "backup's displaced-<time>/ folder")
+    bak.add_argument("--restore-to", metavar="GAME_DIR",
+                     help="the game folder to restore (default: the one backed up)")
+    bak.add_argument("--apply", action="store_true",
+                     help="with --restore-backup: restore, not only show the plan")
+
     beh = parser.add_argument_group("behaviour")
     beh.add_argument("--include-optional", action="store_true",
                      help="also report optional integrations a rule set knows "

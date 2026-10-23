@@ -68,7 +68,7 @@ release is in [`CHANGELOG.md`](CHANGELOG.md).
 
 - [From WeiDU logs to a running EET game](#from-weidu-logs-to-a-running-eet-game)
 - [Install](#install) · [The wizard (GUI)](#the-wizard-gui)
-- [Checking the install](#checking-the-install)
+- [Checking the install](#checking-the-install) · [Backing up the game folder](#backing-up-the-game-folder)
 - [Making it reproducible](#making-it-reproducible)
 - [Supplementary catalogues](#supplementary-catalogues)
 - [Community data, kept current](#community-data-kept-current)
@@ -265,6 +265,24 @@ ordering advice is a warning. Rules come from a mod's own Project Infinity
 `[Metadata]` ini and/or a community rule set in the
 [BigWorldSetup-Next-Generation](https://github.com/Selphira/BigWorldSetup-Next-Generation)
 shape.
+
+## Backing up the game folder
+
+```bash
+python3 -m iemod_fetch --backup ~/Games/BG2EE                 # into ~/Games/BG2EE-iemod-backups/
+python3 -m iemod_fetch --verify-backup ~/Games/BG2EE-iemod-backups/<name>
+python3 -m iemod_fetch --restore-backup ~/Games/BG2EE-iemod-backups/<name>          # shows the plan
+python3 -m iemod_fetch --restore-backup ~/Games/BG2EE-iemod-backups/<name> --apply  # does it
+```
+
+Before an install, copy what WeiDU changes (`override/`, `lang/*/dialog*.tlk`,
+the folder's root files) with their sha256, and list every other file. A
+restore **deletes nothing**: files added since, and the current version of
+each file put back, are moved into the backup's `displaced-<time>/`; what it
+cannot put back (a listed, not copied, file that changed) is named, and the
+exit code is 1. It writes only into a game folder, and only into the one
+backed up unless `--restore-to` names another. Offline; see [ADR-0042](docs/ADR.md). Back up BG2:EE *before*
+EET's conversion: the converted `override/` is large.
 
 ## Configuration
 
@@ -482,7 +500,7 @@ Windows, on Python 3.9 and 3.14. macOS runs the same suite in a separate,
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,261 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,301 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -681,7 +699,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,261, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,301, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean |

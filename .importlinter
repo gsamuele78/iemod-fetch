@@ -49,6 +49,7 @@ source_modules =
     iemod_fetch.simulate
     iemod_fetch.constraints
     iemod_fetch.gamedir
+    iemod_fetch.backup
     iemod_fetch.installer
     iemod_fetch.plan
     iemod_fetch.report
@@ -149,7 +150,7 @@ layers =
     iemod_fetch.plan | iemod_fetch.report
     iemod_fetch.installer | iemod_fetch.tra
     iemod_fetch.resolution | iemod_fetch.languages
-    iemod_fetch.simulate | iemod_fetch.constraints | iemod_fetch.gamedir
+    iemod_fetch.simulate | iemod_fetch.constraints | iemod_fetch.gamedir | iemod_fetch.backup
     iemod_fetch.conflicts | iemod_fetch.sortorder
     iemod_fetch.limits
     iemod_fetch.ordering
@@ -191,6 +192,7 @@ forbidden_modules =
     iemod_fetch.errors
     iemod_fetch.freshness
     iemod_fetch.gamedir
+    iemod_fetch.backup
     iemod_fetch.install
     iemod_fetch.installer
     iemod_fetch.languages

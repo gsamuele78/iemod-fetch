@@ -171,7 +171,7 @@ run can be stopped and resumed, or finished from the command line.
 
 | # | Phase / item | Size |
 |---|---|---|
-| 21 | **Backup** phase before installing: copy or zip of the game folder's override, dialogs and WeiDU state, with a restore action | M |
+| 21 | **Backup and restore in the tool: done** (ADR-0042: `iemod_fetch/backup.py`, `api.backup_game` / `plan_restore` / `restore_backup`, `--backup`, `--verify-backup`, `--restore-backup [--apply]`); the wizard's page is next. **Backup** phase before installing: copy or zip of the game folder's override, dialogs and WeiDU state, with a restore action | M |
 | 22 | **6. Installation**: drives mod_installer (EET mode) or WeiDU directly, streams the output into the window, recognises prompts and answers them only from a recorded answer file (`@wlb-inputs` style); otherwise it asks the player | L |
 | 23 | Resume after a failure or cancel; the WeiDU.log is the state | M |
 | 24 | A real Windows end-to-end CI job (roadmap F) and live GitHub API contract tests (item A) | M |
