@@ -2388,3 +2388,106 @@ unread, for the player to prune with it.
   change, not a guess.
 - The wizard's Backup phase (item 21's page) uses `api.backup_game`,
   `api.plan_restore` and `api.restore_backup`; that page is the next step.
+
+## ADR-0043 — One Python version, chosen like a distribution's kernel, and the libraries that earn their place
+
+**Status**: accepted (the owner's decision, 2026-10-23); carried out in 4.0.0
+**Supersedes**: ADR-0001's zero-runtime-dependency constraint (cited
+elsewhere as ADR-0002), ADR-0028's Python-version bullet, ADR-0029's "still
+standard library only" for the CLI, the M3 validation row's "the `.pyz` stays
+standard-library only", and ROADMAP E6
+**Date**: 2026-10-23
+
+### Context
+
+3.0.0 supports Python 3.9 to 3.14; the tools run on 3.12, written out in 20
+places across all 10 workflows, plus two test matrices and four settings in
+`pyproject.toml`. 3.9 has been out of support since October 2025,
+3.10 since 2026-10-01 (PEP 619); 3.15.0 shipped on 2026-10-09 (PEP 790).
+Two audits of the code against the libraries the community uses (PyPI
+metadata, and the candidates run, 2026-10-23) found:
+
+- what kept them out, besides the standard-library-only rule, was mostly
+  Python 3.9: the current releases of urllib3,
+  filelock, platformdirs, tenacity, rapidfuzz and jsonschema need 3.10 or
+  3.11;
+- the defects found (M7: the sort's cycle handling, tp2 strings, `.tra`
+  code pages, GitHub's limits, the offsite check) are fixed in the standard
+  library - except the offsite check, which needs the Public Suffix List;
+- one candidate is worse than the code it would replace: charset-normalizer
+  reads short Cyrillic `.tra` text as cp1125.
+
+PySide6 6.12 announces "initial support" for 3.15, PyInstaller 6.21 supports
+it; a wizard build on 3.15 has not been run.
+
+### Decision
+
+- **One Python version for everything** - development, CI, tools, release
+  builds and `requires-python` - chosen as Debian chooses a kernel: the
+  newest stable that the whole toolchain already supports, not the newest
+  released. **3.14** now; 3.15 when a full build of both bundles and every
+  test passes on it.
+- **One place names it**: `.python-version`, read by every workflow
+  (`python-version-file`). The weekly upstream check (ADR-0028) compares it
+  with actions/python-versions' manifest and with every other place that names
+  a version, and proposes the move as a reviewed change, like WeiDU's.
+  Dependabot does not update `python-version` (verified in dependabot-core);
+  no second bot is added.
+- **The CLI ships as a bundle too**, beside the wizard, so a player does not
+  need that Python; installing with pip needs it.
+- **A library is adopted when it fixes a measured defect or a measured cost**:
+  a test fails before it, it is pinned by hash, pip-audit scans it, its licence
+  is permissive or file-level copyleft kept unmodified. First: filelock (a
+  lock on the shared data folder) and publicsuffixlist (MPL-2.0; distinct
+  `*.github.io` sites). urllib3 waits for keep-alive to be measured worth it.
+
+### Consequences
+
+- 4.0.0 is breaking: Python 3.14 or the bundle. Ubuntu 24.04 (3.12), Debian
+  12 and 13, and macOS's `/usr/bin/python3` (3.9.6) users take the bundle.
+- One version tested, on Linux and Windows: a defect that only an older
+  Python would show is no longer looked for, on purpose.
+- The code can drop its 3.9 forms (about 890 `Optional`/`List` annotations,
+  tarfile's filter fallback) in one mechanical change.
+- Moving to 3.15 is a measured step: it makes UTF-8 the default encoding on
+  Windows (PEP 686), which a green build has to show is harmless here.
+- Bundled libraries make their security fixes ours to ship.
+
+---
+
+## ADR-0044 — lcc-docs' dates as a second update signal, never as a version
+
+**Status**: accepted
+**Date**: 2026-10-23
+
+### Context
+
+Updates are found from krion64's `version_cache.json`: a GitHub release tag
+per repository. lcc-docs (`db/mods.json`, 2,151 mods, kept by hand every two
+or three days) has no version numbers; it has `last_update` (2,142 mods),
+`status` (stable, beta, obsolete 75, archived 66, missing 60...), `safe` and
+`compatibilities` ("EE version >= 2.5"). Measured on the supplied logs (149
+mods), with the data of 2026-10-23, matching each tp2 to krion64's mod
+records (`t` -> `gh`) and to lcc-docs' `tp2`: 90 have both, **52 only an
+lcc-docs date** - no tagged GitHub release krion64 can see: mods hosted
+elsewhere (Weasel Mods, Gibberlings3's site, baldurs-gate.de) and GitHub
+repositories without releases (gibberlings3/ee_fixpack, gitjas/toa...) - 4
+only a krion64 release, 3 neither; for 9, the lcc-docs date is newer than
+krion64's latest release. The numbers move with the matching: through the
+manifest's `github` field, 87 / 55 / 4 / 3 and 7 newer; through krion64's
+mods index, 112 / 30 / 3 / 4. Between 30 and 55 mods, then.
+
+### Decision
+
+- The version stays krion64's: a tag compared with the installed one.
+- lcc-docs adds a **date**: when it is newer than the copy the player has, the
+  mod is marked "maybe updated", with the page's link - never "update
+  available", since a date cannot tell a release from an edited page.
+- lcc-docs' `status` and `compatibilities` are shown with it.
+- When the two disagree, both are shown.
+
+### Consequences
+
+The 30 to 55 mods with no GitHub release get a signal they lack today. Some marks will be
+pages edited without a new release; the wording says so. A test pins that a
+date is never presented as a version.

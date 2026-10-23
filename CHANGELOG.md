@@ -8,6 +8,14 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Documentation
+- **The plan after three audits** (GUI-AUDIT M5b-M8): editing the order by
+  component with fixes after a manual move (measured against BWS-NG, Infinity
+  Mod Runner and Project Infinity); one Python version and the libraries that
+  earn their place (ADR-0043, for 4.0.0); defects the audits reproduced, to be
+  fixed in the standard library (the offsite check with publicsuffixlist); and what the other projects do that this
+  tool does not. ADR-0044: lcc-docs' dates as a second update signal.
+
 ### Added
 - **A game folder's backup and restore** (GUI-AUDIT M4 item 21, ADR-0042):
   `--backup GAME_DIR [--backup-to DIR]` copies `override/`, the

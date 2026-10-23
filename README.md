@@ -42,7 +42,11 @@ catalogue as the source) and is fixed, nothing is removed or renamed.
 Installation from the wizard is the next milestone (M4); then M5, the order
 and the selection by kind of mod for what krion64 does not place - measured
 first: BWS-NG's per-component order, then a kind only where the sources agree
-(ADR-0041) - with Infinity Mod Runner and its Forge as references
+(ADR-0041) - with Infinity Mod Runner and its Forge as references. After
+three audits the plan also holds editing the order by component with fixes
+after a manual move (M5b), **4.0.0 on one Python version, 3.14**, with the
+libraries that earn their place (M6, ADR-0043), defects to fix (M7) and what
+the other projects do that this tool does not (M8)
 ([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
