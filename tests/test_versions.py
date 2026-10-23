@@ -118,6 +118,13 @@ def test_a_dotless_tag_spelling_its_own_release_is_still_equal():
     ("20180929", "v1.5 BETA", False),
     ("20240101", "20230101", True),          # dates on both sides rank
     ("V19", "2.0", False),                   # not known
+    # review of #56, real tags from krion64's cache: a letter is a revision
+    ("v4.81a", "v4.0", True), ("1.4.4a", "1.4", True), ("v2.5a", "1.0", True),
+    ("1.4b", "1.3", True), ("v2.0-alpha", "v1.0", False),
+    # an integer-numbered mod against a dotted copy: BG1NPC v32, Tweaks v18
+    ("v32", "v31.1", True), ("v18", "17.0", True),
+    # a leading zero is the dot before it: 0.71, as compare_published reads it
+    ("v071", "0.70", True), ("v034", "0.33", True), ("v071", "0.72", False),
     ("v1.0", "v1.0", False),
     (None, "v1.0", False),
 ])

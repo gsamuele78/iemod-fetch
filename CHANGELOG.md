@@ -63,8 +63,11 @@ Python API, which is internal.
   (v53, which is 5.3), is not named like the mod, and the rule trusts only
   a repository that is - it misses this one rather than guess. An offer
   needs a plainly newer release (`versions.newer_release`): never a dotless
-  tag whose readings disagree (`V19`, 19 or 1.9, against `2.0`), never a
-  release candidate or beta over a stable copy (`v4.1.0-rc1` over `4.0`),
+  tag whose readings disagree (`V19`, 19 or 1.9, against `2.0`; a number
+  like BG1NPC's `v32` against `v31.1` is not dotless, and `v071` reads
+  0.71), never a release candidate, beta, alpha or `pre-` tag over a stable
+  copy (`v4.1.0-rc1` over `4.0`; a bare letter is a revision: `v4.81a` is
+  offered over `v4.0`),
   never a tag that is a date over a version
   (`20180929` over `v1.5 BETA`), and a repository named exactly like the mod
   is preferred to one whose name only holds it. A release taken is checked

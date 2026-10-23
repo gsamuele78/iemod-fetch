@@ -137,11 +137,15 @@ def _dotless_disagrees(tag: str, installed: str) -> bool:
     a, b = parse_version(tag) or (), parse_version(installed) or ()
     numbers_a = [p for p in a if isinstance(p, int)]
     numbers_b = [p for p in b if isinstance(p, int)]
-    for single, other, text in ((numbers_a, numbers_b, tag), (numbers_b, numbers_a, installed)):
-        if len(single) == 1 and single[0] >= 10 and len(other) >= 2:
-            dotted = ".".join(_digits(text))
-            reread = (compare(dotted, installed) if text is tag
-                      else compare(tag, dotted))
+    for single, other, is_tag in ((numbers_a, numbers_b, True), (numbers_b, numbers_a, False)):
+        # A dropped dot is plausible only against a one-digit major: `v32`
+        # against `v31.1` is BG1NPC's 32nd release, not 3.2 (review of #56)
+        if len(single) == 1 and single[0] >= 10 and len(other) >= 2 and other[0] < 10:
+            digits = _digits(tag if is_tag else installed)
+            # `v071` is 0.71, as compare_published reads it; `V19` is 1.9
+            dotted = ("0." + digits.lstrip("0") if digits.startswith("0")
+                      else ".".join(digits))
+            reread = compare(dotted, installed) if is_tag else compare(tag, dotted)
             return reread != compare(tag, installed)
     return False
 
@@ -152,7 +156,11 @@ _DATE = re.compile(r"(?<!\d)(?:19|20)\d{2}[-_.]?(?:0[1-9]|1[0-2])[-_.]?"
 
 
 def _is_prerelease(text: str) -> bool:
-    return any(isinstance(p, str) and p in _PRERELEASE for p in parse_version(text) or ())
+    """A word says so - `rc`, `beta`, `alpha`, `dev`, `pre`. Not a bare letter:
+    `v4.81a`, `1.4.4a`, `1.4b` are revisions in this ecosystem (review of #56,
+    measured on krion64's 690 repositories)."""
+    return any(isinstance(p, str) and len(p) > 1 and p in _PRERELEASE
+               for p in parse_version(text) or ())
 
 
 def newer_release(tag: str | None, installed: str | None) -> bool:
