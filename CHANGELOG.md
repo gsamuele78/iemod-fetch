@@ -91,10 +91,25 @@ Python API, which is internal.
   page: AC_QUEST, bgqe, c#solaufein, JA#BGT_AdvPack and c#brage failed "did not
   return an archive". The repository the author's site names is now resolved as
   any GitHub source - once, with the same tp2 check - whether the redirect
-  shows when the link is opened as a page (a manifest naming `/download`) or
-  when it is downloaded (a resource page's link). A XenForo thread
+  shows when the link is opened as a page (a manifest's or the catalogue's
+  link to `/download`) or when it is downloaded (a resource page's link). A
+  source pinned to a file - a `sha256`, a release tag or an asset - is never
+  handed over: a pin means that file or nothing. A XenForo thread
   (`index.php?threads/...`) and a `/forums/topic/` page are now told as forum
   posts, so they come last; the dead Dark Tidings `.rar` came from one.
+- **GitHub's secondary rate limit is waited out, not taken for a refusal**
+  (GUI-AUDIT M7 item 45). A 403 from GitHub stopped at once unless the hourly
+  quota was spent, but GitHub also answers 403 (or 429) when requests come too
+  fast, and its docs say to wait and retry: the `Retry-After` seconds, else at
+  least one minute, then longer. That is what the client now does, for
+  GitHub only and only when the response says so (a Retry-After header, or
+  "secondary rate limit" in the body); a real refusal and a spent hourly
+  quota still stop at once with their own message - a 429 with the quota
+  spent too, which was retried after 2 and 4 s. A secondary limit asking
+  more than five minutes stops at once rather than retrying early, and
+  Cancel ends any wait between retries at once (the GUI's Stop no longer
+  sits out a rate limit). A `Retry-After` given as an HTTP date (RFC 9110)
+  is now waited until, not ignored.
 - **A Russian, Polish or Chinese mod's component names read in its own
   script** (GUI-AUDIT M7 item 44). A .tra file that is not UTF-8 was read as
   Windows-1252 whatever its language: on 103 real mods, 2,286 Russian and
