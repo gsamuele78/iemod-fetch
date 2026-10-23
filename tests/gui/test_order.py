@@ -533,6 +533,45 @@ def test_turning_off_what_another_needs_is_previewed_and_not_applied(qtbot, tmp_
     assert emitted == []
 
 
+class Worse(Preview):
+    """Preview, but a plan without EET_end's line - planned again or turned
+    off - leaves it red (`still`) or breaks another rule (`broken`)."""
+
+    def __init__(self, still=False, broken=""):
+        super().__init__()
+        self.still, self.broken = still, broken
+
+    def __call__(self, game, chosen, labels, folder, phases):
+        result = super().__call__(game, chosen, labels, folder, phases)
+        names = [u["name"] for phase in phases or () for u in phase]
+        if phases is not None and "EET_end" not in names:
+            for u in result["phases"][-1]["units"]:
+                u["flagged"] = u["flagged"] or (self.still and u["name"] == "EET_end")
+            result["violations"] = result["violations"] + ([self.broken] if self.broken
+                                                           else [])
+        return result
+
+
+def test_planning_again_that_leaves_the_row_red_is_not_applied(qtbot, tmp_path):
+    """Review of #77: a re-plan the planner still finds wrong is refused."""
+    widget, _view = fixing(qtbot, tmp_path, Worse(still=True))
+    dialog = opened(qtbot, widget)
+    dialog.options.setCurrentRow(1)
+    assert "A rule still finds it in the wrong place." in dialog.preview.text()
+    assert not dialog.apply.isEnabled()
+
+
+def test_a_fix_that_breaks_another_rule_is_not_applied(qtbot, tmp_path):
+    """Review of #77: planning again or turning off that breaks a rule the
+    plan keeps now is refused, the rule named."""
+    widget, _view = fixing(qtbot, tmp_path, Worse(broken="ub should be installed before eet"))
+    dialog = opened(qtbot, widget)
+    for row in (1, 2):                                  # replan, off
+        dialog.options.setCurrentRow(row)
+        assert "Newly broken: ub should be installed before eet" in dialog.preview.text()
+        assert not dialog.apply.isEnabled()
+
+
 def test_turning_a_row_off_hands_its_components_to_the_window(qtbot, tmp_path):
     widget, _view = fixing(qtbot, tmp_path, Preview())
     emitted = []
