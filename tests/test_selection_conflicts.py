@@ -168,14 +168,15 @@ def test_an_unreadable_decisions_file_is_a_problem_not_a_crash(tmp_path, text):
 
 
 def test_no_decisions_file_is_no_decisions(tmp_path):
-    assert api.load_decisions(str(tmp_path)) == {"choose": {}, "accept": {}, "problem": None}
+    assert api.load_decisions(str(tmp_path)) == {"choose": {}, "accept": {},
+                                                  "ignored_order": {}, "problem": None}
 
 
 def test_decisions_are_saved_whole_and_read_back(tmp_path):
     api.save_decisions(str(tmp_path), {"conflict-a": "option-b"}, {"conflict-c": " why "})
     assert api.load_decisions(str(tmp_path)) == {
         "choose": {"conflict-a": "option-b"}, "accept": {"conflict-c": "why"},
-        "problem": None}
+        "ignored_order": {}, "problem": None}
     assert not [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
 
 
