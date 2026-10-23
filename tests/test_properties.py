@@ -327,3 +327,21 @@ def test_the_check_after_each_move_equals_the_full_check(case):
         breaks = broken_after_move(breaks, order, before, node, followers)
         assert breaks == broken_pairs(order, before)
         assert broken_after_move(breaks, order, before, node) == breaks   # no followers
+
+
+# GUI-AUDIT M5b item 32: every move the order page offers a red row mends a
+# rule it breaks and breaks no other, and moves that row alone.
+from iemod_fetch.ordering import order_fixes  # noqa: E402
+
+
+@settings(max_examples=300, deadline=None)
+@given(_order_moves())
+def test_every_offered_fix_mends_a_rule_and_breaks_none(case):
+    order, before, _moves = case
+    now = broken_pairs(order, before)
+    for node in order:
+        for fix in order_fixes(order, before, node):
+            after = broken_pairs(fix.order, before)
+            assert fix.fixed and not fix.fixed & after
+            assert after <= now and after < now
+            assert [n for n in fix.order if n != node] == [n for n in order if n != node]

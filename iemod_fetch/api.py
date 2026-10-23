@@ -53,6 +53,7 @@ from .naming import normalize_key
 from .net import DEFAULT_MAX_BYTES, HttpClient
 from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, broken_after_move, broken_pairs,
                        bws_sequence, plan_order, render_plan_summary, reverse, tp2_key)
+from .ordering import order_fixes as _order_fixes
 from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
@@ -61,7 +62,7 @@ from . import bio, choices, limits, pi, premeta, sortorder
 from .decisions import Decisions, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
-from .rules import Context, Install, RuleSet, check_all, load_suppressions
+from .rules import ORDER, Context, Install, RuleSet, check_all, load_suppressions
 from .runner import Options, Runner
 from .selection import Install as SelectionInstall
 from .selection import one_line_label, tp2_problem
@@ -86,7 +87,8 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "selection_plan", "save_install_order", "reset_install_order",
-           "order_breaks", "order_breaks_after_move", "order_followers",
+           "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
+           "preview_install_order",
            "INSTALL_ORDER_FILE", "project_settings", "download_selection",
            "import_selection", "export_selection"]
 
@@ -982,14 +984,53 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
     """
     order_file = os.path.join(folder, INSTALL_ORDER_FILE) if folder else None
     custom = bool(order_file and os.path.isfile(order_file))
+    return _selection_plan(game, chosen, labels, folder, order_file if custom else None,
+                           target, data_dir, rules, mod_db, order_catalogue,
+                           fetch_metadata)[0]
+
+
+def preview_install_order(game: str, chosen: Sequence[tuple[str, int]],
+                          labels: dict | None = None, folder: str | None = None,
+                          phases: Sequence[Sequence[dict]] | None = None,
+                          target: str | None = None, data_dir: str | None = None,
+                          rules: Sequence[str] = (), mod_db: str | None = None,
+                          order_catalogue: str | None = None,
+                          fetch_metadata: bool = False) -> dict:
+    """
+    What selection_plan would give for `chosen` with `phases` as the order
+    set by hand (as save_install_order takes it; None: the computed order),
+    writing nothing to `folder`: a fix on the order page, previewed (M5b item
+    32). Beyond selection_plan's keys, "errors": the summaries of the
+    blocking findings that are not about order - what dropping a component
+    can add (a mod that needs it).
+    """
+    with tempfile.TemporaryDirectory(prefix="iemod-preview-") as work:
+        order_file = None
+        if phases is not None:
+            order_file = os.path.join(work, INSTALL_ORDER_FILE)
+            with open(order_file, "w", encoding="utf-8") as fh:
+                fh.write(_install_order_text(phases))
+        result, findings = _selection_plan(game, chosen, labels, folder, order_file,
+                                           target, data_dir, rules, mod_db,
+                                           order_catalogue, fetch_metadata)
+    result["errors"] = sorted({f["summary"] for f in findings
+                               if f["kind"] != ORDER and f["severity"] == "error"
+                               and not (f.get("stale_risk") or f.get("suppressed"))})
+    return result
+
+
+def _selection_plan(game, chosen, labels, folder, order_file, target, data_dir, rules,
+                    mod_db, order_catalogue, fetch_metadata) -> tuple[dict, list[dict]]:
+    """selection_plan's result with `order_file` as the order set by hand,
+    and the rule pass's findings."""
+    custom = order_file is not None
     decided = load_decisions(folder) if folder else None   # "keep both" orders
     with _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
-                             order_catalogue, fetch_metadata,
-                             order_file if custom else None, decided) as (
-                                 _settings, _analysis, _ruleset, plan):
+                             order_catalogue, fetch_metadata, order_file, decided) as (
+                                 _settings, analysis, _ruleset, plan):
         if plan is None:
-            return {"phases": [], "cycles": [], "violations": [], "planned": False,
-                    "custom": custom}
+            return ({"phases": [], "cycles": [], "violations": [], "planned": False,
+                     "custom": custom}, analysis.findings)
         # per unit, not per mod: a split mod's other parts are neither moved
         # nor wrong because one part is (review of #74)
         moved = {(move.key, move.display) for move in plan.moved}
@@ -1022,7 +1063,7 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
             } for unit in units]})
         return {"phases": phases, "cycles": [list(c) for c in plan.cycles],
                 "violations": [v.summary for v in plan.residual],
-                "planned": True, "custom": custom}
+                "planned": True, "custom": custom}, analysis.findings
 
 
 def _flagged(unit, violations) -> bool:
@@ -1053,6 +1094,19 @@ def order_breaks_after_move(previous: set, order: Sequence[str], before: dict,
     return broken_after_move(previous, order, before, moved, followers)
 
 
+def order_fixes(order: Sequence[str], before: dict, node: str,
+                followers: dict | None = None) -> list[dict]:
+    """
+    The moves of the unit `node` alone that mend a rule it breaks and break
+    no other (M5b item 32): {"kind": "after" or "before", "anchor": the unit
+    it goes just after or before, "order": the order with the move made,
+    "fixed": the pairs it mends, "left": `node`'s pairs still broken}.
+    """
+    return [{"kind": fix.kind, "anchor": fix.anchor, "order": list(fix.order),
+             "fixed": sorted(fix.fixed), "left": sorted(fix.breaks)}
+            for fix in _order_fixes(order, before, node, followers)]
+
+
 def order_followers(before: dict) -> dict:
     """unit -> the units a rule puts after it (the reverse of `before`)."""
     return reverse(before)
@@ -1065,6 +1119,23 @@ def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
     `folder`/install-order.txt: a Project Infinity Sorting Order file, which
     the CLI reads with --sorting-order and PI itself can apply.
     """
+    text = _install_order_text(phases)
+    # The project's ini names it first, so the command line uses it too: if
+    # the ini cannot be written, no order file is left for the wizard alone.
+    project = os.path.join(folder, PROJECT_FILE)
+    before = _config.read_section(project, _config.SECTION).get("sorting_order")
+    if before != INSTALL_ORDER_FILE:
+        _config.write_values(project, {"sorting_order": INSTALL_ORDER_FILE})
+    try:
+        return _write_whole(folder, INSTALL_ORDER_FILE, text)
+    except BaseException:
+        if before != INSTALL_ORDER_FILE:     # put back what was there, if anything
+            _config.write_values(project, {"sorting_order": before})
+        raise
+
+
+def _install_order_text(phases: Sequence[Sequence[dict]]) -> str:
+    """`phases` as a Sorting Order file, refused before anything is written."""
     lines = ["// Install order set in the iemod-fetch wizard (Project Infinity",
              "// Sorting Order format). Delete this file to use the computed order."]
     # A tp2 in both installs is written with its numbers in each: `*` would
@@ -1084,19 +1155,8 @@ def save_install_order(folder: str, phases: Sequence[Sequence[dict]]) -> str:
             whole = not unit.get("split") and len(seen[unit["tp2"].lower()]) == 1
             lines.append(f"{name} *" if whole else f"{name} {numbers}")
     text = "\n".join(lines) + "\n"
-    sortorder.parse(text, source="the wizard's install order")   # refuse before writing
-    # The project's ini names it first, so the command line uses it too: if
-    # the ini cannot be written, no order file is left for the wizard alone.
-    project = os.path.join(folder, PROJECT_FILE)
-    before = _config.read_section(project, _config.SECTION).get("sorting_order")
-    if before != INSTALL_ORDER_FILE:
-        _config.write_values(project, {"sorting_order": INSTALL_ORDER_FILE})
-    try:
-        return _write_whole(folder, INSTALL_ORDER_FILE, text)
-    except BaseException:
-        if before != INSTALL_ORDER_FILE:     # put back what was there, if anything
-            _config.write_values(project, {"sorting_order": before})
-        raise
+    sortorder.parse(text, source="the wizard's install order")
+    return text
 
 
 def reset_install_order(folder: str) -> None:

@@ -548,6 +548,51 @@ def broken_after_move(previous: set[tuple[str, str]], order: Sequence[str],
     return kept | mine | theirs
 
 
+@dataclass(frozen=True)
+class OrderFix:
+    """One way to mend a row a rule finds in the wrong place (M5b item 32)."""
+    kind: str                           # "after": just after `anchor`; "before": just before it
+    node: str                           # the unit moved
+    anchor: str                         # the unit it is put next to
+    order: tuple[str, ...]              # the order with the fix made
+    fixed: frozenset[tuple[str, str]]   # the broken pairs it mends
+    breaks: frozenset[tuple[str, str]]  # the pairs of `node` still broken after it
+
+
+def order_fixes(order: Sequence[str], before: Mapping[str, Iterable[str]], node: str,
+                after: Mapping[str, Iterable[str]] | None = None) -> list[OrderFix]:
+    """
+    The moves of `node` alone that mend a rule it breaks and break no other:
+    just after the last unit a rule puts before it, if that one is below it,
+    and just before the first a rule puts after it, if that one is above it.
+    A move that would break another pair is not offered - a fix adds no error
+    (GUI-AUDIT M5b item 32).
+    """
+    if after is None:
+        after = reverse(before)
+    at = {unit: n for n, unit in enumerate(order)}
+    if node not in at:
+        return []
+    now = broken_after_move(set(), order, before, node, after)
+    firsts = [at[unit] for unit in before.get(node, ()) if unit in at]
+    thens = [at[unit] for unit in after.get(node, ()) if unit in at]
+    candidates = []
+    if firsts and max(firsts) > at[node]:
+        candidates.append(("after", order[max(firsts)]))
+    if thens and min(thens) < at[node]:
+        candidates.append(("before", order[min(thens)]))
+    fixes = []
+    for kind, anchor in candidates:
+        moved = [unit for unit in order if unit != node]
+        spot = moved.index(anchor) + (kind == "after")
+        moved.insert(spot, node)
+        left = broken_after_move(now, moved, before, node, after)
+        if left < now:                  # mends some, breaks nothing new
+            fixes.append(OrderFix(kind, node, anchor, tuple(moved),
+                                  frozenset(now - left), frozenset(left)))
+    return fixes
+
+
 def reverse(before: Mapping[str, Iterable[str]]) -> dict[str, set[str]]:
     """unit -> the units a rule puts after it."""
     out: dict[str, set[str]] = {}

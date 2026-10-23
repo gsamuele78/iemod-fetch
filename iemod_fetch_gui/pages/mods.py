@@ -195,7 +195,7 @@ class ModsPage(QWidget):
         self.details.setOpenLinks(False)          # catalogue text is third-party
         self.panel = ConflictsPanel()
         self.panel.can_choose = self._can_choose
-        self.panel.deselect.connect(self._deselect)
+        self.panel.deselect.connect(self.deselect)
         self.panel.choose.connect(self._choose_in)
         self.panel.decide.connect(self._decide)
         self.panel.undo.connect(self._undo)
@@ -571,7 +571,9 @@ class ModsPage(QWidget):
             return
         self.checked.emit()
 
-    def _deselect(self, pairs: list) -> None:
+    def deselect(self, pairs: list) -> None:
+        """Untick the chosen (tp2, number) `pairs` (a conflict option, a fix
+        on the order page)."""
         for tp2, number in pairs:
             item = self.items.get((tp2, number))
             if item is not None:

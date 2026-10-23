@@ -14,7 +14,7 @@ from iemod_fetch import api
 from .pages.download import DownloadPage, Downloader, download_project
 from .pages.game import GamePage
 from .pages.mods import Checker, Loader, ModsPage, find_conflicts, load_choices
-from .pages.order import OrderPage, Planner, plan_selection
+from .pages.order import OrderPage, Planner, Previewer, plan_selection, preview_selection
 from .pages.pending import PendingPage
 
 # BWS-NG's order (ADR-0031). Its download and extraction are one step per mod
@@ -26,7 +26,8 @@ PHASES = ["Game and folders", "Mod selection", "Install order",
 class MainWindow(QMainWindow):
     def __init__(self, project_dir: str, load: Loader = load_choices,
                  check: Checker = find_conflicts, plan: Planner = plan_selection,
-                 download: Downloader = download_project) -> None:
+                 download: Downloader = download_project,
+                 preview: Previewer = preview_selection) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.setWindowTitle(f"iemod-fetch {api.__version__} - {project_dir}")
@@ -41,7 +42,7 @@ class MainWindow(QMainWindow):
 
         self.game = GamePage(project_dir)
         self.mods = ModsPage(project_dir, load, check)
-        self.order = OrderPage(project_dir, plan)
+        self.order = OrderPage(project_dir, plan, preview)
         self.download = DownloadPage(project_dir, download)
         self.pages: list[QWidget] = [self.game, self.mods, self.order, self.download,
                                      PendingPage(PHASES[4], self.game, "M4")]
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow):
         self.game.completeChanged.connect(lambda _complete: self._refresh())
         self.mods.completeChanged.connect(lambda _complete: self._refresh())
         self.order.completeChanged.connect(lambda _complete: self._refresh())
+        self.order.turn_off.connect(self._turn_off)
         self.download.completeChanged.connect(lambda _complete: self._refresh())
 
         buttons = QHBoxLayout()
@@ -104,6 +106,18 @@ class MainWindow(QMainWindow):
         if self.current + 1 < len(self.pages):
             self.stack.setCurrentIndex(self.current + 1)
         self._refresh()
+
+    def _turn_off(self, keys: list) -> None:
+        """A fix on the order page turns components off (M5b item 32): they
+        are unticked on the mods page, the selection saved and planned again."""
+        self.mods.deselect([tuple(key) for key in keys])
+        try:
+            path = self.mods.save()
+        except Exception as exc:     # refused by selection.json's own checks
+            QMessageBox.critical(self, "Cannot save the selection", str(exc))
+            return
+        self.status.setText(f"saved {path}")
+        self.order.start(self.mods.game, self.mods.chosen(), self.mods.labels())
 
     def go_back(self) -> None:
         if self.current > 0 and not self.download.running():

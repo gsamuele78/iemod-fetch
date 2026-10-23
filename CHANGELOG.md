@@ -47,6 +47,17 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Fixes on each red row of the order page** (GUI-AUDIT M5b item 32).
+  "Fix..." offers what mends the selected row, each previewed before it is
+  applied: just after the mod a rule puts before it, or just before the one a
+  rule puts after it (checked at once against the plan's rules); planned again
+  by the rules with the player's other moves kept, or its components turned
+  off (both previewed by the planner, in the background, writing nothing).
+  Only a fix that mends its rule and adds no other broken rule and no new
+  error is applied; the preview says what would break. A property test holds
+  every offered move to that. `api.order_fixes`, and
+  `api.preview_install_order`: the plan of a hand order or a selection, with
+  the errors it adds, written nowhere.
 - **A drop on the order page is checked at once** (GUI-AUDIT M5b item 31).
   Only the rules the moved row is in are checked again - BWS-NG's technique -
   and only the rows whose mark changes are painted, so the red marks come at

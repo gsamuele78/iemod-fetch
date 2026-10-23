@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("PySide6")
 pytest.importorskip("pytestqt")
 
-from PySide6.QtCore import QModelIndex  # noqa: E402
+from PySide6.QtCore import QModelIndex, Qt  # noqa: E402
 from PySide6.QtWidgets import QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
@@ -413,3 +413,238 @@ def test_a_drag_after_a_split_leaves_the_marks_to_the_plan(qtbot, tmp_path):
     assert not any(view.item(r).foreground().color() == RED for r in range(view.count()))
     with qtbot.waitSignal(widget.planned, timeout=5000):
         planner.gate.set()
+
+
+# ------------------------------------------------------ fixes (item 32)
+ALL = [(f"{n}/{n}.tp2", 0) for n in ("bg1ub", "eet", "ub", "ascension", "EET_end")]
+
+
+class Ruled(Planner):
+    """Planner, with the rule as edges: EET_end after every other EET mod; a
+    hand order without EET_end leaves it to the rule, last."""
+
+    def __call__(self, game, chosen, labels, folder):
+        result = super().__call__(game, chosen, labels, folder)
+        eet = result["phases"][-1]["units"]
+        if not any(u["name"] == "EET_end" for u in eet):
+            eet.append(unit("EET_end", constrained=True))
+        present = {tp2 for tp2, _n in chosen}
+        for phase in result["phases"]:
+            phase["units"] = [u for u in phase["units"] if u["tp2"] in present]
+        eet = result["phases"][-1]["units"]
+        for u in eet:
+            if u["name"] == "EET_end":
+                u["after"] = [o["node"] for o in eet if o is not u]
+        return result
+
+
+class Preview:
+    """api.preview_install_order's answer, from Ruled; turning EET_end off
+    adds `error` when there is one."""
+
+    def __init__(self, error=""):
+        self.error, self.calls = error, []
+
+    def __call__(self, game, chosen, labels, folder, phases):
+        import tempfile
+        self.calls.append((list(chosen), phases))
+        with tempfile.TemporaryDirectory() as scratch:
+            if phases is not None:
+                api.save_install_order(scratch, phases)
+            result = Ruled()(game, chosen, labels, scratch)
+        gone = ("EET_end/EET_end.tp2", 0) not in chosen
+        result["errors"] = [self.error] if self.error and gone else []
+        return result
+
+
+def fixing(qtbot, folder, preview):
+    widget = OrderPage(str(folder), plan=Ruled(), preview=preview)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.start("EET", ALL, {})
+    widget.tabs.setCurrentIndex(1)
+    view = widget.tabs.widget(1)
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        view.model().moveRow(QModelIndex(), 3, QModelIndex(), 1)    # EET_end up
+    assert texts(widget, 1) == ["eet", "EET_end", "ub", "ascension"]
+    view = widget.tabs.widget(1)                    # the plan's list, made again
+    view.setCurrentRow(1)
+    assert widget.fix.isEnabled()
+    return widget, view
+
+
+def opened(qtbot, widget):
+    widget.fix.click()
+    dialog = widget.fixing
+    planner_fixes = [f for f in dialog.fixes if f["kind"] in ("replan", "off")]
+    qtbot.waitUntil(lambda: not any(f["preview"].startswith("Previewing")
+                                    for f in planner_fixes), timeout=5000)
+    return dialog
+
+
+def test_fix_is_offered_only_on_a_red_row(qtbot, tmp_path):
+    widget, view = fixing(qtbot, tmp_path, Preview())
+    view.setCurrentRow(0)
+    assert not widget.fix.isEnabled()
+
+
+def test_a_move_fix_puts_the_row_just_after_what_must_come_first(qtbot, tmp_path):
+    widget, _view = fixing(qtbot, tmp_path, Preview())
+    dialog = opened(qtbot, widget)
+    assert [f["kind"] for f in dialog.fixes] == ["after", "replan", "off"]
+    assert dialog.options.item(0).text() == "Move it just after ascension"
+    assert "2 rule(s) mended, none broken" in dialog.preview.text()   # ub, ascension
+    assert dialog.apply.isEnabled()
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        dialog.apply.click()
+    assert texts(widget, 1) == ["eet", "ub", "ascension", "EET_end"]
+    assert lines_of(tmp_path)[-1] == "EET_end *"
+    assert widget.problems.text() == ""
+
+
+def test_planning_the_row_again_keeps_the_other_moves(qtbot, tmp_path):
+    widget, view = fixing(qtbot, tmp_path, Preview())
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        view.model().moveRow(QModelIndex(), 3, QModelIndex(), 2)    # ascension above ub
+    widget.tabs.widget(1).setCurrentRow(1)
+    dialog = opened(qtbot, widget)
+    dialog.options.setCurrentRow(1)
+    assert "EET_end would go after ub (EET, row 4 of 4)" in dialog.preview.text()
+    assert "breaks nothing else" in dialog.preview.text()
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        dialog.apply.click()
+    assert lines_of(tmp_path) == ["bg1ub *", "eet *", "ascension *", "ub *"]
+    assert texts(widget, 1) == ["eet", "ascension", "ub", "EET_end"]
+
+
+def test_turning_off_what_another_needs_is_previewed_and_not_applied(qtbot, tmp_path):
+    preview = Preview(error="ascension needs EET_end, which is not installed")
+    widget, _view = fixing(qtbot, tmp_path, preview)
+    emitted = []
+    widget.turn_off.connect(emitted.append)
+    dialog = opened(qtbot, widget)
+    dialog.options.setCurrentRow(2)
+    assert "New error: ascension needs EET_end" in dialog.preview.text()
+    assert not dialog.apply.isEnabled()
+    off = [chosen for chosen, _phases in preview.calls
+           if ("EET_end/EET_end.tp2", 0) not in chosen]
+    assert off == [ALL[:-1]]
+    dialog.accept()                                 # what is not ok is never applied
+    assert emitted == []
+
+
+class Worse(Preview):
+    """Preview, but a plan without EET_end's line - planned again or turned
+    off - leaves it red (`still`) or breaks another rule (`broken`)."""
+
+    def __init__(self, still=False, broken=""):
+        super().__init__()
+        self.still, self.broken = still, broken
+
+    def __call__(self, game, chosen, labels, folder, phases):
+        result = super().__call__(game, chosen, labels, folder, phases)
+        names = [u["name"] for phase in phases or () for u in phase]
+        if phases is not None and "EET_end" not in names:
+            for u in result["phases"][-1]["units"]:
+                u["flagged"] = u["flagged"] or (self.still and u["name"] == "EET_end")
+            result["violations"] = result["violations"] + ([self.broken] if self.broken
+                                                           else [])
+        return result
+
+
+def test_planning_again_that_leaves_the_row_red_is_not_applied(qtbot, tmp_path):
+    """Review of #77: a re-plan the planner still finds wrong is refused."""
+    widget, _view = fixing(qtbot, tmp_path, Worse(still=True))
+    dialog = opened(qtbot, widget)
+    dialog.options.setCurrentRow(1)
+    assert "A rule still finds it in the wrong place." in dialog.preview.text()
+    assert not dialog.apply.isEnabled()
+
+
+def test_a_fix_that_breaks_another_rule_is_not_applied(qtbot, tmp_path):
+    """Review of #77: planning again or turning off that breaks a rule the
+    plan keeps now is refused, the rule named."""
+    widget, _view = fixing(qtbot, tmp_path, Worse(broken="ub should be installed before eet"))
+    dialog = opened(qtbot, widget)
+    for row in (1, 2):                                  # replan, off
+        dialog.options.setCurrentRow(row)
+        assert "Newly broken: ub should be installed before eet" in dialog.preview.text()
+        assert not dialog.apply.isEnabled()
+
+
+def test_turning_a_row_off_hands_its_components_to_the_window(qtbot, tmp_path):
+    widget, _view = fixing(qtbot, tmp_path, Preview())
+    emitted = []
+    widget.turn_off.connect(emitted.append)
+    dialog = opened(qtbot, widget)
+    dialog.options.setCurrentRow(2)
+    assert dialog.options.currentItem().text() == "Turn it off (1 component(s))"
+    assert dialog.apply.isEnabled()
+    dialog.apply.click()
+    assert emitted == [[("EET_end/EET_end.tp2", 0)]]
+    assert "EET_end" not in " ".join(lines_of(tmp_path))
+
+
+def test_the_window_unticks_what_a_fix_turns_off_and_plans_again(qtbot, tmp_path):
+    """Item 32's "turn it off" through the window: the mods page unticks the
+    components, the selection is saved and the order planned again."""
+    from gui.test_m3_end_to_end import EET, TW, UB, check, load, plan
+    from iemod_fetch_gui.window import MainWindow
+    api.save_project(str(tmp_path), "EET")
+    main = MainWindow(str(tmp_path), load=load, check=check, plan=plan)
+    qtbot.addWidget(main)
+    with qtbot.waitSignal(main.mods.loaded, timeout=5000):
+        main.mods.start("EET")
+    for key in [(UB, 0), (EET, 0), (TW, 100)]:
+        main.mods.items[key].setCheckState(0, Qt.CheckState.Checked)
+    with qtbot.waitSignal(main.order.planned, timeout=5000):
+        main.order.turn_off.emit([(TW, 100)])
+    assert main.mods.chosen() == [(UB, 0), (EET, 0)]
+    assert TW not in (tmp_path / api.SELECTION_FILE).read_text()
+    shown = [u["tp2"] for p in main.order.result["phases"] for u in p["units"]]
+    assert TW not in shown and EET in shown
+
+
+def test_a_fix_on_the_real_planner_mends_what_a_hand_order_broke(qtbot, tmp_path):
+    """Item 32 on the real path: stratagems #5900 dragged above the EET core
+    breaks a rule the plan reports; "plan it again" is previewed by the real
+    planner - nothing left broken, no new error - and applied."""
+    here = os.path.join(os.path.dirname(__file__), os.pardir)
+    mock = os.path.join(here, "data", "eetmock")
+    common = {"order_catalogue": os.path.join(here, "data", "krion"),
+              "rules": [os.path.join(mock, "rules")], "target": os.path.join(mock, "Mods")}
+    from test_selection_plan import CHOSEN
+
+    def real(game, chosen, labels, folder):
+        return api.selection_plan(game, chosen, labels, folder=folder,
+                                  data_dir=os.path.join(folder, "no-cache"), **common)
+
+    def preview(game, chosen, labels, folder, phases):
+        return api.preview_install_order(game, chosen, labels, folder=folder, phases=phases,
+                                         data_dir=os.path.join(folder, "no-cache"), **common)
+    widget = OrderPage(str(tmp_path), plan=real, preview=preview)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.start("EET", CHOSEN, {})
+    widget.tabs.setCurrentIndex(1)
+    rows = lambda: [widget.tabs.widget(1).item(r).data(ROLE)  # noqa: E731
+                    for r in range(widget.tabs.widget(1).count())]
+    source = next(r for r, u in enumerate(rows()) if u["name"] == "stratagems #5900")
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        widget.tabs.widget(1).model().moveRow(QModelIndex(), source, QModelIndex(), 1)
+    assert widget.result["violations"]
+    flagged = next(r for r, u in enumerate(rows()) if u["name"] == "stratagems #5900")
+    assert rows()[flagged]["flagged"]
+    widget.tabs.widget(1).setCurrentRow(flagged)
+    dialog = opened(qtbot, widget)
+    kinds = [f["kind"] for f in dialog.fixes]
+    assert "replan" in kinds
+    dialog.options.setCurrentRow(kinds.index("replan"))
+    assert "breaks nothing else" in dialog.preview.text(), dialog.preview.text()
+    with qtbot.waitSignal(widget.planned, timeout=10000):
+        dialog.apply.click()
+    assert widget.result["violations"] == [] and widget.result["cycles"] == []
+    assert not any(u["flagged"] for u in rows())
+    # its line is gone, every other row keeps the order the player set
+    assert "stratagems 5900" not in lines_of(tmp_path)
+    assert "stratagems 4100" in lines_of(tmp_path)
