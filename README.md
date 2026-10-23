@@ -30,9 +30,10 @@ the components the community rule sets say must go, and writes one script that
 installs everything with WeiDU on Windows or Linux. It never guesses: whatever
 the evidence does not decide is reported to you, with the reason.
 
-The standard library at runtime, plus one library that earns its place
-(publicsuffixlist, MPL-2.0: the Public Suffix List; ADR-0043), carried inside
-the one file - nothing to install but Python 3.14.
+The standard library at runtime, plus two libraries that earn their place
+(publicsuffixlist, MPL-2.0: the Public Suffix List; filelock, MIT: one refresh
+of the community data at a time; ADR-0043), carried inside the one file -
+nothing to install but Python 3.14.
 
 **Current release: 3.0.0** - the desktop wizard up to download (milestone
 M3): game and folders, mod selection with conflicts and presets, install
@@ -510,7 +511,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,515 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,519 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -540,7 +541,11 @@ $ python3 iemod-fetch.pyz --update-data
 ```
 
 `--no-update-data` stays offline, `--no-default-data` uses only the flags,
-`--data-dir` moves the cache. The pinned WeiDU and mod_installer used by the
+`--data-dir` moves the cache. The wizard and the CLI share it: a refresh
+with something to do holds `<data dir>/.lock`. While another program holds
+it, `--update-data` waits (up to five minutes) and an ordinary run goes on at
+once with the last good copy, saying so. The lock goes with the program that
+held it. The pinned WeiDU and mod_installer used by the
 test suite are watched the same way, weekly, by `upstream-versions.yml`.
 
 GitHub's answers (each mod's latest release, the data's HEAD) are kept beside
@@ -750,7 +755,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,515, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,519, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 62 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

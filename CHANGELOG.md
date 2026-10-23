@@ -121,6 +121,15 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **Two refreshes of the community data at once no longer break each other**
+  (GUI-AUDIT M6 item 39). The wizard refreshing at start and `--update-data`
+  shared one staging folder: one failed with `No such file or directory`, and
+  the manifest saved last forgot the other's update. A refresh now holds
+  `<data dir>/.lock` (filelock 3.32.7, MIT, pinned by hash; ADR-0043
+  amendment) when it has something to do. Meanwhile `--update-data` waits up
+  to five minutes; an ordinary run uses the last good copy at once and says
+  another program is refreshing it; a run whose data is fresh is not
+  affected.
 - **A newer GitHub release is no longer offered for a copy that came from
   GitHub, nor for the same number with a word added** (GUI-AUDIT M7 item 59, measured by the
   download-sources run of every mod). EET came as GitHub's source snapshot of
