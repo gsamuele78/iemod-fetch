@@ -85,6 +85,15 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **GitHub's secondary rate limit is waited out, not taken for a refusal**
+  (GUI-AUDIT M7 item 45). A 403 from GitHub stopped at once unless the hourly
+  quota was spent, but GitHub also answers 403 (or 429) when requests come too
+  fast, and its docs say to wait and retry: the `Retry-After` seconds, else at
+  least one minute, then longer. That is what the client now does, for
+  GitHub only and only when the response says so (a Retry-After header, or
+  "secondary rate limit" in the body); a real refusal and a spent hourly
+  quota still stop at once with their own message. A `Retry-After` given as
+  an HTTP date (RFC 9110) is now waited until, not ignored.
 - **A Russian, Polish or Chinese mod's component names read in its own
   script** (GUI-AUDIT M7 item 44). A .tra file that is not UTF-8 was read as
   Windows-1252 whatever its language: on 103 real mods, 2,286 Russian and

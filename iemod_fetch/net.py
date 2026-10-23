@@ -7,9 +7,12 @@ Policy (ADR-0003):
     dropped on every cross-host redirect, including GitHub's own CDN;
   * responses are size-capped and streamed to a temporary file, then verified by
     content sniffing and (when known) sha256 before anything is extracted;
-  * retries honour Retry-After and never retry a deterministic 4xx.
+  * retries honour Retry-After (seconds or an HTTP date) and never retry a
+    deterministic 4xx - but for GitHub's secondary rate limit, a 403 or 429
+    that GitHub's docs say to wait out and retry (GUI-AUDIT item 45).
 """
 import contextlib
+import email.utils
 import errno
 import functools
 import hashlib
@@ -219,15 +222,17 @@ class HttpClient:
                 return action()
             except urllib.error.HTTPError as exc:
                 last = exc
-                # The error owns the response socket. Only its status and
-                # headers are used, so release the connection now rather than
-                # whenever the exception is garbage-collected.
+                secondary = self._secondary_limit(url, exc)
+                # The error owns the response socket. Only its status, headers
+                # and the start of its body are used, so release the connection
+                # now rather than whenever the exception is garbage-collected.
                 _release(exc)
-                if exc.code not in _RETRYABLE_STATUS:
+                if exc.code not in _RETRYABLE_STATUS and not secondary:
                     raise HttpStatusError(url, exc.code,
                                           self._rate_limit_reason(exc)
                                           or exc.reason or "") from exc
-                delay = self._retry_after(exc) or self._backoff(attempt)
+                delay = self._retry_after(exc) or (
+                    self._secondary_backoff(attempt) if secondary else self._backoff(attempt))
             except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
                     http.client.HTTPException) as exc:
                 # IncompleteRead - a transfer cut short - is an HTTPException,
@@ -251,11 +256,45 @@ class HttpClient:
         try:
             seconds = float(value)
         except (TypeError, ValueError):
-            return None          # an HTTP-date, or junk: fall back to backoff
+            # RFC 9110 allows an HTTP date too: wait until then
+            try:
+                when = email.utils.parsedate_to_datetime(value)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                return None      # junk: fall back to backoff
+            if when.tzinfo is None:
+                return None
+            seconds = when.timestamp() - time.time()
         # Server input: NaN or a negative value would make time.sleep raise.
         if math.isnan(seconds):
             return None
         return min(max(seconds, 0.0), 300.0)
+
+    @staticmethod
+    def _secondary_limit(url: str, exc) -> bool:
+        """
+        GitHub's secondary rate limit: a 403 or 429 from GitHub while the
+        hourly quota is not spent, with a Retry-After or GitHub's own words in
+        the body. GitHub's docs say to wait and retry it; a 403 that is a real
+        refusal has neither, and an exhausted quota (X-RateLimit-Remaining 0,
+        reset up to an hour away) still stops at once with its own message.
+        """
+        if exc.code not in (403, 429) or host_of(url) not in GITHUB_AUTH_HOSTS:
+            return False
+        headers = getattr(exc, "headers", None) or {}
+        if headers.get("X-RateLimit-Remaining") == "0":
+            return False
+        if headers.get("Retry-After"):
+            return True
+        body = b""
+        with contextlib.suppress(OSError, AttributeError, KeyError, ValueError,
+                                 http.client.HTTPException):
+            body = exc.read(4096) or b""
+        return b"secondary rate limit" in body.lower()
+
+    @staticmethod
+    def _secondary_backoff(attempt: int) -> float:
+        """GitHub: at least one minute, then longer each time."""
+        return float(min(60 * 2 ** (attempt - 1), 300))
 
     @staticmethod
     def _rate_limit_reason(exc) -> str | None:
