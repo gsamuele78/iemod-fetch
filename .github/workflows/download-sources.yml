@@ -52,6 +52,7 @@ jobs:
           python tools/landing_probe.py \
             https://downloads.weaselmods.net/download/alabaster-sands/ \
             https://downloads.weaselmods.net/download/the-bloodied-stings-of-barovia/ \
+            "https://www.weaselmods.net/forumdisplay.php?fid=5" \
             https://www.gibberlings3.net/files/file/702-a-mod-for-the-orderly/ || true
       - name: Summary
         run: |

@@ -11,6 +11,7 @@ every element whose attributes mention a download (href, data-*, action,
 onclick), trimmed; and what LandingPageResolver picks from it.
 """
 import os
+import re
 import sys
 from html.parser import HTMLParser
 
@@ -33,6 +34,8 @@ class Elements(HTMLParser):
         self.found = []
 
     def handle_starttag(self, tag, attrs):
+        if tag in ("link", "meta", "script", "style"):
+            return                      # the head's assets, not a download
         text = " ".join(f'{k}="{v}"' for k, v in attrs if v is not None)
         if any(word in text.lower() for word in WORDS):
             self.found.append(f"<{tag} {text}>"[:300])
@@ -58,8 +61,22 @@ def probe(client, url):
         parser = Elements()
         parser.feed(body.decode("utf-8", errors="replace"))
         print(f"   {len(body):,} bytes of HTML; {len(parser.found)} element(s) about a download:")
-        for element in parser.found[:40]:
+        for element in parser.found[:60]:
             print(f"     {element}")
+        post = re.search(rb"postid-(\d+)", body)
+        if post and b"Download Manager" in body:
+            # WordPress Download Manager's own direct link: ?wpdmdl=<package id>
+            direct = f"{url.split('?')[0]}?wpdmdl={post.group(1).decode()}"
+            print(f"   WPDM package {post.group(1).decode()}; trying {direct}")
+            try:
+                with client.open(direct) as got:
+                    print(f"     status {getattr(got, 'status', '?')}, final {got.geturl()}")
+                    for name in HEADERS:
+                        if got.headers.get(name):
+                            print(f"     {name}: {got.headers.get(name)}")
+                    print(f"     first bytes: {got.read(8)!r}")
+            except (ModFetchError, OSError) as exc:
+                print(f"     error: {exc}")
     picked = LandingPageResolver(client).resolve(ModSource(key="probe", name="probe", url=url))
     if picked.ok:
         print(f"   resolver picks: {picked.candidate.url} ({picked.candidate.origin})")
