@@ -68,6 +68,7 @@ from .selection import (Choice, Selection, parse_selection,
                         selection_from_logs, selection_to_json)
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
+from .weidu_lex import legacy_charset
 from .urls import repo_from_url
 from . import tra
 from .contract import SCHEMA_VERSION
@@ -379,10 +380,11 @@ def _github_releases(settings) -> dict:
     Mod key -> (owner/repo, its latest release) from krion64's daily scan, for
     the repository named like the mod: what a copy from elsewhere is compared
     with (ADR-0039 amendment). Only a repository whose name is the mod's, or
-    holds it: "the newest any repository of the mod names" would offer
-    RoxanneSHS/Finch v53 for Pocket Plane's finchnpc. The repository is
-    read from the release's own URL, so a renamed one (InfinityMods/Ascension,
-    now Gibberlings3's) is downloaded from where it lives.
+    holds it - one named exactly like it first: "the newest any repository of
+    the mod names" would offer RoxanneSHS/Finch v53 for Pocket Plane's
+    finchnpc, a repository it cannot tell from a fork. The repository is read from the release's own URL, so a renamed
+    one (InfinityMods/Ascension, now Gibberlings3's) is downloaded from where
+    it lives; without one, as a source spells it rather than lowercased.
     """
     if not settings.releases:
         return {}
@@ -390,12 +392,18 @@ def _github_releases(settings) -> dict:
     out = {}
     for mod in list_mods(settings.manifest, settings.catalogue, settings.mod_db,
                          settings.allow_http, settings.releases):
-        for repo in mod.repos:
-            name = normalize_key(repo.split("/", 1)[1])
+        if not mod.key:
+            continue
+        named = [(normalize_key(repo.split("/", 1)[1]), repo) for repo in mod.repos]
+        ranked = ([r for n, r in named if n == mod.key]
+                  + [r for n, r in named if n != mod.key and mod.key in n])
+        spelled = {s["github"].lower(): s["github"] for s in mod.sources
+                   if isinstance(s.get("github"), str)}
+        for repo in ranked:
             release = cache.get(repo)
-            if (release and not release.archived and mod.key
-                    and (name == mod.key or mod.key in name)):
-                out[mod.key] = (repo_from_url(release.url or "") or repo, release)
+            if release and not release.archived:
+                out[mod.key] = (repo_from_url(release.url or "")
+                                or spelled.get(repo, repo), release)
                 break
     return out
 
@@ -482,20 +490,27 @@ def _text_under(root: str, relative: str) -> str | None:
             data = fh.read(_MAX_TEXT_BYTES + 1)
     except OSError:
         return None
-    return _decode_text(data)
+    return _decode_text(data, relative)
 
 
-def _decode_text(data: bytes) -> str:
-    """UTF-8 (EE mods), else Windows-1252 (pre-EE ones: 0x92 is an apostrophe,
-    not a control character), else Latin-1 for the five bytes 1252 leaves out."""
+def _decode_text(data: bytes, path: str = "") -> str:
+    """
+    UTF-8 (EE mods), else the code page of the language folder in `path` as
+    WeiDU infers it (Russian cp1251, Polish and Czech cp1250, Chinese cp936,
+    ...; GUI-AUDIT item 44), else Windows-1252 (pre-EE: 0x92
+    is an apostrophe, not a control character), else Latin-1 for the five
+    bytes 1252 leaves out.
+    """
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         pass
-    try:
-        return data.decode("cp1252")
-    except UnicodeDecodeError:
-        return data.decode("latin-1")
+    for charset in dict.fromkeys((legacy_charset(path), "cp1252")):
+        try:
+            return data.decode(charset)
+        except UnicodeDecodeError:
+            pass
+    return data.decode("latin-1")
 
 
 # The wizard's project: one folder, one iemod-fetch.ini the CLI reads too

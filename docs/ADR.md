@@ -2062,8 +2062,9 @@ command line either.
     of the entry's other sources gets its turn (GUI-AUDIT M7 items 54, 58).
     And a copy from anywhere but GitHub is compared with the latest release
     krion64's daily scan names for the repository called like the mod (a
-    fork is never offered); when that release is newer by
-    `versions.compare_published` - never on versions it cannot rank - the
+    repository named otherwise is never offered); when that release is plainly
+    newer by `versions.newer_release` - never on versions it cannot rank, a
+    release candidate over a release, or a date over a version - the
     record carries it as `newer` and the run tells the player to re-run
     with `--take-newer FOLDER` (or `all`). Offered, not taken: the player
     decides, as ADR-0005 wants, and a front end can make it a button. Taken,

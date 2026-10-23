@@ -3,7 +3,7 @@
 #
 # The shape is functional core / imperative shell (ADR-0019):
 #
-#   core     naming, errors, versions, weidu, tp2, modmeta, manifest,
+#   core     naming, errors, versions, weidu, weidu_lex, tp2, modmeta, manifest,
 #            catalogues, moddb, rules, ordering, conflicts, resolution,
 #            installer, languages, plan, report,
 #            config, pinning, selection, available, contract, tra, freshness,
@@ -36,6 +36,7 @@ source_modules =
     iemod_fetch.urls
     iemod_fetch.versions
     iemod_fetch.weidu
+    iemod_fetch.weidu_lex
     iemod_fetch.tp2
     iemod_fetch.modmeta
     iemod_fetch.manifest
@@ -222,5 +223,6 @@ forbidden_modules =
     iemod_fetch.urls
     iemod_fetch.versions
     iemod_fetch.weidu
+    iemod_fetch.weidu_lex
 # The api itself imports the rest: only the GUI's own imports are judged.
 allow_indirect_imports = True

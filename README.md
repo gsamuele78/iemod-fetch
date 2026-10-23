@@ -510,7 +510,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,380 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,434 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -638,7 +638,8 @@ it is. Only when one is offered: naming a mod whose copy is as new or newer
 does nothing, so `take_newer` can stay in the ini without replacing the mod
 on every run. It passes the
 same tp2 check as any download. No offer is made when the versions cannot be
-ranked, or from a repository named otherwise than the mod (a fork).
+ranked, or from a repository named otherwise than the mod - a fork, or a
+maintainer's copy the tool cannot tell from one.
 
 In the wizard, the download page shows each offer under *Newer release* with
 a box to tick; *Install the ticked newer releases* runs the same take for the
@@ -735,7 +736,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,380, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,434, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 53 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

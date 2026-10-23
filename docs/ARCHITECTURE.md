@@ -84,6 +84,7 @@ Five contracts are enforced, and CI fails on a violation:
 | `versions.py` | version parsing and comparison, returning `None` for unrankable pairs | the ordering must be a strict weak ordering or `sorted()` is undefined |
 | `weidu.py` | the WeiDU log: the statement of desired state | attacker-adjacent input; every unreadable line becomes a warning, never an exception |
 | `tp2.py` | the installed mod's own version and supported games | the mod is the authority on itself |
+| `weidu_lex.py` | WeiDU's strings and LANGUAGE declarations, for `tp2.py` and `tra.py` | a string closes on its own mark; measured against WeiDU 251 on 103 mods |
 | `modmeta.py` | `.iemod` / Project Infinity `[Metadata]` | the developer's own ordering claims outrank any third-party rule |
 | `premeta.py` | a planned mod's own metadata ini, fetched before download and cached (ADR-0037) | read as text, never executed; 1 MiB cap; a staged mod's own ini wins |
 | `sortorder.py` | Project Infinity's Sorting Order file, as order rules (ADR-0037) | sorts only what is chosen, never adds or drops |
