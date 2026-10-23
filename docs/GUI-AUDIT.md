@@ -214,15 +214,16 @@ the authors' metadata inis, the player's Sorting Order. Measured gaps:
   workflow can).
 - **Infinity Mod Runner** (Anprionsa, MIT, a Tauri/Rust installer, beta
   1.0.2, "1,675 components installed in 12.2 h") and the **Infinity Mod
-  Forge** it reads publish their data at `anprionsa.github.io/infinity-mod-forge`
-  with the same file names krion64's site has (`data/categories.json`,
-  `data/mods/*.json` with `wp` paths, `version_cache.json`, `ki` known
-  issues). Whether krion64's data is the Forge's, a copy or a fork is to be
-  measured, not assumed; if it is one source, it counts once.
+  Forge** it reads. **krion64's site is the Infinity Mod Forge** (its README:
+  "Infinity Mod Forge", formerly "EET Mod Forge"), the data this tool has
+  read since M2; the Runner fetches the same files from
+  `anprionsa.github.io/infinity-mod-forge`. One source, counted once: the
+  audit checks whether the two copies differ, and the Runner adds no
+  classification of its own.
 
 | # | Item | Size |
 |---|---|---|
-| 25 | **Audit, measured on GitHub's runners**: every source's classification (krion64's categories and per-component `c`, the Infinity Mod Forge's and how it relates to krion64's, lcc-docs' categories, BWS-NG's, Project Infinity's), how many mods each covers, a mapping from each to krion64's install phases, and where they disagree. On the supplied 145-mod EET log: how many mods have no krion64 place, and how far the order by kind is from the order the player actually installed. ADR-0041 decides from these numbers. | M |
+| 25 | **Audit, measured on GitHub's runners**: every source's classification (krion64's (the Infinity Mod Forge's) categories and per-component `c`, lcc-docs' categories, BWS-NG's, Project Infinity's), how many mods each covers, a mapping from each to krion64's install phases, and where they disagree. On the supplied 145-mod EET log: how many mods have no krion64 place, and how far the order by kind is from the order the player actually installed. ADR-0041 decides from these numbers. | M |
 | 26 | **Selection by kind**: one "kind" filter and column in phase 2, from the mapping, each mod showing which source says what; a disagreement is shown, never settled silently. | M |
 | 27 | **Order by kind for what krion64 does not place**: such a mod takes the place its kind maps to, marked "placed by kind" with its source in the order page, the plan summary and the JSON plan. It never overrides, in this order: the player's Sorting Order, the authors' inis, BWS-NG's rules, krion64's own place. | M |
 | 28 | **Exceptions per component**: a component whose kind differs from its mod's (a tweak pack's portraits, a tactical mod's kits, what goes after EET_end) is split and placed by its own kind, from krion64's and BWS-NG's per-component data; two chosen components known to overwrite the same thing (BWS-NG and krion64 conflict records, `mod-forge.json`) are reported with their order as an option, as conflicts are today. Static analysis of what a tp2 copies is not promised: WeiDU's language can compute any path. What can be measured is what an install really overwrote: Infinity Mod Runner's *File Guard* snapshots the override folder's md5s after each batch and flags a change outside an allowlist of files several mods legitimately write (`guard_allowlist.json`); the same check belongs to M4's installation, and its findings feed this item. | L |
