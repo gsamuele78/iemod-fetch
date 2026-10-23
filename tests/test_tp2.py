@@ -119,3 +119,53 @@ def test_read_mod_tp2_finds_the_file_case_insensitively(tmp_path):
 def test_read_mod_tp2_returns_none_when_absent(tmp_path):
     (tmp_path / "empty").mkdir()
     assert read_mod_tp2(str(tmp_path / "empty"), "x.tp2") is None
+
+
+# ------------------------------------------- WeiDU's strings (GUI-AUDIT item 43)
+QUOTED = '''BACKUP ~mymod/backup~
+AUTHOR ~The "Quoted" Author~
+VERSION ~v2 "smart"~
+LANGUAGE ~Eng "lish"~ ~english~ ~mymod/english.tra~
+
+BEGIN ~Use "smart" AI~
+REQUIRE_PREDICATE GAME_IS ~bg2ee eet~ ~need "ee"~
+
+BEGIN ~~~~~A ~tilde~ name~~~~~
+'''
+
+
+def test_a_string_closes_on_the_mark_that_opened_it():
+    """WeiDU 251 on this tp2: --list-languages `0:Eng "lish"`, and
+    --list-components-json names `Use "smart" AI` and `A ~tilde~ name`.
+    The old regex read version `v2`, name `Use`, authors ['The', 'VERSION']."""
+    info = parse_tp2(QUOTED)
+    assert info.version == 'v2 "smart"'
+    assert info.mod_name == 'Use "smart" AI'
+    assert info.authors == ['The "Quoted" Author']
+    assert info.games == ["bg2ee", "eet"]
+    assert info.language_decls == [('Eng "lish"', "english")]
+
+
+def test_five_tildes_hold_tildes():
+    assert parse_tp2("BACKUP ~x~\nBEGIN ~~~~~A ~tilde~ name~~~~~\n").mod_name == "A ~tilde~ name"
+
+
+def test_language_inside_code_is_not_a_declaration():
+    """Measured on 119 real tp2s against WeiDU 251's --list-languages: 12 read
+    code as a language (BoneHill's `reload_array = ... LANGUAGE`, ToA's
+    `iconv_path =`) or lost SCS's bare directory `ENGLISH`; now all 119 agree."""
+    tp2 = '''BACKUP ~x~
+ACTION_IF FILE_EXISTS ~x~ BEGIN
+  LAF HANDLE_CHARSETS STR_VAR iconv_path = ~%MOD_FOLDER%~ END
+END
+LANGUAGE ~English~ ENGLISH ~x/english/setup.tra~
+LANGUAGE ~Deutsch~ german ~x/german/setup.tra~
+'''
+    info = parse_tp2(tp2)
+    assert info.language_decls == [("English", "ENGLISH"), ("Deutsch", "german")]
+    assert info.languages == ["English", "Deutsch"]
+
+
+def test_version_is_the_preamble_line_not_a_variable():
+    tp2 = 'BACKUP ~x~\nOUTER_SPRINT v ~%VERSION%~\nVERSION ~v3~\n'
+    assert parse_tp2(tp2).version == "v3"
