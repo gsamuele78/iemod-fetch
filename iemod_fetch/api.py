@@ -69,6 +69,7 @@ from .selection import (Choice, Selection, parse_selection,
 from .simulate import simulate_install, steps_of
 from .tp2 import read_mod_tp2
 from .weidu_lex import legacy_charset
+from .etagcache import ETagCache
 from .urls import repo_from_url
 from . import tra
 from .contract import SCHEMA_VERSION
@@ -348,9 +349,16 @@ def _http_client(settings: Settings) -> HttpClient:
                                     use_gh=not settings.no_gh_cli,
                                     use_git_credential=not settings.no_git_credential,
                                     oauth_client_id=settings.oauth_client_id)
-    return HttpClient(token=credential.token, allow_http=settings.allow_http,
-                      timeout=settings.timeout, max_bytes=settings.max_bytes,
-                      retries=settings.retries)
+    client = HttpClient(token=credential.token, allow_http=settings.allow_http,
+                        timeout=settings.timeout, max_bytes=settings.max_bytes,
+                        retries=settings.retries)
+    client.etags = ETagCache(_etag_dir(settings))
+    return client
+
+
+def _etag_dir(settings: Settings) -> str:
+    """Beside the community data, never inside it: a refresh swaps that folder whole."""
+    return os.path.normpath(_data_dir(settings)) + "-http"
 
 
 def list_mods(manifest: str | None = None, catalogues: Sequence[str] = (),
@@ -2090,6 +2098,7 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
     client = HttpClient(token=credential.token, allow_http=settings.allow_http,
                         timeout=settings.timeout, max_bytes=settings.max_bytes,
                         retries=settings.retries)
+    client.etags = ETagCache(_etag_dir(settings))
 
     for warning in (config.warnings if config else []):
         print(f"[warning] {warning}", file=sys.stderr)

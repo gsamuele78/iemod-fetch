@@ -47,6 +47,15 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **GitHub's answers are asked "changed since?"** (GUI-AUDIT M7 item 45,
+  part 2). A run asks GitHub what the run before it asked - each mod's latest
+  release, the community data's HEAD - and every answer used to spend the
+  hourly limit. Answers are now kept with their ETag in `<data dir>-http`
+  (`iemod_fetch/etagcache.py`, written whole, owner-only) and asked again
+  with If-None-Match; an unchanged one is a `304` with no body. GitHub's
+  docs, and a measurement here (X-RateLimit-Remaining went 14985 -> 14984 for
+  a 200 and stayed 14984 for the 304): an authorized 304 is free. Without a
+  token it still counts, and saves only the transfer.
 - **The wizard offers a newer GitHub release, and takes it on request**
   (GUI-AUDIT M7 item 59). The download page shows a mod's offer under "Newer
   release" with a box to tick; "Install the ticked newer releases" runs the

@@ -30,12 +30,15 @@ import urllib.request
 from dataclasses import dataclass
 
 from publicsuffixlist import PublicSuffixList
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 from collections.abc import Callable
 
 from .archives import Kind, detect_kind
 from .errors import (Cancelled, ChecksumMismatch, HttpStatusError, InsecureURL,
                      NetworkError, NotAnArchive, TooLarge)
+
+if TYPE_CHECKING:
+    from .etagcache import ETagCache
 
 # `_with_retries` returns exactly what the action it wraps returns. Saying so
 # keeps `read_bytes -> bytes` and `download -> DownloadResult` honest instead of
@@ -185,6 +188,10 @@ class HttpClient:
         # The run's cancel event (Runner sets it): a wait between retries ends
         # when it is set, so Cancel never waits out a rate limit (review of #61).
         self.cancel = None
+        # GitHub API answers kept by ETag (etagcache.ETagCache; api wires it):
+        # an unchanged answer is a 304 with no body, free with a token
+        self.etags: ETagCache | None = None
+        self.not_modified = 0
         self._opener = urllib.request.build_opener(SafeRedirectHandler(allow_http))
 
     # -- policy ------------------------------------------------------------
@@ -352,11 +359,42 @@ class HttpClient:
 
     def get_json(self, url: str):
         import json as _json
-        raw = self.read_bytes(url, limit=8 * 1024 * 1024)
+        raw, etag = self._read_json(url, 8 * 1024 * 1024)
         try:
-            return _json.loads(raw.decode("utf-8"))
+            value = _json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError) as exc:
             raise NetworkError(f"{url}: expected JSON, got {raw[:120]!r}") from exc
+        if etag and self.etags is not None:
+            self.etags.put(url, etag, raw)
+        return value
+
+    def _read_json(self, url: str, cap: int) -> tuple[bytes, str | None]:
+        """
+        The body, and the ETag to keep it under when it is new. A GitHub API
+        answer kept from an earlier run is asked for with If-None-Match; a 304
+        means it is unchanged, and the kept body is used (GUI-AUDIT item 45).
+        """
+        if self.etags is None or host_of(url) != "api.github.com":
+            return self.read_bytes(url, limit=cap), None
+        kept = self.etags.get(url)
+
+        def action() -> tuple[bytes, str | None]:
+            headers = {"If-None-Match": kept[0]} if kept else None
+            try:
+                with self.open(url, extra_headers=headers) as resp:
+                    data: bytes = resp.read(cap + 1)
+                    etag = resp.headers.get("ETag")
+            except urllib.error.HTTPError as exc:
+                if exc.code == 304 and kept:
+                    _release(exc)
+                    self.not_modified += 1
+                    return kept[1], None
+                raise
+            if len(data) > cap:
+                raise TooLarge(f"{url}: response exceeded {cap} bytes")
+            return data, etag
+
+        return self._with_retries(url, action)
 
     def post_form(self, url: str, fields: dict) -> dict:
         """POST an application/x-www-form-urlencoded body and parse a JSON reply."""
