@@ -16,6 +16,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass
 
+from .childenv import child_env
 from .errors import ExtractionError, UnsafeArchive
 
 MAX_TOTAL_BYTES = 2 * 1024 ** 3       # 2 GiB uncompressed ceiling
@@ -239,7 +240,7 @@ def _seven_zip_listing(path: str) -> list[tuple] | None:
     try:
         proc = subprocess.run([tool, "l", "-slt", "-ba", "--", path],
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                              timeout=_TOOL_TIMEOUT, check=False)
+                              timeout=_TOOL_TIMEOUT, check=False, env=child_env())
     except (OSError, subprocess.TimeoutExpired):
         return None
     if proc.returncode != 0:
@@ -291,7 +292,7 @@ def _extract_external(path: str, dest: str, kind: Kind) -> None:
     for tool, cmd in candidates:
         try:
             proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  timeout=_TOOL_TIMEOUT, check=False)
+                                  timeout=_TOOL_TIMEOUT, check=False, env=child_env())
         except (OSError, subprocess.TimeoutExpired) as exc:
             failures.append(f"{tool}: {exc}")
             continue

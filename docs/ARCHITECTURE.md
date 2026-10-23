@@ -117,6 +117,7 @@ Five contracts are enforced, and CI fails on a violation:
 | `install.py` | stage a verified mod directory | never deletes an existing directory; `--force` moves it aside |
 | `orgindex.py` | trusted-owner repository listing | a disk cache with a TTL |
 | `etagcache.py` | GitHub API answers kept with their ETag, for If-None-Match | one file per URL, written whole, owner-only; a damaged or foreign entry is ignored |
+| `childenv.py` | the environment a program started by this one gets | inside a PyInstaller bundle, the library path from before the bundle started, so git, gh, 7-Zip and unrar load the system's libraries |
 | `atomic.py` | write a file whole or not at all: the state, the report, the config, the caches | a temp of its own beside the target, removed on failure; the target keeps its mode, a new file is owner-only (0600); the install state is flushed to disk |
 | `resolvers.py` | one manifest entry to one URL | refuses to guess; reports what it found instead |
 | `datasync.py` | the community-data cache: refresh from GitHub, stand in for source flags (ADR-0032) | each file checked against its git hash; swapped in whole; paths cannot leave the cache |

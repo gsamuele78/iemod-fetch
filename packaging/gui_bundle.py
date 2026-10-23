@@ -211,10 +211,10 @@ def pack(folder: str, dist: str, name: str = NAME) -> str:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         for here, dirs, files in os.walk(folder):
             dirs.sort()
-            for name in [d for d in dirs if os.path.islink(os.path.join(here, d))]:
-                link(zf, os.path.join(here, name), base)
-            for name in sorted(files):
-                full = os.path.join(here, name)
+            for entry in [d for d in dirs if os.path.islink(os.path.join(here, d))]:
+                link(zf, os.path.join(here, entry), base)
+            for entry in sorted(files):
+                full = os.path.join(here, entry)
                 if os.path.islink(full):
                     link(zf, full, base)
                     continue

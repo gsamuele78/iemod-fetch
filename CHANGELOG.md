@@ -55,9 +55,17 @@ Python API, which is internal.
   every start and is what Windows antivirus software flags most), with the
   runtime's libraries and their licences, no Qt. Each is unzipped and run
   with `--version` and `--help` before it is published, attested, and listed
-  in `SHA256SUMS` (macOS: its own `.sha256`). Measured locally: 14.7 MB,
-  built in 14 s; run with an empty environment and no Python on `PATH`, it
-  took the data folder's lock and reached GitHub through a proxy over TLS.
+  in `SHA256SUMS` (macOS: its own `.sha256`). Linux is built on Ubuntu 22.04,
+  not the latest runner: setup-python's 3.14 for 24.04 needs glibc 2.38, and
+  the bundle would not have started on Debian 12 (review of #70). The build
+  stops if any bundled file needs a glibc newer than 2.35, and the zip is run
+  once more inside `debian:12`. Programs it starts (git, gh, 7-Zip, unrar)
+  get the system's library path back, not the bundle's (`childenv.py`), so
+  they load their own OpenSSL. Python's LICENSE.txt ships with it. Measured
+  locally, with a standalone Python (glibc 2.17): 14.7 MB, built in 14 s; run
+  with an empty environment and no Python on `PATH`, it took the data
+  folder's lock and reached GitHub through a proxy over TLS. The size of the
+  CI build, which carries the system's OpenSSL, is not measured here.
 - **Choosing mods by kind** (GUI-AUDIT M5 item 26, ADR-0041 decision 4).
   lcc-docs' categories and BWS-NG's are one taxonomy spelled two ways
   (`Quête`, `quest`); `iemod_fetch/kinds.py` maps both onto one vocabulary.

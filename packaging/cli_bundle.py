@@ -23,9 +23,11 @@ import argparse
 import importlib.util
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,13 +42,22 @@ ZIP = "iemod-fetch-cli"
 ENTRY = "import sys\nfrom iemod_fetch.cli import main\n\nsys.exit(main())\n"
 # The wizard and Qt are another program; tkinter is never used.
 EXCLUDE = ("tkinter", "PySide6", "shiboken6", "iemod_fetch_gui")
+# The oldest glibc a Linux bundle may need: Ubuntu 22.04's. Debian 12 has 2.36,
+# Ubuntu 24.04 2.39. A Python built on a newer system needs a newer glibc
+# (setup-python's 3.14 for ubuntu-24.04 needs 2.38, review of #70), and the
+# bundle would not start there - so the build stops instead.
+MAX_GLIBC = (2, 35)
+_GLIBC = re.compile(rb"GLIBC_2\.(\d+)(?:\.(\d+))?\x00")
 
 
 def notice(versions: dict) -> str:
     return f"""iemod-fetch, the command line, as a program that needs no Python.
 
 The Python {versions['python']} runtime is under the PSF License Agreement
-(https://docs.python.org/3/license.html). The program was built with
+(licenses/Python-LICENSE.txt). The libraries it was built with, which come
+with it - OpenSSL, libffi, zlib, expat, bzip2, mpdecimal and others,
+depending on the system - are listed with their licences at
+https://docs.python.org/3/license.html. The program was built with
 PyInstaller {versions['pyinstaller']}, whose bootloader exception allows this
 distribution (https://pyinstaller.org/en/stable/license.html). The libraries
 it carries are listed with their licences under licenses/.
@@ -79,11 +90,51 @@ def executable(folder: str) -> str:
     return os.path.join(folder, NAME + (".exe" if os.name == "nt" else ""))
 
 
+def python_licence() -> str:
+    """The interpreter's own LICENSE.txt: beside the standard library on
+    POSIX, in the installation's root on Windows."""
+    for place in (sysconfig.get_paths()["stdlib"], sys.base_prefix):
+        path = os.path.join(place, "LICENSE.txt")
+        if os.path.isfile(path):
+            return path
+    raise SystemExit("build aborted: this Python has no LICENSE.txt to ship with it")
+
+
 def add_licences(folder: str) -> None:
     shutil.copy(os.path.join(ROOT, "LICENSE"), os.path.join(folder, "LICENSE"))
     shared.add_runtime_licences(folder)
+    shutil.copy(python_licence(), os.path.join(folder, "licenses", "Python-LICENSE.txt"))
     with open(os.path.join(folder, "NOTICE.txt"), "w", encoding="utf-8") as fh:
         fh.write(notice(versions()))
+
+
+def glibc_needed(folder: str) -> tuple[int, int] | None:
+    """The newest glibc symbol version any library or program in the folder
+    asks for: the names in an ELF file's version-needs table. glibc itself is
+    never bundled, so every one found is a need, not a definition."""
+    newest = None
+    for here, _dirs, files in os.walk(folder):
+        for name in files:
+            path = os.path.join(here, name)
+            if os.path.islink(path):
+                continue
+            with open(path, "rb") as fh:
+                if fh.read(4) != b"\x7fELF":
+                    continue
+                fh.seek(0)
+                data = fh.read()
+            for match in _GLIBC.finditer(data):
+                version = (2, int(match.group(1)))
+                newest = version if newest is None or version > newest else newest
+    return newest
+
+
+def check_glibc(folder: str, limit: tuple[int, int] = MAX_GLIBC) -> None:
+    needed = glibc_needed(folder)
+    if needed is not None and needed > limit:
+        raise SystemExit(f"the bundle needs glibc {needed[0]}.{needed[1]}, newer than "
+                         f"{limit[0]}.{limit[1]} (Ubuntu 22.04): build it with an older "
+                         f"Python build, it would not start on Debian 12")
 
 
 def check(folder: str, work: str) -> None:
@@ -105,6 +156,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="iemod-cli-") as work:
         folder = build(work)
+        if platform.system() == "Linux":
+            check_glibc(folder)
         add_licences(folder)
         path = shared.pack(folder, os.path.abspath(args.dist), ZIP)
         unpacked = os.path.join(work, "unpacked")

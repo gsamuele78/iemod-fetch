@@ -38,13 +38,25 @@ def test_the_folder_carries_the_licences_and_no_qt_notice(tmp_path, monkeypatch)
     folder.mkdir()
     cli.add_licences(str(folder))
     assert (folder / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
-    assert sorted(os.listdir(folder / "licenses")) == ["filelock-LICENSE",
+    assert sorted(os.listdir(folder / "licenses")) == ["Python-LICENSE.txt",
+                                                       "filelock-LICENSE",
                                                        "publicsuffixlist-LICENSE"]
+    assert "PSF" in (folder / "licenses" / "Python-LICENSE.txt").read_text(encoding="utf-8")
     assert (folder / "NOTICE-publicsuffixlist.txt").exists()      # MPL-2.0's source offer
     notice = (folder / "NOTICE.txt").read_text(encoding="utf-8")
     assert "Python 3.14.6" in notice and "PyInstaller 6.22.3" in notice
     assert not (folder / "NOTICE-Qt.txt").exists()
     assert not any("GPL" in name for name in os.listdir(folder / "licenses"))
+
+
+def test_the_names_inside_the_zip_do_not_shadow_its_name(tmp_path, monkeypatch):
+    """pack() names the zip before it walks the folder (review of #70)."""
+    monkeypatch.setattr(cli.shared, "tag", lambda: "linux-x86_64")
+    folder = tmp_path / "out" / cli.NAME
+    (folder / "_internal").mkdir(parents=True)
+    (folder / "_internal" / "lib.so").write_bytes(b"x")
+    path = cli.shared.pack(str(folder), str(tmp_path / "dist"), cli.ZIP)
+    assert os.path.basename(path) == "iemod-fetch-cli-linux-x86_64.zip"
 
 
 def test_the_wizard_and_qt_are_left_out():
@@ -71,3 +83,25 @@ def test_a_program_that_does_not_start_stops_the_build(tmp_path):
     fake_program(tmp_path / "p", "import sys\nsys.exit('ModuleNotFoundError: filelock')\n")
     with pytest.raises(SystemExit, match="does not run --version"):
         cli.check(str(tmp_path / "p"), str(tmp_path))
+
+
+def elf(path, needs):
+    path.write_bytes(b"\x7fELF" + b"\0" * 60 + b"".join(b"GLIBC_2.%d\0" % n for n in needs))
+
+
+def test_the_newest_glibc_any_bundled_file_needs_is_found(tmp_path):
+    (tmp_path / "_internal").mkdir()
+    elf(tmp_path / cli.NAME, [2, 17])
+    elf(tmp_path / "_internal" / "libpython3.14.so.1.0", [3, 34, 38])
+    (tmp_path / "_internal" / "notes.txt").write_bytes(b"GLIBC_2.99\0")   # not ELF
+    assert cli.glibc_needed(str(tmp_path)) == (2, 38)
+
+
+def test_a_linux_bundle_that_would_not_start_on_debian_12_stops_the_build(tmp_path):
+    """setup-python's 3.14 for ubuntu-24.04 needs glibc 2.38 (review of #70):
+    Debian 12 has 2.36, Ubuntu 22.04 2.35."""
+    elf(tmp_path / cli.NAME, [2, 38])
+    with pytest.raises(SystemExit, match="glibc 2.38"):
+        cli.check_glibc(str(tmp_path))
+    elf(tmp_path / cli.NAME, [2, 17, 34])
+    cli.check_glibc(str(tmp_path))
