@@ -247,8 +247,8 @@ jobs:
   # start on Debian 12 (2.36) - cli_bundle.py refuses a bundle needing more
   # than 2.35, and the zip is run once more inside debian:12 (review of #70).
   # A commit made before cli_bundle.py existed builds none. Debian's image
-  # comes from the ECR mirror of Docker's library: Docker Hub rate-limits
-  # anonymous pulls.
+  # comes from Docker Hub, else from the ECR mirror of Docker's library: both
+  # limit anonymous pulls (ECR alone failed with "Data limit exceeded").
   cli:
     name: Command-line bundle (${{ matrix.os }})
     needs: [decide, verify]
@@ -281,8 +281,13 @@ jobs:
         if: steps.has.outputs.it == 'yes' && runner.os == 'Linux'
         run: |
           mkdir debian-check && unzip -q cli-dist/iemod-fetch-cli-linux-*.zip -d debian-check
-          docker run --rm -v "$PWD/debian-check:/b:ro" public.ecr.aws/docker/library/debian:12 /b/iemod-fetch/iemod-fetch --version
-          docker run --rm -v "$PWD/debian-check:/b:ro" public.ecr.aws/docker/library/debian:12 /b/iemod-fetch/iemod-fetch --help > /dev/null
+          image=""
+          for candidate in debian:12 public.ecr.aws/docker/library/debian:12; do
+            if docker pull -q "$candidate"; then image="$candidate"; break; fi
+          done
+          test -n "$image" || { echo "::error::no registry gave debian:12"; exit 1; }
+          docker run --rm -v "$PWD/debian-check:/b:ro" "$image" /b/iemod-fetch/iemod-fetch --version
+          docker run --rm -v "$PWD/debian-check:/b:ro" "$image" /b/iemod-fetch/iemod-fetch --help > /dev/null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.has.outputs.it == 'yes'
         with:
