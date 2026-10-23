@@ -125,3 +125,58 @@ def compare_published(left: str | None, right: str | None) -> int | None:
     if alike and same_words and _digits(left).lstrip("0") == _digits(right).lstrip("0"):
         return 0
     return result
+
+
+def _dotless_disagrees(tag: str, installed: str) -> bool:
+    """
+    `V19` against `2.0`: as 19 it is newer, as 1.9 - the dots a tag drops -
+    older. `compare_published` ranks such a pair by the number (its tests:
+    `v12` over `1.3`), which serves the update view; an offer to replace a
+    copy wants both readings to agree.
+    """
+    a, b = parse_version(tag) or (), parse_version(installed) or ()
+    numbers_a = [p for p in a if isinstance(p, int)]
+    numbers_b = [p for p in b if isinstance(p, int)]
+    for single, other, is_tag in ((numbers_a, numbers_b, True), (numbers_b, numbers_a, False)):
+        # A dropped dot is plausible only against a one-digit major: `v32`
+        # against `v31.1` is BG1NPC's 32nd release, not 3.2 (review of #56)
+        if len(single) == 1 and single[0] >= 10 and len(other) >= 2 and other[0] < 10:
+            digits = _digits(tag if is_tag else installed)
+            # `v071` is 0.71, as compare_published reads it; `V19` is 1.9
+            dotted = ("0." + digits.lstrip("0") if digits.startswith("0")
+                      else ".".join(digits))
+            reread = compare(dotted, installed) if is_tag else compare(tag, dotted)
+            return reread != compare(tag, installed)
+    return False
+
+
+# A tag that is a date (`20180929`, `2025.05.18`) says when, not which version.
+_DATE = re.compile(r"(?<!\d)(?:19|20)\d{2}[-_.]?(?:0[1-9]|1[0-2])[-_.]?"
+                   r"(?:0[1-9]|[12]\d|3[01])(?!\d)")
+
+
+def _is_prerelease(text: str) -> bool:
+    """A word says so - `rc`, `beta`, `alpha`, `dev`, `pre`. Not a bare letter:
+    `v4.81a`, `1.4.4a`, `1.4b` are revisions in this ecosystem (review of #56,
+    measured on krion64's 690 repositories)."""
+    return any(isinstance(p, str) and len(p) > 1 and p in _PRERELEASE
+               for p in parse_version(text) or ())
+
+
+def newer_release(tag: str | None, installed: str | None) -> bool:
+    """
+    Whether a release tag is plainly newer than an installed copy - what the
+    run may offer to replace it with (ADR-0039 amendment). Stricter than
+    `compare_published`: a dotless tag whose two readings disagree (`V19`
+    against `2.0`) is not offered; a release candidate or a beta is never offered over
+    a stable copy (`v4.1.0-rc1` against `4.0`), nor a tag that is a date over
+    a numbered version (`2025.05.18` against `v1.5`): those rank, but are not
+    "the newer version" a player asked for.
+    """
+    if not tag or not installed or compare_published(tag, installed) != 1:
+        return False
+    if _dotless_disagrees(tag, installed):
+        return False
+    if _is_prerelease(tag) and not _is_prerelease(installed):
+        return False
+    return not (_DATE.search(tag) and not _DATE.search(installed))
