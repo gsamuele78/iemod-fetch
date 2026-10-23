@@ -91,3 +91,36 @@ def test_the_stability_ladder_still_holds_after_the_fix():
     assert compare("beta", "alpha") == 1
     assert compare("rc", "beta") == 1
     assert compare("alpha", "snapshot") == 1
+
+
+# ------------------------------------------------- compare_published, offers
+def test_the_update_view_still_ranks_a_dotless_tag_by_its_number():
+    """compare_published keeps its tested choice (test_freshness: v12 over 1.3);
+    only an offer to replace a copy asks both readings to agree."""
+    from iemod_fetch.versions import compare_published, newer_release
+    assert compare_published("V19", "2.0") == 1
+    assert not newer_release("V19", "2.0")       # as 1.9 it is older
+    assert newer_release("V21", "2.0.5")         # as 21 and as 2.1, newer
+
+
+def test_a_dotless_tag_spelling_its_own_release_is_still_equal():
+    from iemod_fetch.versions import compare_published
+    assert compare_published("V19", "1.9") == 0
+    assert compare_published("v071", "0.71") == 0
+
+
+@pytest.mark.parametrize("tag,installed,offered", [
+    ("2.1.0", "v1.5 BETA", True),            # Ascension, measured
+    ("v6.0", "v4.0", True),
+    ("v4.1.0-rc1", "4.0", False),            # a candidate over a release
+    ("v2.0-beta", "v1.5 BETA", True),        # a beta over a beta
+    ("2025.05.18", "v1.5", False),           # a date over a version
+    ("20180929", "v1.5 BETA", False),
+    ("20240101", "20230101", True),          # dates on both sides rank
+    ("V19", "2.0", False),                   # not known
+    ("v1.0", "v1.0", False),
+    (None, "v1.0", False),
+])
+def test_an_offer_is_made_only_for_a_plainly_newer_release(tag, installed, offered):
+    from iemod_fetch.versions import newer_release
+    assert newer_release(tag, installed) is offered

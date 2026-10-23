@@ -638,7 +638,8 @@ it is. Only when one is offered: naming a mod whose copy is as new or newer
 does nothing, so `take_newer` can stay in the ini without replacing the mod
 on every run. It passes the
 same tp2 check as any download. No offer is made when the versions cannot be
-ranked, or from a repository named otherwise than the mod (a fork).
+ranked, or from a repository named otherwise than the mod - a fork, or a
+maintainer's copy the tool cannot tell from one.
 
 ## Planning the install order
 

@@ -59,8 +59,16 @@ Python API, which is internal.
   same one again on the next run). Measured:
   Ascension from a Beamdog thread (v1.5 BETA) is offered 2.1.0 from
   Gibberlings3/Ascension (krion64 knows it as InfinityMods/Ascension, renamed);
-  finchnpc is offered nothing, its only scanned repository being a fork
-  (RoxanneSHS/Finch v53).
+  finchnpc is offered nothing: its only scanned repository, RoxanneSHS/Finch
+  (v53, which is 5.3), is not named like the mod, and the rule trusts only
+  a repository that is - it misses this one rather than guess. An offer
+  needs a plainly newer release (`versions.newer_release`): never a dotless
+  tag whose readings disagree (`V19`, 19 or 1.9, against `2.0`), never a
+  release candidate or beta over a stable copy (`v4.1.0-rc1` over `4.0`),
+  never a tag that is a date over a version
+  (`20180929` over `v1.5 BETA`), and a repository named exactly like the mod
+  is preferred to one whose name only holds it. A release taken is checked
+  against the game's GAME_IS like any download.
 - **A game folder's backup and restore** (GUI-AUDIT M4 item 21, ADR-0042):
   `--backup GAME_DIR [--backup-to DIR]` copies `override/`, the
   `lang/*/dialog*.tlk` and the root's files with their sha256 and lists every

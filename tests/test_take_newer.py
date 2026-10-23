@@ -214,3 +214,69 @@ def test_the_take_asks_github_for_the_release_offered(tmp_path, monkeypatch):
 
     asked = [u for u in stub.calls if "/repos/Gibberlings3/EndlessBG1/releases" in u]
     assert asked and all(u.endswith("/releases/tags/v2.0") for u in asked), asked
+
+
+def test_a_release_candidate_is_not_offered_over_a_release(tmp_path, monkeypatch):
+    """Follow-up (b): `v4.1.0-rc1` ranks above `4.0`, but is not the newer version."""
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("4.0")})
+    setup(tmp_path, monkeypatch, stub, cache={"Gibberlings3/EndlessBG1": {
+        "tag": "v4.1.0-rc1"}})
+
+    code, out = run(ARGS)
+
+    assert code == 0, out
+    assert not record(tmp_path)["newer"]
+
+
+def test_without_a_release_url_the_repo_is_spelled_as_its_source_spells_it(
+        tmp_path, monkeypatch):
+    """Follow-up (c): the scan's keys are lowercased."""
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("v1.5 BETA")})
+    setup(tmp_path, monkeypatch, stub, cache={"Gibberlings3/EndlessBG1": {"tag": "v2.0"}})
+
+    assert run(ARGS)[0] == 0
+
+    assert record(tmp_path)["newer"]["repo"] == "Gibberlings3/EndlessBG1"
+
+
+def test_a_repository_named_exactly_like_the_mod_comes_first(tmp_path, monkeypatch):
+    """Follow-up (d): a name that only holds the mod's is the second choice."""
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("v1.5 BETA")})
+    # the manifest names the other one, so it is listed first
+    make(tmp_path, monkeypatch, stub, WEIDU, {"mods": [
+        {"name": "Endless BG1", "tp2": "EndlessBG1",
+         "github": "someone/EndlessBG1-Tweaks"}]})
+    (tmp_path / "lcc.json").write_text(json.dumps({"mods": [
+        {"tp2": "EndlessBG1", "name": "Endless BG1",
+         "urls": [FORUM, "https://github.com/Gibberlings3/EndlessBG1"]}]}))
+    (tmp_path / "vc.json").write_text(json.dumps({
+        "someone/EndlessBG1-Tweaks": {"tag": "v9.0"},
+        **RELEASE}))
+
+    assert run(ARGS)[0] == 0
+
+    newer = record(tmp_path)["newer"]
+    assert newer["repo"] == "Gibberlings3/EndlessBG1" and newer["version"] == "v2.0"
+
+
+def test_the_take_reads_the_new_copys_own_game_requirement(tmp_path, monkeypatch):
+    """Follow-up (e): a release taken is checked against the game as any download."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("EndlessBG1/EndlessBG1.tp2",
+                    "BACKUP ~x~\nVERSION ~v2.0~\nBEGIN ~c~\n"
+                    "REQUIRE_PREDICATE GAME_IS ~bg2ee~ ~no~\n")
+    stub = DiscoveryStub(owners={}, releases={}, blobs={FORUM: mod_zip("v1.5 BETA")})
+    setup(tmp_path, monkeypatch, stub)
+    args = [a if a != "WeiDU.log" else "WeiDU.log:EET" for a in ARGS]
+    assert run(args)[0] == 0
+    stub.releases = {"Gibberlings3/EndlessBG1": {"tag_name": "v2.0", "assets": [
+        {"name": "m.zip", "browser_download_url": ASSET}]}}
+    stub.blobs[ASSET] = buf.getvalue()
+
+    code, out = run([*args, "--take-newer", "EndlessBG1"])
+
+    assert code == 0, out
+    rec = record(tmp_path)
+    assert rec["status"] == "ok"
+    assert any("declares support for" in a for a in rec["advisories"]), rec["advisories"]
