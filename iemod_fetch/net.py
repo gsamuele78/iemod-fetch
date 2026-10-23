@@ -443,7 +443,7 @@ class HttpClient:
                 actual = digest.hexdigest()
                 kind = detect_kind(head)
                 if require_archive and kind is Kind.UNKNOWN:
-                    raise NotAnArchive(url, head[:160])
+                    raise NotAnArchive(url, head[:160], final_url=final_url)
                 if expected_sha256 and actual.lower() != expected_sha256.lower():
                     raise ChecksumMismatch(url, expected_sha256, actual)
 

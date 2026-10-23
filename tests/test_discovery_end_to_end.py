@@ -350,10 +350,10 @@ def test_the_retry_does_not_lower_the_bar(tmp_path, monkeypatch):
 def test_a_wrong_catalogue_download_gives_way_to_the_entrys_repository(
         tmp_path, monkeypatch):
     """
-    Measured on 2026-10-23 with the catalogue alone (GUI-AUDIT M7 item 54): a
-    direct link went first, failed the .tp2 check, and the repository the same
-    entry lists was never tried - the retry probed the catalogue again and got
-    the same link back.
+    Measured on 2026-10-23 with the catalogue alone (GUI-AUDIT M7 item 54): the
+    first source's file failed the .tp2 check, and the entry's other sources
+    were never tried - the retry probed the catalogue again and got the same
+    one back.
     """
     wrong = "https://host.example/mods/EndlessBG1-patch.zip"
     asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
@@ -465,10 +465,10 @@ def test_when_every_source_is_refused_the_failure_names_each(tmp_path, monkeypat
 
 def test_a_forum_attachment_waits_for_the_repository(tmp_path, monkeypatch):
     """
-    Measured on 2026-10-23: lcc-docs' Beamdog attachments were a save game,
-    .debug logs, a patch or another mod for 8 mods of one EET log. Listed first
-    by the catalogue, a forum's file is still tried after the repository; when
-    the repository is right it is never downloaded.
+    Measured on 2026-10-23: files scraped from the Beamdog threads lcc-docs
+    lists were a save game, .debug logs, a patch or another mod for 8 mods of
+    one EET log. Listed first, a forum's file is still tried after the
+    repository; when the repository is right it is never downloaded.
     """
     attachment = "https://forums.beamdog.com/uploads/editor/nd/82qpx7xj78an.zip"
     asset = "https://github.com/Gibberlings3/EndlessBG1/releases/download/v1/m.zip"
