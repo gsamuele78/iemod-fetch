@@ -243,18 +243,25 @@ def test_a_restore_writes_only_into_a_game_folder_and_the_one_backed_up(tmp_path
     assert (other / "chitin.key").read_bytes() == b"KEY V1  original"
 
 
-@pytest.mark.skipif(os.name == "nt", reason="names that differ only in case need a "
-                    "case-sensitive file system")
 def test_a_file_differing_only_in_case_is_moved_aside_once(tmp_path):
+    """On a case-sensitive system a mod's x.itm beside X.ITM is a file of its
+    own and is moved aside; on a case-insensitive one (Windows, macOS) it IS
+    X.ITM, changed, and is put back. Either way one restore finishes it."""
+    probe = tmp_path / "Probe"
+    probe.write_bytes(b"")
+    case_sensitive = not (tmp_path / "probe").exists()
     root = game(tmp_path)
     write(root / "override" / "X.ITM", b"backed up")
     path = backup.create(str(root), str(tmp_path / "backups"), name="before")
     write(root / "override" / "x.itm", b"a mod's")
     plan = backup.plan_restore(path, str(root))
-    assert plan["put_back"] == [] and plan["displace"] == ["override/x.itm"]
+    if case_sensitive:
+        assert plan["put_back"] == [] and plan["displace"] == ["override/x.itm"]
+    else:
+        assert plan["put_back"] == ["override/X.ITM"] and plan["displace"] == []
     backup.restore(path, str(root))
     assert (root / "override" / "X.ITM").read_bytes() == b"backed up"
-    assert not (root / "override" / "x.itm").exists()
+    assert sorted(os.listdir(root / "override")) == ["X.ITM", "spwi101.spl"]
     again = backup.plan_restore(path, str(root))
     assert again["put_back"] == [] and again["displace"] == []
 
