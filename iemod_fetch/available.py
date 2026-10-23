@@ -10,6 +10,11 @@ source knows something different about a mod:
 * the BWS-NG / krion64 mod database: the version and, often, a sha256;
 * krion64's release cache: each GitHub repository's latest release (M2d).
 
+Each source's kind is kept apart (M5 item 26, kinds.py): lcc-docs' categories
+and BWS-NG's as kinds, krion64's install category and tags beside them. The
+selection filters on any kind a source gives; where two sources both classify
+a mod with no kind in common, `kind_disagreement` says so - never settled.
+
 With versions known and a WeiDU.log given, each mod also says what is
 installed, the newest version any source names, and whether that is an update
 (freshness.py has the rule and how it was measured).
@@ -25,6 +30,7 @@ from collections.abc import Mapping, Sequence
 
 from .catalogues import CatalogueSet
 from .freshness import RELEASE, Candidate, Release, github_repo, latest, update_available
+from .kinds import BWS_NG, LCC_DOCS, disagree, kinds as to_kinds, source_name
 from .manifest import Manifest
 from .moddb import ModDatabase
 from .naming import normalize_key
@@ -49,6 +55,9 @@ class AvailableMod:
     blocking: bool = False
     advisories: list[str] = field(default_factory=list)
     sources: list[dict] = field(default_factory=list)
+    kinds_by_source: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    install_category: str | None = None   # krion64's, beside the kinds
+    tags: tuple[str, ...] = ()
     repos: list[str] = field(default_factory=list)       # GitHub owner/repo, lowercased
     candidates: list[Candidate] = field(default_factory=list)
     installed: str | None = None
@@ -59,6 +68,22 @@ class AvailableMod:
         repo = github_repo(url)
         if repo and repo not in self.repos:
             self.repos.append(repo)
+
+    def _kinds(self, origin: str, found: tuple[str, ...]) -> None:
+        if found:
+            origin = source_name(origin)
+            self.kinds_by_source[origin] = to_kinds(
+                self.kinds_by_source.get(origin, ()) + found, {})
+
+    @property
+    def kinds(self) -> tuple[str, ...]:
+        """Every kind any source gives, in KINDS' order."""
+        return to_kinds((k for found in self.kinds_by_source.values() for k in found), {})
+
+    @property
+    def kind_disagreement(self) -> bool:
+        said = list(self.kinds_by_source.values())
+        return any(disagree(a, b) for i, a in enumerate(said) for b in said[i + 1:])
 
     def as_dict(self) -> dict:
         freshness = {"installed": self.installed,
@@ -72,7 +97,11 @@ class AvailableMod:
                 "categories": list(self.categories), "status": list(self.status),
                 "safe": self.safe, "last_update": self.last_update,
                 "version": self.version, "blocking": self.blocking,
-                "advisories": list(self.advisories), "sources": list(self.sources)}
+                "advisories": list(self.advisories), "sources": list(self.sources),
+                "kinds": list(self.kinds),
+                "kinds_by_source": {o: list(k) for o, k in self.kinds_by_source.items()},
+                "kind_disagreement": self.kind_disagreement,
+                "install_category": self.install_category, "tags": list(self.tags)}
 
 
 def _games(values) -> tuple[str, ...]:
@@ -117,6 +146,7 @@ def available_mods(manifest: Manifest | None = None,
                 mod.games = tuple(sorted(set(mod.games) | set(_games(entry.games))))
                 mod.categories = tuple(dict.fromkeys(mod.categories + entry.categories))
                 mod.status = tuple(dict.fromkeys(mod.status + entry.status))
+                mod._kinds(entry.origin, to_kinds(entry.categories, LCC_DOCS))
                 mod.safe = mod.safe if mod.safe is not None else entry.safe
                 mod.last_update = mod.last_update or entry.last_update
                 mod.blocking = mod.blocking or entry.blocking
@@ -140,11 +170,13 @@ def available_mods(manifest: Manifest | None = None,
             ("sha256", best.sha256 if best else None),
             ("version", record.version)) if v})
         _record_versions(mod, record, origin)
+        _record_kinds(mod, record, origin)
 
     for extra in versions:
         for record in extra.records.values():
             if record.key in found:
                 _record_versions(found[record.key], record, extra.origin)
+                _record_kinds(found[record.key], record, extra.origin)
 
     for mod in found.values():
         for repo in _by_likeness(mod.repos, mod.key):
@@ -174,6 +206,12 @@ def _record_versions(mod: AvailableMod, record, origin: str) -> None:
         mod._repo(url)
     if record.version:
         mod.candidates.append(Candidate(record.version, origin))
+
+
+def _record_kinds(mod: AvailableMod, record, origin: str) -> None:
+    mod._kinds(origin, to_kinds(record.categories, BWS_NG))
+    mod.install_category = mod.install_category or record.install_category
+    mod.tags = tuple(dict.fromkeys(mod.tags + tuple(record.tags)))
 
 
 def mods_document(mods: list[AvailableMod]) -> str:

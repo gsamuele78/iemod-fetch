@@ -510,7 +510,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,490 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,515 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 ## Community data, kept current
@@ -621,6 +621,12 @@ Both are measured, not assumed (docs/TESTING.md):
   ranked. Known blind spot: a release tagged without bumping the tp2 VERSION
   (EET's v14.1 tag carries VERSION v14.0) still shows as an update after it is
   installed.
+* **A mod's kind** is what lcc-docs and BWS-NG say, mapped onto one
+  vocabulary (`kinds`, and `kinds_by_source` for who says what), with
+  krion64's `install_category` and `tags` beside it, never mapped. Where two
+  sources share no kind, `kind_disagreement` is `true` and nothing is chosen:
+  on the 2026-10-23 data, 1 of 1,843 mods (all 15 BWS-NG codes and 17
+  lcc-docs labels are mapped).
 
 The formats are `schemas/mods-v1.schema.json` and
 `schemas/components-v1.schema.json`; the GUI reads the same through
@@ -744,7 +750,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,490, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,515, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 62 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

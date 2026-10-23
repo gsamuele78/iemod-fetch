@@ -47,6 +47,15 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Choosing mods by kind** (GUI-AUDIT M5 item 26, ADR-0041 decision 4).
+  lcc-docs' categories and BWS-NG's are one taxonomy spelled two ways
+  (`Quête`, `quest`); `iemod_fetch/kinds.py` maps both onto one vocabulary.
+  `--list-mods` gains `kinds`, `kinds_by_source` (what each source says),
+  `kind_disagreement`, and krion64's `install_category` and `tags`, shown
+  beside and never mapped - optional fields, the schema stays version 1. The
+  wizard's selection lists kinds down the left, adds a "Kind" column, marked
+  where two sources disagree, and a "Kinds disagree" filter; the details say
+  which source says what. Nothing is settled for the player.
 - **GitHub's answers are asked "changed since?"** (GUI-AUDIT M7 item 45,
   part 2). A run asks GitHub what the run before it asked - each mod's latest
   release, the community data's HEAD - and every answer used to spend the

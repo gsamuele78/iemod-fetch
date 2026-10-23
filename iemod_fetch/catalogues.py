@@ -179,7 +179,7 @@ class SupplementaryCatalogue:
 
     # ------------------------------------------------------------- loading
     @classmethod
-    def load(cls, path: str) -> SupplementaryCatalogue:
+    def load(cls, path: str, name: str | None = None) -> SupplementaryCatalogue:
         try:
             if os.path.getsize(path) > _MAX_BYTES:
                 raise ConfigError(f"catalogue {path} is larger than {_MAX_BYTES} bytes")
@@ -189,7 +189,7 @@ class SupplementaryCatalogue:
             raise ConfigError(f"cannot read catalogue {path}: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise ConfigError(f"catalogue {path} is not valid JSON: {exc}") from exc
-        return cls.from_entries(raw, name=os.path.basename(path))
+        return cls.from_entries(raw, name=name or _label(path))
 
     @classmethod
     def from_entries(cls, raw, name: str = "catalogue") -> SupplementaryCatalogue:
@@ -284,7 +284,14 @@ class CatalogueSet:
 
     @classmethod
     def load(cls, paths: Iterable[str]) -> CatalogueSet:
-        return cls([SupplementaryCatalogue.load(p) for p in paths or ()])
+        catalogues: list[SupplementaryCatalogue] = []
+        seen: dict[str, int] = {}
+        for path in paths or ():
+            name = _label(path)
+            seen[name] = seen.get(name, 0) + 1       # two catalogues, two names
+            catalogues.append(SupplementaryCatalogue.load(
+                path, name if seen[name] == 1 else f"{name} ({seen[name]})"))
+        return cls(catalogues)
 
     def __bool__(self) -> bool:
         return bool(self.catalogues)
@@ -309,3 +316,18 @@ class CatalogueSet:
     def find(self, folder=None, key=None, repo=None) -> CatalogueEntry | None:
         """Folder, then manifest key, then the repository the manifest names."""
         return self.lookup(folder, key) or self.lookup_repo(repo)
+
+
+def _label(path: str) -> str:
+    """
+    A catalogue's name, from its path: the data cache's
+    `lcc-docs/db/mods.json` is lcc-docs (review of #65: "mods.json" is what
+    every catalogue is called); a file named for itself keeps its name.
+    """
+    parts = [p for p in os.path.normpath(os.path.abspath(path)).split(os.sep) if p]
+    if not parts or os.path.splitext(parts[-1])[0].lower() not in ("mods", "catalogue"):
+        return os.path.basename(path)
+    parts.pop()
+    while len(parts) > 1 and parts[-1].lower() in ("db", "data"):
+        parts.pop()
+    return parts[-1] if parts else os.path.basename(path)
