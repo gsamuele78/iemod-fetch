@@ -170,8 +170,12 @@ def newer_release(tag: str | None, installed: str | None) -> bool:
     `compare_published`: a dotless tag whose two readings disagree (`V19`
     against `2.0`) is not offered; a release candidate or a beta is never offered over
     a stable copy (`v4.1.0-rc1` against `4.0`), nor a tag that is a date over
-    a numbered version (`2025.05.18` against `v1.5`): those rank, but are not
-    "the newer version" a player asked for.
+    a numbered version (`2025.05.18` against `v1.5`), nor the same number
+    with a word added - a language, a platform such as `_EE`, an author's
+    suffix (`v04ru` against `V0.4`: RoxanneSHS's ru is The-Rune); a single
+    letter is still a revision: those rank, but are not "the newer version" a
+    player asked for. `20191024-fix` is the one real tag where that may skip
+    a new build - the price of not offering a copy its own release forever.
     """
     if not tag or not installed or compare_published(tag, installed) != 1:
         return False
@@ -179,4 +183,24 @@ def newer_release(tag: str | None, installed: str | None) -> bool:
         return False
     if _is_prerelease(tag) and not _is_prerelease(installed):
         return False
+    if _variant(tag, installed):
+        return False
     return not (_DATE.search(tag) and not _DATE.search(installed))
+
+
+def _variant(tag: str, installed: str) -> bool:
+    """
+    The same number with a word added - a language, a platform (`_EE`), an
+    author's suffix (`v04ru`) - a build of the same release, not a newer one.
+    "The same number" is `compare_published`'s reading of the tag without its
+    words: `v2.0-linux` is 2 and 2.0 alike, `v11.0-fr` is not 1.10 (review of
+    #63). A single letter is still a revision (`1.4c`).
+    """
+    words = {p for p in parse_version(installed) or () if isinstance(p, str)}
+    parts = parse_version(tag) or ()
+    if not any(isinstance(p, str) and len(p) > 1 and p not in words for p in parts):
+        return False
+    numbers = ".".join(str(p) for p in parts if isinstance(p, int))
+    if _digits(tag).startswith("0") and numbers:
+        numbers = "0" + numbers          # `v04ru`: 04, as compare_published reads it
+    return bool(numbers) and compare_published(numbers, installed) == 0

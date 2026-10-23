@@ -112,6 +112,21 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A newer GitHub release is no longer offered for a copy that came from
+  GitHub, nor for the same number with a word added** (GUI-AUDIT M7 item 59, measured by the
+  download-sources run of every mod). EET came as GitHub's source snapshot of
+  v14.1 - whose tp2 still says v14.0 - and was offered v14.1: the snapshot's
+  `api.github.com/.../zipball` URL did not read as GitHub. A copy whose
+  candidate is a release asset or a source snapshot, or whose URL is on any
+  of GitHub's download hosts, is now never offered - so a fork's default-branch
+  snapshot is no longer offered the main repository's release either. And
+  The Rune's only tag, `v04ru`, was offered over `V0.4`: the same number with
+  a word added - a language, a platform such as `_EE`, an author's suffix
+  (RoxanneSHS's tags end in letters of the mod's name: ru for The-Rune) - is
+  not newer; a single letter is still a revision. The number is compared, not
+  the digits (review of #63): `v11.0-fr` is still offered over `1.10`. A
+  compromise, deliberately: `20191024-fix` is the one real tag where the offer
+  skipped could have been new - offering it would loop on every run.
 - **A download link that ends on a GitHub repository's page takes that
   repository's release** (GUI-AUDIT M7 item 55). baldurs-gate.de's resource
   `/download` answers 301 to `github.com/<owner>/<repo>/releases`, an HTML
