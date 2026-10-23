@@ -11,14 +11,18 @@ by kind but by install category (`QUEST MODS BG2`, `KIT & CLASS MODS`...):
 that is shown beside, never mapped into a kind - how decisive each kind is
 for an install place is ADR-0041's table, item 27's business.
 
-A label this table does not know is kept as it is, so a source that adds a
-category shows it rather than losing it.
+A label is looked up ignoring case and Unicode composition (`Quête` typed
+either way). One this table does not know is kept as it is, so a source that
+adds a category shows it rather than losing it - and, not being a kind, it
+never makes a disagreement (review of #65).
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+import unicodedata
+from collections.abc import Iterable, Mapping
 
-# The kinds, in the order the selection lists them.
+# The kinds, in the order a mod's own kinds are listed (the selection's left
+# list is alphabetical).
 KINDS = ("interface", "cosmetic", "portraits and sound", "quest", "recruitable NPC",
          "one-day NPC", "NPC (other)", "kit", "spells and items", "smith and merchant",
          "gameplay", "tactics and scripts", "unofficial patch", "utility", "conversion",
@@ -43,14 +47,31 @@ BWS_NG = {
 }
 
 
-def kinds(labels: Iterable[str], table: dict[str, str]) -> tuple[str, ...]:
+# What the player reads for a source, by the name it was loaded under: the
+# data cache's folders (datasync) and BWS-NG's repository name.
+SOURCE_NAMES = {"lcc-docs": "lcc-docs", "bws-ng": "BWS-NG",
+                "bigworldsetup-next-generation": "BWS-NG", "krion64": "krion64"}
+
+
+def _fold(label: str) -> str:
+    return unicodedata.normalize("NFC", label).strip().casefold()
+
+
+def source_name(origin: str) -> str:
+    """`bws-ng` is BWS-NG; a source this tool does not know keeps its own name."""
+    return SOURCE_NAMES.get(_fold(origin), origin)
+
+
+def kinds(labels: Iterable[str], table: Mapping[str, str]) -> tuple[str, ...]:
     """A source's labels as kinds, in KINDS' order; an unknown label kept as is."""
-    found = dict.fromkeys(table.get(label, label) for label in labels if label)
+    folded = {_fold(label): kind for label, kind in table.items()}
+    found = dict.fromkeys(folded.get(_fold(label), label) for label in labels if label)
     order = {kind: i for i, kind in enumerate(KINDS)}
     return tuple(sorted(found, key=lambda kind: (order.get(kind, len(KINDS)), kind)))
 
 
 def disagree(a: Iterable[str], b: Iterable[str]) -> bool:
-    """Two sources that both classify a mod, with no kind in common."""
-    a, b = set(a), set(b)
+    """Two sources that both classify a mod, with no kind in common. A label
+    no table knows is not a kind: it cannot disagree."""
+    a, b = set(a) & set(KINDS), set(b) & set(KINDS)
     return bool(a and b and not a & b)

@@ -11,6 +11,7 @@ import os
 
 import pytest
 
+from iemod_fetch import api
 from iemod_fetch.available import available_mods, mods_document
 from iemod_fetch.catalogues import CatalogueSet, SupplementaryCatalogue
 from iemod_fetch.kinds import BWS_NG, KINDS, LCC_DOCS, disagree, kinds
@@ -60,6 +61,14 @@ def test_a_disagreement_needs_two_sources_that_both_classify():
     assert disagree(["quest"], ["kit"])
     assert not disagree(["quest", "gameplay"], ["quest"])
     assert not disagree([], ["kit"])
+    # a label no table knows is not a kind: it cannot disagree (review of #65)
+    assert not disagree(["Nouveau"], ["kit"])
+
+
+def test_a_label_is_looked_up_ignoring_case_and_composition():
+    decomposed = "Que\u0302te"                      # Quête, the accent apart
+    assert kinds([decomposed, "GAMEPLAY"], LCC_DOCS) == ("quest", "gameplay")
+    assert kinds(["Quest", "NPC1D"], BWS_NG) == ("quest", "one-day NPC")
 
 
 def test_each_source_says_what_the_mod_is():
@@ -91,3 +100,40 @@ def test_the_document_carries_the_kinds_and_the_schema_accepts_it():
     assert entry["kind_disagreement"] is True
     with open(SCHEMA, encoding="utf-8") as fh:
         jsonschema.validate(doc, json.load(fh))
+
+
+def write(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_the_player_reads_each_source_by_its_name_on_the_real_path(tmp_path):
+    """Review of #65: from the data cache's own layout, lcc-docs' catalogue
+    was "mods.json" and BWS-NG's folder "bws-ng" - not what the player reads."""
+    write(tmp_path / "lcc-docs" / "db" / "mods.json", [
+        {"tp2": "turnabout", "name": "Turnabout", "categories": ["Quête"],
+         "games": ["BG2EE"], "urls": []}])
+    write(tmp_path / "bws-ng" / "data" / "mods" / "turnabout.json",
+          {"name": "Turnabout", "categories": ["gameplay"]})
+    write(tmp_path / "krion64" / "data" / "mods" / "turnabout.json",
+          {"t": "turnabout", "v": "v3", "ord": 1, "c": "QUEST MODS BG2", "tags": ["tob"]})
+    write(tmp_path / "krion64" / "data" / "version_cache.json", {})
+
+    mod = {m.key: m for m in api.list_mods(
+        catalogues=[str(tmp_path / "lcc-docs" / "db" / "mods.json")],
+        mod_db=str(tmp_path / "bws-ng" / "data" / "mods"),
+        releases=str(tmp_path / "krion64" / "data" / "version_cache.json"))}["turnabout"]
+
+    assert mod.as_dict()["kinds_by_source"] == {"lcc-docs": ["quest"], "BWS-NG": ["gameplay"]}
+    assert mod.kind_disagreement
+    assert (mod.install_category, mod.tags) == ("QUEST MODS BG2", ("tob",))
+
+
+def test_two_catalogues_of_one_file_name_stay_two_sources(tmp_path):
+    for folder, label in (("a", "Kit"), ("b", "Quête")):
+        write(tmp_path / folder / "mods.json", [
+            {"tp2": "m", "name": "M", "categories": [label], "urls": []}])
+    mods = available_mods(None, CatalogueSet.load(
+        [str(tmp_path / "a" / "mods.json"), str(tmp_path / "b" / "mods.json")]))
+    assert mods[0].kinds_by_source == {"a": ("kit",), "b": ("quest",)}
+    assert mods[0].kind_disagreement

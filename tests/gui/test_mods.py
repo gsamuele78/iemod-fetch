@@ -238,6 +238,15 @@ def test_the_list_is_chosen_by_kind_and_a_disagreement_is_shown(qtbot, tmp_path)
     assert "krion64 install category: QUEST MODS BG2 (tags: tob)" in widget.details.toPlainText()
 
 
+def test_a_chosen_mod_the_kind_filter_hides_stays_chosen(qtbot, tmp_path):
+    mods = [dict(MODS[0], kinds=["quest"]), dict(KINDS[0])]
+    widget = page(qtbot, tmp_path, mods)
+    check(widget, (TP2, 0))
+    widget.categories.setCurrentRow(1)                   # gameplay: Turnabout only
+    assert widget.tree.topLevelItem(0).isHidden()
+    assert widget.chosen() == [(TP2, 0)]
+
+
 # --------------------------------------------- review follow-ups (#32)
 EXCLUSIVE_NEEDED = [{
     "key": "fp", "name": "Faiths and Powers", "games": ["EET"], "categories": ["Kits"],

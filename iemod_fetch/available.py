@@ -30,7 +30,7 @@ from collections.abc import Mapping, Sequence
 
 from .catalogues import CatalogueSet
 from .freshness import RELEASE, Candidate, Release, github_repo, latest, update_available
-from .kinds import BWS_NG, LCC_DOCS, disagree, kinds as to_kinds
+from .kinds import BWS_NG, LCC_DOCS, disagree, kinds as to_kinds, source_name
 from .manifest import Manifest
 from .moddb import ModDatabase
 from .naming import normalize_key
@@ -71,6 +71,7 @@ class AvailableMod:
 
     def _kinds(self, origin: str, found: tuple[str, ...]) -> None:
         if found:
+            origin = source_name(origin)
             self.kinds_by_source[origin] = to_kinds(
                 self.kinds_by_source.get(origin, ()) + found, {})
 
