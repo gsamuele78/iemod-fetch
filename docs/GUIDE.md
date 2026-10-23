@@ -424,7 +424,7 @@ The default ceiling is 2 GiB because real mods reach it — BGGO is 1.4 GB.
 | `no download link … scored high enough` | The page only offered navigation links to other mods. Open it, find the real download, and pin it as the entry's `url`. |
 | `archive contains .tp2 files […] but none of them is …` | The archive is a different mod — or the mod renamed itself. If the archive is right, add `"expect_tp2": "<the name shown>"` to its manifest entry. With `-c` a catalogue usually supplies this automatically. |
 | `the mod now ships as 'X' (your log says 'Y')` | Not an error. The mod renamed its folder; it was installed under the new name because that is what WeiDU needs. |
-| `did not contain this mod; installed from … instead` | The manifest's download was wrong and the catalogue's URL was used. Promote that URL into your manifest. |
+| `did not contain this mod; installed from … instead` | The manifest's download was wrong and the catalogue's URL was used. Promote that URL into your manifest. A `; <url>: <reason>` after it names a source refused for another reason, such as a path escaping the target folder. |
 
 ---
 

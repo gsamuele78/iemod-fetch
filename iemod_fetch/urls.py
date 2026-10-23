@@ -43,6 +43,20 @@ def unwrap_redirect(url: str) -> str:
     return url
 
 
+def is_forum_post(url: str) -> bool:
+    """
+    A forum thread, or a file attached to one: anyone in the thread may have
+    posted it. Measured on 2026-10-23 (GUI-AUDIT M7 item 58): of lcc-docs'
+    Beamdog links for one EET log, 8 were not the mod (a save game, debug logs,
+    a patch, another mod) and the two that were - Ascension v1.5 BETA, Finch
+    v4.0 - were years behind their authors' releases (2.1.0, v6.0).
+    """
+    parts = urllib.parse.urlsplit(url or "")
+    host, path = (parts.hostname or "").lower(), parts.path.lower()
+    return host.startswith("forums.") or path.startswith(
+        ("/topic/", "/discussion/", "/viewtopic.php"))
+
+
 def repo_from_url(url: str) -> str | None:
     """Extract owner/repo from a github.com URL. Returns None for profile URLs."""
     parsed = urllib.parse.urlparse(url or "")

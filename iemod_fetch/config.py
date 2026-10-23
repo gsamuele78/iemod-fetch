@@ -25,7 +25,7 @@ FILENAME = "iemod-fetch.ini"
 
 # Options that may be repeated on the command line; in the file, one per line or
 # comma-separated.
-LIST_KEYS = ("weidu_log", "catalogue", "only", "trusted_owner", "rules")
+LIST_KEYS = ("weidu_log", "catalogue", "only", "trusted_owner", "rules", "take_newer")
 BOOL_KEYS = ("dry_run", "force", "refresh", "quiet", "allow_manual", "check_only",
              "accept_suggestions", "allow_http", "allow_exe", "accept_offsite",
              "include_optional",

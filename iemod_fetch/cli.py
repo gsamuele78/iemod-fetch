@@ -94,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="also fetch catalogue entries no WeiDU log references")
     src.add_argument("--only", action="append", default=None, metavar="FOLDER",
                      help="restrict the run to these mod folders; repeatable")
+    src.add_argument("--take-newer", action="append", default=None, metavar="FOLDER",
+                     help="install the newer GitHub release a run offered for this "
+                          "mod, over the copy on disk (kept in .backup/); 'all' "
+                          "takes every one offered. Repeatable")
 
     out = parser.add_argument_group("output")
     out.add_argument("--decisions", metavar="PATH",

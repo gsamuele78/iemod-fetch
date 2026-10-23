@@ -47,6 +47,20 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **A newer GitHub release is offered for a copy from elsewhere, and taken on
+  request** (GUI-AUDIT M7 item 59, ADR-0039 amendment). When a mod comes from
+  an author's site or a forum post and krion64's release scan names a newer
+  release of the repository called like the mod, the run says so beside the
+  mod and in its JSON record (`newer`: version, installed, repo, date, url).
+  `--take-newer FOLDER` (repeatable; `all` for every one offered; `take_newer`
+  in the ini) installs that release over the copy on disk, kept in
+  `.backup/`; if GitHub cannot give it, the copy is left as it is. Only a
+  release that is offered is taken, by its tag (never an older one, nor the
+  same one again on the next run). Measured:
+  Ascension from a Beamdog thread (v1.5 BETA) is offered 2.1.0 from
+  Gibberlings3/Ascension (krion64 knows it as InfinityMods/Ascension, renamed);
+  finchnpc is offered nothing, its only scanned repository being a fork
+  (RoxanneSHS/Finch v53).
 - **A game folder's backup and restore** (GUI-AUDIT M4 item 21, ADR-0042):
   `--backup GAME_DIR [--backup-to DIR]` copies `override/`, the
   `lang/*/dialog*.tlk` and the root's files with their sha256 and lists every
@@ -60,6 +74,25 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **A wrong catalogue download no longer hides the catalogue's other sources**
+  (GUI-AUDIT M7 item 54). With the catalogue alone (`-m ''`), lcc-docs' direct
+  links go first, and for 8 of the 145 mods of an EET log that link is a
+  Beamdog forum attachment which is not the mod - a save game, `.debug` logs,
+  a compatibility patch, another mod. The .tp2 check refused it and the retry
+  asked the catalogue again, getting the same attachment, so the repository or
+  page the entry also lists was never tried. Each of the entry's sources now
+  gets its turn - one turn per source, not per URL, so a link that redirects
+  to a new signed URL each time cannot loop - each held to the same check;
+  the warning names what was refused, and when every source is refused the
+  failure names each one, with the reason of any refused for something other
+  than not being the mod (a path escaping the target folder, say).
+- **A forum's file comes last, and says so** (GUI-AUDIT M7 item 58, ADR-0039
+  amendment). With GitHub out of reach - no token and 115 GitHub mods is
+  enough - Ascension came from a Beamdog thread as v1.5 BETA (its repository:
+  2.1.0) and Finch as v4.0 (v6.0), silently: the right tp2, years old. A
+  forum thread or a file attached to one is now tried after the entry's own
+  direct links, its repository and its other pages, and a mod installed from
+  one carries an advisory naming the post and the version the mod declares.
 - **A contradiction in the order rules no longer breaks rules outside it**
   (GUI-AUDIT M7 item 42). When the sort got stuck it reported every unit left
   as the cycle and released the first in priority even if it was not in the

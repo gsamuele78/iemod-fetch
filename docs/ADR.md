@@ -2045,6 +2045,30 @@ command line either.
     the catalogue could not resolve said only "entry has no url and no
     github repository"; a link typed with accents crashed the mod; a bare
     403 was called a rate limit.
+  - *Amendment (2026-10-23, the owner's decision) - a forum's file comes
+    last.* Real downloads of all 145 mods, with 7-Zip and unar installed,
+    found lcc-docs' Beamdog links to be the weakest source of all: 8 were
+    not the mod (a save game, `.debug` logs, a sound file, a patch, another
+    mod), and with GitHub out of reach the two that were came from a thread
+    years behind their authors - Ascension v1.5 BETA for 2.1.0, Finch v4.0
+    for v6.0 - with nothing to say so; the tp2 check cannot tell an old
+    copy from a new one. A forum thread or a file attached to one
+    (`urls.is_forum_post`: a `forums.` host, `/topic/`, `/discussion/`,
+    `viewtopic.php`) is now tried after the entry's own direct links, its
+    repository and its other pages, and a mod installed from one carries an
+    advisory naming the post and the version the mod declares. It is not
+    refused: for some mods a forum post is the only copy left, and the same
+    tp2 check still gates it. When a downloaded archive is not the mod, each
+    of the entry's other sources gets its turn (GUI-AUDIT M7 items 54, 58).
+    And a copy from anywhere but GitHub is compared with the latest release
+    krion64's daily scan names for the repository called like the mod (a
+    fork is never offered); when that release is newer by
+    `versions.compare_published` - never on versions it cannot rank - the
+    record carries it as `newer` and the run tells the player to re-run
+    with `--take-newer FOLDER` (or `all`). Offered, not taken: the player
+    decides, as ADR-0005 wants, and a front end can make it a button. Taken,
+    it is that release or nothing: the catalogue's other sources would only
+    bring back the copy being replaced (item 59).
 - Landing pages are the weakest source: a scrape can find no archive. Those
   mods come back as "No download found", which the player can retry or fix
   with a manifest entry.

@@ -9,15 +9,17 @@ from dataclasses import dataclass
 from dataclasses import replace as _replace
 
 from .contract import SCHEMA_VERSION
-from .errors import (Cancelled, InstallConflict, ModFetchError, Unresolved,
+from .errors import (Cancelled, InstallConflict, ModFetchError, NotThisMod, Unresolved,
                      VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
-from .naming import archive_filename
+from .naming import archive_filename, normalize_key
 from .plan import Plan, WorkItem
 from .report import Record, RunReport, Status, line_for
 from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
                         repo_from_url)
+from .urls import is_forum_post
+from .versions import compare_published
 
 
 @dataclass
@@ -30,6 +32,9 @@ class Options:
     accept_offsite: bool = False
     refresh: bool = False          # re-download even if verified on disk
     discovery_attempts: int = 1    # trusted-owner candidates to actually try
+    # folders (lowercased) whose newer GitHub release replaces the copy on
+    # disk; "all" takes every one a run offered (ADR-0039 amendment)
+    take_newer: frozenset = frozenset()
 
 
 class Runner:
@@ -45,9 +50,11 @@ class Runner:
     """
 
     def __init__(self, client, options: Options, stream=None, org_index=None,
-                 catalogue=None, on_event=None, cancel=None):
+                 catalogue=None, on_event=None, cancel=None, releases=None):
         self.client = client
         self.options = options
+        # mod key -> (owner/repo, the latest release krion64's daily scan saw)
+        self.releases = releases or {}
         self.org_index = org_index
         self.catalogue = catalogue
         self.github = GitHubResolver(client, allow_exe=options.allow_exe)
@@ -86,7 +93,8 @@ class Runner:
             return []
         return entry.advisories() + entry.game_advisories(game)
 
-    def _attempt(self, source, folder, candidate, expect_tp2):  # noqa: ARG002
+    def _attempt(self, source, folder, candidate, expect_tp2,  # noqa: ARG002
+                 force=False):
         """Download one candidate and install it. Exceptions propagate."""
         staging = os.path.join(self.options.target_dir, ".staging")
         os.makedirs(staging, exist_ok=True)
@@ -103,7 +111,7 @@ class Runner:
                                           expected_sha256=candidate.sha256, **extra)
             self._emit("mod_extracting", folder=folder)
             outcome = install_from_archive(archive, self.options.target_dir, folder,
-                                           force=self.options.force,
+                                           force=self.options.force or force,
                                            allow_exe=self.options.allow_exe,
                                            expect_tp2=expect_tp2)
             return result, outcome
@@ -127,6 +135,10 @@ class Runner:
         expect_tp2 = ((source.expect_tp2 if source else None)
                       or (entry.expected_tp2 if entry else None))
 
+        taking = self._taking_newer(folder, expect_tp2)
+        if taking:
+            return self._take_newer(item, taking, expect_tp2, advisories)
+
         if not self.options.refresh:
             existing = verify_mod_dir(dest, folder, expect_tp2)
             if not existing and expect_tp2:
@@ -136,10 +148,14 @@ class Runner:
                 if existing:
                     dest = renamed
             if existing:
+                kept = self.state.get(os.path.basename(dest)) or {}
+                newer = self._newer(folder, kept.get("url"), kept.get("mod_version"))
                 return Record(folder, Status.SKIPPED,
                               f"already installed and verified ({existing})",
                               source_key=source.key if source else None,
-                              tp2_file=existing, advisories=advisories)
+                              tp2_file=existing,
+                              advisories=advisories + self._offer(folder, newer),
+                              newer=newer)
 
         if source is None:
             if not self.has_fallbacks:
@@ -165,20 +181,40 @@ class Runner:
                           warnings=list(resolution.warnings))
 
         try:
-            try:
-                result, outcome = self._attempt(source, folder, candidate, expect_tp2)
-            except VerificationFailed:
-                # The manifest's artefact is not this mod. A curated catalogue
-                # often knows a better URL, so give that one turn before giving
-                # up - the same strict check still gates the retry.
-                alternate = self._catalogue_alternate(source, folder, entry, candidate)
-                if alternate is None:
-                    raise
-                result, outcome = self._attempt(source, folder, alternate, expect_tp2)
-                candidate = alternate
+            refused = [candidate.url]
+            other = []                  # refusals for another reason than "not this mod"
+            skip = {candidate.url}      # what was refused, and each source used
+            while True:
+                try:
+                    result, outcome = self._attempt(source, folder, candidate, expect_tp2)
+                    break
+                except VerificationFailed as exc:
+                    # The artefact is not this mod: the manifest's, or the
+                    # catalogue's first source - lcc-docs links forum
+                    # attachments that are save games, debug logs or another
+                    # mod's patch. Each of the catalogue's other sources gets
+                    # one turn - a source, not a URL: one that redirects to a
+                    # new signed URL each time would otherwise come round
+                    # forever - and the same strict check gates every one.
+                    if self.cancel.is_set():
+                        raise Cancelled("cancelled") from exc
+                    if not isinstance(exc, NotThisMod):
+                        other.append(f"{candidate.url}: {exc}")
+                    alternate = self._catalogue_alternate(source, folder, entry, skip)
+                    if alternate is None:
+                        if len(refused) > 1:
+                            raise VerificationFailed(
+                                f"none of the {len(refused)} sources tried contained this "
+                                f"mod: {', '.join(refused)}"
+                                + "".join(f"; {why}" for why in other)) from exc
+                        raise
+                    candidate = alternate
+                    refused.append(candidate.url)
+            if len(refused) > 1:
                 resolution.warnings.append(
-                    f"{folder}: the manifest's download did not contain this mod; "
-                    f"installed from {entry.origin} instead ({alternate.url})")
+                    f"{folder}: {', '.join(refused[:-1])} did not contain this mod; "
+                    f"installed from {entry.origin} instead ({candidate.url})"
+                    + "".join(f"; {why}" for why in other))
         except Cancelled as exc:
             return Record(folder, Status.CANCELLED, "stopped during the download",
                           source_key=source.key, url=candidate.url, error_code=exc.code)
@@ -195,6 +231,13 @@ class Runner:
 
         # What the mod says about itself beats what any catalogue guessed.
         advisories = self._reconcile_with_tp2(advisories, outcome, item.game)
+        if is_forum_post(candidate.url):
+            declared = outcome.version or candidate.version or "no version"
+            advisories.append(
+                f"installed from a forum post ({candidate.url}), which may be older "
+                f"than the author's release: the mod declares {declared}")
+        newer = self._newer(folder, candidate.url, outcome.version)
+        advisories += self._offer(folder, newer)   # the name --take-newer reads
 
         with self._lock:
             self.state.record(outcome.folder, sha256=result.sha256, url=candidate.url,
@@ -219,6 +262,108 @@ class Runner:
                       tp2_file=outcome.tp2_file,
                       origin=candidate.origin, bytes=result.size,
                       discovered_github=discovered, advisories=advisories,
+                      warnings=list(resolution.warnings), newer=newer)
+
+    # ------------------------------------------------- a newer GitHub release
+    def _newer(self, folder, url, version):
+        """
+        The GitHub release to offer instead of a copy that came from elsewhere:
+        the latest release of the repository named like the mod, as krion64's
+        daily scan saw it, when it is newer than the VERSION the copy's tp2
+        declares. None when it cannot be told - no such repository or release,
+        a copy from GitHub already, versions that cannot be ranked. Offered,
+        never taken unasked (ADR-0005, ADR-0039 amendment).
+        """
+        known = self.releases.get(normalize_key(folder))
+        if not known or not version or repo_from_url(url or ""):
+            return None
+        repo, release = known
+        if compare_published(release.tag, version) != 1:
+            return None
+        return {"version": release.tag, "installed": version, "repo": repo,
+                "date": release.date, "url": release.url}
+
+    @staticmethod
+    def _offer(folder, newer):
+        if not newer:
+            return []
+        when = f", {newer['date']}" if newer.get("date") else ""
+        return [(f"GitHub has a newer release: {newer['version']} ({newer['repo']}{when}); "
+                 f"this copy declares {newer['installed']}. To install it instead: "
+                 f"--take-newer {folder}")]
+
+    def _taking_newer(self, folder, expect_tp2):
+        """
+        The (repo, release) to install for `folder` under --take-newer: only
+        one offered for the copy on disk, named or by `all`. Asking by name
+        never takes an older release, nor the same one again on each run
+        (review of #52).
+        """
+        wanted = self.options.take_newer
+        if not wanted or not (folder.lower() in wanted or "all" in wanted):
+            return None
+        kept = self.state.get(folder) or (self.state.get(expect_tp2) if expect_tp2 else None) or {}
+        if not self._newer(folder, kept.get("url"), kept.get("mod_version")):
+            return None
+        return self.releases.get(normalize_key(folder))
+
+    def _take_newer(self, item, known, expect_tp2, advisories) -> Record:
+        """
+        Install the GitHub release asked for, over the copy on disk (kept in
+        .backup/, as --force keeps it). Only that release - its tag, not
+        whatever GitHub calls latest now (review of #52): if it cannot be had,
+        the mod is left as it is - the catalogue's other sources would only
+        bring back the copy being replaced.
+        """
+        folder = item.folder
+        repo, release = known
+        source = _replace(item.source or ModSource(key=folder, name=folder),
+                          url=None, github=repo, release_tag=release.tag, asset=None,
+                          sha256=None)
+        resolution = self.github.resolve(source)
+        candidate = resolution.candidate
+        if candidate is None:
+            return Record(folder, Status.MANUAL,
+                          f"--take-newer: {repo} {release.tag} could not be had "
+                          f"({resolution.reason}); the copy on disk is kept",
+                          source_key=source.key, advisories=advisories,
+                          error_code=Unresolved.code)
+        if self.options.dry_run:
+            return Record(folder, Status.PLANNED,
+                          f"would replace the copy on disk with {repo} {release.tag}",
+                          source_key=source.key, url=candidate.url,
+                          version=candidate.version, origin=candidate.origin,
+                          advisories=advisories)
+        try:
+            result, outcome = self._attempt(source, folder, candidate, expect_tp2,
+                                            force=True)
+        except Cancelled as exc:
+            return Record(folder, Status.CANCELLED, "stopped during the download",
+                          source_key=source.key, url=candidate.url, error_code=exc.code)
+        except ModFetchError as exc:
+            return Record(folder, Status.FAILED, f"{exc}; the copy on disk is kept",
+                          source_key=source.key, url=candidate.url, error_code=exc.code)
+        except OSError as exc:
+            return Record(folder, Status.FAILED, f"filesystem error: {exc}",
+                          source_key=source.key, url=candidate.url,
+                          error_code="filesystem")
+        with self._lock:
+            self.state.record(outcome.folder, sha256=result.sha256, url=candidate.url,
+                              version=candidate.version, tp2_file=outcome.tp2_file,
+                              mod_version=outcome.version,
+                              declares_games=", ".join(
+                                  outcome.tp2_info.normalised_games) or None
+                              if outcome.tp2_info else None,
+                              source_key=source.key, origin=candidate.origin)
+        detail = (f"installed {outcome.tp2_file} ({result.size:,} bytes, "
+                  f"{outcome.version or candidate.version}) from {repo}, as asked")
+        if outcome.backup:
+            detail += f"; previous copy kept at {os.path.basename(outcome.backup)}"
+        return Record(outcome.folder, Status.OK, detail, source_key=source.key,
+                      url=candidate.url, sha256=result.sha256,
+                      version=outcome.version or candidate.version,
+                      tp2_file=outcome.tp2_file, origin=candidate.origin,
+                      bytes=result.size, advisories=advisories,
                       warnings=list(resolution.warnings))
 
     def _resolve(self, source, folder):
@@ -298,56 +443,82 @@ class Runner:
                 f"{', '.join(info.normalised_games)} - not {game}")
         return kept
 
-    def _catalogue_alternate(self, source, folder, entry, used):
-        """A catalogue-provided candidate whose URL differs from the one tried."""
+    def _catalogue_alternate(self, source, folder, entry, skip: set):
+        """The catalogue's best candidate from a source not used yet, whose URL
+        was not refused; the source and the URL join `skip`."""
         if not entry:
             return None
-        probe = self._probe_catalogue(source, folder, entry)
+        used: list = []
+        probe = self._probe_catalogue(source, folder, entry, skip=skip, used=used)
         if not probe:
             return None
         candidate = probe[0].candidate
-        return candidate if candidate and candidate.url != used.url else None
+        skip.update(used)
+        skip.add(candidate.url)
+        return candidate
 
-    def _probe_catalogue(self, source, folder, entry, tried=None):
+    def _probe_catalogue(self, source, folder, entry, tried=None, skip=(), used=None):
         """
         Try the sources a supplementary catalogue lists, best first.
 
         A URL that is itself the archive beats a repository (no guessing which
-        release asset is meant), which beats a landing page (no scraping). All
-        three still have to pass the .tp2 check before anything is installed.
-        Why each one failed is added to `tried`, when given.
+        release asset is meant), which beats a landing page (no scraping). A
+        forum thread, or a file attached to one, comes after all of them: what
+        anyone in the thread posted is often not the mod, or an old copy of it
+        (ADR-0039 amendment). All of them still have to pass the .tp2 check
+        before anything is installed. Why each one failed is added to `tried`,
+        when given. A source in `skip`, or whose candidate is - used already,
+        or downloaded and refused - is passed over, so the next one gets its
+        turn; the source returned is added to `used`, when given.
         """
         def failed(where, probe):
             if tried is not None and probe.reason:
                 tried.append(f"{where}: {probe.reason}")
 
-        for url in entry.direct_urls:
-            probe = self.landing.resolve(_replace(source, url=url, github=None))
-            if probe.ok:
-                probe.warnings.append(
-                    f"{folder}: resolved via {entry.origin} direct download -> {url}")
-                return probe, None
-            failed(url, probe)
+        def fresh(probe, slot):
+            if slot in skip or not probe.ok or probe.candidate.url in skip:
+                return False
+            if used is not None:
+                used.append(slot)
+            return True
 
-        if entry.github:
+        def from_url(url, how, kind):
+            if (kind, url) in skip:
+                return None
+            probe = self.landing.resolve(_replace(source, url=url, github=None))
+            if fresh(probe, (kind, url)):
+                probe.warnings.append(f"{folder}: resolved via {entry.origin} {how}-> {url}")
+                return probe
+            failed(url, probe)
+            return None
+
+        direct = entry.direct_urls
+        # a repository PAGE is covered by entry.github; a direct file link is not
+        pages = [u for u in entry.http_urls if u not in direct and not repo_from_url(u)]
+
+        for url in direct:
+            if not is_forum_post(url) and (probe := from_url(url, "direct download ",
+                                                             "direct")):
+                return probe, None
+
+        if entry.github and ("github", entry.github) not in skip:
             probe = self.github.resolve(_replace(source, github=entry.github))
-            if probe.ok:
+            if fresh(probe, ("github", entry.github)):
                 probe.warnings.append(
                     f"{folder}: resolved via {entry.origin} -> {entry.github}; it will "
                     f"only be installed if it contains {folder}.tp2 or setup-{folder}.tp2")
                 return probe, entry.github
             failed(entry.github, probe)
 
-        direct = set(entry.direct_urls)
-        for url in entry.http_urls:
-            # a repository PAGE is covered above; a direct file link is not
-            if url in direct or repo_from_url(url):
-                continue
-            probe = self.landing.resolve(_replace(source, url=url, github=None))
-            if probe.ok:
-                probe.warnings.append(f"{folder}: resolved via {entry.origin} -> {url}")
+        for url in pages:
+            if not is_forum_post(url) and (probe := from_url(url, "", "page")):
                 return probe, None
-            failed(url, probe)
+        for url in direct:
+            if is_forum_post(url) and (probe := from_url(url, "forum attachment ", "direct")):
+                return probe, None
+        for url in pages:
+            if is_forum_post(url) and (probe := from_url(url, "forum thread ", "page")):
+                return probe, None
         return None
 
     def _collect(self, report: RunReport, item: WorkItem, future) -> None:
