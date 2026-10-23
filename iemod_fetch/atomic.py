@@ -19,8 +19,8 @@ def write_text(path: str, text: str, *, private: bool = False,
     file or the new one, never half of it.
 
     private: a new file is readable by its owner only (a config holding a
-        token); otherwise a new file gets the usual umask. An existing file
-        keeps its own mode either way.
+        token); otherwise readable by all, writable by its owner, within the
+        umask. An existing file keeps its own mode either way.
     durable: flush to disk before the rename, and the folder after it on
         POSIX, for state that must survive a power cut (what was installed).
     """
@@ -32,7 +32,7 @@ def write_text(path: str, text: str, *, private: bool = False,
         mode = None
     temp = os.path.join(folder, f".{os.path.basename(path)}.{secrets.token_hex(6)}.tmp")
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
-                 0o600 if private else 0o666)
+                 0o600 if private else 0o644)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
@@ -44,11 +44,15 @@ def write_text(path: str, text: str, *, private: bool = False,
         os.replace(temp, path)
     except BaseException:
         with contextlib.suppress(OSError):
+            os.chmod(temp, 0o600)       # Windows refuses to delete a read-only file
             os.unlink(temp)
         raise
     if durable and os.name == "posix":
-        dir_fd = os.open(folder, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+        # The file is in place: a folder that cannot be flushed (some network
+        # and FUSE file systems answer EINVAL) does not make the write fail.
+        with contextlib.suppress(OSError):
+            dir_fd = os.open(folder, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)

@@ -59,9 +59,9 @@ def test_text_is_utf8(tmp_path):
 def test_permissions(tmp_path):
     kept = tmp_path / "kept.ini"
     kept.write_text("x", encoding="utf-8")
-    os.chmod(kept, 0o640)
+    os.chmod(kept, 0o700)
     write_text(str(kept), "y", private=True)
-    assert stat.S_IMODE(os.stat(kept).st_mode) == 0o640       # its owner's choice
+    assert stat.S_IMODE(os.stat(kept).st_mode) == 0o700       # its owner's choice
 
     secret = tmp_path / "token.ini"
     write_text(str(secret), "y", private=True)
@@ -73,7 +73,7 @@ def test_permissions(tmp_path):
         write_text(str(plain), "y")
     finally:
         os.umask(umask)
-    assert stat.S_IMODE(os.stat(plain).st_mode) == 0o644      # as open() would
+    assert stat.S_IMODE(os.stat(plain).st_mode) == 0o644      # never group-writable
 
 
 def test_durable_flushes_the_file(tmp_path, monkeypatch):
@@ -84,3 +84,39 @@ def test_durable_flushes_the_file(tmp_path, monkeypatch):
     assert synced == []
     write_text(str(tmp_path / "b"), "x", durable=True)
     assert len(synced) == (2 if os.name == "posix" else 1)    # the file, then its folder
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the folder is flushed on POSIX only")
+def test_a_folder_that_cannot_be_flushed_does_not_fail_a_written_file(tmp_path, monkeypatch):
+    """Review of #55: EINVAL from a network file system's folder came after the rename."""
+    fsync = os.fsync
+
+    def files_only(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError(22, "Invalid argument")
+        fsync(fd)
+    monkeypatch.setattr(atomic.os, "fsync", files_only)
+    write_text(str(tmp_path / "state.json"), "x", durable=True)
+    assert (tmp_path / "state.json").read_text(encoding="utf-8") == "x"
+
+
+def test_a_failed_write_removes_a_read_only_temp(tmp_path, monkeypatch):
+    """Review of #55: Windows will not delete a read-only file, so the temp stayed."""
+    path = tmp_path / "ro.json"
+    path.write_text("old", encoding="utf-8")
+    os.chmod(path, 0o444)
+    removed = []
+    unlink = os.unlink
+
+    def strict(p):             # as Windows: a read-only file cannot be deleted
+        if not os.stat(p).st_mode & stat.S_IWUSR:
+            raise PermissionError(13, "Access is denied")
+        removed.append(p)
+        unlink(p)
+    monkeypatch.setattr(atomic.os, "unlink", strict)
+    monkeypatch.setattr(atomic.os, "replace", lambda s, d: (_ for _ in ()).throw(
+        PermissionError(13, "Access is denied")))
+    with pytest.raises(PermissionError):
+        write_text(str(path), "new")
+    assert removed and leftovers(tmp_path) == []
+    os.chmod(path, 0o600)
