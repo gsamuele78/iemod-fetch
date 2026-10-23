@@ -237,8 +237,8 @@ Python API, which is internal.
   (GUI-AUDIT M6 item 39). The wizard refreshing at start and `--update-data`
   shared one staging folder: one failed with `No such file or directory`, and
   the manifest saved last forgot the other's update. A refresh now holds
-  `<data dir>/.lock` (filelock 3.32.7, MIT, pinned by hash; ADR-0043
-  amendment) when it has something to do. Meanwhile `--update-data` waits up
+  `<data dir>/.lock` (filelock 4.2.4, MIT, pinned by hash; ADR-0043
+  amendments) when it has something to do. Meanwhile `--update-data` waits up
   to five minutes; an ordinary run uses the last good copy at once and says
   another program is refreshing it; a run whose data is fresh is not
   affected.

@@ -9,6 +9,11 @@ updates:
       dev-tooling:
         patterns: ["*"]
         update-types: [minor, patch]
+    # This entry also reads pyproject's runtime dependencies (it opened the
+    # filelock 3 -> 4 pull request, #76): the same hold as below.
+    ignore:
+      - dependency-name: filelock
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "deps"
 
@@ -21,8 +26,7 @@ updates:
     groups:
       runtime:
         patterns: ["*"]
-    # filelock 4 had twenty releases in its first month (2026-09/10): stay on
-    # 3.x until the line settles, then move by hand with a test run.
+    # A new major filelock is moved to by hand, with a test run (ADR-0043).
     ignore:
       - dependency-name: filelock
         update-types: ["version-update:semver-major"]

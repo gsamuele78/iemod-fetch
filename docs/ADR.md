@@ -2615,6 +2615,35 @@ lose one side's new entries, which costs only fetching them again. On a file
 system without `flock`, filelock falls back to a marker file that a crash on
 another machine leaves behind.
 
+### Amendment (2026-10-23, later): filelock 4.2.4, for CVE-2026-112940
+
+**Context**: CVE-2026-112940 (CVSS 3.1 7.1, published the same evening; fixed
+in 4.2.1) is in filelock 3.20.4-4.2.0: `ReadWriteLock` and
+`AsyncReadWriteLock`, the SQLite reader/writer locks, let another local user
+who can create or rename entries in the lock's directory make SQLite write into, create
+or unlink the lock user's files. iemod-fetch uses only `FileLock`, so the path
+is not reached; but the .pyz and the bundles carry the vulnerable module, and
+pip-audit turned every pull request red. No release carried 3.32.7: it came
+in after 3.0.0.
+
+**Decision**: filelock 4.2.4 (the latest, 2026-10-19), `>=4.2.1,<5` in
+pyproject, not `--ignore-vuln`: a known-vulnerable module in what players
+download is reported by every scanner they may run, and an exception would
+have to be re-argued at each new advisory. The hold on 4.x is lifted earlier
+than planned. It was there because 4.x was changing fast, not because of a
+known defect. The one incompatible change in 4.0.0 is `SoftReadWriteLock`'s
+on-disk protocol, also unused here. Measured on 3.14: the suite and
+`tests/test_datalock.py` (two refreshes on one folder; a second process
+holding the lock) pass unchanged; `import filelock` takes 37 ms instead of
+79 ms, since 4.2 loads the lock types other than `FileLock` on first use.
+Dependabot holds the next major version for a move by hand, in both of
+its pip entries: the root one reads pyproject's dependencies too, and it is
+the one that opened the 3 -> 4 pull request (#76) the hold was meant to stop.
+
+**Consequences**: Python 3.11 or newer for filelock, below the 3.14 the
+project requires. A later 4.x is a Dependabot pull request like any other
+runtime library.
+
 ---
 
 ## ADR-0044 — lcc-docs' dates as a second update signal, never as a version

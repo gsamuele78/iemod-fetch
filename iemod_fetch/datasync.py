@@ -388,8 +388,8 @@ def refresh(client, data_dir: str, sources: Sequence[Source] = SOURCES,
                  for s in sources]
         if all(r is not None for r in fresh):
             return [r for r in fresh if r is not None]
-    # Imported here: filelock brings asyncio and sqlite3 with it, about 0.2 s
-    # on every start for a run that finds its data fresh.
+    # Imported here: about 40 ms (filelock 4.2; 3.x brought asyncio and sqlite3,
+    # about 80) that a run finding its data fresh does not need.
     from filelock import FileLock, Timeout
     if wait is None:
         wait = LOCK_WAIT if force else 0
