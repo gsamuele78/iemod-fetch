@@ -89,6 +89,8 @@ jobs:
         run: test -f .python-version || echo 3.12 > .python-version
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
+      - name: The runtime's libraries, by hash (ADR-0043)
+        run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
       - run: pip install ".[gui]" "pyinstaller==6.22.3"
       - name: Build, sign ad hoc, zip, start the unzipped copy once
         run: python packaging/gui_bundle.py --dist gui-dist

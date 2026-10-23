@@ -4,7 +4,7 @@
 # which requires-python, ruff, mypy and the classifiers below follow, and which
 # tools/upstream_versions.py checks every week. The runtime takes a library
 # only when it fixes a measured defect (ADR-0043, superseding ADR-0001/0002's
-# "none, ever"); `dependencies` is empty until the first such library lands.
+# "none, ever"); `dependencies` lists them, requirements/runtime.txt pins them.
 # Everything under `optional-dependencies` is developer tooling.
 
 [build-system]
@@ -34,7 +34,9 @@ classifiers = [
   "Topic :: System :: Archiving :: Packaging",
   "Typing :: Typed",
 ]
-dependencies = []          # see the note above (ADR-0043)
+# The runtime's libraries (ADR-0043); requirements/runtime.txt pins each by
+# version and hash for CI, the .pyz and the bundles.
+dependencies = ["publicsuffixlist>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/gsamuele78/iemod-fetch"
