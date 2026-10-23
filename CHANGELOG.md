@@ -80,7 +80,7 @@ Python API, which is internal.
   wrote into the same temp, and five of them left it behind when the write
   failed. `iemod_fetch.atomic.write_text` gives each write a temp of its own,
   removes it on failure and keeps the file's permissions (a new file is
-  0644 within the umask, a new config 0600); the install state
+  readable by its owner only, as the config already was); the install state
   is still flushed to disk, now its folder too on Linux and macOS. The
   `--conflict-report` file, written in place before, goes through it too. A
   missing parent folder of the report, the config or the data manifest is

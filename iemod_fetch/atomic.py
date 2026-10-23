@@ -12,15 +12,15 @@ import os
 import secrets
 
 
-def write_text(path: str, text: str, *, private: bool = False,
-               durable: bool = False) -> None:
+def write_text(path: str, text: str, *, durable: bool = False) -> None:
     """
     Replace `path` with `text` (UTF-8) in one rename: a reader sees the old
     file or the new one, never half of it.
 
-    private: a new file is readable by its owner only (a config holding a
-        token); otherwise readable by all, writable by its owner, within the
-        umask. An existing file keeps its own mode either way.
+    A new file is readable by its owner only - the config may hold a token,
+    the state and reports name the player's folders; an existing file keeps
+    the mode its owner gave it.
+
     durable: flush to disk before the rename, and the folder after it on
         POSIX, for state that must survive a power cut (what was installed).
     """
@@ -32,7 +32,7 @@ def write_text(path: str, text: str, *, private: bool = False,
         mode = None
     temp = os.path.join(folder, f".{os.path.basename(path)}.{secrets.token_hex(6)}.tmp")
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
-                 0o600 if private else 0o644)
+                 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)

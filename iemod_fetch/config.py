@@ -205,10 +205,10 @@ def write_values(path: str, values: dict[str, Any],
             # Read back with interpolation: a literal % is written %% (C:/100%BG).
             parser.set(section, key, text.replace("%", "%%"))
     # An existing file keeps the permissions its owner gave it; a new one is
-    # readable by its owner only (it may hold a token).
+    # readable by its owner only (it may hold a token): write_text's rule.
     buf = io.StringIO()
     parser.write(buf)
-    write_text(path, buf.getvalue(), private=True)
+    write_text(path, buf.getvalue())
 
 
 def read_section(path: str, section: str) -> dict[str, str]:

@@ -60,20 +60,12 @@ def test_permissions(tmp_path):
     kept = tmp_path / "kept.ini"
     kept.write_text("x", encoding="utf-8")
     os.chmod(kept, 0o700)
-    write_text(str(kept), "y", private=True)
+    write_text(str(kept), "y")
     assert stat.S_IMODE(os.stat(kept).st_mode) == 0o700       # its owner's choice
 
-    secret = tmp_path / "token.ini"
-    write_text(str(secret), "y", private=True)
-    assert stat.S_IMODE(os.stat(secret).st_mode) == 0o600
-
-    umask = os.umask(0o022)
-    try:
-        plain = tmp_path / "report.json"
-        write_text(str(plain), "y")
-    finally:
-        os.umask(umask)
-    assert stat.S_IMODE(os.stat(plain).st_mode) == 0o644      # never group-writable
+    new = tmp_path / "token.ini"
+    write_text(str(new), "y")
+    assert stat.S_IMODE(os.stat(new).st_mode) == 0o600        # owner only
 
 
 def test_durable_flushes_the_file(tmp_path, monkeypatch):
@@ -104,7 +96,7 @@ def test_a_failed_write_removes_a_read_only_temp(tmp_path, monkeypatch):
     """Review of #55: Windows will not delete a read-only file, so the temp stayed."""
     path = tmp_path / "ro.json"
     path.write_text("old", encoding="utf-8")
-    os.chmod(path, 0o444)
+    os.chmod(path, 0o400)
     removed = []
     unlink = os.unlink
 
