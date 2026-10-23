@@ -2262,6 +2262,12 @@ on 2026-10-23 (krion64 at its HEAD, BWS-NG at its HEAD, lcc-docs' db):
      utilities, conversions, mixed spell-and-item mods). Never a guess.
    Each placed mod names its source in the order page, the plan summary and
    the JSON plan.
+   *Done for the kind (GUI-AUDIT item 27):* `kinds.PLACES`, the table
+   above re-measured on the 2026-10-23 data; a quest split by its games is
+   right for 97 of 132 (73%). Of 1,071 classified mods krion64 does not
+   place, 445 are placed and 626 are not; on the 397 krion64 places, the
+   kind names krion64's own category for 351 (88%). *Not yet:* BWS-NG's
+   sequence carried onto krion64's order, which comes first.
 3. **The 21% disagreement is shown, not settled**: where the plan orders two
    chosen components the other way round from BWS-NG's sequence, and no rule
    decides, the order page marks the pair "BWS-NG installs these the other

@@ -46,6 +46,7 @@ from .installer import build_installer
 from . import config as _config
 from .languages import LANGUAGES, apply_language_preference, parse_preferences
 from .manifest import Manifest, load_manifest
+from .kinds import KindHint
 from .moddb import ModDatabase
 from .modmeta import find_metadata
 from .naming import normalize_key
@@ -922,7 +923,8 @@ def _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
         ruleset = analysis.ruleset or RuleSet()
         plan = None
         if index is not None and logs:
-            plan = plan_order(_log_roles(logs), index, ruleset, analysis.context)
+            plan = plan_order(_log_roles(logs), index, ruleset, analysis.context,
+                              kinds=_kind_hints(settings))
         yield settings, analysis, ruleset, plan
 
 
@@ -943,8 +945,8 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
     (ADR-0037): on top of the rules, and a contradiction is reported.
 
     Returns {"phases": [{"role", "title", "units": [{"node", "name", "tp2",
-    "category", "components": [[tp2, number, label]], "constrained", "moved",
-    "flagged"}]}], "cycles": [[names]], "violations": [text], "planned",
+    "category", "components": [[tp2, number, label]], "constrained", "placed_by",
+    "no_place", "moved", "flagged"}]}], "cycles": [[names]], "violations": [text], "planned",
     "custom": whether install-order.txt is in use}.
     """
     order_file = os.path.join(folder, INSTALL_ORDER_FILE) if folder else None
@@ -972,6 +974,9 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
                 "components": [[path.replace("\\", "/"), number, comment]
                                for path, _lang, number, comment in unit.lines],
                 "constrained": unit.node in plan.constrained,
+                # its kind placed it, krion64 having no place for it (item 27)
+                "placed_by": unit.placed_by,
+                "no_place": unit.no_place,
                 "moved": unit.key in moved,
                 # what an order rule still finds wrong; a cycle names every
                 # unit left when it was broken, so it is reported, not marked
@@ -1570,6 +1575,17 @@ def _log_roles(specs):
     return roles
 
 
+def _kind_hints(settings) -> dict[str, KindHint]:
+    """What lcc-docs and BWS-NG say each mod is, for placing what krion64
+    does not (ADR-0041 decision 2): the same merge --list-mods shows."""
+    if not (settings.catalogue or settings.mod_db):
+        return {}
+    mods = available_mods(None, CatalogueSet.load(settings.catalogue),
+                          ModDatabase.load(settings.mod_db) if settings.mod_db else None)
+    return {mod.key: KindHint(mod.kinds, mod.games, tuple(mod.kinds_by_source))
+            for mod in mods if mod.kinds}
+
+
 def _plan_order(settings, analysis: RuleAnalysis, stream):
     """Build the rule-compliant install order, if asked for."""
     if not getattr(settings, "plan_order", None):
@@ -1596,7 +1612,8 @@ def _plan_order(settings, analysis: RuleAnalysis, stream):
     constraints = analysis.constraints or _staged_constraints(settings, specs)
     plan = plan_order(specs, index, ruleset, context,
                       include_optional=settings.include_optional,
-                      reassign_phase=settings.reassign_phase)
+                      reassign_phase=settings.reassign_phase,
+                      kinds=_kind_hints(settings))
     games = _phase_games(settings, specs)
     resolution = None
     if settings.decisions or settings.resolve_conflicts:
