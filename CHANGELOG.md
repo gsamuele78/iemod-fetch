@@ -47,6 +47,14 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The download measurement, every mod and from home** (GUI-AUDIT M7 item
+  57). The download-sources workflow, run by hand, takes `real=all` to
+  download every mod the catalogue found instead of 20, and its summary says
+  what the player was told: copies from a forum post, newer GitHub releases
+  offered, links that led to a GitHub repository. `tools/measure_workstation.py`
+  runs the same steps from a player's own connection, where Gibberlings3, SHS
+  and Nexus do not answer with Cloudflare's 403 as they do to GitHub's
+  runners, and writes one folder with `summary.md` to paste back.
 - **A newer GitHub release is offered for a copy from elsewhere, and taken on
   request** (GUI-AUDIT M7 item 59, ADR-0039 amendment). When a mod comes from
   an author's site or a forum post and krion64's release scan names a newer

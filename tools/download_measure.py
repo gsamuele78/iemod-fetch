@@ -4,12 +4,15 @@ JSON reports of real runs - the measurement the development sandbox could not
 make (its proxy refuses third-party repositories).
 
     python tools/download_measure.py dry-catalogue.json [dry-manifest.json]
-        [--real real.json] [--pick N]
+        [--real real.json] [--pick N|all]
 
 Prints a Markdown summary: per run, the mods with a downloadable candidate
 (planned/ok), with none (manual) and failed, by the candidate's origin, and
-each miss with its reason. `--pick N` prints instead, one per line, N planned
-mods of the first report to try for real (deterministic: sorted by folder).
+each miss with its reason; for a real run also what the player is told (GUI-
+AUDIT M7 items 55, 58, 59): a mod installed from a forum post, a newer GitHub
+release offered, a link that led to a GitHub repository. `--pick N` prints
+instead, one per line, N planned mods of the first report to try for real
+(deterministic: sorted by folder); `--pick all`, every one.
 """
 import argparse
 import collections
@@ -53,25 +56,48 @@ def summary(title, report):
     return lines
 
 
+def signals(report):
+    """What a real run told the player beside the mods (items 55, 58, 59)."""
+    records = report.get("records") or []
+    forum = [r["folder"] for r in records
+             if any("forum post" in a for a in r.get("advisories") or ())]
+    newer = [(r["folder"], r["newer"]) for r in records if r.get("newer")]
+    led = [w for w in report.get("warnings") or () if "on GitHub;" in w]
+    lines = ["#### What the player was told", "",
+             f"- installed from a forum post: {len(forum)}"
+             + (f" ({', '.join(sorted(forum))})" if forum else ""),
+             f"- a newer GitHub release offered: {len(newer)}",
+             f"- a link that led to a GitHub repository: {len(led)}", ""]
+    for folder, offer in sorted(newer):
+        lines.append(f"  - {folder}: {offer.get('installed')} -> {offer.get('version')} "
+                     f"({offer.get('repo')})")
+    if newer:
+        lines.append("")
+    return lines
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("reports", nargs="+")
     parser.add_argument("--real")
-    parser.add_argument("--pick", type=int)
+    parser.add_argument("--pick", metavar="N|all")
     args = parser.parse_args(argv)
     first = load(args.reports[0])
     if args.pick:
         planned = sorted(r["folder"] for r in first.get("records") or []
                          if r["status"] == "planned")
-        print("\n".join(planned[:args.pick]))
+        if args.pick != "all":
+            planned = planned[:int(args.pick)]
+        print("\n".join(planned))
         return 0
     titles = ["Catalogue only (no manifest, dry run)", "With the manifest (dry run)"]
     out = ["## Download sources, measured", ""]
     for title, path in zip(titles, args.reports, strict=False):
         out += summary(title, load(path))
     if args.real:
-        out += summary("Real download of a sample (archive must hold the tp2)",
-                       load(args.real))
+        real = load(args.real)
+        out += summary("Real download (archive must hold the tp2)", real)
+        out += signals(real)
     print("\n".join(out))
     return 0
 

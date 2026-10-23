@@ -3,7 +3,10 @@
 # third-party repositories and the mod sites. On the supplied 145-mod EET log:
 # a dry run with the community catalogue only (what the wizard does with no
 # manifest) and one with the manifest, then a real download of 20 mods the
-# catalogue found, so the tp2 check of their archives is measured too.
+# catalogue found - every one, run by hand with real=all - so the tp2 check of
+# their archives is measured too. Gibberlings3, SHS and Nexus answer the
+# runners with Cloudflare's 403: tools/measure_workstation.py measures the same
+# from a home connection (GUI-AUDIT M7 item 57).
 # Informational: the numbers go to the job summary and an artifact; only a
 # crash fails it.
 name: Download sources
@@ -15,6 +18,10 @@ on:
   schedule:
     - cron: "29 4 * * 1"
   workflow_dispatch:
+    inputs:
+      real:
+        description: "Mods to download for real: a number, or all"
+        default: "20"
 
 permissions:
   contents: read
@@ -23,7 +30,7 @@ jobs:
   measure:
     name: Resolve and download from the real sources
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     env:
       GH_TOKEN: ${{ github.token }}
       IEMOD_DATA_DIR: iemod-data
@@ -42,9 +49,14 @@ jobs:
           python -m iemod_fetch $common -m '' -t mods-a --json-report dry-catalogue.json || true
           python -m iemod_fetch $common -m tests/data/mod_downloads.json -t mods-b \
             --json-report dry-manifest.json || true
-      - name: Real download of 20 mods the catalogue found
+      - name: Real download of the mods the catalogue found (20, or the input)
+        env:
+          REAL: ${{ inputs.real || '20' }}
         run: |
-          picks=$(python tools/download_measure.py dry-catalogue.json --pick 20)
+          if ! printf '%s' "$REAL" | grep -Eqx '[0-9]+|all'; then
+            echo "::error::real is a number or all"; exit 1
+          fi
+          picks=$(python tools/download_measure.py dry-catalogue.json --pick "$REAL")
           only=$(printf -- '--only %s ' $picks)
           python -m iemod_fetch -w tests/data/WeiDU.log -m '' -t mods-real $only \
             --no-discovery --no-update-data --no-gh-cli --no-git-credential -q \
