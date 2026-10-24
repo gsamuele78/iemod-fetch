@@ -388,6 +388,20 @@ property over random orders, rules and moves). On 2026-10-23, p50/p95:
 stored on each row as a string and only the rows whose mark changes were
 painted again). No test asserts a time: a shared runner would make it flaky.
 
+### RAR archives, extracted against 7-Zip (GUI-AUDIT item 40)
+
+`tools/rar_measure.py corpus | reference | compare` downloads the distinct
+.rar links of lcc-docs' `mods.json`, extracts each with the official 7-Zip
+(the reference: it alone implements every RAR version) and then with each
+candidate, in an empty folder, and calls an archive identical only when the
+same files come out with the same SHA-256. The `RAR extractors` workflow runs
+it inside `debian:trixie` (bsdtar, unar, 7zip-dfsg: the floor's own packages)
+and on Windows and macOS runners (their system bsdtar, Homebrew's unar).
+Measured in a sandbox on 2026-10-24 with Ubuntu's packages, on 63 archives
+(57 RAR4, 6 RAR5): bsdtar 3.7.2 56, unar 1.10.1 54 (no RAR5), either 59, the
+dfsg 7zip none. The trixie numbers come from the workflow and decide the
+extractor (an ADR); no test asserts them.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The

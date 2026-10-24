@@ -541,6 +541,11 @@ informational workflow: it is reported, never blocking.
 python3 -m pytest -q      # 1,686 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
+Some measurements need the network and run as their own workflows: which
+open-source tool extracts the catalogue's RAR archives as 7-Zip does, on
+Debian trixie (the minimum platform), Windows and macOS, is
+`tools/rar_measure.py` in the `RAR extractors` workflow (docs/TESTING.md).
+
 ## Community data, kept current
 
 The order, the conflicts and the list of mods come from lcc-docs,
