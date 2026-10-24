@@ -198,6 +198,34 @@ jobs:
             python -m pytest -q -rs tests/test_real_weidu.py tests/test_real_weidu_limits.py \
               tests/test_real_mod_installer.py
 
+  # The wizard's mod_installer on Windows (ADR-0046), as the bundle builds it:
+  # the C runtime linked in, and packaging/mod_installer.py fails if the .exe
+  # still names VCRUNTIME140.dll. The release builds it only for a release;
+  # this proves it on every change. Linux: real-weidu; macOS: release-macos.
+  mod-installer-windows:
+    name: mod_installer for the Windows bundle
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version-file: .python-version }
+      - name: Build, static C runtime, version checked
+        run: python packaging/mod_installer.py --out "$RUNNER_TEMP/mi"
+      - name: It starts, and names no Visual C++ runtime DLL
+        run: |
+          "$RUNNER_TEMP/mi/mod_installer.exe" --version
+          python - "$RUNNER_TEMP/mi/mod_installer.exe" <<'PY'
+          import sys
+          data = open(sys.argv[1], "rb").read().lower()
+          print("vcruntime140:", data.count(b"vcruntime140"),
+                "msvcp140:", data.count(b"msvcp140"))
+          sys.exit(1 if b"vcruntime140" in data or b"msvcp140" in data else 0)
+          PY
+
   build:
     name: Build and verify the zipapp
     runs-on: ubuntu-latest

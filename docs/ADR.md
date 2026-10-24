@@ -2886,7 +2886,11 @@ part of this project's build, until an upstream stable release includes it.
   release; it is left for the maintainer to decide, and this is where the
   choice is recorded.
 - **CI tests the same binary.** ci.yml's real-weidu job builds mod_installer
-  with the same script, so the program tested is the program shipped. A
+  with the same script, so the program tested is the program shipped. Its
+  `mod-installer-windows` job builds the Windows .exe on every change, with
+  the guard against VCRUNTIME140.dll, because the release builds the bundles
+  only for a release. macOS is built by release-macos.yml on every change
+  to packaging. A
   test keeps the commit and version in the script and in ci.yml equal.
 - **The command line is unchanged.** The generated scripts run the player's
   own mod_installer, at their terminal.
