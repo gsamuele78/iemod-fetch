@@ -398,7 +398,8 @@ same files come out with the same SHA-256. The `RAR extractors` workflow runs
 it inside `debian:trixie` (bsdtar, unar, 7zip-dfsg: the floor's own packages)
 and on Windows and macOS runners (their system bsdtar, Homebrew's unar).
 On 2026-10-24 (CI): of lcc-docs' 131 distinct .rar links, 130 downloaded and
-the reference extracted 105 (98 RAR4, 7 RAR5; 7 solid). Archives each tool
+the reference extracted 105 (98 RAR4, 7 RAR5; 7 solid); the other 25 are not
+RAR at all (the link serves something else). Archives each tool
 extracted to the same files:
 
 | Platform | bsdtar (libarchive) | unar | 7zip (dfsg) | Any |
