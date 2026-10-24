@@ -57,6 +57,17 @@ Python API, which is internal.
   without the Visual C++ runtime. The real-WeiDU job tests that same build. Why: upstream's last release,
   v12.1.1, stops after the first component on Linux (it reads `weidu.log`,
   while WeiDU writes `WeiDU.log`), and nothing newer is released.
+- **Which open-source tool opens the catalogue's RAR archives, measured**
+  (GUI-AUDIT M6 item 40, before the choice): `tools/rar_measure.py` and the
+  `RAR extractors` workflow download every distinct .rar link of lcc-docs,
+  extract each with the official 7-Zip 26.00 (pinned by hash, the reference
+  only, never shipped) and with Debian trixie's own bsdtar (libarchive), unar
+  and 7zip (the dfsg build, without the unRAR code) - trixie is the floor -
+  plus Windows' tar.exe and macOS' bsdtar and unar, and count the archives
+  each extracts to the same files. Of 105 RAR archives: bsdtar 95 on every
+  system, trixie's unar 94 (no RAR5), Homebrew's unar 103, the dfsg 7zip 1;
+  two solid RAR4 archives no open-source tool extracts (docs/TESTING.md).
+  Nothing is bundled yet: the extractor set comes with an ADR.
 - **The install, run** (GUI-AUDIT M4 item 22a, ADR-0045, amending ADR-0022):
   `api.start_install` runs mod_installer - the command the generated scripts
   run, after the same checks - reads its output line by line and answers
