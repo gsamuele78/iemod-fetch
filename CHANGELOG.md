@@ -47,6 +47,15 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The install, run** (GUI-AUDIT M4 item 22a, ADR-0045, amending ADR-0022):
+  `api.start_install` runs mod_installer - the command the generated scripts
+  run, after the same checks - reads its output line by line and answers
+  WeiDU's questions: EET's BG:EE folder, then the answers the planned log
+  records (`// @wlb-inputs:`, BIO's format), then the player. Cancel stops
+  mod_installer and everything it started (its own process group). The
+  command line still runs nothing; the wizard's page comes with item 22c.
+  Verified with the real mod_installer 16.0.0 and WeiDU v251 (CI's
+  real-weidu job).
 - **Several rows at once, keys and find on the order page; group defaults**
   (GUI-AUDIT M5b item 35). Rows are selected and dragged together, moved one
   place with Ctrl+Up / Ctrl+Down, and found by name. A mod ticked whole takes

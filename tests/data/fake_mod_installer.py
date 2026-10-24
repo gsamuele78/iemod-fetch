@@ -10,9 +10,13 @@ FAKE_QUESTIONS: JSON {"tp2.tp2#n": ["question", ...]} asked for a component.
 FAKE_TRANSCRIPT: a file every answer is appended to, one per line.
 FAKE_FAIL: "tp2.tp2#n" - that component fails, exit status 1.
 FAKE_SLOW: seconds slept after each batch starts (to cancel meanwhile).
+FAKE_GRANDCHILD: a file the pid of a sleeping child is written to - WeiDU's
+  place - started with the first batch, never waited for.
+FAKE_ECHO_ENV: the name of a variable whose value is logged at the start.
 """
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -48,6 +52,11 @@ def install(game, log_file, questions, transcript, fail, slow):
             f'component: "{number}", component_name: "", sub_component: "", version: "" }}'
             for tp2, folder, lang, number, _line in batch)
         log("INFO", "installers", f"Installing mod WeiduBatchedComponents([{listed}])")
+        pidfile = os.environ.get("FAKE_GRANDCHILD")
+        if pidfile and not os.path.exists(pidfile):
+            child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+            with open(pidfile, "w", encoding="utf-8") as fh:
+                fh.write(str(child.pid))
         time.sleep(slow)
         for tp2, _folder, _lang, number, line in batch:
             key = f"{tp2.lower()}#{number}"
@@ -75,6 +84,9 @@ def main(argv):
     questions = json.loads(os.environ.get("FAKE_QUESTIONS", "{}"))
     transcript = os.environ.get("FAKE_TRANSCRIPT", os.devnull)
     fail, slow = os.environ.get("FAKE_FAIL", ""), float(os.environ.get("FAKE_SLOW", "0"))
+    echo = os.environ.get("FAKE_ECHO_ENV")
+    if echo:
+        log("INFO", "main", f"{echo}={os.environ.get(echo, '')}")
     if argv[0] == "eet":
         log("INFO", "installers", "Beginning pre eet install process")
         status = install(args["--bg1-game-directory"], args["--bg1-log-file"], questions,

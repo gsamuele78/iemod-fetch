@@ -193,7 +193,8 @@ jobs:
           pip install pytest
           IEMOD_WEIDU="$RUNNER_TEMP/weidu/WeiDU-Linux/weidu" \
           IEMOD_MOD_INSTALLER="$RUNNER_TEMP/mi/bin/mod_installer" IEMOD_REQUIRE_REAL=1 \
-            python -m pytest -q -rs tests/test_real_weidu.py tests/test_real_weidu_limits.py
+            python -m pytest -q -rs tests/test_real_weidu.py tests/test_real_weidu_limits.py \
+              tests/test_real_mod_installer.py
 
   build:
     name: Build and verify the zipapp

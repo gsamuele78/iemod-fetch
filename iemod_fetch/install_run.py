@@ -13,13 +13,17 @@ answers the planned log records for the batch being installed
 downloaded is started by this program: mod_installer starts WeiDU, and
 WeiDU runs the mods' tp2s - which is what installing them means.
 
-Cancelling stops mod_installer (terminate, then kill after a grace period);
-WeiDU, its child, then finds its input gone and stops at its next prompt or
-at the end of the component. The WeiDU.log in the game folder says what was
-installed: resuming from it is item 23.
+Cancelling stops mod_installer and everything it started - WeiDU above all,
+which would otherwise go on writing into the game folder: mod_installer runs
+in a process group of its own (a session on POSIX, a new process group on
+Windows), which is terminated, then killed after a grace period (POSIX:
+killpg; Windows: `taskkill /T /F`). The WeiDU.log in the game folder says
+what was installed: resuming from it is item 23.
 """
+import contextlib
 import os
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -146,12 +150,25 @@ class InstallRun:
     def run(self) -> Outcome:
         outcome = Outcome(None)
         # the pipes close with the block, whatever ends it
-        with subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
-                self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, env=child_env({"RUST_LOG": "info"}),
-                text=True, encoding="utf-8", errors="replace", bufsize=1) as process:
-            self._process = process
+        # its own process group, so that cancelling reaches WeiDU too
+        group: dict = {"start_new_session": True}
+        if sys.platform == "win32":
+            group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        process = subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
+            self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, env=child_env({"RUST_LOG": "info"}),
+            text=True, encoding="utf-8", errors="replace", bufsize=1, **group)
+        self._process = process
+        try:
             self._pump(process, outcome)
+        finally:
+            # Only standard input is closed here: the output belongs to the
+            # thread reading it, which closes it at its end. Closing it from
+            # here while that thread waits on it would wait as long as anything
+            # mod_installer started keeps it open (review of the tree kill).
+            with contextlib.suppress(OSError):
+                if process.stdin is not None:
+                    process.stdin.close()
             outcome.returncode = process.wait()
         return outcome
 
@@ -161,8 +178,9 @@ class InstallRun:
 
         def read() -> None:
             assert process.stdout is not None
-            for line in process.stdout:
-                lines.put(line)
+            with process.stdout:
+                for line in process.stdout:
+                    lines.put(line)
             lines.put(None)
         threading.Thread(target=read, daemon=True).start()
         reader = OutputReader()
@@ -213,14 +231,29 @@ class InstallRun:
         return True
 
     def _stop(self, process: subprocess.Popen) -> None:
-        if process.poll() is not None:
-            return
-        process.terminate()
-        deadline = time.monotonic() + self.grace_s
-        while process.poll() is None and time.monotonic() < deadline:
-            time.sleep(0.05)
+        """Stop mod_installer and what it started: terminate, then kill."""
         if process.poll() is None:
-            process.kill()
+            _signal_group(process, kill=False)
+            deadline = time.monotonic() + self.grace_s
+            while process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.05)
+        # WeiDU may outlive mod_installer: the group goes, whatever is left of it
+        _signal_group(process, kill=True)
+
+
+def _signal_group(process: subprocess.Popen, kill: bool) -> None:
+    """Terminate (or kill) the process group `process` leads."""
+    if sys.platform == "win32":
+        if kill:
+            subprocess.run(  # noqa: S603, S607 (Windows' own taskkill)
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                env=child_env())
+        elif process.poll() is None:
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        return
+    with contextlib.suppress(ProcessLookupError, PermissionError):   # gone already
+        os.killpg(process.pid, signal.SIGKILL if kill else signal.SIGTERM)
 
 
 def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: str,

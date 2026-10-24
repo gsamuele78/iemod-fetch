@@ -196,3 +196,82 @@ def test_the_command_is_the_one_the_scripts_run(setup):
     one = command(setup["plan"], {"BG2EE": "/g"}, "/mods", "/mi", "/weidu")
     assert one[:6] == ["/mi", "normal", "--game-directory", "/g", "--log-file",
                        os.path.join(setup["plan"], "WeiDU.log")]
+
+
+# ------------------------------------------------ reviews of the design
+def alive(pid):
+    """Whether process `pid` is still running (a zombie counts as gone)."""
+    if os.name == "nt":
+        import subprocess
+        listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                capture_output=True, text=True, check=False).stdout
+        return str(pid) in listed
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            return fh.read().split(")")[-1].split()[0] != "Z"
+    except FileNotFoundError:
+        return False
+
+
+def test_cancel_stops_what_mod_installer_started_too(setup, monkeypatch, tmp_path):
+    """WeiDU, mod_installer's child, must not go on writing into the game."""
+    import time
+    pidfile = tmp_path / "weidu.pid"
+    monkeypatch.setenv("FAKE_SLOW", "30")
+    monkeypatch.setenv("FAKE_GRANDCHILD", str(pidfile))
+    install, _events = run(setup, monkeypatch, {}, grace_s=1.0)
+    timer = threading.Timer(1.0, install.cancel)
+    timer.start()
+    outcome = install.run()
+    timer.cancel()
+    assert outcome.cancelled
+    pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not alive(pid)
+
+
+def test_mod_installer_gets_the_child_environment(setup, monkeypatch):
+    """A frozen bundle's library path is not handed down (childenv, #70)."""
+    from iemod_fetch import install_run
+    seen = []
+
+    def marked(extra=None):
+        seen.append(dict(extra or {}))
+        return dict(os.environ, IEMOD_CHILD_ENV="cleaned", **(extra or {}))
+    monkeypatch.setattr(install_run, "child_env", marked)
+    monkeypatch.setenv("FAKE_ECHO_ENV", "IEMOD_CHILD_ENV")
+    install, events = run(setup, monkeypatch, {})
+    assert install.run().ok
+    assert seen[0] == {"RUST_LOG": "info"}
+    assert any(e.text.endswith("IEMOD_CHILD_ENV=cleaned") for e in events)
+
+
+def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67 // @wlb-inputs: 1\n")
+    asked = []
+    install, _events = run(setup, monkeypatch, {
+        "vienxay.tp2#0": ["Choose one", "And another"],
+        "eet.tp2#0": [EET_QUESTION]},
+        ask=lambda question, batch: asked.append(question) or "2")
+    outcome = install.run()
+    assert outcome.ok
+    assert asked == ["And another"]
+    assert answers(setup)[:2] == ["1", "2"]
+    assert [a.source for a in outcome.answered][:2] == ["recorded", "player"]
+
+
+def test_folders_with_spaces_and_accents_reach_it_whole(setup, monkeypatch, tmp_path):
+    """The command is a list, never a shell line."""
+    for name in ("BGEE", "EET"):
+        folder = tmp_path / f"Baldur's Gate {name} – città"
+        os.rename(setup["games"][name], folder)
+        setup["games"][name] = str(folder)
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    outcome = install.run()
+    assert outcome.ok
+    assert answers(setup) == [setup["games"]["BGEE"]]
+    assert "SETUP-UB.TP2" in read(setup["games"]["EET"], "WeiDU.log")

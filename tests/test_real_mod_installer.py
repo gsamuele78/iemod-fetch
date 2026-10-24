@@ -17,6 +17,10 @@ from iemod_fetch import api
 
 MOD_INSTALLER = os.environ.get("IEMOD_MOD_INSTALLER", "")
 WEIDU = os.environ.get("IEMOD_WEIDU", "")
+if os.environ.get("IEMOD_REQUIRE_REAL") and not (os.path.isfile(MOD_INSTALLER)
+                                                  and os.path.isfile(WEIDU)):
+    raise RuntimeError("IEMOD_REQUIRE_REAL is set but IEMOD_MOD_INSTALLER or IEMOD_WEIDU "
+                       "is not a file")
 pytestmark = pytest.mark.skipif(
     not (os.path.isfile(MOD_INSTALLER) and os.path.isfile(WEIDU)),
     reason="real mod_installer and WeiDU not given (IEMOD_MOD_INSTALLER, IEMOD_WEIDU)")
@@ -41,6 +45,7 @@ def test_the_real_mod_installer_asks_and_gets_the_recorded_answers(tmp_path):
     mods = tmp_path / "mods"
     (mods / "asker").mkdir(parents=True)
     (mods / "asker" / "asker.tp2").write_text(ASKER)
+    (game / "asker-answers.txt").write_text("")              # APPEND_OUTER needs it there
     plan = tmp_path / "plan"
     plan.mkdir()
     (plan / "WeiDU.log").write_text(

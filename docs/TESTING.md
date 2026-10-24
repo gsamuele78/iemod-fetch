@@ -171,6 +171,16 @@ GAME_IS, REQUIRE_COMPONENT and FORBID_COMPONENT. Three claims:
 * WeiDU installs the resolved plan to the last component;
 * the generated `install-eet.sh` drives mod_installer + WeiDU into both games.
 
+`tests/test_real_mod_installer.py` (ADR-0045) runs the wizard's own install
+(`api.start_install`) with the same two programs: a test mod whose tp2 asks
+two questions (`ACTION_READLN`), the planned log recording their answers as
+`// @wlb-inputs: hello,world`. mod_installer's question reaches the install,
+both recorded answers go back in order, and WeiDU installs the component
+with them. `tests/test_install_run.py` runs the rest - an answer from EET's
+folder, from the log, from the player; cancel, which must also stop the
+process mod_installer started; a failed component; folders with spaces and
+accents - against a stand-in that prints and asks as mod_installer does.
+
 Its first run found two bugs no self-consistent test could: a parser bug and a
 fixture placed where WeiDU does not look. Opt in locally with
 `IEMOD_WEIDU=/path/to/weidu` (and `IEMOD_MOD_INSTALLER`); CI's `real-weidu` job
@@ -414,7 +424,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,670 collected (8 run the real WeiDU, 128 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,684 collected (9 run the real WeiDU, 128 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
