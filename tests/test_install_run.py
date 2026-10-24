@@ -232,6 +232,28 @@ def test_cancel_stops_what_mod_installer_started_too(setup, monkeypatch, tmp_pat
     assert not alive(pid)
 
 
+def test_an_ended_install_does_not_wait_on_what_it_left_running(setup, monkeypatch, tmp_path):
+    """
+    mod_installer exits, something it started still holds its output (review
+    of #83): the run ends soon after - not when that lets go - and stops it.
+    """
+    import time
+    pidfile = tmp_path / "weidu.pid"
+    monkeypatch.setenv("FAKE_GRANDCHILD", str(pidfile))
+    monkeypatch.setenv("FAKE_EXIT_EARLY", "1")
+    install, events = run(setup, monkeypatch, {}, grace_s=1.0, drain_s=0.5)
+    started = time.monotonic()
+    outcome = install.run()
+    assert time.monotonic() - started < 15
+    assert outcome.returncode == 0 and not outcome.cancelled
+    assert any("still running: stopped" in e.text for e in events)
+    pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not alive(pid)
+
+
 def test_mod_installer_gets_the_child_environment(setup, monkeypatch):
     """A frozen bundle's library path is not handed down (childenv, #70)."""
     from iemod_fetch import install_run

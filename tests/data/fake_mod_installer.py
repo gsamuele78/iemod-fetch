@@ -12,6 +12,8 @@ FAKE_FAIL: "tp2.tp2#n" - that component fails, exit status 1.
 FAKE_SLOW: seconds slept after each batch starts (to cancel meanwhile).
 FAKE_GRANDCHILD: a file the pid of a sleeping child is written to - WeiDU's
   place - started with the first batch, never waited for.
+FAKE_EXIT_EARLY: with FAKE_GRANDCHILD, exit 0 right after starting it,
+  leaving it to hold the output.
 FAKE_ECHO_ENV: the name of a variable whose value is logged at the start.
 """
 import json
@@ -19,6 +21,15 @@ import os
 import subprocess
 import sys
 import time
+
+
+IGNORING = """
+import signal, time
+for name in ("SIGTERM", "SIGBREAK", "SIGINT"):
+    if hasattr(signal, name):
+        signal.signal(getattr(signal, name), signal.SIG_IGN)
+time.sleep(120)
+"""
 
 
 def log(level, target, text):
@@ -54,9 +65,13 @@ def install(game, log_file, questions, transcript, fail, slow):
         log("INFO", "installers", f"Installing mod WeiduBatchedComponents([{listed}])")
         pidfile = os.environ.get("FAKE_GRANDCHILD")
         if pidfile and not os.path.exists(pidfile):
-            child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+            # it shrugs off a polite stop, the way a busy WeiDU may: only a
+            # real kill of the whole tree ends it
+            child = subprocess.Popen([sys.executable, "-c", IGNORING])
             with open(pidfile, "w", encoding="utf-8") as fh:
                 fh.write(str(child.pid))
+            if os.environ.get("FAKE_EXIT_EARLY"):
+                return 0
         time.sleep(slow)
         for tp2, _folder, _lang, number, line in batch:
             key = f"{tp2.lower()}#{number}"
@@ -80,6 +95,8 @@ def install(game, log_file, questions, transcript, fail, slow):
 
 
 def main(argv):
+    # mod_installer (Rust) reads its standard input as UTF-8 on every system
+    sys.stdin.reconfigure(encoding="utf-8")
     args = dict(zip(argv[1::2], argv[2::2], strict=False))
     questions = json.loads(os.environ.get("FAKE_QUESTIONS", "{}"))
     transcript = os.environ.get("FAKE_TRANSCRIPT", os.devnull)

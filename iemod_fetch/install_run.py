@@ -39,6 +39,7 @@ from .prompts import EET_FOLDER_QUESTION, Answers, Event, OutputReader, recorded
 PRE_EET_LOG, EET_LOG = "WeiDU-BGEE.log", "WeiDU.log"
 QUIET_S = 0.5            # no output for this long after a question: it is complete
 GRACE_S = 10.0           # terminate, then kill after this long
+DRAIN_S = 2.0            # its output still open this long after it ended: stop the rest
 
 
 @dataclass
@@ -72,6 +73,17 @@ def _has_mods(game_dir: str) -> str:
     return ""
 
 
+def _program(path: str) -> bool:
+    """A file this system runs: executable on POSIX; on Windows, where every
+    file reads as executable, by its extension (PATHEXT)."""
+    if not os.path.isfile(path):
+        return False
+    if sys.platform == "win32":
+        known = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").lower().split(";")
+        return os.path.splitext(path)[1].lower() in known
+    return os.access(path, os.X_OK)
+
+
 def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: str,
               allow_existing: bool = False) -> list[str]:
     """What stops the install before it starts, in words; [] when nothing."""
@@ -81,9 +93,9 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
             problems.append(f"{name}: {folder} is not a folder")
         elif not os.path.isfile(os.path.join(folder, "chitin.key")):
             problems.append(f"{name}: no chitin.key in {folder} - not a game folder")
-        elif not allow_existing and _has_mods(folder):
+        elif not allow_existing and (installed := _has_mods(folder)):
             problems.append(f"{name}: {folder} already has mods installed "
-                            f"({_has_mods(folder)}); the plan is for a fresh game - "
+                            f"({installed}); the plan is for a fresh game - "
                             "restore its backup first")
     if not os.path.isdir(mods_dir):
         problems.append(f"the mods folder {mods_dir} does not exist - download first")
@@ -94,7 +106,7 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
         if mixed:
             problems.append(f"mods must be lower-case on Linux: {mixed} in {mods_dir}")
     for name, path in (("mod_installer", mod_installer), ("WeiDU", weidu)):
-        if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+        if not _program(path):
             problems.append(f"{name} is not a program here: {path}")
     return problems
 
@@ -128,7 +140,7 @@ class InstallRun:
                  ask: Callable[[str, tuple], str | None],
                  on_event: Callable[[Event], None] = lambda _event: None,
                  bgee_dir: str | None = None, quiet_s: float = QUIET_S,
-                 grace_s: float = GRACE_S) -> None:
+                 grace_s: float = GRACE_S, drain_s: float = DRAIN_S) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -139,9 +151,10 @@ class InstallRun:
         self.argv, self.cwd, self.ask, self.on_event = argv, cwd, ask, on_event
         self.bgee_dir = bgee_dir
         self.answers = Answers(recorded)
-        self.quiet_s, self.grace_s = quiet_s, grace_s
+        self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
+        self._job = _Job()
 
     def cancel(self) -> None:
         """Stop the install, from any thread."""
@@ -149,8 +162,8 @@ class InstallRun:
 
     def run(self) -> Outcome:
         outcome = Outcome(None)
-        # the pipes close with the block, whatever ends it
-        # its own process group, so that cancelling reaches WeiDU too
+        # Its own process group (POSIX) or job (Windows): cancelling, or its
+        # end, must reach WeiDU and whatever else it started too.
         group: dict = {"start_new_session": True}
         if sys.platform == "win32":
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
@@ -159,6 +172,7 @@ class InstallRun:
             stderr=subprocess.STDOUT, env=child_env({"RUST_LOG": "info"}),
             text=True, encoding="utf-8", errors="replace", bufsize=1, **group)
         self._process = process
+        self._job = _Job.holding(process)
         try:
             self._pump(process, outcome)
         finally:
@@ -170,24 +184,37 @@ class InstallRun:
                 if process.stdin is not None:
                     process.stdin.close()
             outcome.returncode = process.wait()
+            self._job.close()
         return outcome
 
     def _pump(self, process: subprocess.Popen, outcome: Outcome) -> None:
         """Read the output until it ends, answering and cancelling as it goes."""
         lines: queue.Queue[str | None] = queue.Queue()
+        stdout = process.stdout
 
         def read() -> None:
-            assert process.stdout is not None
-            with process.stdout:
-                for line in process.stdout:
-                    lines.put(line)
+            if stdout is not None:
+                with stdout:
+                    for line in stdout:
+                        lines.put(line)
             lines.put(None)
         threading.Thread(target=read, daemon=True).start()
         reader = OutputReader()
+        exited_at: float | None = None
         while True:
             if self._cancel.is_set():
                 self._stop(process)
                 outcome.cancelled = True
+                return
+            if exited_at is None and process.poll() is not None:
+                exited_at = time.monotonic()
+            if exited_at is not None and time.monotonic() - exited_at > self.drain_s:
+                # mod_installer has ended and something it started still holds
+                # its output (review of #83): what is left would go on writing
+                # into the game folder, alone - it is stopped, and said so.
+                self._stop(process)
+                self.on_event(Event("line", "mod_installer ended, but what it started "
+                                            "was still running: stopped"))
                 return
             try:
                 line = lines.get(timeout=self.quiet_s if reader.asking
@@ -220,8 +247,9 @@ class InstallRun:
                 if given is None:
                     return False
                 answer, source = given, "player"
-        assert process.stdin is not None
         try:
+            if process.stdin is None:
+                raise OSError("no standard input")
             process.stdin.write(answer + "\n")
             process.stdin.flush()
         except OSError:
@@ -233,27 +261,99 @@ class InstallRun:
     def _stop(self, process: subprocess.Popen) -> None:
         """Stop mod_installer and what it started: terminate, then kill."""
         if process.poll() is None:
-            _signal_group(process, kill=False)
+            self._signal(process, kill=False)
             deadline = time.monotonic() + self.grace_s
             while process.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.05)
         # WeiDU may outlive mod_installer: the group goes, whatever is left of it
-        _signal_group(process, kill=True)
+        self._signal(process, kill=True)
+
+    def _signal(self, process: subprocess.Popen, kill: bool) -> None:
+        """Terminate (or kill) mod_installer's process group, or its job."""
+        if sys.platform == "win32":
+            if kill:
+                # the job holds every process it started, living parent or not
+                self._job.terminate()
+            elif process.poll() is None:
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            return
+        with contextlib.suppress(ProcessLookupError, PermissionError):   # gone already
+            os.killpg(process.pid, signal.SIGKILL if kill else signal.SIGTERM)
 
 
-def _signal_group(process: subprocess.Popen, kill: bool) -> None:
-    """Terminate (or kill) the process group `process` leads."""
+class _Job:
+    """
+    Windows: a Job Object holding mod_installer and every process it starts
+    (they inherit it), killed together whatever order they die in - taskkill
+    /T walks the tree from a living parent, and finds nothing once
+    mod_installer is gone (review of #83). It is also killed when this
+    program ends (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE). Elsewhere it does
+    nothing: the process group does this.
+    """
+
+    def __init__(self, handle: int | None = None) -> None:
+        self.handle = handle
+
+    @classmethod
+    def holding(cls, process: subprocess.Popen) -> _Job:
+        return cls(_new_job(process)) if sys.platform == "win32" else cls()
+
+    def terminate(self) -> None:
+        if self.handle and sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+            ctypes.WinDLL("kernel32").TerminateJobObject(wintypes.HANDLE(self.handle), 1)
+
+    def close(self) -> None:
+        if self.handle and sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+            ctypes.WinDLL("kernel32").CloseHandle(wintypes.HANDLE(self.handle))
+        self.handle = None
+
+
+def _new_job(process: subprocess.Popen) -> int:
+    """A kill-on-close Job Object, `process` in it (Windows only)."""
     if sys.platform == "win32":
-        if kill:
-            subprocess.run(  # noqa: S603, S607 (Windows' own taskkill)
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-                env=child_env())
-        elif process.poll() is None:
-            process.send_signal(signal.CTRL_BREAK_EVENT)
-        return
-    with contextlib.suppress(ProcessLookupError, PermissionError):   # gone already
-        os.killpg(process.pid, signal.SIGKILL if kill else signal.SIGTERM)
+        import ctypes
+        from ctypes import wintypes
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                        ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", Basic),
+                        ("IoInfo", ctypes.c_ulonglong * 6),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+        info = Extended()
+        info.BasicLimitInformation.LimitFlags = 0x2000   # KILL_ON_JOB_CLOSE
+        ok = kernel32.SetInformationJobObject(
+            wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
+        ok = ok and kernel32.AssignProcessToJobObject(
+            wintypes.HANDLE(job), wintypes.HANDLE(int(process._handle)))  # noqa: SLF001
+        if not ok:
+            error = ctypes.get_last_error()
+            kernel32.CloseHandle(wintypes.HANDLE(job))
+            process.kill()
+            raise OSError(error, "mod_installer could not be put in a job")
+        return job
+    raise OSError("Job Objects are Windows'")
 
 
 def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: str,

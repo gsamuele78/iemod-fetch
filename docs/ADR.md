@@ -2769,8 +2769,17 @@ version up to the tag).
   answered, in this order: EET's BG:EE folder question with that folder;
   the next answer the planned log records for the batch being installed;
   else the player is asked. Every answer is shown with where it came from.
-- Cancel terminates mod_installer, and kills it after a grace period. The
-  game's WeiDU.log says what went in; resuming from it is item 23.
+- Cancel terminates mod_installer, and kills it after a grace period - it
+  and everything it started: its own process group on Linux and macOS
+  (killpg), a Job Object on Windows (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`,
+  terminated whole). The job, not `taskkill /T`, because a tree walk starts
+  from a living parent and finds nothing once mod_installer is gone, and a
+  pid may meanwhile be someone else's. The game's WeiDU.log says what went
+  in; resuming from it is item 23.
+- When mod_installer ends, whatever it started and left holding its output
+  is given two seconds, then stopped the same way, and the player is told:
+  left alone it would go on writing into the game folder, and the run would
+  wait on it.
 
 ### Consequences
 
@@ -2790,3 +2799,9 @@ version up to the tag).
   mod_installer 16.0.0 driving the real WeiDU v251 on synthetic game folders,
   a test mod asking two questions (opt-in, `IEMOD_MOD_INSTALLER`). Not
   verified: a real install on real game data - no runner has the games.
+- On Windows, mod_installer runs a moment before it is put in its job; a
+  process it started in that moment would be outside it. mod_installer
+  starts WeiDU only after reading its logs, well after that moment, so this
+  is accepted rather than started suspended (which needs the Win32 process
+  API, not subprocess). The Windows tests run the stop against a child that
+  ignores a polite stop, so only the job's kill passes them.
