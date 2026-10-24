@@ -115,25 +115,26 @@ def corpus(args) -> int:
 
 
 def reference(args) -> int:
+    seven_zip = os.path.abspath(args.seven_zip)   # each extraction runs in its own folder
     out = {}
     for name in archives(args.dir):
         path = os.path.abspath(os.path.join(args.dir, name))
         entry = {"sha256": sha256(path), "kind": kind(path)}
         if entry["kind"] != "not RAR":
-            listing = subprocess.run([args.seven_zip, "l", "-slt", path],  # noqa: S603
+            listing = subprocess.run([seven_zip, "l", "-slt", path],  # noqa: S603
                                      capture_output=True, text=True, errors="replace",
                                      check=False).stdout
             entry["solid"] = "Solid = +" in listing
             entry["encrypted"] = "Encrypted = +" in listing
             with tempfile.TemporaryDirectory() as work:
-                entry["rc"] = run([args.seven_zip, "x", "-y", path], work)
+                entry["rc"] = run([seven_zip, "x", "-y", path], work)
                 entry["files"] = tree(work)
         out[name] = entry
     with open(args.json, "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=1)
     usable = sum(1 for e in out.values() if e.get("rc") == 0 and e.get("files"))
     print(f"{len(out)} archives, {usable} extracted by the reference")
-    return 0
+    return 0 if usable else 1                   # a reference that read nothing measures nothing
 
 
 def compare(args) -> int:
@@ -186,7 +187,7 @@ def compare(args) -> int:
     if args.summary:
         with open(args.summary, "a", encoding="utf-8") as fh:
             fh.write(text)
-    return 0
+    return 0 if measured else 1
 
 
 def main(argv: list[str] | None = None) -> int:
