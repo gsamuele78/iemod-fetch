@@ -2720,3 +2720,73 @@ mods index, 112 / 30 / 3 / 4. Between 30 and 55 mods, then.
 The 30 to 55 mods with no GitHub release get a signal they lack today. Some marks will be
 pages edited without a new release; the wording says so. A test pins that a
 date is never presented as a version.
+
+---
+
+## ADR-0045 — The wizard runs mod_installer, on the player's word (amends ADR-0022)
+
+**Status**: accepted (the owner's decision, 2026-10-24)
+**Date**: 2026-10-24
+
+### Context
+
+ADR-0022 made the command line write two scripts for mod_installer and run
+none of them: the operator reads and runs them. GUI-AUDIT M4 item 22 asks the
+wizard's Installation phase to drive the install itself - its output in the
+window, WeiDU's questions answered from a recorded answer, otherwise asked.
+Asked whether to run it, keep generating scripts, or drive WeiDU directly,
+the owner chose to run mod_installer; mod_installer and WeiDU come from paths
+the player gives, else from a pinned download the player confirms (item 22b).
+
+Read on mod_installer 16.0.0's source (GPL-3.0, invoked, never vendored):
+
+- it installs a WeiDU.log in batches of consecutive components of one mod,
+  logging `Installing mod WeiduBatchedComponents([WeiduComponent { tp_file,
+  name, lang, component, ... }])` before each;
+- when WeiDU waits for input it logs `User Input required`, `Question is` and
+  the question, then reads **one line from its own standard input** and
+  gives it to WeiDU - so whoever starts it can answer;
+- it answers EET's question for the BG:EE folder itself, on Linux only.
+
+Answers recorded for later live on the component's own WeiDU.log line in
+Born2BSalty's Infinity Orchestrator's format (GPL-3.0, read at 33800cc, no
+code copied): `// @wlb-inputs: a,b,c`, left to right, `,,` an empty answer.
+The logs this tool writes already carry them through (`weidu.py` reads a
+version up to the tag).
+
+### Decision
+
+- The command line is unchanged: `--emit-installer` writes scripts and runs
+  nothing.
+- The wizard's Installation phase runs `mod_installer` - the command the
+  scripts run, after the checks they make (a game folder, a game with no mods
+  yet, lower-case mod folders on Linux, both programs there) - as a child
+  process, **only after the player confirms**, and only after the game's
+  backup (ADR-0042). It starts nothing else: no WeiDU of its own, no mod's
+  `setup-*.exe`.
+- Its output is read line by line (`iemod_fetch/prompts.py`, pure: the batch
+  started, a question once the output goes quiet) and shown. A question is
+  answered, in this order: EET's BG:EE folder question with that folder;
+  the next answer the planned log records for the batch being installed;
+  else the player is asked. Every answer is shown with where it came from.
+- Cancel terminates mod_installer, and kills it after a grace period. The
+  game's WeiDU.log says what went in; resuming from it is item 23.
+
+### Consequences
+
+- **ADR-0006's "nothing downloaded is executed" is now narrower, and said
+  so**: this program still never starts anything it downloaded. It starts
+  mod_installer and, through it, WeiDU - which run the mods' tp2 scripts:
+  that is what installing a mod is. Downloading, extracting, planning and
+  the command line stay as before.
+- A question no recorded answer covers stops the install until the player
+  answers it; one answered wrongly is WeiDU's to judge, as in a terminal.
+- A recorded answer cannot hold a comma (the format's limit). Answers are
+  matched to a batch, not a single question: a mod that asks a different
+  number of questions than the log recorded gets the wrong answers from the
+  next one on - the same as BIO.
+- What is verified: the run against a stand-in mod_installer that prints and
+  asks as the real one does (every test run), and against the real
+  mod_installer 16.0.0 driving the real WeiDU v251 on synthetic game folders,
+  a test mod asking two questions (opt-in, `IEMOD_MOD_INSTALLER`). Not
+  verified: a real install on real game data - no runner has the games.

@@ -27,7 +27,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from .atomic import write_text
 from .auth import resolve_credential
@@ -58,7 +58,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, choices, limits, pi, premeta, sortorder
+from . import bio, choices, install_run, limits, pi, premeta, sortorder
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
@@ -86,7 +86,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
-           "ignore_order", "unignore_order", "selection_digest",
+           "ignore_order", "unignore_order", "selection_digest", "start_install",
            "selection_plan", "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
@@ -856,6 +856,29 @@ def save_decisions(folder: str, choose: dict | None = None,
          for unit, i in ignored_order.items()}))
     parse_decisions(text, source="the wizard's decisions")    # refuse before writing
     return _write_whole(folder, DECISIONS_FILE, text)
+
+
+def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
+                  mod_installer: str, weidu: str,
+                  ask: Callable[[str, tuple], str | None],
+                  on_event: Callable[[Any], None] | None = None,
+                  language: str = "en_US", allow_existing: bool = False,
+                  **timing: float) -> install_run.InstallRun:
+    """
+    An install of a planned order ready to run (GUI-AUDIT M4 item 22,
+    ADR-0045): mod_installer over `plan_dir`'s WeiDU logs, the mods in
+    `mods_dir`, onto `games` ({"BGEE": folder, "EET": folder} for EET, else
+    one game). Its run() blocks until mod_installer ends and returns an
+    Outcome; cancel() stops it from another thread. `on_event` gets each line
+    of output, each batch of components started and each answer given;
+    `ask(question, batch)` answers what neither EET's folder nor the log's
+    recorded `// @wlb-inputs:` answer - None cancels. ConfigError names what
+    stops the install before it starts: a folder that is not a game, a game
+    with mods already, the mods missing, a program missing.
+    """
+    return install_run.start(plan_dir, games, mods_dir, mod_installer, weidu, ask,
+                             on_event or (lambda _event: None), language=language,
+                             allow_existing=allow_existing, **timing)
 
 
 def selection_digest(game: str, chosen: Sequence[tuple[str, int]],
