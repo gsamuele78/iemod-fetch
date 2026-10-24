@@ -287,9 +287,11 @@ def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
 
 
 def test_folders_with_spaces_and_accents_reach_it_whole(setup, monkeypatch, tmp_path):
-    """The command is a list, never a shell line."""
+    """The command is a list, never a shell line; an answer goes as UTF-8."""
     for name in ("BGEE", "EET"):
-        folder = tmp_path / f"Baldur's Gate {name} – città"
+        # Windows refuses an accented BG:EE folder (the next test)
+        accents = "" if os.name == "nt" and name == "BGEE" else " – città"
+        folder = tmp_path / f"Baldur's Gate {name}{accents}"
         os.rename(setup["games"][name], folder)
         setup["games"][name] = str(folder)
     install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
@@ -297,3 +299,23 @@ def test_folders_with_spaces_and_accents_reach_it_whole(setup, monkeypatch, tmp_
     assert outcome.ok
     assert answers(setup) == [setup["games"]["BGEE"]]
     assert "SETUP-UB.TP2" in read(setup["games"]["EET"], "WeiDU.log")
+
+
+def test_an_accented_bgee_folder_is_refused_on_windows(setup, monkeypatch, tmp_path):
+    """
+    EET is told the BG:EE folder through WeiDU's input; mod_installer reads
+    and passes it as UTF-8, and how WeiDU on Windows opens such a path is not
+    measured (review of #83): refused there, before anything starts.
+    """
+    from iemod_fetch import install_run
+    folder = tmp_path / "Baldur's Gate – città"
+    os.rename(setup["games"]["BGEE"], folder)
+    setup["games"]["BGEE"] = str(folder)
+    args = (setup["games"], setup["mods"], setup["program"], setup["program"])
+    monkeypatch.setattr(install_run, "_windows", lambda: True)
+    assert [p for p in install_run.preflight(*args) if "plain ASCII" in p]
+    monkeypatch.setattr(install_run, "_windows", lambda: False)
+    assert install_run.preflight(*args) == []
+    # BG:EE alone is not EET: no question, nothing refused
+    monkeypatch.setattr(install_run, "_windows", lambda: True)
+    assert install_run.preflight({"BGEE": str(folder)}, *args[1:]) == []

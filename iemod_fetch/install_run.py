@@ -84,6 +84,10 @@ def _program(path: str) -> bool:
     return os.access(path, os.X_OK)
 
 
+def _windows() -> bool:
+    return sys.platform == "win32"
+
+
 def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: str,
               allow_existing: bool = False) -> list[str]:
     """What stops the install before it starts, in words; [] when nothing."""
@@ -105,6 +109,15 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
                       if entry != entry.lower() and not entry.startswith(".")), None)
         if mixed:
             problems.append(f"mods must be lower-case on Linux: {mixed} in {mods_dir}")
+    bgee = games.get("BGEE", "") if "EET" in games else ""
+    if _windows() and not bgee.isascii():
+        # EET asks for this folder and mod_installer passes the answer to
+        # WeiDU as UTF-8 - the only encoding it reads its own input in. How
+        # WeiDU on Windows opens a path given so is not measured (ADR-0045):
+        # refused rather than guessed.
+        problems.append(f"BGEE: {bgee} has letters outside plain ASCII; EET is told this "
+                        "folder through WeiDU's input, which on Windows is not known to "
+                        "take them - rename the folder (or its parents) first")
     for name, path in (("mod_installer", mod_installer), ("WeiDU", weidu)):
         if not _program(path):
             problems.append(f"{name} is not a program here: {path}")

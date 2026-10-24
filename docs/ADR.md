@@ -2799,6 +2799,19 @@ version up to the tag).
   mod_installer 16.0.0 driving the real WeiDU v251 on synthetic game folders,
   a test mod asking two questions (opt-in, `IEMOD_MOD_INSTALLER`). Not
   verified: a real install on real game data - no runner has the games.
+- **Answers are written as UTF-8, and on Windows an accented BG:EE folder
+  is refused.** mod_installer reads its input with Rust's `read_line` into a
+  `String` (`utils::get_user_input`, 16.0.0): anything but UTF-8 is an error
+  there, so no other encoding can be chosen. It passes the line to WeiDU's
+  input as those bytes (`runner.rs`, `write_all`). How WeiDU v251 on Windows
+  opens a path it is given so is not measured (no Windows runner here has
+  the real chain), and an ANSI reading would name another, missing folder.
+  So the one answer known to carry a path - EET's BG:EE folder - must be
+  plain ASCII on Windows; preflight says so before anything starts. Linux
+  needs no answer (mod_installer fills it itself), macOS is UTF-8 throughout.
+  A recorded answer with accents is written as it is, unmeasured likewise.
+  The game folders on the command line are not affected: they reach WeiDU
+  through its arguments, as with the generated scripts (ADR-0022).
 - On Windows, mod_installer runs a moment before it is put in its job; a
   process it started in that moment would be outside it. mod_installer
   starts WeiDU only after reading its logs, well after that moment, so this

@@ -53,7 +53,8 @@ Python API, which is internal.
   WeiDU's questions: EET's BG:EE folder, then the answers the planned log
   records (`// @wlb-inputs:`, BIO's format), then the player. Cancel stops
   mod_installer and everything it started (its own process group; a Job
-  Object on Windows), and so does its end, for whatever it left running. The
+  Object on Windows), and so does its end, for whatever it left running. On
+  Windows an accented BG:EE folder is refused for EET (ADR-0045). The
   command line still runs nothing; the wizard's page comes with item 22c.
   Verified with the real mod_installer 16.0.0 and WeiDU v251 (CI's
   real-weidu job).
