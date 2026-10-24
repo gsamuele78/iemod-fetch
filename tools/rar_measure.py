@@ -85,10 +85,15 @@ def corpus(args) -> int:
         for url in mod.get("urls") or ():
             if isinstance(url, str) and RAR.search(url) and url not in urls:
                 urls.append(url)
+    names = {url: f"{n:03d}.rar" for n, url in enumerate(urls, 1)}
+    if args.index:                          # the names another run gave: same archive, same name
+        with open(args.index, encoding="utf-8") as fh:
+            names = {entry["url"]: name for name, entry in json.load(fh).items()}
+        urls = [url for url in urls if url in names]
     os.makedirs(args.dir, exist_ok=True)
     index, cap = {}, args.max_mb * 1_000_000
-    for n, url in enumerate(urls, 1):
-        name = f"{n:03d}.rar"
+    for url in urls:
+        name = names[url]
         target = os.path.join(args.dir, name)
         fetch = RAW.sub(r"https://raw.githubusercontent.com/\1/\2/\3", url)
         try:
@@ -145,9 +150,13 @@ def compare(args) -> int:
     with open(args.ref, encoding="utf-8") as fh:
         ref = json.load(fh)
     tools = []
+    reserved = {"archive", "kind", "solid", "encrypted", "files", "missing"}
     for spec in args.tool:
         label, _, command = spec.partition("=")
+        if label in reserved or not command:
+            raise SystemExit(f"--tool {spec!r}: give LABEL=COMMAND, LABEL not one of {sorted(reserved)}")
         tools.append((label, command))
+    unrunnable = set()
     rows = []
     for name, expected in sorted(ref.items()):
         path = os.path.abspath(os.path.join(args.dir, name))
@@ -163,9 +172,12 @@ def compare(args) -> int:
             with tempfile.TemporaryDirectory() as work:
                 rc = run(argv, work)
                 got = tree(work)
-            wrong = len(set(got.items()) ^ set(expected["files"].items()))
-            row[label] = ("identical" if got == expected["files"] else
-                          f"rc={rc} files={len(got)}/{len(expected['files'])} wrong={wrong}")
+            if isinstance(rc, str) and rc.startswith("error"):
+                unrunnable.add(label)       # not measured, not "extracts nothing"
+            want = expected["files"]
+            wrong = sum(1 for path in got.keys() | want.keys() if got.get(path) != want.get(path))
+            row[label] = ("identical" if got == want else
+                          f"rc={rc} files={len(got)}/{len(want)} wrong={wrong}")
         rows.append(row)
     with open(args.json, "w", encoding="utf-8") as fh:
         json.dump(rows, fh, indent=1)
@@ -191,7 +203,9 @@ def compare(args) -> int:
     if args.summary:
         with open(args.summary, "a", encoding="utf-8") as fh:
             fh.write(text)
-    return 0 if measured else 1
+    if unrunnable:
+        sys.stderr.write(f"could not start: {', '.join(sorted(unrunnable))}\n")
+    return 0 if measured and not unrunnable else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -201,6 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     one.add_argument("--mods", required=True)
     one.add_argument("--dir", required=True)
     one.add_argument("--max-mb", type=int, default=400)
+    one.add_argument("--index", help="name the archives as this index.json of another run does")
     two = sub.add_parser("reference")
     two.add_argument("--dir", required=True)
     two.add_argument("--seven-zip", required=True)

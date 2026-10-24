@@ -93,7 +93,7 @@ jobs:
           PLATFORM: ${{ matrix.os }}
         run: |
           curl -sSLf -o mods.json "$MODS_JSON"
-          python tools/rar_measure.py corpus --mods mods.json --dir rars
+          python tools/rar_measure.py corpus --mods mods.json --dir rars --index out-index.json
           tools=(--tool "$TOOL1")
           if [ -n "$TOOL2" ]; then tools+=(--tool "$TOOL2"); fi
           python tools/rar_measure.py compare --dir rars --ref out-ref.json "${tools[@]}" \
