@@ -5,7 +5,11 @@ ADR-0040): PyInstaller, one folder, zipped as
 `dist/iemod-fetch-gui-<os>-<arch>.zip`, then started once to prove it runs.
 
     pip install "iemod-fetch[gui]" pyinstaller
-    python packaging/gui_bundle.py [--dist dist]
+    python packaging/gui_bundle.py [--dist dist] [--mod-installer DIR]
+
+`--mod-installer DIR`: what packaging/mod_installer.py built there - the
+program the wizard installs with (ADR-0046) goes beside the wizard's own,
+with its licence (GPL-3.0) and a NOTICE saying where its source is.
 
 One folder, not one file: Qt is LGPL-3.0, and its libraries stay separate
 files beside the program, which a user may replace with their own build of
@@ -159,6 +163,36 @@ def add_runtime_licences(target: str) -> None:
                             os.path.join(licences, f"{name}-{entry.name}"))
 
 
+def program_dir(folder: str) -> str:
+    """Where the wizard's own program lies, and mod_installer beside it."""
+    return os.path.dirname(executable(folder))
+
+
+def add_mod_installer(folder: str, built: str) -> None:
+    """mod_installer, as packaging/mod_installer.py built it in `built`."""
+    sys.path.insert(0, os.path.join(ROOT, "packaging"))
+    import mod_installer as recipe
+    name = "mod_installer" + (".exe" if os.name == "nt" else "")
+    shutil.copy2(os.path.join(built, name), os.path.join(program_dir(folder), name))
+    target = folder if not folder.endswith(".app") else os.path.join(
+        folder, "Contents", "Resources")
+    licences = os.path.join(target, "licenses")
+    os.makedirs(licences, exist_ok=True)
+    shutil.copy(os.path.join(built, "LICENSE"), os.path.join(licences, "mod_installer-LICENSE"))
+    with open(os.path.join(target, "NOTICE-mod_installer.txt"), "w", encoding="utf-8") as fh:
+        fh.write(f"""mod_installer {recipe.VERSION}, by dark0dave, unmodified, is a separate program
+in this folder ({name}), under the GNU General Public License v3.0
+(licenses/mod_installer-LICENSE). The wizard runs it to install mods.
+
+It was built with Rust {recipe.RUST} by packaging/mod_installer.py of
+iemod-fetch, from this source (its Corresponding Source):
+  {recipe.SOURCE}, attached to the same iemod-fetch release as this
+  bundle, on its GitHub release page - and, while upstream keeps it, at
+  {recipe.REPOSITORY}/tree/{recipe.REV}
+The Rust libraries it links are those its Cargo.lock names, from crates.io.
+""")
+
+
 def sign(folder: str) -> None:
     """Re-sign a macOS .app ad hoc: the licence files added after PyInstaller
     signed it would otherwise break its signature, and macOS refuses it."""
@@ -178,6 +212,13 @@ def check(folder: str, work: str) -> None:
     if done.returncode != 0 or "ok" not in done.stdout:
         raise SystemExit(f"the built program does not start (exit {done.returncode}):\n"
                          f"{done.stdout}\n{done.stderr}")
+    beside = os.path.join(program_dir(folder),
+                          "mod_installer" + (".exe" if os.name == "nt" else ""))
+    if os.path.exists(beside):
+        said = subprocess.run([beside, "--version"], capture_output=True, text=True,
+                              timeout=60, check=False).stdout.strip()
+        if not said.startswith("mod_installer "):
+            raise SystemExit(f"the bundled mod_installer does not start: {said!r}")
 
 
 def unpack(path: str, into: str) -> None:
@@ -235,10 +276,15 @@ def link(zf: zipfile.ZipFile, full: str, base: str) -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dist", default=os.path.join(ROOT, "dist"))
+    parser.add_argument("--mod-installer", metavar="DIR",
+                        help="put the mod_installer packaging/mod_installer.py built in DIR "
+                             "in the bundle")
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="iemod-gui-") as work:
         folder = build(work)
         add_licences(folder)
+        if args.mod_installer:
+            add_mod_installer(folder, os.path.abspath(args.mod_installer))
         sign(folder)
         path = pack(folder, os.path.abspath(args.dist))
         unpacked = os.path.join(work, "unpacked")

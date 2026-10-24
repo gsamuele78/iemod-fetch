@@ -109,9 +109,17 @@ jobs:
       - name: The runtime's libraries, by hash (ADR-0043)
         run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
       - run: pip install ".[gui]" "pyinstaller==6.22.3"
-      - name: Build, sign ad hoc, zip, start the unzipped copy once
+      # with the mod_installer it installs with (ADR-0046), when the tag has
+      # packaging/mod_installer.py
+      - name: Build mod_installer, then the bundle with it; sign ad hoc, zip, start the unzipped copy once
         if: needs.target.outputs.gui == 'true'
-        run: python packaging/gui_bundle.py --dist gui-dist
+        run: |
+          if [ -f packaging/mod_installer.py ]; then
+            python packaging/mod_installer.py --out "$RUNNER_TEMP/mod_installer"
+            python packaging/gui_bundle.py --dist gui-dist --mod-installer "$RUNNER_TEMP/mod_installer"
+          else
+            python packaging/gui_bundle.py --dist gui-dist
+          fi
       # The command line too (GUI-AUDIT item 36): macOS's own python3 is 3.9.
       - name: The command line - build, run once, zip
         if: needs.target.outputs.cli == 'true'

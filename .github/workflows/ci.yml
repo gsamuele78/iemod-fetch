@@ -163,7 +163,9 @@ jobs:
     env:
       # Pinned toolchain (ADR-0026). WeiDU: the official v251.00 Linux release,
       # sha256 recorded on first download. mod_installer: no release tag past
-      # v12.1.1, so the commit whose Cargo.toml says 16.0.0.
+      # v12.1.1, so the commit whose Cargo.toml says 16.0.0, built by
+      # packaging/mod_installer.py as the wizard's bundle carries it (ADR-0046;
+      # a test keeps the two pins equal).
       WEIDU_URL: https://github.com/WeiDUorg/weidu/releases/download/v251.00/WeiDU-Linux-251.zip
       WEIDU_SHA256: 3e1a34ec5d6e934b1d4a34541a1312d0170b120c6efe903a732415acde3bd3c0
       MOD_INSTALLER_REV: 3b6827a039db43e342be19f7610ecdd680fe0a62
@@ -182,19 +184,47 @@ jobs:
           echo "$WEIDU_SHA256  $RUNNER_TEMP/weidu.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/weidu.zip" -d "$RUNNER_TEMP/weidu"
           chmod +x "$RUNNER_TEMP/weidu/WeiDU-Linux/weidu"
-      - name: mod_installer, built from its pinned commit
+      - name: mod_installer, built from its pinned commit as the bundle's is
         run: |
-          cargo install --locked --quiet --git https://github.com/dark0dave/mod_installer \
-            --rev "$MOD_INSTALLER_REV" --root "$RUNNER_TEMP/mi"
+          sudo apt-get install -y -q musl-tools
+          python packaging/mod_installer.py --out "$RUNNER_TEMP/mi"
       # Synthetic game folders (no game data): WeiDU identifies the game by
       # marker files, which is all these flags need. See tests/test_real_weidu.py.
       - name: Real WeiDU agrees with the simulator and the limit measurement; the plan installs end to end
         run: |
           pip install pytest
           IEMOD_WEIDU="$RUNNER_TEMP/weidu/WeiDU-Linux/weidu" \
-          IEMOD_MOD_INSTALLER="$RUNNER_TEMP/mi/bin/mod_installer" IEMOD_REQUIRE_REAL=1 \
+          IEMOD_MOD_INSTALLER="$RUNNER_TEMP/mi/mod_installer" IEMOD_REQUIRE_REAL=1 \
             python -m pytest -q -rs tests/test_real_weidu.py tests/test_real_weidu_limits.py \
               tests/test_real_mod_installer.py
+
+  # The wizard's mod_installer on Windows (ADR-0046), as the bundle builds it:
+  # the C runtime linked in, and packaging/mod_installer.py fails if the .exe
+  # still names VCRUNTIME140.dll. The release builds it only for a release;
+  # this proves it on every change. Linux: real-weidu; macOS: release-macos.
+  mod-installer-windows:
+    name: mod_installer for the Windows bundle
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version-file: .python-version }
+      - name: Build, static C runtime, version checked
+        run: python packaging/mod_installer.py --out "$RUNNER_TEMP/mi"
+      - name: It starts, and names no Visual C++ runtime DLL
+        run: |
+          "$RUNNER_TEMP/mi/mod_installer.exe" --version
+          python - "$RUNNER_TEMP/mi/mod_installer.exe" <<'PY'
+          import sys
+          data = open(sys.argv[1], "rb").read().lower()
+          print("vcruntime140:", data.count(b"vcruntime140"),
+                "msvcp140:", data.count(b"msvcp140"))
+          sys.exit(1 if b"vcruntime140" in data or b"msvcp140" in data else 0)
+          PY
 
   build:
     name: Build and verify the zipapp

@@ -146,3 +146,22 @@ def test_a_bundle_with_another_version_than_the_pin_stops(tmp_path, monkeypatch)
     monkeypatch.setattr(bundle.importlib.metadata, "version", lambda name: "0.0.1")
     with pytest.raises(SystemExit, match="pins"):
         bundle.build(str(tmp_path))
+
+
+def test_mod_installer_goes_beside_the_program_with_its_licence(tmp_path):
+    """ADR-0046: the program the wizard installs with, beside the wizard's
+    own, its GPL-3.0 text and a notice of its source at the commit built."""
+    folder = program(tmp_path)
+    built = tmp_path / "built"
+    built.mkdir()
+    name = "mod_installer" + (".exe" if os.name == "nt" else "")
+    (built / name).write_bytes(b"\x7fELF mod_installer")
+    (built / "LICENSE").write_text("GNU GENERAL PUBLIC LICENSE\nVersion 3", encoding="utf-8")
+    bundle.add_mod_installer(str(folder), str(built))
+    assert (folder / name).read_bytes() == b"\x7fELF mod_installer"
+    assert "GENERAL PUBLIC LICENSE" in (folder / "licenses" / "mod_installer-LICENSE").read_text(
+        encoding="utf-8")
+    notice = (folder / "NOTICE-mod_installer.txt").read_text(encoding="utf-8")
+    assert "unmodified" in notice and "General Public License v3.0" in notice
+    assert "https://github.com/dark0dave/mod_installer/tree/3b6827a" in notice
+    assert "mod_installer-16.0.0-source.tar.gz" in notice

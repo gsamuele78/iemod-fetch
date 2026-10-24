@@ -2818,3 +2818,95 @@ version up to the tag).
   is accepted rather than started suspended (which needs the Win32 process
   API, not subprocess). The Windows tests run the stop against a child that
   ignores a polite stop, so only the job's kill passes them.
+
+---
+
+## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it
+
+**Context.** The wizard runs mod_installer (ADR-0045), so the player needs
+one (GUI-AUDIT M4 item 22b). The maintainer first chose dark0dave's latest
+stable tag, v12.1.1. Measuring it changed the choice:
+
+- **It stops after the first component on Linux.** After every component it
+  opens `weidu.log` in the game folder (`utils::get_last_installed`,
+  unconditionally), and WeiDU writes `WeiDU.log`. Measured with the real
+  WeiDU v251 on a synthetic game: v12.1.1 exits 1 after the first component;
+  16.0.0, same input, exits 0. Windows and macOS file systems ignore case,
+  so those systems are not affected.
+- **Its published binaries are not what their names say.** The
+  "x86_64-apple-darwin" one is arm64; the "x86_64-unknown-linux-musl" one
+  links glibc.
+- **It works differently.** It logs its batches in another form
+  (`Component { ... }`, one at a time) and never fills EET's BG:EE folder by
+  itself.
+- **16.0.0 has none of these problems, and upstream has nothing newer.**
+  16.0.0 is upstream's main branch: commit 3b6827a, which CI's real-weidu
+  job tests. It has no release, and there is no newer commit or tag (checked
+  2026-10-24).
+
+**Decision.** The maintainer's choice: 16.0.0 on every system, compiled as
+part of this project's build, until an upstream stable release includes it.
+
+- **`packaging/mod_installer.py` builds it.** It:
+  - fetches the commit by its id with git (the id names the content);
+  - installs the pinned Rust (1.98.0) and the system's target with rustup;
+  - builds with the commit's own Cargo.lock;
+  - checks that the program says `mod_installer 16.0.0`.
+
+  The targets are:
+  - Linux: static (musl), so it runs on any distribution;
+  - Windows: x86_64, with the C runtime linked in (`+crt-static`). By
+    default Rust's MSVC programs load VCRUNTIME140.dll (measured: upstream's
+    v12.1.1 .exe names it). A clean Windows lacks that DLL, and the bundle
+    keeps its own copy under `_internal`, where mod_installer does not look.
+    The build fails if the program still names it.
+  - macOS: Apple silicon, the runner's architecture. This is the wizard's
+    own bundle's architecture too (README): no Intel Mac either way.
+
+  It installs what rustup can. It names what it cannot install: git, rustup,
+  and on Linux musl-gcc (Debian/Ubuntu: `musl-tools`, which the workflows
+  install).
+- **The wizard's bundle carries it.** `gui_bundle.py --mod-installer` puts
+  it beside the wizard's own program, with its GPL-3.0 text and a NOTICE
+  giving the source at that commit. The unzipped copy runs it once. The
+  release workflows (Linux, Windows, macOS) build it for every new tag; a
+  tag made before the script existed is built as it was.
+- **Its source is published from the same place as the program.** The
+  script also writes `mod_installer-16.0.0-source.tar.gz` (`git archive` of
+  the commit; the same bytes on every run). release.yml attaches it to each
+  release whose bundles carry the program, lists it in SHA256SUMS and covers
+  it with the attestation. This is the GPL-3.0 section 6(d) way, served by
+  this repository rather than by a third party's server: upstream may
+  rewrite or delete its history, and our release still holds the source.
+  The bundle's NOTICE names that file first and upstream second.
+- **Its Rust libraries are not vendored.** They are named, with their
+  checksums, in the commit's Cargo.lock, and served by crates.io. They are
+  MIT and Apache-2.0, not GPL. A `cargo vendor` archive would be the
+  strictest reading of "Corresponding Source", at tens of megabytes per
+  release; it is left for the maintainer to decide, and this is where the
+  choice is recorded.
+- **CI tests the same binary.** ci.yml's real-weidu job builds mod_installer
+  with the same script, so the program tested is the program shipped. Its
+  `mod-installer-windows` job builds the Windows .exe on every change, with
+  the guard against VCRUNTIME140.dll, because the release builds the bundles
+  only for a release. macOS is built by release-macos.yml on every change
+  to packaging. A
+  test keeps the commit and version in the script and in ci.yml equal.
+- **The command line is unchanged.** The generated scripts run the player's
+  own mod_installer, at their terminal.
+
+**Consequences.**
+
+- **This project now ships a third party's program.** It ships as a
+  separate executable (aggregation, not linking), with its licence and its
+  exact source named in the bundle. The bundle's build provenance covers it.
+  A wrong build is ours to answer for.
+- **Builds are slower, and need what Rust needs.** The bundle builds take
+  about two minutes longer. Building locally needs git, rustup and, on
+  Linux, musl-tools; the script says which is missing.
+- **Players without the bundle get no mod_installer from us.** For the
+  zipapp, pip, or a system the bundle does not exist for, the player gives
+  the path of their own (item 22b checks its version).
+- **Retirement.** When upstream releases a version with the fix, the pin
+  moves to that release and this build may go. The weekly upstream check
+  opens that issue.

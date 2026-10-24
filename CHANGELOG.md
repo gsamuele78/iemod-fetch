@@ -47,6 +47,16 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **mod_installer 16.0.0, built into the wizard's bundle** (ADR-0046, ahead of
+  GUI-AUDIT M4 item 22b). `packaging/mod_installer.py` compiles the commit CI
+  tests (3b6827a, upstream's main branch) with Rust 1.98.0, statically on
+  Linux. The wizard's bundles for Linux, Windows and macOS carry it beside
+  the program, with its GPL-3.0 licence and a notice of its source; each
+  release attaches that source (`mod_installer-16.0.0-source.tar.gz`, in
+  SHA256SUMS and attested). On Windows the C runtime is linked in, so it starts
+  without the Visual C++ runtime. The real-WeiDU job tests that same build. Why: upstream's last release,
+  v12.1.1, stops after the first component on Linux (it reads `weidu.log`,
+  while WeiDU writes `WeiDU.log`), and nothing newer is released.
 - **The install, run** (GUI-AUDIT M4 item 22a, ADR-0045, amending ADR-0022):
   `api.start_install` runs mod_installer - the command the generated scripts
   run, after the same checks - reads its output line by line and answers

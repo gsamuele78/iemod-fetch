@@ -85,7 +85,9 @@ class Verdict:
                    if self.tool == "weidu" else
                    "1. Pick the commit whose Cargo.toml says the new version and read "
                    "its changes (command line, EET mode).\n2. Update `MOD_INSTALLER_REV` "
-                   "and `MOD_INSTALLER_VERSION` in `.github/workflows/ci.yml`.\n")
+                   "and `MOD_INSTALLER_VERSION` in `.github/workflows/ci.yml`, and `REV` "
+                   "and `VERSION` in `packaging/mod_installer.py` (the wizard's bundle, "
+                   "ADR-0046). If upstream released it, consider retiring the build.\n")
                 + "3. CI green - the real-WeiDU job installs the mock EET plan with it.\n")
 
 
