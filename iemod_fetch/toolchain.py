@@ -134,11 +134,37 @@ def bundled(tool: str) -> str | None:
     return path if os.path.isfile(path) else None
 
 
-def _examine(tool: str, path: str, source: str, system: str | None = None) -> Found:
+def on_path(tool: str) -> str | None:
+    """`tool` in PATH's folders only. Not shutil.which: on Windows it looks in
+    the current folder first, whatever `path=` says (Python 3.14, read), so a
+    weidu.exe in the folder the wizard was started from would be run (review
+    of #86)."""
+    names = [tool]
+    if sys.platform == "win32":
+        names = [tool + ext.lower() for ext in
+                 os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if ext]
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        if not folder or folder == os.curdir:
+            continue
+        for name in names:
+            candidate = os.path.join(folder, name)
+            if os.path.isfile(candidate) and (sys.platform == "win32"
+                                              or os.access(candidate, os.X_OK)):
+                return candidate
+    return None
+
+
+def _examine(tool: str, path: str, source: str, system: str | None = None,
+             machine: str | None = None) -> Found:
     found = Found(tool, path, source=source)
     found.version = version_of(tool, path)
     if found.version is None:
         found.problem = f"{path} does not answer --version as {tool} does"
+        if tool == WEIDU and (system or sys.platform) == "darwin" \
+                and (machine or platform.machine()).lower() == "arm64":
+            # WeiDU's Mac build is x86_64 only
+            found.problem += (" - on Apple silicon WeiDU needs Rosetta 2: "
+                              "softwareupdate --install-rosetta")
     elif tool == MOD_INSTALLER and (system or sys.platform).startswith("linux") \
             and int(found.version.split(".")[0]) < 16:
         found.problem = (f"mod_installer {found.version} stops after the first component "
@@ -163,9 +189,9 @@ def find(tool: str, given: str | None = None, tools_dir: str | None = None) -> F
     beside = bundled(tool)
     if beside:
         return _examine(tool, beside, "bundled")
-    on_path = shutil.which(tool)
-    if on_path:
-        return _examine(tool, on_path, "PATH")
+    in_path = on_path(tool)
+    if in_path:
+        return _examine(tool, in_path, "PATH")
     pin = pin_for(tool)
     path = downloaded_path(tool, tools_dir, pin) if tools_dir else None
     if path and pin and os.path.isfile(path):

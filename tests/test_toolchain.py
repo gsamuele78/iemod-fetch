@@ -214,3 +214,25 @@ def test_a_downloaded_weidu_changed_since_is_not_run(tmp_path, pinned):
         fh.write(b"\n# swapped\n")
     again = toolchain.find("weidu", tools_dir=tools)
     assert not again.ok and "sha256 changed" in again.problem
+
+
+def test_path_never_means_the_current_folder(tmp_path, monkeypatch):
+    """shutil.which on Windows tries the current folder first (review of
+    #86): a weidu there is not the one on PATH, and an empty PATH finds none."""
+    here, elsewhere = tmp_path / "Downloads", tmp_path / "bin"
+    program(here, "weidu", "WeiDU version 1")
+    real = program(elsewhere, "weidu", "WeiDU version 25100")
+    monkeypatch.chdir(here)
+    monkeypatch.setenv("PATHEXT", ".CMD;.EXE")
+    monkeypatch.setenv("PATH", os.pathsep.join(["", os.curdir, str(elsewhere)]))
+    assert toolchain.on_path("weidu") == real
+    monkeypatch.setenv("PATH", os.curdir)
+    assert toolchain.on_path("weidu") is None
+
+
+def test_weidu_silent_on_apple_silicon_says_rosetta(tmp_path):
+    silent = program(tmp_path, "weidu", "")
+    found = toolchain._examine("weidu", silent, "PATH", system="darwin", machine="arm64")
+    assert "softwareupdate --install-rosetta" in found.problem
+    elsewhere = toolchain._examine("weidu", silent, "PATH", system="linux", machine="x86_64")
+    assert "Rosetta" not in elsewhere.problem

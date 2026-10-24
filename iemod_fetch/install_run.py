@@ -73,6 +73,28 @@ def _has_mods(game_dir: str) -> str:
     return ""
 
 
+# mod_installer reads each of its options from an environment variable too
+# (clap's `env`, read from its 16.0.0 source: config/args.rs and options.rs).
+# One the command line does not set would come from the player's environment
+# - NEW_EET_DIR or OVERWRITE change what the install does - so none reaches it
+# (review of #86). Its OCAMLRUNPARAM option is WeiDU's memory tuning.
+MOD_INSTALLER_ENV = (
+    "ABORT_ON_WARNINGS", "BATCH_MODE", "BATCH_SIZE", "BATCH_SKIP", "BG1_GAME_DIRECTORY",
+    "BG1_LOG_FILE", "BG2_GAME_DIRECTORY", "BG2_LOG_FILE", "CASEFOLD", "CHECK_LAST_INSTALLED",
+    "DEPTH", "DOWNLOAD", "FETCH_WEIDU_BINARY", "GAME_DIRECTORY", "GENERATE_DIRECTORY",
+    "LOG_FILE", "LOOKBACK", "MOD_DIRECTORIES", "NEVER_ABORT", "NEW_EET_DIR",
+    "NEW_PRE_EET_DIR", "OCAMLRUNPARAM", "OVERWRITE", "SKIP_INSTALLED", "STRICT_MATCHING",
+    "TICK", "TIMEOUT", "WEIDU_BINARY", "WEIDU_LOG_MODE")
+
+
+def mod_installer_env() -> dict[str, str]:
+    """The child's environment (childenv) without mod_installer's options,
+    logging at info so its batches and questions are seen."""
+    env = child_env({"RUST_LOG": "info"}) or dict(os.environ)
+    drop = {name.upper() for name in MOD_INSTALLER_ENV}
+    return {key: value for key, value in env.items() if key.upper() not in drop}
+
+
 def _program(path: str) -> bool:
     """A file this system runs: executable on POSIX; on Windows, where every
     file reads as executable, by its extension (PATHEXT)."""
@@ -177,7 +199,7 @@ class InstallRun:
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         process = subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
             self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, env=child_env({"RUST_LOG": "info"}),
+            stderr=subprocess.STDOUT, env=mod_installer_env(),
             text=True, encoding="utf-8", errors="replace", bufsize=1, **group)
         self._process = process
         self._job = _Job.holding(process)

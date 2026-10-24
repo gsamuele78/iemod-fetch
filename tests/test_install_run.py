@@ -288,6 +288,22 @@ def test_mod_installer_gets_the_child_environment(setup, monkeypatch):
     assert any(e.text.endswith("IEMOD_CHILD_ENV=cleaned") for e in events)
 
 
+def test_mod_installers_options_never_come_from_the_players_environment(setup, monkeypatch):
+    """clap reads NEW_EET_DIR, OVERWRITE, DOWNLOAD... from the environment as
+    options (review of #86): none reaches mod_installer; the rest does."""
+    monkeypatch.setenv("NEW_EET_DIR", "/somewhere/else")
+    monkeypatch.setenv("overwrite", "true")              # Windows names are not case-sensitive
+    monkeypatch.setenv("IEMOD_KEEP_ME", "kept")
+    for name, expected in (("NEW_EET_DIR", ""), ("IEMOD_KEEP_ME", "kept")):
+        monkeypatch.setenv("FAKE_ECHO_ENV", name)
+        install, events = run(setup, monkeypatch, {}, allow_existing=True)
+        assert install.run().ok
+        assert any(e.text.endswith(f"{name}={expected}") for e in events), name
+    from iemod_fetch import install_run
+    env = install_run.mod_installer_env()
+    assert "overwrite" not in env and "OVERWRITE" not in env and env["RUST_LOG"] == "info"
+
+
 def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
     from pathlib import Path
     Path(setup["plan"], "WeiDU-BGEE.log").write_text(

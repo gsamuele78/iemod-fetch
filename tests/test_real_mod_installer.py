@@ -83,8 +83,11 @@ END
 """
 
 
-@pytest.mark.parametrize("name", ["plain folder", "città – über"],
-                         ids=["ascii", "non-ascii"])
+# "città – über" fits Windows' ANSI code page (cp1252); "Игры ゲーム" does
+# not: a program opening paths with the ANSI API would fail only that one
+# (review of #86). Both tell WeiDU's wide-API use apart from cp1252 luck.
+@pytest.mark.parametrize("name", ["plain folder", "città – über", "Игры ゲーム"],
+                         ids=["ascii", "cp1252", "beyond-cp1252"])
 def test_a_folder_answered_through_mod_installer_reaches_weidu(tmp_path, name):
     """
     The measurement ADR-0046 records (review of #83): a folder given as an
