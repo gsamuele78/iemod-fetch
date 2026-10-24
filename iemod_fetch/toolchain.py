@@ -144,8 +144,8 @@ def on_path(tool: str) -> str | None:
         names = [tool + ext.lower() for ext in
                  os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if ext]
     for folder in os.environ.get("PATH", "").split(os.pathsep):
-        if not folder or folder == os.curdir:
-            continue
+        if not folder or not os.path.isabs(folder):
+            continue                            # "", "." or "bin": the current folder's
         for name in names:
             candidate = os.path.join(folder, name)
             if os.path.isfile(candidate) and (sys.platform == "win32"

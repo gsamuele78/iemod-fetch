@@ -224,7 +224,8 @@ def test_path_never_means_the_current_folder(tmp_path, monkeypatch):
     real = program(elsewhere, "weidu", "WeiDU version 25100")
     monkeypatch.chdir(here)
     monkeypatch.setenv("PATHEXT", ".CMD;.EXE")
-    monkeypatch.setenv("PATH", os.pathsep.join(["", os.curdir, str(elsewhere)]))
+    program(here / "bin", "weidu", "WeiDU version 2")
+    monkeypatch.setenv("PATH", os.pathsep.join(["", os.curdir, "bin", str(elsewhere)]))
     assert toolchain.on_path("weidu") == real
     monkeypatch.setenv("PATH", os.curdir)
     assert toolchain.on_path("weidu") is None
