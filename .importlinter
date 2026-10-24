@@ -10,7 +10,7 @@
 #            decisions, bio, pi, limits, choices, prompts
 #            -> pure. Parse, compare, decide. No sockets, no subprocesses.
 #   shell    net, etagcache, childenv, auth, archives, install, orgindex, resolvers, datasync, runner,
-#            install_run, api, cli
+#            install_run, toolchain, api, cli
 #            -> everything that touches the network, the filesystem or a
 #               subprocess.
 #   api      what the tool does, as functions: the one thing the CLI and the
@@ -81,6 +81,7 @@ forbidden_modules =
     iemod_fetch.resolvers
     iemod_fetch.runner
     iemod_fetch.install_run
+    iemod_fetch.toolchain
     iemod_fetch.api
     iemod_fetch.cli
 
@@ -150,7 +151,7 @@ layers =
     iemod_fetch.cli
     iemod_fetch.api
     iemod_fetch.runner
-    iemod_fetch.resolvers | iemod_fetch.install | iemod_fetch.orgindex | iemod_fetch.datasync | iemod_fetch.install_run
+    iemod_fetch.resolvers | iemod_fetch.install | iemod_fetch.orgindex | iemod_fetch.datasync | iemod_fetch.install_run | iemod_fetch.toolchain
     iemod_fetch.net
     iemod_fetch.archives | iemod_fetch.auth | iemod_fetch.etagcache
     iemod_fetch.childenv
@@ -205,6 +206,7 @@ forbidden_modules =
     iemod_fetch.backup
     iemod_fetch.install
     iemod_fetch.install_run
+    iemod_fetch.toolchain
     iemod_fetch.installer
     iemod_fetch.kinds
     iemod_fetch.languages

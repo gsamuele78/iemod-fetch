@@ -180,12 +180,20 @@ with them. `tests/test_install_run.py` runs the rest - an answer from EET's
 folder, from the log, from the player; cancel, which must also stop the
 process mod_installer started; a failed component; folders with spaces and
 accents - against a stand-in that prints and asks as mod_installer does.
+It also measures a folder given as an answer - plain, and with accents -
+reaching WeiDU through mod_installer (`FILE_EXISTS` in the test mod). CI runs
+it on Linux (`real-weidu`) and on Windows (`mod-installer-windows`, the
+official WeiDU for Windows and the bundle's own mod_installer build): the
+measurement that lifted #83's refusal of an accented BG:EE folder (ADR-0046).
+`tests/test_toolchain.py` covers where the programs come from and WeiDU's
+pinned download: a tampered byte, a zip reaching out of its folder, a
+program swapped after the download - each refused, nothing left behind.
 
 Its first run found two bugs no self-consistent test could: a parser bug and a
 fixture placed where WeiDU does not look. Opt in locally with
 `IEMOD_WEIDU=/path/to/weidu` (and `IEMOD_MOD_INSTALLER`); CI's `real-weidu` job
 downloads both pinned and sets `IEMOD_REQUIRE_REAL=1`, so a missing tool fails
-instead of skipping.
+instead of skipping; so does the Windows job.
 
 ### Components before download: krion64 against WeiDU
 
@@ -449,7 +457,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,698 collected (9 run the real WeiDU, 128 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,722 collected (12 run the real WeiDU, 128 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

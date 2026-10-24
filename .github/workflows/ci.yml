@@ -203,7 +203,7 @@ jobs:
   # still names VCRUNTIME140.dll. The release builds it only for a release;
   # this proves it on every change. Linux: real-weidu; macOS: release-macos.
   mod-installer-windows:
-    name: mod_installer for the Windows bundle
+    name: mod_installer for the Windows bundle, and a real install with it
     runs-on: windows-latest
     defaults:
       run:
@@ -225,6 +225,25 @@ jobs:
                 "msvcp140:", data.count(b"msvcp140"))
           sys.exit(1 if b"vcruntime140" in data or b"msvcp140" in data else 0)
           PY
+      # The real install on Windows, with the official WeiDU (ADR-0046, item
+      # 22b): recorded answers reach WeiDU through mod_installer, and a folder
+      # with letters outside ASCII - EET's BG:EE folder travels so - is the
+      # measurement that keeps or lifts the wizard's refusal of one (#83).
+      - name: WeiDU for Windows, verified against its pinned digest
+        env:
+          WEIDU_WIN_URL: https://github.com/WeiDUorg/weidu/releases/download/v251.00/WeiDU-Windows-251.zip
+          WEIDU_WIN_SHA256: a54c6198d6ebed8139793fcacb225500d563657c23fc775b840383f9750493d8
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/weidu.zip" "$WEIDU_WIN_URL"
+          echo "$WEIDU_WIN_SHA256  $RUNNER_TEMP/weidu.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/weidu.zip" -d "$RUNNER_TEMP/weidu"
+      - name: The real mod_installer and WeiDU install on Windows
+        run: |
+          pip install --require-hashes -r requirements/runtime.txt
+          pip install pytest
+          IEMOD_WEIDU="$RUNNER_TEMP/weidu/WeiDU-Windows/weidu.exe" \
+          IEMOD_MOD_INSTALLER="$RUNNER_TEMP/mi/mod_installer.exe" IEMOD_REQUIRE_REAL=1 \
+            python -m pytest -q -rs tests/test_real_mod_installer.py
 
   build:
     name: Build and verify the zipapp

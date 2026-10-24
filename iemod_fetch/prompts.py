@@ -2,9 +2,9 @@
 WeiDU's prompts in an install mod_installer runs (GUI-AUDIT M4 item 22,
 ADR-0045): what it asks, and the answers recorded for it.
 
-mod_installer (dark0dave, GPL-3.0, read at 16.0.0) installs a WeiDU.log in
-batches of consecutive components of one mod, logging each batch before it
-starts:
+mod_installer (dark0dave, GPL-3.0, read at 16.0.0 and 12.1.1) installs a
+WeiDU.log in batches of consecutive components of one mod (12.1.1: one
+component at a time), logging each before it starts:
 
     [2026-10-24T00:00:00Z INFO  mod_installer::installers] Installing mod
     WeiduBatchedComponents([WeiduComponent { tp_file: "EET.TP2", name: "EET",
@@ -13,7 +13,7 @@ starts:
 When WeiDU waits for an answer it logs `User Input required`, `Question is`
 and the question, then reads one line from its own standard input and gives
 it to WeiDU. Only EET's question for the BG:EE folder is answered by
-mod_installer itself, and only on Linux.
+mod_installer itself, and only 16.0.0 on Linux.
 
 The answers a player recorded ride on the component's line of the WeiDU.log,
 as Born2BSalty's Infinity Orchestrator writes them (GPL-3.0; the format read
@@ -36,8 +36,12 @@ EET_FOLDER_QUESTION = "enter the full path to your bg:ee+sod installation"
 
 _LOG_LINE = re.compile(r"^\s*~(?P<path>[^~]+)~\s+#(?P<lang>\d+)\s+#(?P<number>\d+)")
 _RECORD = re.compile(r"^\[\S+\s+(?P<level>[A-Z]+)\s+(?P<target>[\w:]+)\]\s?(?P<text>.*)$")
-_COMPONENT = re.compile(r'WeiduComponent \{ tp_file: "(?P<tp2>[^"]*)", name: "[^"]*", '
+# 16.0.0: `WeiduBatchedComponents([WeiduComponent { ... }, ...])`, a batch;
+# 12.1.1: `Component { ... }`, one component at a time
+_COMPONENT = re.compile(r'(?:Weidu)?Component \{ tp_file: "(?P<tp2>[^"]*)", name: "[^"]*", '
                         r'lang: "[^"]*", component: "(?P<number>\d+)"')
+# 12.1.1 logs a growing row of dots while WeiDU works, one record a tick
+_TICK = re.compile(r"\.*")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 Key = tuple[str, int]          # (tp2 file name, lower-cased; component number)
@@ -97,6 +101,8 @@ class OutputReader:
             # a new record after a question: WeiDU answered it itself
             self._asking = None
         text = record["text"]
+        if _TICK.fullmatch(text):
+            return []                              # waiting, nothing said
         if text.startswith("Installing mod "):
             self.batch = tuple((tp2_name(m["tp2"]), int(m["number"]))
                                for m in _COMPONENT.finditer(text))

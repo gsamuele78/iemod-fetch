@@ -2800,7 +2800,8 @@ version up to the tag).
   a test mod asking two questions (opt-in, `IEMOD_MOD_INSTALLER`). Not
   verified: a real install on real game data - no runner has the games.
 - **Answers are written as UTF-8, and on Windows an accented BG:EE folder
-  is refused.** mod_installer reads its input with Rust's `read_line` into a
+  is refused** (until measured - item 22b measured it and lifted the
+  refusal; ADR-0046, "the folder answer on Windows"). mod_installer reads its input with Rust's `read_line` into a
   `String` (`utils::get_user_input`, 16.0.0): anything but UTF-8 is an error
   there, so no other encoding can be chosen. It passes the line to WeiDU's
   input as those bytes (`runner.rs`, `write_all`). How WeiDU v251 on Windows
@@ -2910,3 +2911,71 @@ part of this project's build, until an upstream stable release includes it.
 - **Retirement.** When upstream releases a version with the fix, the pin
   moves to that release and this build may go. The weekly upstream check
   opens that issue.
+
+### Item 22b: finding the programs, and WeiDU's download
+
+**Decision.**
+
+- **mod_installer** is found where the player says, else beside the
+  wizard's own program (the bundle's), else on PATH. It is never downloaded,
+  because no upstream release is fit for it.
+  - One older than 16 is refused on Linux, where it stops after the first
+    component.
+  - Any version not tested here is used, with a note.
+- **WeiDU** is found where the player says, else on PATH, else as its
+  official v251 release. That release is downloaded only on the player's
+  word: `api.tool_download` names what would be fetched and its licence
+  (GPL-2.0) for the confirmation.
+  - The download goes through `net.HttpClient` (https, size cap), and the
+    zip's sha256 is checked before anything is unpacked.
+  - `archives.safe_extract` unpacks it.
+  - The program is checked against its own sha256 and made executable for
+    the user only.
+  - It lives in a per-user tools folder beside the data cache.
+  - Each later lookup checks that sha256 again, so a program swapped there
+    is not run.
+
+  The pins were measured from WeiDUorg's zips: the Linux binary is static,
+  the Mac binary is x86_64 (Rosetta on Apple silicon). A test keeps them
+  equal to the digests CI verifies.
+- **PATH means PATH's folders.** `shutil.which` on Windows tries the
+  current folder first, even when given `path=` (read in Python 3.14's
+  shutil), so a stray weidu.exe in the folder the wizard was started from
+  would be run. `toolchain.on_path` looks only in PATH's folders.
+- **On Apple silicon, a WeiDU that does not answer** is told apart from a
+  wrong program: the Mac build is x86_64 and needs Rosetta 2
+  (`softwareupdate --install-rosetta`), and the message says so.
+- **None of mod_installer's options comes from the environment.** Its clap
+  arguments each read an environment variable too: 29 of them in 16.0.0's
+  `config/args.rs` and `options.rs`, such as NEW_EET_DIR, OVERWRITE and
+  DOWNLOAD. Any the command line does not set would be the player's, so
+  `install_run.mod_installer_env` drops them all (case-insensitively, for
+  Windows). What mod_installer still reads from the player: its per-user
+  parser configuration (confy, in the system's config folder, used when its
+  version matches). That holds the strings it recognises questions by. It
+  is the player's mod_installer configuration, as for the generated
+  scripts, and is left alone.
+- **The wizard runs mod_installer with `--download=false`.** Otherwise, for
+  a mod not found, 16.0.0 and 12.1.1 both log "Please provide mod url" and
+  download what the next line of their input names. That bypasses the
+  project's download path (ADR-0003, ADR-0006) and its question parser.
+  Measured: with the flag, a missing mod is "Failed to find mod".
+
+**The folder answer on Windows.** #83 refused an accented BG:EE folder on
+Windows until the path could be measured. `tests/test_real_mod_installer.py`
+now measures it: a test mod asks for a folder, the planned log answers with
+a folder name, and the answer travels through mod_installer to WeiDU, which
+checks `FILE_EXISTS` on a file inside it. Three names:
+- an ASCII name, the control (a missing file makes the test fail);
+- `città – über`, which fits Windows' ANSI code page (cp1252);
+- `Игры ゲーム`, which does not.
+
+A program that opened paths through the ANSI API would pass the second name
+and fail the third (review of #86), so the third is the one that says
+something. On CI's Windows runner (run 40079746900), the official WeiDU v251
+for Windows and the bundle's own mod_installer 16.0.0 build found the file
+under all three names: 4 real tests passed, none skipped
+(`IEMOD_REQUIRE_REAL=1`). WeiDU opens paths through the wide API.
+
+The refusal is lifted. What stays unmeasured: real game data, and EET's own
+tp2 rather than a test mod that reads a path the same way.

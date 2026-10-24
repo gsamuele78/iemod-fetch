@@ -59,6 +59,24 @@ def test_the_output_is_read_into_batches_and_questions():
     assert not reader.asking and reader.question() is None
 
 
+def test_mod_installer_12s_one_component_lines_and_ticks_are_read_too():
+    """12.1.1, a player's own on Windows or macOS: `Component { ... }`, one
+    at a time, and a row of dots logged each tick while WeiDU works."""
+    reader = OutputReader()
+    events = []
+    for line in [
+            ("[2026-10-24T00:00:00Z INFO  mod_installer::installers] Installing mod "
+             'Component { tp_file: "ASKER.TP2", name: "asker", lang: "0", component: "3", '
+             'component_name: "Asks", sub_component: "", version: "1" }\n'),
+            "[2026-10-24T00:00:00Z INFO  mod_installer::weidu] \n",
+            "[2026-10-24T00:00:00Z INFO  mod_installer::weidu] ...\n"]:
+        events += reader.feed(line)
+    assert [(e.kind, e.batch) for e in events if e.kind == "batch"] == \
+        [("batch", (("asker.tp2", 3),))]
+    assert [e for e in events if e.kind == "line" and set(e.text.split("] ")[-1]) <= {"."}] \
+        == []                                    # the ticks say nothing
+
+
 # ---------------------------------------------------------- the install
 @pytest.fixture
 def setup(tmp_path):
@@ -191,8 +209,8 @@ def test_the_command_is_the_one_the_scripts_run(setup):
     assert argv[:2] == ["/mi", "eet"]
     assert argv[argv.index("--bg1-log-file") + 1].endswith("WeiDU-BGEE.log")
     assert argv[argv.index("--bg2-game-directory") + 1] == setup["games"]["EET"]
-    assert argv[-6:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
-                         "--language", "it_IT"]
+    assert argv[-7:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
+                         "--language", "it_IT", "--download=false"]
     one = command(setup["plan"], {"BG2EE": "/g"}, "/mods", "/mi", "/weidu")
     assert one[:6] == ["/mi", "normal", "--game-directory", "/g", "--log-file",
                        os.path.join(setup["plan"], "WeiDU.log")]
@@ -270,6 +288,22 @@ def test_mod_installer_gets_the_child_environment(setup, monkeypatch):
     assert any(e.text.endswith("IEMOD_CHILD_ENV=cleaned") for e in events)
 
 
+def test_mod_installers_options_never_come_from_the_players_environment(setup, monkeypatch):
+    """clap reads NEW_EET_DIR, OVERWRITE, DOWNLOAD... from the environment as
+    options (review of #86): none reaches mod_installer; the rest does."""
+    monkeypatch.setenv("NEW_EET_DIR", "/somewhere/else")
+    monkeypatch.setenv("overwrite", "true")              # Windows names are not case-sensitive
+    monkeypatch.setenv("IEMOD_KEEP_ME", "kept")
+    for name, expected in (("NEW_EET_DIR", ""), ("IEMOD_KEEP_ME", "kept")):
+        monkeypatch.setenv("FAKE_ECHO_ENV", name)
+        install, events = run(setup, monkeypatch, {}, allow_existing=True)
+        assert install.run().ok
+        assert any(e.text.endswith(f"{name}={expected}") for e in events), name
+    from iemod_fetch import install_run
+    env = install_run.mod_installer_env()
+    assert "overwrite" not in env and "OVERWRITE" not in env and env["RUST_LOG"] == "info"
+
+
 def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
     from pathlib import Path
     Path(setup["plan"], "WeiDU-BGEE.log").write_text(
@@ -289,9 +323,7 @@ def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
 def test_folders_with_spaces_and_accents_reach_it_whole(setup, monkeypatch, tmp_path):
     """The command is a list, never a shell line; an answer goes as UTF-8."""
     for name in ("BGEE", "EET"):
-        # Windows refuses an accented BG:EE folder (the next test)
-        accents = "" if os.name == "nt" and name == "BGEE" else " – città"
-        folder = tmp_path / f"Baldur's Gate {name}{accents}"
+        folder = tmp_path / f"Baldur's Gate {name} – città"
         os.rename(setup["games"][name], folder)
         setup["games"][name] = str(folder)
     install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
@@ -301,21 +333,16 @@ def test_folders_with_spaces_and_accents_reach_it_whole(setup, monkeypatch, tmp_
     assert "SETUP-UB.TP2" in read(setup["games"]["EET"], "WeiDU.log")
 
 
-def test_an_accented_bgee_folder_is_refused_on_windows(setup, monkeypatch, tmp_path):
+def test_an_accented_bgee_folder_is_not_refused(setup, tmp_path):
     """
-    EET is told the BG:EE folder through WeiDU's input; mod_installer reads
-    and passes it as UTF-8, and how WeiDU on Windows opens such a path is not
-    measured (review of #83): refused there, before anything starts.
+    #83 refused one on Windows until it was measured; item 22b measured it
+    (tests/test_real_mod_installer.py, on CI's Windows runner): the real
+    WeiDU v251 opens a folder with accents given as UTF-8 through
+    mod_installer. ADR-0046.
     """
     from iemod_fetch import install_run
     folder = tmp_path / "Baldur's Gate – città"
     os.rename(setup["games"]["BGEE"], folder)
     setup["games"]["BGEE"] = str(folder)
     args = (setup["games"], setup["mods"], setup["program"], setup["program"])
-    monkeypatch.setattr(install_run, "_windows", lambda: True)
-    assert [p for p in install_run.preflight(*args) if "plain ASCII" in p]
-    monkeypatch.setattr(install_run, "_windows", lambda: False)
     assert install_run.preflight(*args) == []
-    # BG:EE alone is not EET: no question, nothing refused
-    monkeypatch.setattr(install_run, "_windows", lambda: True)
-    assert install_run.preflight({"BGEE": str(folder)}, *args[1:]) == []

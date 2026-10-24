@@ -47,6 +47,21 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **The programs an install runs** (GUI-AUDIT M4 item 22b, ADR-0046).
+  `api.find_tools` finds mod_installer where the player says, else beside the
+  wizard's own program (the bundle carries it), else on PATH; it is never
+  downloaded, and one older than 16 is refused on Linux. WeiDU: where the
+  player says, else on PATH, else its official v251 release, downloaded only
+  on the player's word (`api.tool_download` says what and under which
+  licence, `api.download_tool` fetches it): sha256 checked before it is
+  unpacked, unpacked safely, the program checked against its own sha256 and
+  again each time it is found, kept in a per-user tools folder. The wizard
+  runs mod_installer with `--download=false`, so a missing mod is an error
+  rather than mod_installer asking for a URL, and none of mod_installer's
+  options comes from the player's environment (NEW_EET_DIR, OVERWRITE...).
+  A program on PATH is never one in the current folder. An accented BG:EE
+  folder is no longer refused on Windows: measured in CI, the real WeiDU
+  opens folders even outside the ANSI code page.
 - **mod_installer 16.0.0, built into the wizard's bundle** (ADR-0046, ahead of
   GUI-AUDIT M4 item 22b). `packaging/mod_installer.py` compiles the commit CI
   tests (3b6827a, upstream's main branch) with Rust 1.98.0, statically on
@@ -74,8 +89,7 @@ Python API, which is internal.
   WeiDU's questions: EET's BG:EE folder, then the answers the planned log
   records (`// @wlb-inputs:`, BIO's format), then the player. Cancel stops
   mod_installer and everything it started (its own process group; a Job
-  Object on Windows), and so does its end, for whatever it left running. On
-  Windows an accented BG:EE folder is refused for EET (ADR-0045). The
+  Object on Windows), and so does its end, for whatever it left running. The
   command line still runs nothing; the wizard's page comes with item 22c.
   Verified with the real mod_installer 16.0.0 and WeiDU v251 (CI's
   real-weidu job).

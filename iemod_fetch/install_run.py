@@ -73,6 +73,28 @@ def _has_mods(game_dir: str) -> str:
     return ""
 
 
+# mod_installer reads each of its options from an environment variable too
+# (clap's `env`, read from its 16.0.0 source: config/args.rs and options.rs).
+# One the command line does not set would come from the player's environment
+# - NEW_EET_DIR or OVERWRITE change what the install does - so none reaches it
+# (review of #86). Its OCAMLRUNPARAM option is WeiDU's memory tuning.
+MOD_INSTALLER_ENV = (
+    "ABORT_ON_WARNINGS", "BATCH_MODE", "BATCH_SIZE", "BATCH_SKIP", "BG1_GAME_DIRECTORY",
+    "BG1_LOG_FILE", "BG2_GAME_DIRECTORY", "BG2_LOG_FILE", "CASEFOLD", "CHECK_LAST_INSTALLED",
+    "DEPTH", "DOWNLOAD", "FETCH_WEIDU_BINARY", "GAME_DIRECTORY", "GENERATE_DIRECTORY",
+    "LOG_FILE", "LOOKBACK", "MOD_DIRECTORIES", "NEVER_ABORT", "NEW_EET_DIR",
+    "NEW_PRE_EET_DIR", "OCAMLRUNPARAM", "OVERWRITE", "SKIP_INSTALLED", "STRICT_MATCHING",
+    "TICK", "TIMEOUT", "WEIDU_BINARY", "WEIDU_LOG_MODE")
+
+
+def mod_installer_env() -> dict[str, str]:
+    """The child's environment (childenv) without mod_installer's options,
+    logging at info so its batches and questions are seen."""
+    env = child_env({"RUST_LOG": "info"}) or dict(os.environ)
+    drop = {name.upper() for name in MOD_INSTALLER_ENV}
+    return {key: value for key, value in env.items() if key.upper() not in drop}
+
+
 def _program(path: str) -> bool:
     """A file this system runs: executable on POSIX; on Windows, where every
     file reads as executable, by its extension (PATHEXT)."""
@@ -82,10 +104,6 @@ def _program(path: str) -> bool:
         known = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").lower().split(";")
         return os.path.splitext(path)[1].lower() in known
     return os.access(path, os.X_OK)
-
-
-def _windows() -> bool:
-    return sys.platform == "win32"
 
 
 def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: str,
@@ -109,15 +127,9 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
                       if entry != entry.lower() and not entry.startswith(".")), None)
         if mixed:
             problems.append(f"mods must be lower-case on Linux: {mixed} in {mods_dir}")
-    bgee = games.get("BGEE", "") if "EET" in games else ""
-    if _windows() and not bgee.isascii():
-        # EET asks for this folder and mod_installer passes the answer to
-        # WeiDU as UTF-8 - the only encoding it reads its own input in. How
-        # WeiDU on Windows opens a path given so is not measured (ADR-0045):
-        # refused rather than guessed.
-        problems.append(f"BGEE: {bgee} has letters outside plain ASCII; EET is told this "
-                        "folder through WeiDU's input, which on Windows is not known to "
-                        "take them - rename the folder (or its parents) first")
+    # An accented BG:EE folder is not refused: EET is told it through WeiDU's
+    # input, as UTF-8, and the real WeiDU v251 opens it so on Windows too
+    # (measured in CI, item 22b; ADR-0046).
     for name, path in (("mod_installer", mod_installer), ("WeiDU", weidu)):
         if not _program(path):
             problems.append(f"{name} is not a program here: {path}")
@@ -126,9 +138,14 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
 
 def command(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: str,
             weidu: str, language: str = "en_US") -> list[str]:
-    """mod_installer's command for a planned install, as the scripts write it.
+    """mod_installer's command for a planned install, as the scripts write it
+    but for --download.
     `games` is {"BGEE": ..., "EET": ...} for EET, else one game."""
-    tail = ["--mod-directories", mods_dir, "--weidu-binary", weidu, "--language", language]
+    # --download=false: a mod missing is an error, not mod_installer asking for
+    # a URL and downloading it itself (ADR-0046) - the generated scripts leave
+    # that to the player at their terminal
+    tail = ["--mod-directories", mods_dir, "--weidu-binary", weidu, "--language", language,
+            "--download=false"]
     if "EET" in games and "BGEE" in games:
         return [mod_installer, "eet",
                 "--bg1-game-directory", games["BGEE"],
@@ -182,7 +199,7 @@ class InstallRun:
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         process = subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
             self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, env=child_env({"RUST_LOG": "info"}),
+            stderr=subprocess.STDOUT, env=mod_installer_env(),
             text=True, encoding="utf-8", errors="replace", bufsize=1, **group)
         self._process = process
         self._job = _Job.holding(process)
