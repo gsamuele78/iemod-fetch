@@ -58,7 +58,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, choices, install_run, limits, pi, premeta, sortorder
+from . import bio, choices, install_run, limits, pi, premeta, sortorder, toolchain
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
@@ -87,6 +87,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "ignore_order", "unignore_order", "selection_digest", "start_install",
+           "default_tools_dir", "find_tools", "tool_download", "download_tool",
            "selection_plan", "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
@@ -879,6 +880,44 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
     return install_run.start(plan_dir, games, mods_dir, mod_installer, weidu, ask,
                              on_event or (lambda _event: None), language=language,
                              allow_existing=allow_existing, **timing)
+
+
+def default_tools_dir() -> str:
+    """Where mod_installer and WeiDU are downloaded: beside the community data."""
+    return os.path.join(os.path.dirname(os.path.normpath(datasync.default_data_dir())),
+                        "tools")
+
+
+def find_tools(mod_installer: str | None = None, weidu: str | None = None,
+               tools_dir: str | None = None) -> dict[str, toolchain.Found]:
+    """
+    The programs an install runs (GUI-AUDIT M4 item 22b, ADR-0046): each
+    where the player says, else on PATH, else downloaded in `tools_dir` -
+    with its version, a problem when it cannot be used, a note when it was
+    not one this program was tested with.
+    """
+    folder = tools_dir or default_tools_dir()
+    return {toolchain.MOD_INSTALLER: toolchain.find(toolchain.MOD_INSTALLER, mod_installer,
+                                                    folder),
+            toolchain.WEIDU: toolchain.find(toolchain.WEIDU, weidu, folder)}
+
+
+def tool_download(tool: str) -> toolchain.Pin | None:
+    """What downloading `tool` would fetch on this system (to ask the player
+    first), None when nothing can be."""
+    return toolchain.pin_for(tool)
+
+
+def download_tool(tool: str, tools_dir: str | None = None,
+                  progress: Callable[[int, int | None], None] | None = None,
+                  cancel=None, client=None) -> toolchain.Found:
+    """
+    Download `tool`'s pinned release into `tools_dir` and check it against
+    its sha256 - only on the player's word, as what it fetches is then run
+    by the install (ADR-0046). ConfigError when this system has no pin.
+    """
+    return toolchain.download(client or HttpClient(), tool, tools_dir or default_tools_dir(),
+                              progress=progress, cancel=cancel)
 
 
 def selection_digest(game: str, chosen: Sequence[tuple[str, int]],

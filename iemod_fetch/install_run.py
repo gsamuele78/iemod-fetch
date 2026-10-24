@@ -126,9 +126,14 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
 
 def command(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: str,
             weidu: str, language: str = "en_US") -> list[str]:
-    """mod_installer's command for a planned install, as the scripts write it.
+    """mod_installer's command for a planned install, as the scripts write it
+    but for --download.
     `games` is {"BGEE": ..., "EET": ...} for EET, else one game."""
-    tail = ["--mod-directories", mods_dir, "--weidu-binary", weidu, "--language", language]
+    # --download=false: a mod missing is an error, not mod_installer asking for
+    # a URL and downloading it itself (ADR-0046) - the generated scripts leave
+    # that to the player at their terminal
+    tail = ["--mod-directories", mods_dir, "--weidu-binary", weidu, "--language", language,
+            "--download=false"]
     if "EET" in games and "BGEE" in games:
         return [mod_installer, "eet",
                 "--bg1-game-directory", games["BGEE"],

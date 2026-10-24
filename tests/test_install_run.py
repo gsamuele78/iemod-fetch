@@ -59,6 +59,24 @@ def test_the_output_is_read_into_batches_and_questions():
     assert not reader.asking and reader.question() is None
 
 
+def test_mod_installer_12s_one_component_lines_and_ticks_are_read_too():
+    """12.1.1, a player's own on Windows or macOS: `Component { ... }`, one
+    at a time, and a row of dots logged each tick while WeiDU works."""
+    reader = OutputReader()
+    events = []
+    for line in [
+            ("[2026-10-24T00:00:00Z INFO  mod_installer::installers] Installing mod "
+             'Component { tp_file: "ASKER.TP2", name: "asker", lang: "0", component: "3", '
+             'component_name: "Asks", sub_component: "", version: "1" }\n'),
+            "[2026-10-24T00:00:00Z INFO  mod_installer::weidu] \n",
+            "[2026-10-24T00:00:00Z INFO  mod_installer::weidu] ...\n"]:
+        events += reader.feed(line)
+    assert [(e.kind, e.batch) for e in events if e.kind == "batch"] == \
+        [("batch", (("asker.tp2", 3),))]
+    assert [e for e in events if e.kind == "line" and set(e.text.split("] ")[-1]) <= {"."}] \
+        == []                                    # the ticks say nothing
+
+
 # ---------------------------------------------------------- the install
 @pytest.fixture
 def setup(tmp_path):
@@ -191,8 +209,8 @@ def test_the_command_is_the_one_the_scripts_run(setup):
     assert argv[:2] == ["/mi", "eet"]
     assert argv[argv.index("--bg1-log-file") + 1].endswith("WeiDU-BGEE.log")
     assert argv[argv.index("--bg2-game-directory") + 1] == setup["games"]["EET"]
-    assert argv[-6:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
-                         "--language", "it_IT"]
+    assert argv[-7:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
+                         "--language", "it_IT", "--download=false"]
     one = command(setup["plan"], {"BG2EE": "/g"}, "/mods", "/mi", "/weidu")
     assert one[:6] == ["/mi", "normal", "--game-directory", "/g", "--log-file",
                        os.path.join(setup["plan"], "WeiDU.log")]

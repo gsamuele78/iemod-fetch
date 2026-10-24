@@ -97,7 +97,8 @@ def install(game, log_file, questions, transcript, fail, slow):
 def main(argv):
     # mod_installer (Rust) reads its standard input as UTF-8 on every system
     sys.stdin.reconfigure(encoding="utf-8")
-    args = dict(zip(argv[1::2], argv[2::2], strict=False))
+    pairs = [arg for arg in argv[1:] if "=" not in arg]      # --download=false stands alone
+    args = dict(zip(pairs[::2], pairs[1::2], strict=False))
     questions = json.loads(os.environ.get("FAKE_QUESTIONS", "{}"))
     transcript = os.environ.get("FAKE_TRANSCRIPT", os.devnull)
     fail, slow = os.environ.get("FAKE_FAIL", ""), float(os.environ.get("FAKE_SLOW", "0"))
