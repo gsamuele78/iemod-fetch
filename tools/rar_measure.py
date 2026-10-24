@@ -134,6 +134,10 @@ def reference(args) -> int:
         json.dump(out, fh, indent=1)
     usable = sum(1 for e in out.values() if e.get("rc") == 0 and e.get("files"))
     print(f"{len(out)} archives, {usable} extracted by the reference")
+    for name, e in sorted(out.items()):     # why the others were not, one line each
+        if not (e.get("rc") == 0 and e.get("files")):
+            print(f"  not read: {name} {e['kind']} rc={e.get('rc')} "
+                  f"encrypted={e.get('encrypted')} files={len(e.get('files') or {})}")
     return 0 if usable else 1                   # a reference that read nothing measures nothing
 
 

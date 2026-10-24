@@ -397,10 +397,20 @@ candidate, in an empty folder, and calls an archive identical only when the
 same files come out with the same SHA-256. The `RAR extractors` workflow runs
 it inside `debian:trixie` (bsdtar, unar, 7zip-dfsg: the floor's own packages)
 and on Windows and macOS runners (their system bsdtar, Homebrew's unar).
-Measured in a sandbox on 2026-10-24 with Ubuntu's packages, on 63 archives
-(57 RAR4, 6 RAR5): bsdtar 3.7.2 56, unar 1.10.1 54 (no RAR5), either 59, the
-dfsg 7zip none. The trixie numbers come from the workflow and decide the
-extractor (an ADR); no test asserts them.
+On 2026-10-24 (CI): of lcc-docs' 131 distinct .rar links, 130 downloaded and
+the reference extracted 105 (98 RAR4, 7 RAR5; 7 solid). Archives each tool
+extracted to the same files:
+
+| Platform | bsdtar (libarchive) | unar | 7zip (dfsg) | Any |
+|---|---|---|---|---|
+| Debian trixie | 95 | 94 (RAR5: 0 of 7) | 1 | 100 |
+| Windows (`tar.exe`) | 95 | - | - | 95 |
+| macOS (system bsdtar, Homebrew unar) | 95 | 103 | - | 103 |
+
+bsdtar fails mostly on solid RAR4 archives (5 of 7 solid); trixie's unar on
+every RAR5 one, Homebrew's on none. Two solid RAR4 archives (027, 030) no
+open-source tool extracts. The numbers decide the extractor (an ADR); no
+test asserts them.
 
 ## What is deliberately not done
 
