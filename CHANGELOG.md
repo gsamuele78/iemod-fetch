@@ -47,6 +47,16 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **mod_installer 16.0.0, built into the wizard's bundle** (ADR-0046, ahead of
+  GUI-AUDIT M4 item 22b). `packaging/mod_installer.py` compiles the commit CI
+  tests (3b6827a, upstream's main branch) with Rust 1.98.0, statically on
+  Linux. The wizard's bundles for Linux, Windows and macOS carry it beside
+  the program, with its GPL-3.0 licence and a notice of its source; each
+  release attaches that source (`mod_installer-16.0.0-source.tar.gz`, in
+  SHA256SUMS and attested). On Windows the C runtime is linked in, so it starts
+  without the Visual C++ runtime. The real-WeiDU job tests that same build. Why: upstream's last release,
+  v12.1.1, stops after the first component on Linux (it reads `weidu.log`,
+  while WeiDU writes `WeiDU.log`), and nothing newer is released.
 - **Which open-source tool opens the catalogue's RAR archives, measured**
   (GUI-AUDIT M6 item 40, before the choice): `tools/rar_measure.py` and the
   `RAR extractors` workflow download every distinct .rar link of lcc-docs,
@@ -54,8 +64,10 @@ Python API, which is internal.
   only, never shipped) and with Debian trixie's own bsdtar (libarchive), unar
   and 7zip (the dfsg build, without the unRAR code) - trixie is the floor -
   plus Windows' tar.exe and macOS' bsdtar and unar, and count the archives
-  each extracts to the same files. Nothing is bundled yet: the extractor set
-  waits for these numbers and an ADR.
+  each extracts to the same files. Of 105 RAR archives: bsdtar 95 on every
+  system, trixie's unar 94 (no RAR5), Homebrew's unar 103, the dfsg 7zip 1;
+  two solid RAR4 archives no open-source tool extracts (docs/TESTING.md).
+  Nothing is bundled yet: the extractor set comes with an ADR.
 - **The install, run** (GUI-AUDIT M4 item 22a, ADR-0045, amending ADR-0022):
   `api.start_install` runs mod_installer - the command the generated scripts
   run, after the same checks - reads its output line by line and answers

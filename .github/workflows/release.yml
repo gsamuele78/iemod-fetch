@@ -234,12 +234,33 @@ jobs:
         shell: bash
         run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
       - run: pip install ".[gui]" "pyinstaller==6.22.3"
-      - name: Build, start once, zip
-        run: python packaging/gui_bundle.py --dist gui-dist
+      # The program the wizard installs with, built for the bundle (ADR-0046);
+      # a commit made before packaging/mod_installer.py existed bundles none.
+      - name: musl's C compiler, for a static mod_installer (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y -q musl-tools
+      - name: Build mod_installer, then the bundle with it; start once, zip
+        shell: bash
+        run: |
+          if [ -f packaging/mod_installer.py ]; then
+            python packaging/mod_installer.py --out mod_installer-build
+            python packaging/gui_bundle.py --dist gui-dist --mod-installer mod_installer-build
+          else
+            python packaging/gui_bundle.py --dist gui-dist
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gui-${{ matrix.os }}
           path: gui-dist/*.zip
+      # mod_installer's Corresponding Source (GPL-3.0 section 6(d)): attached
+      # to the release beside the bundles that carry the program. One copy -
+      # `git archive` of the commit is the same bytes on every runner.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: runner.os == 'Linux'
+        with:
+          name: mod_installer-source
+          path: mod_installer-build/mod_installer-*-source.tar.gz
+          if-no-files-found: ignore
 
   # The command line the same way (GUI-AUDIT item 36), for systems whose Python
   # is older than the one this release needs. Linux on ubuntu-22.04, not
@@ -309,6 +330,8 @@ jobs:
         with: { pattern: "gui-*", path: dist, merge-multiple: true }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { pattern: "cli-*", path: dist, merge-multiple: true }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { pattern: "mod_installer-source", path: dist, merge-multiple: true }
 
       # Says which workflow, at which commit, produced these bytes. Verifiable
       # with `gh attestation verify dist/iemod-fetch.pyz --repo <owner>/<repo>`.
@@ -342,10 +365,19 @@ jobs:
         with: { pattern: "gui-*", path: dist, merge-multiple: true }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { pattern: "cli-*", path: dist, merge-multiple: true }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { pattern: "mod_installer-source", path: dist, merge-multiple: true }
       - name: The bundles in SHA256SUMS too
         # one glob for the wizard's and the command line's zips: a version
         # built before the command line's bundle existed has only the first
-        run: (cd dist && sha256sum iemod-fetch-*.zip >> SHA256SUMS && cat SHA256SUMS)
+        # mod_installer's source too (ADR-0046), when this commit built it
+        run: |
+          cd dist
+          sha256sum iemod-fetch-*.zip >> SHA256SUMS
+          if ls mod_installer-*-source.tar.gz > /dev/null 2>&1; then
+            sha256sum mod_installer-*-source.tar.gz >> SHA256SUMS
+          fi
+          cat SHA256SUMS
 
       - name: Release notes from the changelog
         # Values reach the script through the environment, never by template
@@ -367,6 +399,10 @@ jobs:
             echo 'The wizard without Python: `iemod-fetch-gui-<os>-<arch>.zip` (Linux, Windows),'
             echo 'in SHA256SUMS and attested the same way; a macOS zip, with its own .sha256, is added'
             echo 'by release-macos.yml when its runner built it. Qt inside it is LGPL-3.0: see NOTICE-Qt.txt.'
+            if ls dist/mod_installer-*-source.tar.gz > /dev/null 2>&1; then
+              echo 'The wizard carries mod_installer (GPL-3.0, by dark0dave), built unchanged from'
+              echo 'its source: `mod_installer-*-source.tar.gz`, attached here (ADR-0046).'
+            fi
             if ls dist/iemod-fetch-cli-*.zip > /dev/null 2>&1; then
               echo 'The command line without Python: `iemod-fetch-cli-<os>-<arch>.zip` (Linux x86_64 with'
               echo 'glibc 2.35 or newer, Windows x86_64, macOS on Apple silicon), for a system whose Python is'

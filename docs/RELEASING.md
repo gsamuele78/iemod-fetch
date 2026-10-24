@@ -129,6 +129,13 @@ there. Dependabot cannot update them:
 | WeiDU | `WEIDU_URL` (release v251.00) and `WEIDU_SHA256` | `sha256sum -c` before it runs |
 | mod_installer | `MOD_INSTALLER_REV` (commit) and `MOD_INSTALLER_VERSION` | built from that commit |
 
+**The wizard's mod_installer** (ADR-0046) is the same commit, compiled by
+`packaging/mod_installer.py` in the wizard's bundle builds (release.yml,
+release-macos.yml) and in the real-WeiDU job. It needs git and rustup (the
+script installs the pinned Rust and target), plus `musl-tools` on Linux.
+Bumping it means changing `REV` and `VERSION` in that script and the two
+`MOD_INSTALLER_*` values in ci.yml; a test fails while they differ.
+
 `upstream-versions.yml` compares them with upstream every Monday. It opens an
 issue per tool that is behind ("WeiDU 252.00 is available (pinned 251.00)"),
 and the run turns red until the pin is bumped. To bump: download the new WeiDU
