@@ -88,7 +88,8 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "ignore_order", "unignore_order", "selection_digest", "start_install",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
-           "selection_plan", "save_install_order", "reset_install_order",
+           "selection_plan", "write_install_plan", "install_games", "INSTALL_PLAN_DIR",
+           "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
            "INSTALL_ORDER_FILE", "project_settings", "download_selection",
@@ -1165,6 +1166,62 @@ def selection_plan(game: str, chosen: Sequence[tuple[str, int]],
     return _selection_plan(game, chosen, labels, folder, order_file if custom else None,
                            target, data_dir, rules, mod_db, order_catalogue,
                            fetch_metadata)[0]
+
+
+INSTALL_PLAN_DIR = "install-plan"
+
+
+def write_install_plan(game: str, chosen: Sequence[tuple[str, int]],
+                       labels: dict | None = None, folder: str = ".",
+                       target: str | None = None, data_dir: str | None = None,
+                       rules: Sequence[str] = (), mod_db: str | None = None,
+                       order_catalogue: str | None = None,
+                       fetch_metadata: bool = False) -> dict:
+    """
+    The planned WeiDU logs the install runs (GUI-AUDIT M4 item 22c): the
+    order selection_plan shows - `folder`/install-order.txt, decisions.json -
+    with the project's language preference applied, written to
+    `folder`/install-plan/ as `--plan-order` writes them (WeiDU-BGEE.log
+    before EET, WeiDU.log). Logs of an earlier plan there are replaced.
+
+    Returns {"plan_dir", "logs": [paths], "languages": [notes]}; ConfigError
+    when nothing could be planned (no order data, or nothing chosen).
+    """
+    order_file = os.path.join(folder, INSTALL_ORDER_FILE)
+    project = load_project(folder)
+    target = target or project_settings(folder).target
+    with _selection_analysis(game, chosen, labels, target, data_dir, rules, mod_db,
+                             order_catalogue, fetch_metadata, order_file if os.path.isfile(order_file)
+                             else None, load_decisions(folder)) as (
+                                 _settings, _analysis, _ruleset, plan):
+        if plan is None or not plan.logs:
+            raise ConfigError("no install order could be planned: refresh the community "
+                              "data, and choose at least one component")
+        notes: list[str] = []
+        if project["language_preference"]:
+            report = apply_language_preference(plan, os.path.abspath(target),
+                                               project["language_preference"])
+            notes = report.render().splitlines()
+        plan_dir = os.path.join(folder, INSTALL_PLAN_DIR)
+        for stale in (PRE_EET_LOG, EET_LOG):
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(os.path.join(plan_dir, stale))
+        logs = plan.write(plan_dir)
+    return {"plan_dir": plan_dir, "logs": logs, "languages": notes}
+
+
+def install_games(folder: str) -> dict[str, str]:
+    """The project's game folders as start_install takes them: {"BGEE",
+    "EET"} for EET (the BG2:EE folder becomes EET), else the one game."""
+    project = load_project(folder)
+    game = project["game"]
+    if game == "EET":
+        return {"BGEE": project["bgee_dir"] or "", "EET": project["bg2ee_dir"] or ""}
+    if game == "BGEE":
+        return {"BGEE": project["bgee_dir"] or ""}
+    if game == "BG2EE":
+        return {"BG2EE": project["bg2ee_dir"] or ""}
+    raise ConfigError("the project names no game: choose it on the first page")
 
 
 def preview_install_order(game: str, chosen: Sequence[tuple[str, int]],

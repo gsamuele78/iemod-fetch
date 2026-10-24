@@ -1,0 +1,482 @@
+"""
+Phase 5 - installation (GUI-AUDIT M4 item 22c, ADR-0045, ADR-0046).
+
+Three steps, each the player's:
+
+1. The programs. mod_installer and WeiDU, found as api.find_tools finds them
+   (the player's file, the bundle's, PATH, a WeiDU downloaded here before);
+   what is wrong with one is said in its own words. A program can be chosen
+   by hand; WeiDU can be downloaded, after a confirmation that names what is
+   fetched, from where, and under which licence.
+2. A backup of every game folder the install changes (ADR-0042): one made
+   here, or one there already. Without it nothing installs.
+3. The install. After a last confirmation, the order the order page shows is
+   written as the planned logs (api.write_install_plan) and mod_installer
+   runs over them (api.start_install): its output is shown as it comes, a
+   question no recorded answer covers is asked here, and Cancel stops it and
+   everything it started. Nothing is undone by itself: the backup is how to
+   start again.
+
+Every slow step runs in a worker thread; what it says reaches the page
+through a queued signal.
+"""
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtGui import QFontDatabase
+from PySide6.QtWidgets import (QFileDialog, QGridLayout, QGroupBox, QHBoxLayout,
+                               QInputDialog, QLabel, QMessageBox, QPlainTextEdit,
+                               QPushButton, QVBoxLayout, QWidget)
+
+from iemod_fetch import api
+
+from .mods import _in_thread
+
+TOOLS = (("mod_installer", "mod_installer"), ("weidu", "WeiDU"))
+PROGRESS_EVERY_S = 0.1
+
+
+def _plan(game: str, chosen: list, labels: dict, folder: str) -> dict:
+    """The real plan writer: the order page's planner, written to the project."""
+    return api.write_install_plan(game, chosen, labels, folder=folder, fetch_metadata=True)
+
+
+def _mods_dir(folder: str) -> str:
+    return api.project_settings(folder).target
+
+
+@dataclass
+class Services:
+    """What the page calls: the api, or a test's stand-ins."""
+    find: Callable[..., dict] = api.find_tools
+    pin: Callable[[str], Any] = api.tool_download
+    download: Callable[..., Any] = api.download_tool
+    backups: Callable[[str], list] = api.list_backups
+    backup: Callable[..., str] = api.backup_game
+    plan: Callable[..., dict] = _plan
+    games: Callable[[str], dict] = api.install_games
+    mods_dir: Callable[[str], str] = _mods_dir
+    start: Callable[..., Any] = api.start_install
+    timing: dict = field(default_factory=dict)    # start_install's quiet_s, grace_s...
+
+
+def _size(count: int) -> str:
+    value = float(count)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:,.0f} {unit}" if unit == "B" else f"{value:,.1f} {unit}"
+        value /= 1024
+    return ""                                   # not reached
+
+
+class _Bridge(QObject):
+    """Carries a message from a worker thread to the page's own thread."""
+    line = Signal(str)
+    status = Signal(str)
+    question = Signal(object)
+
+
+class _Question:
+    """A question from the install's thread, answered on the page's."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.answer: str | None = None
+        self.ready = threading.Event()
+
+    def give(self, answer: str | None) -> None:
+        self.answer = answer
+        self.ready.set()
+
+
+class InstallPage(QWidget):
+    completeChanged = Signal(bool)
+    finished = Signal()                         # a backup, download or install ended
+
+    def __init__(self, project_dir: str, services: Services | None = None) -> None:
+        super().__init__()
+        self.project_dir = project_dir
+        self.services = services or Services()
+        self.wanted: tuple[str, list, dict] | None = None
+        self.given: dict[str, str | None] = {tool: None for tool, _name in TOOLS}
+        self.found: dict[str, Any] = {}
+        self.games: dict[str, str] = {}
+        self.backed_up: dict[str, str] = {}     # game folder -> its newest backup
+        self.outcome: Any = None
+        self._thread: QThread | None = None
+        self._cancel = threading.Event()
+        self._install: Any = None
+        self._asking: _Question | None = None
+        self._last = 0.0
+        self._bridge = _Bridge()
+        self._bridge.line.connect(self._append)
+        self._bridge.status.connect(self._say)
+        self._bridge.question.connect(self._ask)
+
+        # 1. the programs
+        self.tool_state: dict[str, QLabel] = {}
+        self.choose: dict[str, QPushButton] = {}
+        tools = QGridLayout()
+        for row, (tool, name) in enumerate(TOOLS):
+            state = _plain("")
+            choose = QPushButton("Choose...")
+            choose.setAccessibleName(f"Choose {name}")
+            choose.clicked.connect(lambda _checked=False, t=tool: self._choose(t))
+            self.tool_state[tool], self.choose[tool] = state, choose
+            tools.addWidget(QLabel(f"<b>{name}</b>"), row, 0)
+            tools.addWidget(state, row, 1)
+            tools.addWidget(choose, row, 2)
+        self.download_weidu = QPushButton("Download WeiDU...")
+        self.download_weidu.clicked.connect(self.offer_weidu)
+        tools.addWidget(self.download_weidu, 1, 3)
+        tools.setColumnStretch(1, 1)
+        programs = QGroupBox("1. The programs")
+        programs.setLayout(tools)
+
+        # 2. the backups
+        self.backup_rows = QGridLayout()
+        self.backup_rows.setColumnStretch(1, 1)
+        self.backup_state: dict[str, QLabel] = {}
+        self.backup_button: dict[str, QPushButton] = {}
+        backups = QGroupBox("2. A backup of each game folder")
+        backups.setLayout(self.backup_rows)
+
+        # 3. the install
+        self.install_button = QPushButton("Install")
+        self.cancel_button = QPushButton("Cancel")
+        self.install_button.clicked.connect(self.install)
+        self.cancel_button.clicked.connect(self.stop)
+        self.summary = _plain("")
+        self.needs = _plain("")
+        self.output = QPlainTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.output.setAccessibleName("mod_installer's output")
+        self.output.setMaximumBlockCount(20000)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.install_button)
+        buttons.addWidget(self.cancel_button)
+        buttons.addStretch(1)
+        run = QVBoxLayout()
+        run.addLayout(buttons)
+        run.addWidget(self.needs)
+        run.addWidget(self.summary)
+        run.addWidget(self.output, 1)
+        installing = QGroupBox("3. The install")
+        installing.setLayout(run)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("<h2>5. Installation</h2>"))
+        layout.addWidget(_plain(
+            "mod_installer installs the order planned on the order page, with WeiDU, "
+            "into the game folders. It changes them: a backup of each comes first, "
+            "and is how to start again if anything goes wrong."))
+        layout.addWidget(programs)
+        layout.addWidget(backups)
+        layout.addWidget(installing, 1)
+        self._buttons()
+
+    # ------------------------------------------------------------ entering
+    def prepare(self, game: str, chosen: list, labels: dict) -> None:
+        """Entered with the selection to install: what it needs, looked at again."""
+        if self.running():
+            return
+        self.wanted = (game, list(chosen), dict(labels))
+        self.refresh()
+
+    def refresh(self) -> None:
+        self._refresh_tools()
+        self._refresh_backups()
+        self._buttons()
+
+    def _refresh_tools(self) -> None:
+        self.found = self.services.find(self.given["mod_installer"], self.given["weidu"])
+        for tool, _name in TOOLS:
+            found = self.found[tool]
+            if found.ok:
+                text = f"{found.path} - version {found.version} ({found.source})"
+                if found.note:
+                    text += f"\n{found.note}"
+            else:
+                text = found.problem or "not found"
+            self.tool_state[tool].setText(text)
+        weidu = self.found["weidu"]
+        self.download_weidu.setVisible(not weidu.ok and self.services.pin("weidu") is not None)
+
+    def _refresh_backups(self) -> None:
+        try:
+            self.games = self.services.games(self.project_dir)
+        except Exception as exc:          # no game chosen: said, not a crash
+            self.games = {}
+            self._say(str(exc))
+        while self.backup_rows.count():
+            item = self.backup_rows.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+        self.backup_state.clear()
+        self.backup_button.clear()
+        self.backed_up.clear()
+        for row, (name, folder) in enumerate(self.games.items()):
+            state = _plain("")
+            button = QPushButton("Back up now")
+            button.setAccessibleName(f"Back up {name}")
+            button.clicked.connect(lambda _checked=False, f=folder: self.back_up(f))
+            self.backup_state[folder], self.backup_button[folder] = state, button
+            self.backup_rows.addWidget(QLabel(f"<b>{name}</b>"), row, 0)
+            self.backup_rows.addWidget(state, row, 1)
+            self.backup_rows.addWidget(button, row, 2)
+            self._show_backup(folder)
+
+    def _show_backup(self, folder: str) -> None:
+        try:
+            found = self.services.backups(folder) if folder else []
+        except Exception as exc:          # an unreadable backups folder
+            found = []
+            self.backup_state[folder].setText(f"{folder}: {exc}")
+            return
+        if found:
+            newest = found[0]
+            self.backed_up[folder] = newest["path"]
+            self.backup_state[folder].setText(
+                f"{folder}\nbacked up {newest['created']}: {newest['path']} "
+                f"({newest['files']} files)")
+        else:
+            self.backed_up.pop(folder, None)
+            self.backup_state[folder].setText(f"{folder}\nno backup yet")
+
+    # ------------------------------------------------------------ the programs
+    def _choose(self, tool: str) -> None:
+        path, _filter = QFileDialog.getOpenFileName(self, f"Where is {tool}?")
+        if path:
+            self.use(tool, path)
+
+    def use(self, tool: str, path: str | None) -> None:
+        """The program the player chose (None: find it again)."""
+        self.given[tool] = path or None
+        self.refresh()
+
+    def confirm(self, title: str, text: str) -> bool:
+        """Yes or no, asked of the player (a test answers instead)."""
+        answer = QMessageBox.question(self, title, text)
+        return bool(answer == QMessageBox.StandardButton.Yes)
+
+    def offer_weidu(self) -> None:
+        """Download WeiDU, once the player has read what and from where."""
+        pin = self.services.pin("weidu")
+        if pin is None or self.running():
+            return
+        text = (f"Download WeiDU {pin.version} for this system?\n\n"
+                f"From: {pin.url}\n"
+                f"Licence: {pin.licence} - {pin.home}\n"
+                f"Checked against its sha256 before it is unpacked, then kept in "
+                f"{api.default_tools_dir()} and used for the install.")
+        if not self.confirm("Download WeiDU", text):
+            return
+        self._cancel = threading.Event()
+        cancel, download, bridge = self._cancel, self.services.download, self._bridge
+
+        def progress(done: int, total: int | None) -> None:
+            now = time.monotonic()
+            if now - self._last >= PROGRESS_EVERY_S or done == total:
+                self._last = now
+                bridge.status.emit(f"Downloading WeiDU: {_size(done)}"
+                                   + (f" of {_size(total)}" if total else ""))
+
+        self._say("Downloading WeiDU...")
+        self._run(lambda: download("weidu", progress=progress, cancel=cancel),
+                  self._downloaded)
+
+    def _downloaded(self, found: Any) -> None:
+        self._say(f"WeiDU downloaded: {found.path}" if found.ok
+                  else f"WeiDU was downloaded but cannot be used: {found.problem}")
+
+    # ------------------------------------------------------------ the backups
+    def back_up(self, folder: str) -> None:
+        if self.running():
+            return
+        self._cancel = threading.Event()
+        cancel, backup, bridge = self._cancel, self.services.backup, self._bridge
+
+        def on_event(event: dict) -> None:
+            kind = event.get("event")
+            now = time.monotonic()
+            if kind == "backup_progress" and now - self._last < PROGRESS_EVERY_S:
+                return
+            self._last = now
+            if kind == "backup_started":
+                bridge.status.emit(f"Backing up {folder}: {event.get('files', 0)} files, "
+                                   f"{_size(int(event.get('bytes') or 0))}")
+            elif kind == "backup_progress":
+                bridge.status.emit(f"Backing up {folder}: "
+                                   f"{_size(int(event.get('bytes') or 0))} of "
+                                   f"{_size(int(event.get('total') or 0))}")
+
+        self._say(f"Backing up {folder}...")
+        self._run(lambda: backup(folder, on_event=on_event, cancel=cancel),
+                  lambda path: self._say(f"Backed up {folder} to {path}"))
+
+    # ------------------------------------------------------------ the install
+    def ready(self) -> list[str]:
+        """What still stops the install, in words; [] when nothing does."""
+        missing = []
+        if self.wanted is None:
+            missing.append("no selection: go through the earlier phases first")
+        for tool, name in TOOLS:
+            found = self.found.get(tool)
+            if found is None or not found.ok:
+                missing.append(f"{name}: {found.problem if found else 'not looked for'}")
+        if not self.games:
+            missing.append("no game folders: set them on the first page")
+        for folder in self.games.values():
+            if folder not in self.backed_up:
+                missing.append(f"no backup of {folder or 'a game folder'} yet")
+        return missing
+
+    def install(self) -> None:
+        if self.running() or self.ready() or self.wanted is None:
+            return
+        game, chosen, labels = self.wanted
+        folders = "\n".join(f"  {name}: {folder}" for name, folder in self.games.items())
+        backups = "\n".join(f"  {path}" for path in self.backed_up.values())
+        if not self.confirm("Install", (
+                f"Install {len(chosen)} component(s) into:\n{folders}\n\n"
+                f"mod_installer and WeiDU change these folders. Nothing is undone by "
+                f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
+            return
+        self._cancel = threading.Event()
+        self.output.clear()
+        self.outcome = None
+        services, folder, games = self.services, self.project_dir, dict(self.games)
+        tools = {tool: self.found[tool].path for tool, _name in TOOLS}
+        cancel, bridge = self._cancel, self._bridge
+
+        def on_event(event: Any) -> None:
+            text = event.text
+            if event.kind == "batch":
+                text = "== " + ", ".join(f"{tp2} #{number}" for tp2, number in event.batch)
+            elif event.kind == "answer":
+                text = f"-> {text}"
+            bridge.line.emit(text)
+
+        def run() -> Any:
+            bridge.status.emit("Writing the install order...")
+            plan = services.plan(game, chosen, labels, folder)
+            for note in plan.get("languages", []):
+                bridge.line.emit(note)
+            if cancel.is_set():
+                return "cancelled"
+            install = services.start(plan["plan_dir"], games, services.mods_dir(folder),
+                                     tools["mod_installer"], tools["weidu"],
+                                     ask=self._from_install, on_event=on_event,
+                                     **services.timing)
+            self._install = install
+            if cancel.is_set():                 # Cancel while it was being set up
+                install.cancel()
+            bridge.status.emit("Installing...")
+            return install.run()
+
+        self._run(run, self._installed)
+
+    def _from_install(self, question: str, _batch: tuple) -> str | None:
+        """Called on the install's thread: ask on the page's, wait for the answer."""
+        asked = _Question(question)
+        self._bridge.question.emit(asked)
+        asked.ready.wait()
+        return asked.answer
+
+    def _ask(self, asked: _Question) -> None:
+        self._asking = asked
+        self._append(asked.text)
+        answer = self.ask_player(asked.text)
+        if self._asking is asked:               # not answered by Cancel meanwhile
+            self._asking = None
+            asked.give(answer)
+
+    def ask_player(self, question: str) -> str | None:
+        """The player's answer to WeiDU's question; None cancels the install."""
+        text, ok = QInputDialog.getText(
+            self, "WeiDU asks", question + "\n\n(Cancel stops the install.)")
+        return text if ok else None
+
+    def stop(self) -> None:
+        """Cancel what runs: the install and everything it started."""
+        self._cancel.set()
+        if self._install is not None:
+            self._install.cancel()
+        if self._asking is not None:
+            asked, self._asking = self._asking, None
+            asked.give(None)
+        if self.running():
+            self._say("Stopping...")
+
+    def _installed(self, outcome: Any) -> None:
+        if outcome == "cancelled":
+            self._say("Cancelled before mod_installer started: nothing was changed.")
+            return
+        self.outcome = outcome
+        backups = ", ".join(self.backed_up.values())
+        if outcome.ok:
+            self._say("Installed. Each game's WeiDU.log lists what went in.")
+        elif outcome.cancelled:
+            self._say(f"Cancelled. What was installed until then stays: to start "
+                      f"again, restore the backup ({backups}).")
+        else:
+            self._say(f"mod_installer stopped with exit status {outcome.returncode}: "
+                      f"the output above says where. To start again, restore the "
+                      f"backup ({backups}).")
+
+    # ------------------------------------------------------------ plumbing
+    def running(self) -> bool:
+        return self._thread is not None
+
+    def _run(self, call: Callable[[], Any], done: Callable[[Any], None]) -> None:
+        self._thread = _in_thread(call, done, self._failed, self._finished)
+        self._buttons()
+        self.completeChanged.emit(False)
+
+    def _failed(self, message: str) -> None:
+        self._say(message)
+
+    def _finished(self) -> None:
+        self._thread = None
+        self._install = None
+        self._asking = None
+        self.refresh()
+        self.completeChanged.emit(self.is_complete())
+        self.finished.emit()
+
+    def _append(self, text: str) -> None:
+        self.output.appendPlainText(text)
+
+    def _say(self, text: str) -> None:
+        self.summary.setText(text)
+
+    def _buttons(self) -> None:
+        busy = self.running()
+        missing = self.ready()
+        self.install_button.setEnabled(not busy and not missing)
+        self.install_button.setToolTip("\n".join(missing) if missing else
+                                       "Install the planned order into the game folders")
+        self.cancel_button.setEnabled(busy)
+        self.download_weidu.setEnabled(not busy)
+        for button in (*self.choose.values(), *self.backup_button.values()):
+            button.setEnabled(not busy)
+        self.needs.setText("" if busy or not missing else
+                           "Before installing:\n" + "\n".join(f"- {m}" for m in missing))
+
+    def is_complete(self) -> bool:
+        """The install ran to its end without an error."""
+        return bool(self.outcome is not None and getattr(self.outcome, "ok", False))
+
+
+def _plain(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setTextFormat(Qt.TextFormat.PlainText)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    return label

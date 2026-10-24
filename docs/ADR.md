@@ -2820,6 +2820,25 @@ version up to the tag).
   API, not subprocess). The Windows tests run the stop against a child that
   ignores a polite stop, so only the job's kill passes them.
 
+### Item 22c: the wizard's page
+
+- **The plan the install runs is written to `PROJECT/install-plan/`.**
+  `api.write_install_plan` makes the same plan the order page shows (its
+  install-order.txt, decisions.json), applies the project's language
+  preference, and writes it as `--plan-order` writes it. Until now the
+  wizard only planned in a temporary folder. Each install writes it again,
+  so what runs is what the order page showed at that moment.
+- **The order of steps is fixed:** the programs, then a finished backup of
+  each game folder the project names (made here, or one already there),
+  then a confirmation that names the folders and the backups. Without a
+  backup, *Install* is not offered.
+- **A question no recorded answer covers is asked in a dialog** on the
+  page's thread, while the install's thread waits. Cancelling the dialog,
+  or *Cancel* at any time, stops the install and everything it started.
+- **Nothing is undone by itself.** A failed or cancelled install leaves the
+  game as WeiDU left it, and the page names the backup to restore. Restoring
+  is the player's call, not an automatic step.
+
 ---
 
 ## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it
