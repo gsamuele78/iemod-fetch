@@ -2855,8 +2855,13 @@ part of this project's build, until an upstream stable release includes it.
 
   The targets are:
   - Linux: static (musl), so it runs on any distribution;
-  - Windows: x86_64;
-  - macOS: the runner's architecture.
+  - Windows: x86_64, with the C runtime linked in (`+crt-static`). By
+    default Rust's MSVC programs load VCRUNTIME140.dll (measured: upstream's
+    v12.1.1 .exe names it). A clean Windows lacks that DLL, and the bundle
+    keeps its own copy under `_internal`, where mod_installer does not look.
+    The build fails if the program still names it.
+  - macOS: Apple silicon, the runner's architecture. This is the wizard's
+    own bundle's architecture too (README): no Intel Mac either way.
 
   It installs what rustup can. It names what it cannot install: git, rustup,
   and on Linux musl-gcc (Debian/Ubuntu: `musl-tools`, which the workflows
@@ -2866,6 +2871,20 @@ part of this project's build, until an upstream stable release includes it.
   giving the source at that commit. The unzipped copy runs it once. The
   release workflows (Linux, Windows, macOS) build it for every new tag; a
   tag made before the script existed is built as it was.
+- **Its source is published from the same place as the program.** The
+  script also writes `mod_installer-16.0.0-source.tar.gz` (`git archive` of
+  the commit; the same bytes on every run). release.yml attaches it to each
+  release whose bundles carry the program, lists it in SHA256SUMS and covers
+  it with the attestation. This is the GPL-3.0 section 6(d) way, served by
+  this repository rather than by a third party's server: upstream may
+  rewrite or delete its history, and our release still holds the source.
+  The bundle's NOTICE names that file first and upstream second.
+- **Its Rust libraries are not vendored.** They are named, with their
+  checksums, in the commit's Cargo.lock, and served by crates.io. They are
+  MIT and Apache-2.0, not GPL. A `cargo vendor` archive would be the
+  strictest reading of "Corresponding Source", at tens of megabytes per
+  release; it is left for the maintainer to decide, and this is where the
+  choice is recorded.
 - **CI tests the same binary.** ci.yml's real-weidu job builds mod_installer
   with the same script, so the program tested is the program shipped. A
   test keeps the commit and version in the script and in ci.yml equal.

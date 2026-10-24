@@ -51,8 +51,10 @@ Python API, which is internal.
   GUI-AUDIT M4 item 22b). `packaging/mod_installer.py` compiles the commit CI
   tests (3b6827a, upstream's main branch) with Rust 1.98.0, statically on
   Linux. The wizard's bundles for Linux, Windows and macOS carry it beside
-  the program, with its GPL-3.0 licence and a notice of its source; the
-  real-WeiDU job tests that same build. Why: upstream's last release,
+  the program, with its GPL-3.0 licence and a notice of its source; each
+  release attaches that source (`mod_installer-16.0.0-source.tar.gz`, in
+  SHA256SUMS and attested). On Windows the C runtime is linked in, so it starts
+  without the Visual C++ runtime. The real-WeiDU job tests that same build. Why: upstream's last release,
   v12.1.1, stops after the first component on Linux (it reads `weidu.log`,
   while WeiDU writes `WeiDU.log`), and nothing newer is released.
 - **The install, run** (GUI-AUDIT M4 item 22a, ADR-0045, amending ADR-0022):

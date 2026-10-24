@@ -164,3 +164,4 @@ def test_mod_installer_goes_beside_the_program_with_its_licence(tmp_path):
     notice = (folder / "NOTICE-mod_installer.txt").read_text(encoding="utf-8")
     assert "unmodified" in notice and "General Public License v3.0" in notice
     assert "https://github.com/dark0dave/mod_installer/tree/3b6827a" in notice
+    assert "mod_installer-16.0.0-source.tar.gz" in notice

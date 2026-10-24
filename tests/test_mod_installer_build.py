@@ -56,3 +56,20 @@ def test_the_commit_built_is_the_one_ci_tests():
         ci = fh.read()
     assert re.search(r"MOD_INSTALLER_REV:\s*(\w+)", ci)[1] == recipe.REV
     assert re.search(r'MOD_INSTALLER_VERSION:\s*"?([\d.]+)', ci)[1] == recipe.VERSION
+
+
+def test_windows_links_the_c_runtime_in_and_others_build_as_they_are(monkeypatch):
+    monkeypatch.setenv("RUSTFLAGS", "-D warnings")
+    assert recipe.build_env("x86_64-pc-windows-msvc")["RUSTFLAGS"] == \
+        "-D warnings -C target-feature=+crt-static"
+    assert recipe.build_env("x86_64-unknown-linux-musl") is None
+
+
+def test_a_program_that_would_load_the_vc_runtime_is_seen(tmp_path):
+    """Measured: upstream's v12.1.1 .exe, default MSVC build, names
+    VCRUNTIME140.dll among its imports; one built with crt-static does not."""
+    dynamic, static = tmp_path / "a.exe", tmp_path / "b.exe"
+    dynamic.write_bytes(b"MZ...KERNEL32.dll\x00VCRUNTIME140.dll\x00api-ms-win-crt")
+    static.write_bytes(b"MZ...KERNEL32.dll\x00")
+    assert recipe.needs_vc_runtime(str(dynamic))
+    assert not recipe.needs_vc_runtime(str(static))

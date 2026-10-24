@@ -184,10 +184,12 @@ def add_mod_installer(folder: str, built: str) -> None:
 in this folder ({name}), under the GNU General Public License v3.0
 (licenses/mod_installer-LICENSE). The wizard runs it to install mods.
 
-It was built with Rust {recipe.RUST} from this source, which is where to get it:
+It was built with Rust {recipe.RUST} by packaging/mod_installer.py of
+iemod-fetch, from this source (its Corresponding Source):
+  {recipe.SOURCE}, attached to the same iemod-fetch release as this
+  bundle, on its GitHub release page - and, while upstream keeps it, at
   {recipe.REPOSITORY}/tree/{recipe.REV}
-  {recipe.REPOSITORY}/archive/{recipe.REV}.tar.gz
-by packaging/mod_installer.py of iemod-fetch.
+The Rust libraries it links are those its Cargo.lock names, from crates.io.
 """)
 
 

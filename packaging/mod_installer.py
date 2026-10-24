@@ -7,7 +7,10 @@ system and checked to say its version.
     python packaging/mod_installer.py --out build/mod_installer
 
 prints the program's path; gui_bundle.py --mod-installer puts it in the
-bundle, with its licence and where its source is.
+bundle, with its licence and where its source is. Beside it lies SOURCE, the
+source it was built from (`git archive` of REV): the release attaches it, so
+the GPL-3.0's Corresponding Source is offered from the same place as the
+program (section 6(d)), whatever happens upstream.
 
 Why built: upstream's last release, v12.1.1, stops after the first component
 on Linux (it reads `weidu.log`, WeiDU writes `WeiDU.log`), and nothing newer
@@ -45,9 +48,28 @@ def target(system: str | None = None, machine: str | None = None) -> str:
             "Darwin": f"{arch}-apple-darwin"}[system]
 
 
-def run(args: list[str], cwd: str | None = None) -> None:
+SOURCE = f"mod_installer-{VERSION}-source.tar.gz"
+
+
+def run(args: list[str], cwd: str | None = None, env: dict | None = None) -> None:
     sys.stderr.write("+ " + " ".join(args) + "\n")
-    subprocess.run(args, cwd=cwd, check=True)  # noqa: S603 (the build's own tools)
+    subprocess.run(args, cwd=cwd, check=True, env=env)  # noqa: S603 (the build's own tools)
+
+
+def build_env(rust_target: str) -> dict | None:
+    """Windows: the C runtime linked in. By default Rust's MSVC programs load
+    VCRUNTIME140.dll (measured in upstream's v12.1.1 .exe), which a clean
+    Windows lacks and which the bundle keeps under _internal, out of reach."""
+    if rust_target.endswith("-windows-msvc"):
+        flags = os.environ.get("RUSTFLAGS", "")
+        return dict(os.environ, RUSTFLAGS=(flags + " -C target-feature=+crt-static").strip())
+    return None
+
+
+def needs_vc_runtime(program: str) -> bool:
+    """The program names the Visual C++ runtime DLL it would load."""
+    with open(program, "rb") as fh:
+        return b"vcruntime140" in fh.read().lower()
 
 
 def requirements(rust_target: str) -> None:
@@ -83,11 +105,16 @@ def build(out: str) -> str:
     source = os.path.join(out, "source")
     fetch(source)
     run(["cargo", f"+{RUST}", "build", "--release", "--locked", "--target", rust_target],
-        cwd=source)
+        cwd=source, env=build_env(rust_target))
     name = "mod_installer" + (".exe" if platform.system() == "Windows" else "")
     program = os.path.join(out, name)
     shutil.copy2(os.path.join(source, "target", rust_target, "release", name), program)
     shutil.copy(os.path.join(source, "license"), os.path.join(out, "LICENSE"))
+    run(["git", "archive", "--format=tar.gz", f"--prefix=mod_installer-{VERSION}/",
+         "-o", os.path.join(out, SOURCE), REV], cwd=source)
+    if needs_vc_runtime(program):
+        raise SystemExit(f"{program} needs VCRUNTIME140.dll: it would not start on a "
+                         "Windows without the Visual C++ runtime")
     said = version_of(program)
     if said != f"mod_installer {VERSION}":
         raise SystemExit(f"{program} says {said!r}, not mod_installer {VERSION}")
