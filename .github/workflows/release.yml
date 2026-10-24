@@ -234,8 +234,20 @@ jobs:
         shell: bash
         run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
       - run: pip install ".[gui]" "pyinstaller==6.22.3"
-      - name: Build, start once, zip
-        run: python packaging/gui_bundle.py --dist gui-dist
+      # The program the wizard installs with, built for the bundle (ADR-0046);
+      # a commit made before packaging/mod_installer.py existed bundles none.
+      - name: musl's C compiler, for a static mod_installer (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y -q musl-tools
+      - name: Build mod_installer, then the bundle with it; start once, zip
+        shell: bash
+        run: |
+          if [ -f packaging/mod_installer.py ]; then
+            python packaging/mod_installer.py --out "$RUNNER_TEMP/mod_installer"
+            python packaging/gui_bundle.py --dist gui-dist --mod-installer "$RUNNER_TEMP/mod_installer"
+          else
+            python packaging/gui_bundle.py --dist gui-dist
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gui-${{ matrix.os }}

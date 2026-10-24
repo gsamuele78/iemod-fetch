@@ -2821,62 +2821,69 @@ version up to the tag).
 
 ---
 
-## ADR-0046 — mod_installer 16.0.0, built here for the wizard's download, until upstream releases it
+## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it
 
-**Context.** The wizard runs mod_installer (ADR-0045). A player with none
-gets a pinned download, on their word (GUI-AUDIT M4 item 22b). The maintainer
-chose dark0dave's latest stable tag, v12.1.1, and the measurements against it
-changed the choice:
+**Context.** The wizard runs mod_installer (ADR-0045), so the player needs
+one (GUI-AUDIT M4 item 22b). The maintainer first chose dark0dave's latest
+stable tag, v12.1.1. Measuring it changed the choice:
 
-- v12.1.1 stops after the first component on Linux: after every component it
+- **It stops after the first component on Linux.** After every component it
   opens `weidu.log` in the game folder (`utils::get_last_installed`,
   unconditionally), and WeiDU writes `WeiDU.log`. Measured with the real
-  WeiDU v251 on a synthetic game: exit 1 after the first component; 16.0.0,
-  same input, exit 0. Windows and macOS file systems ignore case, so those
-  systems are not affected.
-- Its published binaries are not what their names say: the "x86_64-apple-darwin"
-  one is arm64, the "x86_64-unknown-linux-musl" one links glibc.
-- It logs its batches in another form (`Component { ... }`, one at a time)
-  and never fills EET's BG:EE folder by itself.
-- 16.0.0 (commit 3b6827a, what CI's real-weidu job tests) has none of these
-  problems, but upstream has published no release since v12.1.1.
+  WeiDU v251 on a synthetic game: v12.1.1 exits 1 after the first component;
+  16.0.0, same input, exits 0. Windows and macOS file systems ignore case,
+  so those systems are not affected.
+- **Its published binaries are not what their names say.** The
+  "x86_64-apple-darwin" one is arm64; the "x86_64-unknown-linux-musl" one
+  links glibc.
+- **It works differently.** It logs its batches in another form
+  (`Component { ... }`, one at a time) and never fills EET's BG:EE folder by
+  itself.
+- **16.0.0 has none of these problems, and upstream has nothing newer.**
+  16.0.0 is upstream's main branch: commit 3b6827a, which CI's real-weidu
+  job tests. It has no release, and there is no newer commit or tag (checked
+  2026-10-24).
 
-**Decision.** The maintainer's choice: 16.0.0 on every system, built here,
-until an upstream stable release includes it.
+**Decision.** The maintainer's choice: 16.0.0 on every system, compiled as
+part of this project's build, until an upstream stable release includes it.
 
-- `mod-installer-build.yml` builds commit 3b6827a, unchanged, with its own
-  Cargo.lock and a pinned Rust (1.98.0). The targets are:
-  - Linux x86_64, static (musl), so it runs on any distribution;
-  - Windows x86_64;
-  - macOS for Apple silicon, and for Intel.
+- **`packaging/mod_installer.py` builds it.** It:
+  - fetches the commit by its id with git (the id names the content);
+  - installs the pinned Rust (1.98.0) and the system's target with rustup;
+  - builds with the commit's own Cargo.lock;
+  - checks that the program says `mod_installer 16.0.0`.
 
-  Every binary that can run on its runner must report 16.0.0.
-- A pull request that changes the workflow only builds. Publishing is by
-  hand (`publish` ticked). The release goes out as `mod_installer-16.0.0` in
-  this repository, never marked latest, with:
-  - SHA256SUMS;
-  - a build-provenance attestation;
-  - the exact source tarball and mod_installer's license (GPL-3.0: whoever
-    gets the binary gets the source with it).
+  The targets are:
+  - Linux: static (musl), so it runs on any distribution;
+  - Windows: x86_64;
+  - macOS: the runner's architecture.
 
-  Its notes say it is not a release of iemod-fetch and not made by
-  mod_installer's author.
-- The wizard's download (`iemod_fetch/toolchain.py`, item 22b) pins those
-  files by sha256. The pins are filled in from the published release, not
-  from a build no one can repeat.
-- The commit and version in this workflow and in ci.yml must agree
-  (`tests/test_upstream_versions.py`). The weekly upstream check's issue
-  names both files and the pin to update.
+  It installs what rustup can. It names what it cannot install: git, rustup,
+  and on Linux musl-gcc (Debian/Ubuntu: `musl-tools`, which the workflows
+  install).
+- **The wizard's bundle carries it.** `gui_bundle.py --mod-installer` puts
+  it beside the wizard's own program, with its GPL-3.0 text and a NOTICE
+  giving the source at that commit. The unzipped copy runs it once. The
+  release workflows (Linux, Windows, macOS) build it for every new tag; a
+  tag made before the script existed is built as it was.
+- **CI tests the same binary.** ci.yml's real-weidu job builds mod_installer
+  with the same script, so the program tested is the program shipped. A
+  test keeps the commit and version in the script and in ci.yml equal.
+- **The command line is unchanged.** The generated scripts run the player's
+  own mod_installer, at their terminal.
 
 **Consequences.**
 
-- This repository now ships a third party's program. A wrong build is ours
-  to answer for. The attestation says which workflow at which commit made
-  it; the sha256 pins say the wizard runs only those bytes.
-- The Rust build is not reproducible bit for bit. A rebuild gives new hashes,
-  so a re-publish needs new pins, which is a reviewed change, never an
-  automatic one.
-- When upstream publishes a release that has the fix, the wizard pins it
-  and this workflow is retired. The weekly check opens that issue.
-- The generated CLI scripts are not affected: the player runs their own
-  mod_installer at their own terminal.
+- **This project now ships a third party's program.** It ships as a
+  separate executable (aggregation, not linking), with its licence and its
+  exact source named in the bundle. The bundle's build provenance covers it.
+  A wrong build is ours to answer for.
+- **Builds are slower, and need what Rust needs.** The bundle builds take
+  about two minutes longer. Building locally needs git, rustup and, on
+  Linux, musl-tools; the script says which is missing.
+- **Players without the bundle get no mod_installer from us.** For the
+  zipapp, pip, or a system the bundle does not exist for, the player gives
+  the path of their own (item 22b checks its version).
+- **Retirement.** When upstream releases a version with the fix, the pin
+  moves to that release and this build may go. The weekly upstream check
+  opens that issue.
