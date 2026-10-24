@@ -1,0 +1,321 @@
+"""
+The install the wizard runs (GUI-AUDIT M4 item 22, ADR-0045): mod_installer
+as a child of this program, its output read line by line, WeiDU's questions
+answered - EET's with the BG:EE folder, then what the planned log records
+(`// @wlb-inputs:`), then by asking the player - and stopped on Cancel.
+
+mod_installer is played by tests/data/fake_mod_installer.py, which prints
+what the real one logs and asks the way it asks; the real mod_installer is
+run against a stand-in WeiDU by test_real_mod_installer.py when it is built.
+"""
+import os
+import sys
+import threading
+
+import pytest
+
+from iemod_fetch import api
+from iemod_fetch.errors import ConfigError
+from iemod_fetch.install_run import command, preflight
+from iemod_fetch.prompts import OutputReader, recorded_answers, wlb_inputs
+
+HERE = os.path.dirname(__file__)
+FAKE = os.path.join(HERE, "data", "fake_mod_installer.py")
+EET_QUESTION = "Enter the full path to your BG:EE+SoD installation then press Enter."
+
+
+# ----------------------------------------------------------- the answers
+def test_recorded_answers_are_read_left_to_right_with_blanks():
+    assert wlb_inputs("~A\\A.TP2~ #0 #10 // Confirm: v1.0 // @wlb-inputs: y,,c") == ["y", "", "c"]
+    assert wlb_inputs("~A\\A.TP2~ #0 #10 // Confirm: v1.0") is None
+    assert wlb_inputs(r"~EET\EET.TP2~ #0 #0 // EET core // @wlb-inputs: C:\My Games\BG2") == [
+        r"C:\My Games\BG2"]
+    log = ("// Log of Currently Installed WeiDU Mods\n"
+           "~EET\\EET.TP2~ #0 #0 // EET core (resource importation): v14.0\n"
+           "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67 // @wlb-inputs: 1,2\n")
+    assert recorded_answers(log) == {("vienxay.tp2", 0): ["1", "2"]}
+
+
+def test_the_output_is_read_into_batches_and_questions():
+    reader = OutputReader()
+    kinds = []
+    for line in [
+            ("[2026-10-24T00:00:00Z INFO  mod_installer::installers] Installing mod "
+             'WeiduBatchedComponents([WeiduComponent { tp_file: "SETUP-UB.TP2", name: "ub", '
+             'lang: "0", component: "0", component_name: "", sub_component: "", '
+             'version: "" }, WeiduComponent { tp_file: "SETUP-UB.TP2", name: "ub", lang: "0", '
+             'component: "10", component_name: "", sub_component: "", version: "" }])\n'),
+            "some WeiDU output\n",
+            "[2026-10-24T00:00:00Z INFO  mod_installer::runner] User Input required\n",
+            "[2026-10-24T00:00:00Z INFO  mod_installer::runner] Question is\n",
+            "[2026-10-24T00:00:00Z INFO  mod_installer::runner] Which portraits?\n",
+            "1] classic\n", "2] new\n"]:
+        kinds += [(e.kind, e.batch) for e in reader.feed(line) if e.kind != "line"]
+    assert kinds == [("batch", (("setup-ub.tp2", 0), ("setup-ub.tp2", 10)))]
+    assert reader.asking
+    question = reader.question()
+    assert question.text == "Which portraits?\n1] classic\n2] new"
+    assert question.batch == (("setup-ub.tp2", 0), ("setup-ub.tp2", 10))
+    assert not reader.asking and reader.question() is None
+
+
+# ---------------------------------------------------------- the install
+@pytest.fixture
+def setup(tmp_path):
+    """Two fresh games, the staged mods, the planned logs and the programs."""
+    games = {}
+    for name in ("BGEE", "EET"):
+        folder = tmp_path / name.lower()
+        folder.mkdir()
+        (folder / "chitin.key").write_text("")
+        games[name] = str(folder)
+    mods = tmp_path / "mods"
+    for folder in ("eet", "ub", "vienxay"):
+        (mods / folder).mkdir(parents=True)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU-BGEE.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67 // @wlb-inputs: 1,\n")
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~EET/EET.TP2~ #0 #0 // EET core (resource importation): v14.0\n"
+        "~UB/SETUP-UB.TP2~ #0 #0 // Restorations: v30\n")
+    if os.name == "nt":
+        program = tmp_path / "mod_installer.cmd"
+        program.write_text(f'@"{sys.executable}" "{FAKE}" %*\r\n')
+    else:
+        program = tmp_path / "mod_installer"
+        program.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
+        program.chmod(0o755)
+    return {"games": games, "mods": str(mods), "plan": str(plan),
+            "program": str(program), "transcript": tmp_path / "answers.txt"}
+
+
+def run(setup, monkeypatch, questions, ask=lambda _q, _b: None, **extra):
+    import json
+    monkeypatch.setenv("FAKE_QUESTIONS", json.dumps(questions))
+    monkeypatch.setenv("FAKE_TRANSCRIPT", str(setup["transcript"]))
+    events = []
+    install = api.start_install(setup["plan"], setup["games"], setup["mods"],
+                                setup["program"], weidu=setup["program"], ask=ask,
+                                on_event=events.append, quiet_s=0.3, **extra)
+    return install, events
+
+
+def read(*path):
+    from pathlib import Path
+    file = Path(*path)
+    return file.read_text(encoding="utf-8") if file.exists() else ""
+
+
+def answers(setup):
+    return setup["transcript"].read_text(encoding="utf-8").splitlines() if setup["transcript"].exists() else []
+
+
+def test_eet_is_installed_answering_each_question_from_where_it_should(setup, monkeypatch):
+    asked = []
+    install, events = run(setup, monkeypatch, {
+        "vienxay.tp2#0": ["Choose one", "Press Enter"],
+        "eet.tp2#0": [EET_QUESTION],
+        "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]},
+        ask=lambda question, batch: asked.append((question, batch)) or "y")
+    outcome = install.run()
+    assert outcome.ok, [e.text for e in events]
+    assert answers(setup) == ["1", "", setup["games"]["BGEE"], "y"]
+    assert [a.source for a in outcome.answered] == ["recorded", "recorded", "EET", "player"]
+    # the player was asked only what nothing recorded, with its component
+    assert asked == [("Restore the tavern? [y]es or [n]o", (("setup-ub.tp2", 0),))]
+    # each game's WeiDU.log now names what went in, the recorded answers not copied
+    eet_log = read(setup["games"]["EET"], "WeiDU.log")
+    assert "EET core" in eet_log and "SETUP-UB.TP2" in eet_log
+    assert "@wlb-inputs" not in read(setup["games"]["BGEE"], "WeiDU.log")
+    assert [e.batch for e in events if e.kind == "batch"] == [
+        (("vienxay.tp2", 0),), (("eet.tp2", 0),), (("setup-ub.tp2", 0),)]
+
+
+def test_a_question_the_player_cancels_stops_the_install(setup, monkeypatch):
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": ["Something unknown?"]})
+    outcome = install.run()
+    assert outcome.cancelled and not outcome.ok
+    assert "SETUP-UB" not in read(setup["games"]["EET"], "WeiDU.log")       # never reached
+
+
+def test_cancel_from_another_thread_stops_it(setup, monkeypatch):
+    monkeypatch.setenv("FAKE_SLOW", "30")
+    install, events = run(setup, monkeypatch, {}, grace_s=2.0)
+    timer = threading.Timer(0.5, install.cancel)
+    timer.start()
+    outcome = install.run()
+    timer.cancel()
+    assert outcome.cancelled and outcome.returncode is not None
+    assert any(e.kind == "batch" for e in events)
+
+
+def test_a_failed_component_is_a_failed_install(setup, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "eet.tp2#0")
+    install, events = run(setup, monkeypatch, {})
+    outcome = install.run()
+    assert outcome.returncode == 1 and not outcome.ok and not outcome.cancelled
+    assert any("not installed due to errors" in e.text for e in events if e.kind == "line")
+
+
+# ------------------------------------------------------- before it starts
+def test_what_stops_it_before_it_starts_is_named(setup, tmp_path):
+    games, program = setup["games"], setup["program"]
+    assert preflight(games, setup["mods"], program, program) == []
+    os.remove(os.path.join(games["BGEE"], "chitin.key"))
+    with open(os.path.join(games["EET"], "WeiDU.log"), "w") as fh:
+        fh.write("~EET/EET.TP2~ #0 #0 // EET core\n")
+    problems = preflight(games, str(tmp_path / "nowhere"), program, str(tmp_path / "weidu"))
+    assert any("BGEE: no chitin.key" in p for p in problems)
+    assert any("EET:" in p and "already has mods" in p for p in problems)
+    assert any("does not exist - download first" in p for p in problems)
+    assert any(p.startswith("WeiDU is not a program here") for p in problems)
+    assert not any("already has mods" in p for p in preflight(
+        games, setup["mods"], program, program, allow_existing=True))
+    with pytest.raises(ConfigError, match="no chitin.key"):
+        api.start_install(setup["plan"], games, setup["mods"], program, program,
+                          ask=lambda *_a: None)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux's case rule")
+def test_a_mixed_case_mod_folder_is_refused_on_linux(setup):
+    os.rename(os.path.join(setup["mods"], "ub"), os.path.join(setup["mods"], "UB"))
+    assert any("lower-case on Linux: UB" in p for p in preflight(
+        setup["games"], setup["mods"], setup["program"], setup["program"]))
+
+
+def test_the_command_is_the_one_the_scripts_run(setup):
+    argv = command(setup["plan"], setup["games"], "/mods", "/mi", "/weidu", "it_IT")
+    assert argv[:2] == ["/mi", "eet"]
+    assert argv[argv.index("--bg1-log-file") + 1].endswith("WeiDU-BGEE.log")
+    assert argv[argv.index("--bg2-game-directory") + 1] == setup["games"]["EET"]
+    assert argv[-6:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
+                         "--language", "it_IT"]
+    one = command(setup["plan"], {"BG2EE": "/g"}, "/mods", "/mi", "/weidu")
+    assert one[:6] == ["/mi", "normal", "--game-directory", "/g", "--log-file",
+                       os.path.join(setup["plan"], "WeiDU.log")]
+
+
+# ------------------------------------------------ reviews of the design
+def alive(pid):
+    """Whether process `pid` is still running (a zombie counts as gone)."""
+    if os.name == "nt":
+        import subprocess
+        listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                capture_output=True, text=True, check=False).stdout
+        return str(pid) in listed
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            return fh.read().split(")")[-1].split()[0] != "Z"
+    except FileNotFoundError:
+        return False
+
+
+def test_cancel_stops_what_mod_installer_started_too(setup, monkeypatch, tmp_path):
+    """WeiDU, mod_installer's child, must not go on writing into the game."""
+    import time
+    pidfile = tmp_path / "weidu.pid"
+    monkeypatch.setenv("FAKE_SLOW", "30")
+    monkeypatch.setenv("FAKE_GRANDCHILD", str(pidfile))
+    install, _events = run(setup, monkeypatch, {}, grace_s=1.0)
+    timer = threading.Timer(1.0, install.cancel)
+    timer.start()
+    outcome = install.run()
+    timer.cancel()
+    assert outcome.cancelled
+    pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not alive(pid)
+
+
+def test_an_ended_install_does_not_wait_on_what_it_left_running(setup, monkeypatch, tmp_path):
+    """
+    mod_installer exits, something it started still holds its output (review
+    of #83): the run ends soon after - not when that lets go - and stops it.
+    """
+    import time
+    pidfile = tmp_path / "weidu.pid"
+    monkeypatch.setenv("FAKE_GRANDCHILD", str(pidfile))
+    monkeypatch.setenv("FAKE_EXIT_EARLY", "1")
+    install, events = run(setup, monkeypatch, {}, grace_s=1.0, drain_s=0.5)
+    started = time.monotonic()
+    outcome = install.run()
+    assert time.monotonic() - started < 15
+    assert outcome.returncode == 0 and not outcome.cancelled
+    assert any("still running: stopped" in e.text for e in events)
+    pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not alive(pid)
+
+
+def test_mod_installer_gets_the_child_environment(setup, monkeypatch):
+    """A frozen bundle's library path is not handed down (childenv, #70)."""
+    from iemod_fetch import install_run
+    seen = []
+
+    def marked(extra=None):
+        seen.append(dict(extra or {}))
+        return dict(os.environ, IEMOD_CHILD_ENV="cleaned", **(extra or {}))
+    monkeypatch.setattr(install_run, "child_env", marked)
+    monkeypatch.setenv("FAKE_ECHO_ENV", "IEMOD_CHILD_ENV")
+    install, events = run(setup, monkeypatch, {})
+    assert install.run().ok
+    assert seen[0] == {"RUST_LOG": "info"}
+    assert any(e.text.endswith("IEMOD_CHILD_ENV=cleaned") for e in events)
+
+
+def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67 // @wlb-inputs: 1\n")
+    asked = []
+    install, _events = run(setup, monkeypatch, {
+        "vienxay.tp2#0": ["Choose one", "And another"],
+        "eet.tp2#0": [EET_QUESTION]},
+        ask=lambda question, batch: asked.append(question) or "2")
+    outcome = install.run()
+    assert outcome.ok
+    assert asked == ["And another"]
+    assert answers(setup)[:2] == ["1", "2"]
+    assert [a.source for a in outcome.answered][:2] == ["recorded", "player"]
+
+
+def test_folders_with_spaces_and_accents_reach_it_whole(setup, monkeypatch, tmp_path):
+    """The command is a list, never a shell line; an answer goes as UTF-8."""
+    for name in ("BGEE", "EET"):
+        # Windows refuses an accented BG:EE folder (the next test)
+        accents = "" if os.name == "nt" and name == "BGEE" else " – città"
+        folder = tmp_path / f"Baldur's Gate {name}{accents}"
+        os.rename(setup["games"][name], folder)
+        setup["games"][name] = str(folder)
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    outcome = install.run()
+    assert outcome.ok
+    assert answers(setup) == [setup["games"]["BGEE"]]
+    assert "SETUP-UB.TP2" in read(setup["games"]["EET"], "WeiDU.log")
+
+
+def test_an_accented_bgee_folder_is_refused_on_windows(setup, monkeypatch, tmp_path):
+    """
+    EET is told the BG:EE folder through WeiDU's input; mod_installer reads
+    and passes it as UTF-8, and how WeiDU on Windows opens such a path is not
+    measured (review of #83): refused there, before anything starts.
+    """
+    from iemod_fetch import install_run
+    folder = tmp_path / "Baldur's Gate – città"
+    os.rename(setup["games"]["BGEE"], folder)
+    setup["games"]["BGEE"] = str(folder)
+    args = (setup["games"], setup["mods"], setup["program"], setup["program"])
+    monkeypatch.setattr(install_run, "_windows", lambda: True)
+    assert [p for p in install_run.preflight(*args) if "plain ASCII" in p]
+    monkeypatch.setattr(install_run, "_windows", lambda: False)
+    assert install_run.preflight(*args) == []
+    # BG:EE alone is not EET: no question, nothing refused
+    monkeypatch.setattr(install_run, "_windows", lambda: True)
+    assert install_run.preflight({"BGEE": str(folder)}, *args[1:]) == []
