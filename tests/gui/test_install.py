@@ -42,7 +42,8 @@ def world(tmp_path):
         program = tmp_path / "mod_installer"
         program.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
         program.chmod(0o755)
-    state = {"backups": [], "downloads": [], "plans": [], "find": [], "weidu": True}
+    state = {"backups": [], "downloads": [], "plans": [], "find": [], "weidu": True,
+             "changed": [], "violations": []}
 
     def find(mod_installer=None, weidu=None):
         state["find"].append((mod_installer, weidu))
@@ -59,8 +60,9 @@ def world(tmp_path):
 
     def backup(folder, on_event=None, cancel=None):
         on_event({"event": "backup_started", "files": 1, "bytes": 10})
-        state["backups"].append({"path": f"{folder}-backup", "created": "2026-10-24T09:00",
-                                 "files": 1})
+        state["backups"].insert(0, {"path": f"{folder}-backup", "created": "2026-10-24T09:00",
+                                    "files": 1, "game_dir": folder})
+        state["changed"] = []                    # a fresh backup: the game is as it is
         return f"{folder}-backup"
 
     def plan(game_name, chosen, labels, folder):
@@ -70,11 +72,17 @@ def world(tmp_path):
         (plan_dir / "WeiDU.log").write_text(
             "// Log of Currently Installed WeiDU Mods\n"
             "~UB/SETUP-UB.TP2~ #0 #0 // Restorations: v30\n")
-        return {"plan_dir": str(plan_dir), "logs": [], "languages": ["languages: en_US"]}
+        return {"plan_dir": str(plan_dir), "logs": [], "languages": ["languages: en_US"],
+                "violations": list(state["violations"]), "cycles": []}
+
+    def restore_plan(backup_path, folder):
+        return {"put_back": list(state["changed"]), "displace": [], "cannot_restore": [],
+                "backed_up_from": folder}
 
     services = Services(find=find, pin=lambda tool: PIN, download=download,
                         backups=lambda folder: list(state["backups"]), backup=backup,
                         plan=plan, games=lambda project: {"BG2EE": str(game)},
+                        restore_plan=restore_plan,
                         mods_dir=lambda project: str(mods),
                         timing={"quiet_s": 0.3, "grace_s": 1.0})
     return {"services": services, "state": state, "game": game, "tmp": tmp_path}
@@ -88,7 +96,13 @@ def page_of(qtbot, world, answers=()):
         answers[len(asked) - 1] if len(asked) <= len(answers) else True)
     page.confirmed = asked
     page.prepare("BG2EE", CHOSEN, {})
+    settled(qtbot, page)
     return page
+
+
+def settled(qtbot, page):
+    """The backups' check (a thread of its own) has ended."""
+    qtbot.waitUntil(lambda: page._checking is None, timeout=10000)
 
 
 def run_to_end(qtbot, page):
@@ -134,11 +148,13 @@ def test_no_backup_no_install_and_one_made_here_counts(qtbot, world):
     folder = str(world["game"])
     assert "no backup yet" in page.backup_state[folder].text()
     assert not page.install_button.isEnabled()
-    assert f"no backup of {folder} yet" in page.needs.text()
+    assert f"no backup of {folder} as it is now" in page.needs.text()
     with qtbot.waitSignal(page.finished, timeout=10000):
         page.back_up(folder)
+    settled(qtbot, page)
     assert page.backed_up[folder] == f"{folder}-backup"
     assert "backed up 2026-10-24T09:00" in page.backup_state[folder].text()
+    assert "the game is as it was then" in page.backup_state[folder].text()
     assert page.install_button.isEnabled() and page.needs.text() == ""
 
 
@@ -146,18 +162,23 @@ def test_no_backup_no_install_and_one_made_here_counts(qtbot, world):
 def backed_up(world):
     folder = str(world["game"])
     world["state"]["backups"].append({"path": f"{folder}-backup",
-                                      "created": "2026-10-24T08:00", "files": 1})
+                                      "created": "2026-10-24T08:00", "files": 1,
+                                      "game_dir": folder})
 
 
 def test_the_install_asks_first_then_runs_and_shows_mod_installer(qtbot, world):
     backed_up(world)
     page = page_of(qtbot, world, answers=(False,))
-    page.install()                                       # the player says no
-    assert world["state"]["plans"] == [] and not page.running()
+    run_to_end(qtbot, page)                              # the player says no
+    assert page.outcome is None and not page.running()
+    assert "Not installed" in page.summary.text()
+    assert not (world["game"] / "WeiDU.log").exists()
     title, text = page.confirmed[0]
     assert title == "Install" and str(world["game"]) in text and "-backup" in text
+    settled(qtbot, page)                                 # the backups looked at again
     run_to_end(qtbot, page)
-    assert world["state"]["plans"] == [("BG2EE", CHOSEN)]
+    # written from the selection each time, just before it is confirmed
+    assert world["state"]["plans"] == [("BG2EE", CHOSEN)] * 2
     assert page.outcome.ok and page.is_complete()
     shown = page.output.toPlainText()
     assert "Beginning normal install process" in shown and "== setup-ub.tp2 #0" in shown
@@ -226,6 +247,7 @@ def test_the_window_installs_last_and_keeps_back_locked_while_it_runs(qtbot, wor
     qtbot.addWidget(main)
     main.install.confirm = lambda title, text: True
     main.install.prepare("BG2EE", CHOSEN, {})
+    settled(qtbot, main.install)
     main.stack.setCurrentIndex(4)
     main._refresh()
     with qtbot.waitSignal(main.install.finished, timeout=30000):
@@ -245,3 +267,70 @@ def test_the_real_plan_writer_names_the_project_folder(tmp_path, monkeypatch):
                         lambda *args, **kwargs: seen.update(args=args, kwargs=kwargs) or {})
     install._plan("EET", CHOSEN, {}, str(tmp_path))
     assert seen["kwargs"]["folder"] == str(tmp_path) and seen["kwargs"]["fetch_metadata"]
+
+
+# ------------------------------------------------------------ review of #87
+def test_the_plan_is_always_the_selection_as_it_is_now(qtbot, world):
+    """(1) Entering again with another selection: that one is planned."""
+    backed_up(world)
+    page = page_of(qtbot, world, answers=(False,))
+    other = [("ub/setup-ub.tp2", 0), ("ub/setup-ub.tp2", 10)]
+    page.prepare("BG2EE", other, {})
+    settled(qtbot, page)
+    run_to_end(qtbot, page)
+    assert world["state"]["plans"] == [("BG2EE", other)]
+
+
+def test_what_the_order_breaks_is_named_and_needs_a_yes(qtbot, world):
+    """(2) Order rules the plan breaks: listed (ten, then a count), and the
+    install happens only on "Install anyway"."""
+    backed_up(world)
+    world["state"]["violations"] = [f"ub before mod{n}" for n in range(12)]
+    page = page_of(qtbot, world, answers=(False,))
+    run_to_end(qtbot, page)
+    title, text = page.confirmed[0]
+    assert title == "Install anyway"
+    assert "breaks 12 rule(s)" in text and "ub before mod9" in text
+    assert "ub before mod10" not in text and "and 2 more" in text
+    assert page.outcome is None and not (world["game"] / "WeiDU.log").exists()
+
+
+def test_a_backup_of_a_game_changed_since_does_not_count(qtbot, world):
+    """(3) Restoring it would lose what changed: it is said, and it is not
+    the backup the install relies on."""
+    backed_up(world)
+    world["state"]["changed"] = ["override/x.itm", "WeiDU.log"]
+    page = page_of(qtbot, world)
+    folder = str(world["game"])
+    assert folder not in page.backed_up and not page.install_button.isEnabled()
+    assert "changed after the backup" in page.backup_state[folder].text()
+    assert "2 file(s) differ" in page.backup_state[folder].text()
+    assert f"no backup of {folder} as it is now" in page.needs.text()
+
+
+def test_a_backup_of_another_folder_does_not_count(qtbot, world):
+    world["state"]["backups"].append({"path": "/elsewhere-backup", "created": "x",
+                                      "files": 1, "game_dir": "/another/game"})
+    page = page_of(qtbot, world)
+    folder = str(world["game"])
+    assert folder not in page.backed_up
+    assert "of another folder (/another/game)" in page.backup_state[folder].text()
+
+
+def test_a_real_backup_then_a_changed_game_file_is_seen(qtbot, world, tmp_path):
+    """(3) with the real backup and plan_restore: a file changed after the
+    backup is found, and the backup stops counting."""
+    services = world["services"]
+    services.backup, services.backups = api.backup_game, api.list_backups
+    services.restore_plan = api.plan_restore
+    page = page_of(qtbot, world)
+    folder = str(world["game"])
+    with qtbot.waitSignal(page.finished, timeout=20000):
+        page.back_up(folder)
+    settled(qtbot, page)
+    assert folder in page.backed_up
+    (world["game"] / "chitin.key").write_text("changed")
+    page.refresh()
+    settled(qtbot, page)
+    assert folder not in page.backed_up
+    assert "changed after the backup" in page.backup_state[folder].text()

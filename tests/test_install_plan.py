@@ -3,6 +3,7 @@ The planned logs the wizard's install runs (GUI-AUDIT M4 item 22c): the
 order the order page shows, with the project's languages, written where
 start_install reads them - the step the command line makes with --plan-order.
 """
+import json
 import os
 import re
 
@@ -43,6 +44,27 @@ def test_an_eet_build_is_written_as_its_two_logs_in_the_planned_order(tmp_path):
         planned = [(tp2.rsplit("/", 1)[-1].lower(), number) for unit in phase["units"]
                    for tp2, number, _label in unit["components"]]
         assert components(plan_dir / log) == planned
+
+
+def test_what_the_order_breaks_comes_with_the_plan(tmp_path):
+    """Review of #87: the install page shows what the plan breaks before it
+    runs - the same order rules selection_plan reports."""
+    assert write(tmp_path)["violations"] == [] and write(tmp_path)["cycles"] == []
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "order.json").write_text(json.dumps({"rules": [
+        {"rule": "ub(-):ascension(-)", "direction": "before", "severity": "warning"}]}))
+    kwargs = {"folder": str(tmp_path), "rules": [str(rules)],
+              "target": os.path.join(MOCK, "Mods"), "data_dir": str(tmp_path / "no-cache"),
+              "order_catalogue": KRION}
+    phases = [p["units"] for p in api.selection_plan("EET", CHOSEN, **kwargs)["phases"]]
+    ub = next(u for u in phases[1] if u["name"].lower() == "ub")
+    phases[1].remove(ub)
+    phases[1].append(ub)                                    # ub after ascension
+    api.save_install_order(str(tmp_path), phases)
+    shown = api.selection_plan("EET", CHOSEN, **kwargs)
+    written = api.write_install_plan("EET", CHOSEN, **kwargs)
+    assert written["violations"] and written["violations"] == shown["violations"]
 
 
 def test_a_new_plan_replaces_the_last_ones_logs(tmp_path):

@@ -1184,8 +1184,10 @@ def write_install_plan(game: str, chosen: Sequence[tuple[str, int]],
     `folder`/install-plan/ as `--plan-order` writes them (WeiDU-BGEE.log
     before EET, WeiDU.log). Logs of an earlier plan there are replaced.
 
-    Returns {"plan_dir", "logs": [paths], "languages": [notes]}; ConfigError
-    when nothing could be planned (no order data, or nothing chosen).
+    Returns {"plan_dir", "logs": [paths], "languages": [notes], "violations":
+    [the order rules the plan breaks, as selection_plan words them], "cycles":
+    [[names]]} - for the player to see before installing; ConfigError when
+    nothing could be planned (no order data, or nothing chosen).
     """
     order_file = os.path.join(folder, INSTALL_ORDER_FILE)
     project = load_project(folder)
@@ -1207,7 +1209,10 @@ def write_install_plan(game: str, chosen: Sequence[tuple[str, int]],
             with contextlib.suppress(FileNotFoundError):
                 os.remove(os.path.join(plan_dir, stale))
         logs = plan.write(plan_dir)
-    return {"plan_dir": plan_dir, "logs": logs, "languages": notes}
+        violations = [v.summary for v in plan.residual]
+        cycles = [list(c) for c in plan.cycles]
+    return {"plan_dir": plan_dir, "logs": logs, "languages": notes,
+            "violations": violations, "cycles": cycles}
 
 
 def install_games(folder: str) -> dict[str, str]:

@@ -20,6 +20,7 @@ Three steps, each the player's:
 Every slow step runs in a worker thread; what it says reaches the page
 through a queued signal.
 """
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -38,6 +39,7 @@ from .mods import _in_thread
 
 TOOLS = (("mod_installer", "mod_installer"), ("weidu", "WeiDU"))
 PROGRESS_EVERY_S = 0.1
+MAX_SHOWN = 10                                  # order breaks named in the confirmation
 
 
 def _plan(game: str, chosen: list, labels: dict, folder: str) -> dict:
@@ -60,6 +62,7 @@ class Services:
     plan: Callable[..., dict] = _plan
     games: Callable[[str], dict] = api.install_games
     mods_dir: Callable[[str], str] = _mods_dir
+    restore_plan: Callable[[str, str], dict] = api.plan_restore
     start: Callable[..., Any] = api.start_install
     timing: dict = field(default_factory=dict)    # start_install's quiet_s, grace_s...
 
@@ -111,6 +114,9 @@ class InstallPage(QWidget):
         self._cancel = threading.Event()
         self._install: Any = None
         self._asking: _Question | None = None
+        self._plan_written: dict | None = None
+        self._checking: QThread | None = None
+        self._check_round = 0
         self._last = 0.0
         self._bridge = _Bridge()
         self._bridge.line.connect(self._append)
@@ -221,6 +227,7 @@ class InstallPage(QWidget):
         self.backup_state.clear()
         self.backup_button.clear()
         self.backed_up.clear()
+        to_check: dict[str, dict] = {}
         for row, (name, folder) in enumerate(self.games.items()):
             state = _plain("")
             button = QPushButton("Back up now")
@@ -230,24 +237,85 @@ class InstallPage(QWidget):
             self.backup_rows.addWidget(QLabel(f"<b>{name}</b>"), row, 0)
             self.backup_rows.addWidget(state, row, 1)
             self.backup_rows.addWidget(button, row, 2)
-            self._show_backup(folder)
+            newest = self._show_backup(folder)
+            if newest is not None:
+                to_check[folder] = newest
+        if to_check:
+            self._check_backups(to_check)
 
-    def _show_backup(self, folder: str) -> None:
+    def _show_backup(self, folder: str) -> dict | None:
+        """The newest backup of this very folder, said; None when there is none."""
         try:
-            found = self.services.backups(folder) if folder else []
+            listed = self.services.backups(folder) if folder else []
         except Exception as exc:          # an unreadable backups folder
-            found = []
             self.backup_state[folder].setText(f"{folder}: {exc}")
-            return
-        if found:
-            newest = found[0]
-            self.backed_up[folder] = newest["path"]
+            return None
+        # only a backup of this very folder counts (review of #87): the
+        # backups folder may hold another's, e.g. a game folder moved
+        found = [b for b in listed if _same(b.get("game_dir", folder), folder)]
+        if listed and not found:
             self.backup_state[folder].setText(
-                f"{folder}\nbacked up {newest['created']}: {newest['path']} "
-                f"({newest['files']} files)")
-        else:
-            self.backed_up.pop(folder, None)
+                f"{folder}\nthe backups beside it are of another folder "
+                f"({listed[0].get('game_dir')}): they do not count")
+            return None
+        if not found:
             self.backup_state[folder].setText(f"{folder}\nno backup yet")
+            return None
+        newest = found[0]
+        self.backup_state[folder].setText(
+            f"{folder}\nbacked up {newest['created']}: {newest['path']} - checking that "
+            f"the game is still as it was then...")
+        return dict(newest)
+
+    def _check_backups(self, newest: dict[str, dict]) -> None:
+        """
+        A backup counts only if restoring it would change nothing: the game is
+        as it was when it was made (review of #87). plan_restore hashes the
+        game's files against it, so it runs in a thread of its own.
+        """
+        self._check_round += 1
+        round_, restore_plan = self._check_round, self.services.restore_plan
+
+        def check() -> dict:
+            out: dict = {}
+            for folder, backup in newest.items():
+                try:
+                    out[folder] = restore_plan(backup["path"], folder)
+                except Exception as exc:  # unreadable: said, and not counted
+                    out[folder] = {"error": str(exc)}
+            return out
+
+        def done(results: dict) -> None:
+            if round_ == self._check_round:
+                self._checked(newest, results)
+
+        def ended() -> None:
+            if round_ == self._check_round:
+                self._checking = None
+
+        self._checking = _in_thread(check, done, lambda _message: None, ended)
+
+    def _checked(self, newest: dict[str, dict], results: dict) -> None:
+        for folder, result in results.items():
+            backup = newest[folder]
+            label = self.backup_state.get(folder)
+            if label is None:
+                continue
+            changed = (len(result.get("put_back", [])) + len(result.get("displace", []))
+                       + len(result.get("cannot_restore", [])))
+            if result.get("error"):
+                label.setText(f"{folder}\nthe backup {backup['path']} cannot be checked: "
+                              f"{result['error']}")
+            elif changed:
+                label.setText(
+                    f"{folder}\nthe game changed after the backup of {backup['created']} "
+                    f"({changed} file(s) differ): restoring it would lose that - make a "
+                    f"new backup")
+            else:
+                self.backed_up[folder] = backup["path"]
+                label.setText(f"{folder}\nbacked up {backup['created']}: {backup['path']} "
+                              f"({backup['files']} files) - the game is as it was then")
+        self._buttons()
 
     # ------------------------------------------------------------ the programs
     def _choose(self, tool: str) -> None:
@@ -334,23 +402,51 @@ class InstallPage(QWidget):
             missing.append("no game folders: set them on the first page")
         for folder in self.games.values():
             if folder not in self.backed_up:
-                missing.append(f"no backup of {folder or 'a game folder'} yet")
+                missing.append(f"no backup of {folder or 'a game folder'} as it is now"
+                               + (" (checking...)" if self._checking is not None else ""))
         return missing
 
     def install(self) -> None:
+        """
+        Write the plan from the selection as it is now (never an earlier
+        one: review of #87), then ask - naming the folders, the backups and
+        what the order still breaks - and only then run mod_installer.
+        """
         if self.running() or self.ready() or self.wanted is None:
             return
         game, chosen, labels = self.wanted
-        folders = "\n".join(f"  {name}: {folder}" for name, folder in self.games.items())
-        backups = "\n".join(f"  {path}" for path in self.backed_up.values())
-        if not self.confirm("Install", (
-                f"Install {len(chosen)} component(s) into:\n{folders}\n\n"
-                f"mod_installer and WeiDU change these folders. Nothing is undone by "
-                f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
-            return
+        services, folder = self.services, self.project_dir
         self._cancel = threading.Event()
         self.output.clear()
         self.outcome = None
+        self._say("Writing the install order...")
+        self._run(lambda: services.plan(game, chosen, labels, folder), self._planned)
+
+    def _planned(self, plan: dict) -> None:
+        """The plan is written: ask, then install (after _finished has run)."""
+        self._plan_written = plan
+        for note in plan.get("languages", []):
+            self._append(note)
+
+    def _confirm_and_run(self, plan: dict) -> None:
+        game, chosen, _labels = self.wanted or ("", [], {})
+        folders = "\n".join(f"  {name}: {folder}" for name, folder in self.games.items())
+        backups = "\n".join(f"  {path}" for path in self.backed_up.values())
+        broken = list(plan.get("violations", [])) + [
+            "a cycle: " + " -> ".join(cycle) for cycle in plan.get("cycles", [])]
+        shown = [f"  - {b}" for b in broken[:MAX_SHOWN]]
+        if len(broken) > MAX_SHOWN:
+            shown.append(f"  ... and {len(broken) - MAX_SHOWN} more (the order page lists them)")
+        warning = ("" if not broken else
+                   f"The order still breaks {len(broken)} rule(s) - in red on the order "
+                   f"page. Going on installs it as it is:\n" + "\n".join(shown) + "\n\n")
+        if not self.confirm("Install anyway" if broken else "Install", (
+                f"Install {len(chosen)} component(s) into:\n{folders}\n\n{warning}"
+                f"mod_installer and WeiDU change these folders. Nothing is undone by "
+                f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
+            self._say("Not installed: the plan is written in "
+                      f"{plan['plan_dir']}, nothing else was done.")
+            return
         services, folder, games = self.services, self.project_dir, dict(self.games)
         tools = {tool: self.found[tool].path for tool, _name in TOOLS}
         cancel, bridge = self._cancel, self._bridge
@@ -364,10 +460,6 @@ class InstallPage(QWidget):
             bridge.line.emit(text)
 
         def run() -> Any:
-            bridge.status.emit("Writing the install order...")
-            plan = services.plan(game, chosen, labels, folder)
-            for note in plan.get("languages", []):
-                bridge.line.emit(note)
             if cancel.is_set():
                 return "cancelled"
             install = services.start(plan["plan_dir"], games, services.mods_dir(folder),
@@ -380,6 +472,7 @@ class InstallPage(QWidget):
             bridge.status.emit("Installing...")
             return install.run()
 
+        self._say("Installing...")
         self._run(run, self._installed)
 
     def _from_install(self, question: str, _batch: tuple) -> str | None:
@@ -446,6 +539,13 @@ class InstallPage(QWidget):
         self._thread = None
         self._install = None
         self._asking = None
+        plan, self._plan_written = self._plan_written, None
+        if plan is not None and not self._cancel.is_set():
+            # asked on what was checked before the plan was written: looking
+            # again first would empty the backups until their check ends
+            self._confirm_and_run(plan)         # its own run, or nothing if refused
+            if self.running():
+                return
         self.refresh()
         self.completeChanged.emit(self.is_complete())
         self.finished.emit()
@@ -472,6 +572,10 @@ class InstallPage(QWidget):
     def is_complete(self) -> bool:
         """The install ran to its end without an error."""
         return bool(self.outcome is not None and getattr(self.outcome, "ok", False))
+
+
+def _same(one: str, other: str) -> bool:
+    return os.path.normcase(os.path.abspath(one)) == os.path.normcase(os.path.abspath(other))
 
 
 def _plain(text: str) -> QLabel:
