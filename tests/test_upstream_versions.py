@@ -45,6 +45,20 @@ from tools.upstream_versions import (  # noqa: E402
     newest_python, python_disagreements, python_issue, python_places)
 
 
+def test_the_mod_installer_built_for_the_wizard_is_the_one_ci_tests():
+    """mod-installer-build.yml builds the download the wizard pins (ADR-0046):
+    the commit and version CI's real-weidu job tests, or a bump forgot one."""
+    import re
+
+    def pins(path):
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        return (re.search(r"MOD_INSTALLER_REV:\s*(\w+)", text)[1],
+                re.search(r'MOD_INSTALLER_VERSION:\s*"?([\d.]+)', text)[1])
+    assert pins(".github/workflows/mod-installer-build.yml") == \
+        pins(".github/workflows/ci.yml")
+
+
 def test_the_repository_names_one_python_everywhere():
     """.python-version, requires-python, ruff, mypy, the classifiers and
     iemod_fetch.PYTHON name one version, and no workflow names its own."""

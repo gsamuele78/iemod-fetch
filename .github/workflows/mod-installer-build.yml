@@ -1,0 +1,140 @@
+name: mod_installer build
+
+# mod_installer for the wizard's pinned download (ADR-0046). dark0dave's
+# mod_installer publishes no release past v12.1.1, which stops after the
+# first component on Linux (it reads `weidu.log`, WeiDU writes `WeiDU.log`).
+# So 16.0.0 - the commit ci.yml's real-weidu job tests - is built here, and
+# published as a release of this repository that iemod_fetch/toolchain.py
+# pins by sha256. Until upstream releases a version that has it.
+#
+# A pull request that changes this file builds everything and publishes
+# nothing. Publishing is by hand: Actions > mod_installer build > Run
+# workflow, `publish` ticked. GPL-3.0: the release carries the exact source
+# it was built from and its license.
+on:
+  pull_request:
+    paths: [".github/workflows/mod-installer-build.yml"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the release (else build only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # the same commit as ci.yml's real-weidu job (tests/test_upstream_versions.py)
+  MOD_INSTALLER_REV: 3b6827a039db43e342be19f7610ecdd680fe0a62
+  MOD_INSTALLER_VERSION: "16.0.0"
+  RUST_TOOLCHAIN: "1.98.0"
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # static: runs on any x86_64 Linux, whatever its glibc
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, exe: "", runs: true }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, exe: ".exe", runs: true }
+          - { os: macos-latest, target: aarch64-apple-darwin, exe: "", runs: true }
+          # built on the Apple-silicon runner for an Intel Mac; not run there
+          - { os: macos-latest, target: x86_64-apple-darwin, exe: "", runs: false }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: dark0dave/mod_installer
+          ref: ${{ env.MOD_INSTALLER_REV }}
+          persist-credentials: false
+      - name: musl's C compiler (the TLS library has C in it)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install -y -q musl-tools
+      - name: Rust ${{ env.RUST_TOOLCHAIN }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target "$TARGET"
+      - name: Build, with the commit's own Cargo.lock
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo "+$RUST_TOOLCHAIN" build --release --locked --target "$TARGET"
+      - name: It says it is the version pinned
+        if: matrix.runs
+        env:
+          PROGRAM: target/${{ matrix.target }}/release/mod_installer${{ matrix.exe }}
+        run: |
+          "$PROGRAM" --version
+          "$PROGRAM" --version | grep -qx "mod_installer $MOD_INSTALLER_VERSION"
+      - name: Named for the release
+        env:
+          TARGET: ${{ matrix.target }}
+          EXE: ${{ matrix.exe }}
+        run: |
+          mkdir out
+          cp "target/$TARGET/release/mod_installer$EXE" \
+             "out/mod_installer-$MOD_INSTALLER_VERSION-$TARGET$EXE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mod_installer-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: [build]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # the tag and the release
+      id-token: write          # Sigstore, keyless
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { pattern: "mod_installer-*", path: dist, merge-multiple: true }
+      - name: The source it was built from, and its license (GPL-3.0)
+        run: |
+          curl -fsSL -o "dist/mod_installer-$MOD_INSTALLER_VERSION-source.tar.gz" \
+            "https://github.com/dark0dave/mod_installer/archive/$MOD_INSTALLER_REV.tar.gz"
+          tar -xzOf "dist/mod_installer-$MOD_INSTALLER_VERSION-source.tar.gz" \
+            "mod_installer-$MOD_INSTALLER_REV/license" > dist/LICENSE-mod_installer.txt
+          (cd dist && sha256sum mod_installer-* > SHA256SUMS && cat SHA256SUMS)
+      # Which workflow, at which commit, produced these bytes:
+      # `gh attestation verify <file> --repo <owner>/<repo>`.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/mod_installer-*
+      - name: Notes
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          {
+            echo "mod_installer $MOD_INSTALLER_VERSION by dark0dave (GPL-3.0),"
+            echo "built unchanged from https://github.com/dark0dave/mod_installer/tree/$MOD_INSTALLER_REV"
+            echo "with Rust $RUST_TOOLCHAIN, for the iemod-fetch wizard's pinned download (ADR-0046)."
+            echo "Not a release of iemod-fetch, and not made by mod_installer's author."
+            echo
+            echo 'Linux: x86_64, static (musl). Windows: x86_64. macOS: Apple silicon and Intel.'
+            echo 'The source is attached, with its license. Verify a download:'
+            echo '```'
+            echo 'sha256sum -c SHA256SUMS --ignore-missing'
+            echo "gh attestation verify <file> --repo ${REPOSITORY}"
+            echo '```'
+          } > NOTES.md
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: mod_installer-${{ env.MOD_INSTALLER_VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: mod_installer ${{ env.MOD_INSTALLER_VERSION }} (built from ${{ env.MOD_INSTALLER_REV }})
+          body_path: NOTES.md
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: |
+            dist/mod_installer-*
+            dist/LICENSE-mod_installer.txt
+            dist/SHA256SUMS

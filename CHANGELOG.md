@@ -47,6 +47,14 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **mod_installer 16.0.0, built for the wizard's download** (ADR-0046, ahead
+  of GUI-AUDIT M4 item 22b): `mod-installer-build.yml` builds the commit CI
+  tests (3b6827a) for Linux (static), Windows, and macOS (Apple silicon and
+  Intel), and - run by hand - publishes it as the release
+  `mod_installer-16.0.0` with SHA256SUMS, a provenance attestation, its
+  source and its license (GPL-3.0). The reason: upstream's last release,
+  v12.1.1, stops after the first component on Linux (it reads `weidu.log`,
+  while WeiDU writes `WeiDU.log`). A test keeps the commit equal to ci.yml's.
 - **The install, run** (GUI-AUDIT M4 item 22a, ADR-0045, amending ADR-0022):
   `api.start_install` runs mod_installer - the command the generated scripts
   run, after the same checks - reads its output line by line and answers

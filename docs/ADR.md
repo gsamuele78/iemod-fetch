@@ -2818,3 +2818,65 @@ version up to the tag).
   is accepted rather than started suspended (which needs the Win32 process
   API, not subprocess). The Windows tests run the stop against a child that
   ignores a polite stop, so only the job's kill passes them.
+
+---
+
+## ADR-0046 — mod_installer 16.0.0, built here for the wizard's download, until upstream releases it
+
+**Context.** The wizard runs mod_installer (ADR-0045). A player with none
+gets a pinned download, on their word (GUI-AUDIT M4 item 22b). The maintainer
+chose dark0dave's latest stable tag, v12.1.1, and the measurements against it
+changed the choice:
+
+- v12.1.1 stops after the first component on Linux: after every component it
+  opens `weidu.log` in the game folder (`utils::get_last_installed`,
+  unconditionally), and WeiDU writes `WeiDU.log`. Measured with the real
+  WeiDU v251 on a synthetic game: exit 1 after the first component; 16.0.0,
+  same input, exit 0. Windows and macOS file systems ignore case, so those
+  systems are not affected.
+- Its published binaries are not what their names say: the "x86_64-apple-darwin"
+  one is arm64, the "x86_64-unknown-linux-musl" one links glibc.
+- It logs its batches in another form (`Component { ... }`, one at a time)
+  and never fills EET's BG:EE folder by itself.
+- 16.0.0 (commit 3b6827a, what CI's real-weidu job tests) has none of these
+  problems, but upstream has published no release since v12.1.1.
+
+**Decision.** The maintainer's choice: 16.0.0 on every system, built here,
+until an upstream stable release includes it.
+
+- `mod-installer-build.yml` builds commit 3b6827a, unchanged, with its own
+  Cargo.lock and a pinned Rust (1.98.0). The targets are:
+  - Linux x86_64, static (musl), so it runs on any distribution;
+  - Windows x86_64;
+  - macOS for Apple silicon, and for Intel.
+
+  Every binary that can run on its runner must report 16.0.0.
+- A pull request that changes the workflow only builds. Publishing is by
+  hand (`publish` ticked). The release goes out as `mod_installer-16.0.0` in
+  this repository, never marked latest, with:
+  - SHA256SUMS;
+  - a build-provenance attestation;
+  - the exact source tarball and mod_installer's license (GPL-3.0: whoever
+    gets the binary gets the source with it).
+
+  Its notes say it is not a release of iemod-fetch and not made by
+  mod_installer's author.
+- The wizard's download (`iemod_fetch/toolchain.py`, item 22b) pins those
+  files by sha256. The pins are filled in from the published release, not
+  from a build no one can repeat.
+- The commit and version in this workflow and in ci.yml must agree
+  (`tests/test_upstream_versions.py`). The weekly upstream check's issue
+  names both files and the pin to update.
+
+**Consequences.**
+
+- This repository now ships a third party's program. A wrong build is ours
+  to answer for. The attestation says which workflow at which commit made
+  it; the sha256 pins say the wizard runs only those bytes.
+- The Rust build is not reproducible bit for bit. A rebuild gives new hashes,
+  so a re-publish needs new pins, which is a reviewed change, never an
+  automatic one.
+- When upstream publishes a release that has the fix, the wizard pins it
+  and this workflow is retired. The weekly check opens that issue.
+- The generated CLI scripts are not affected: the player runs their own
+  mod_installer at their own terminal.
