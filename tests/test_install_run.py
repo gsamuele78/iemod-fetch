@@ -106,11 +106,11 @@ def run(setup, monkeypatch, questions, ask=lambda _q, _b: None, **extra):
 def read(*path):
     from pathlib import Path
     file = Path(*path)
-    return file.read_text() if file.exists() else ""
+    return file.read_text(encoding="utf-8") if file.exists() else ""
 
 
 def answers(setup):
-    return setup["transcript"].read_text().splitlines() if setup["transcript"].exists() else []
+    return setup["transcript"].read_text(encoding="utf-8").splitlines() if setup["transcript"].exists() else []
 
 
 def test_eet_is_installed_answering_each_question_from_where_it_should(setup, monkeypatch):
