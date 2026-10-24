@@ -30,21 +30,28 @@ rather than components. "Ignore..." keeps a red row's broken rules as the
 player's call, with why, in decisions.json: the row is shown grey, not red,
 while it stays where it is and breaks no other rule; dragging it, or a rule
 it newly breaks, shows it red again.
+
+Rows are selected as in any list (Shift, Ctrl), dragged together, and moved
+one place with Ctrl+Up / Ctrl+Down; "Find" selects the rows that match in the
+tab shown, so they can be moved at once (M5b item 35). Coming back to the page
+with nothing changed - selection, project files, community data - keeps the
+plan shown rather than planning again.
 """
 import html
 import os
 import time
 from collections.abc import Callable
 
-from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, QThread, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout,
-                               QInputDialog, QLabel, QListWidget, QListWidgetItem,
-                               QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget)
+                               QInputDialog, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMessageBox, QPushButton, QTabWidget,
+                               QVBoxLayout, QWidget)
 
 from iemod_fetch import api
 
-from .mods import Key, _in_thread, _target
+from .mods import Key, _in_thread, _target, selection_digest
 
 Planner = Callable[[str, list[Key], dict, str], dict]
 # (game, chosen, labels, project folder, the order by hand or None) -> a plan
@@ -256,13 +263,33 @@ class OrderPage(QWidget):
             "Red: a rule says it is in the wrong place. Your order is kept in "
             f"{api.INSTALL_ORDER_FILE}, which the command line uses too."))
         layout.addLayout(bar)
+        self.find = QLineEdit()
+        self.find.setPlaceholderText("Find rows (they are selected: drag them, or "
+                                     "Ctrl+Up / Ctrl+Down)")
+        self.find.setClearButtonEnabled(True)
+        self.find.textChanged.connect(lambda _text: self._find())
+        layout.addWidget(self.find)
         layout.addWidget(self.tabs, 1)
         layout.addWidget(self.panel)
         layout.addWidget(self.problems)
+        for keys, step in (("Ctrl+Up", -1), ("Ctrl+Down", 1)):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda step=step: self.nudge(step))
+        self._batch = False                    # rows moved as one: saved once
+        self._planned = ""                     # the digest the plan shown answers
+        self._planning_digest = ""
 
     # ----------------------------------------------------------- planning
     def start(self, game: str, chosen: list[Key], labels: dict) -> None:
-        """Plan `chosen` for `game`, in a worker thread."""
+        """Plan `chosen` for `game`, in a worker thread - unless the plan shown
+        already answers it: nothing it reads has changed (item 35)."""
+        if (self.result and self._planning is None
+                and self._planned == selection_digest(game, chosen, labels,
+                                                      self.project_dir)):
+            self.completeChanged.emit(self.is_complete())
+            self.planned.emit()
+            return
         self.wanted = (game, list(chosen), dict(labels))
         self._generation += 1
         self.result = {}
@@ -284,6 +311,7 @@ class OrderPage(QWidget):
         self.completeChanged.emit(False)        # Next waits for this plan
         plan, (game, chosen, labels) = self.plan, self.wanted
         generation, folder = self._generation, self.project_dir
+        self._planning_digest = selection_digest(game, chosen, labels, folder)
 
         def run():
             try:
@@ -301,10 +329,12 @@ class OrderPage(QWidget):
             return                          # planned a selection no longer wanted
         if result is None:
             self.result = {}
+            self._planned = ""
             self.tabs.clear()
             self._failed(problem)
             self.completeChanged.emit(False)
             return
+        self._planned = self._planning_digest
         self.show_result(result)
 
     def _finished(self) -> None:
@@ -369,7 +399,7 @@ class OrderPage(QWidget):
         widget = QListWidget()
         widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         widget.setDefaultDropAction(Qt.DropAction.MoveAction)
-        widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         for unit in phase["units"]:
             widget.addItem(self._item(unit))
         before = {unit["node"]: list(unit.get("after") or ()) for unit in phase["units"]}
@@ -377,13 +407,18 @@ class OrderPage(QWidget):
         breaks = api.order_breaks([unit["node"] for unit in phase["units"]], before)
         widget.setProperty("breaks", breaks)
 
-        def dropped(_parent, start, _end, _dest, row) -> None:
-            at = row - 1 if row > start else row
-            self._dropped(widget, at, before, followers)
-            unit = widget.item(at).data(ROLE) if 0 <= at < widget.count() else None
-            if isinstance(unit, dict) and unit.get("ignored"):
-                self._unignore(unit["node"])     # a row moved is shown again (item 33)
-            self._reordered()
+        def dropped(_parent, start, end, _dest, row) -> None:
+            # a block of rows lands where the row Qt names was, less itself
+            # when it came from above (item 35)
+            count = end - start + 1
+            first = row - count if row > start else row
+            for at in range(first, first + count):
+                self._dropped(widget, at, before, followers)
+                unit = widget.item(at).data(ROLE) if 0 <= at < widget.count() else None
+                if isinstance(unit, dict) and unit.get("ignored"):
+                    self._unignore(unit["node"])  # a row moved is shown again (item 33)
+            if not self._batch:
+                self._reordered()
         widget.model().rowsMoved.connect(dropped)
         widget.currentItemChanged.connect(lambda *_args: self._can_split())
         return widget
@@ -680,6 +715,48 @@ class OrderPage(QWidget):
             api.unignore_order(self.project_dir, node)
         except Exception as exc:
             QMessageBox.critical(self, "Cannot save the decision", str(exc))
+
+    # ---------------------------------------- moving and finding (item 35)
+    def _rows(self, widget: QListWidget) -> list[int]:
+        rows = sorted({index.row() for index in widget.selectedIndexes()})
+        return rows or ([widget.currentRow()] if widget.currentRow() >= 0 else [])
+
+    def nudge(self, step: int) -> None:
+        """Move the selected rows of the tab shown one place up (-1) or down
+        (1), as one move: checked at once, saved once, planned once."""
+        widget = self.tabs.currentWidget()
+        if not isinstance(widget, QListWidget):
+            return
+        rows = self._rows(widget)
+        if not rows or (step < 0 and rows[0] == 0) or (
+                step > 0 and rows[-1] == widget.count() - 1):
+            return
+        model = widget.model()
+        self._batch = True
+        try:
+            for row in (rows if step < 0 else reversed(rows)):
+                model.moveRow(QModelIndex(), row, QModelIndex(),
+                              row - 1 if step < 0 else row + 2)
+        finally:
+            self._batch = False
+        self._reordered()
+
+    def _find(self) -> None:
+        """Select the rows of the tab shown whose text has every word typed."""
+        widget = self.tabs.currentWidget()
+        if not isinstance(widget, QListWidget):
+            return
+        words = self.find.text().lower().split()
+        widget.clearSelection()
+        if not words:
+            return
+        found = [widget.item(r) for r in range(widget.count())
+                 if all(word in widget.item(r).text().lower() for word in words)]
+        for item in found:
+            item.setSelected(True)
+        if found:
+            widget.setCurrentItem(found[0], QItemSelectionModel.SelectionFlag.NoUpdate)
+            widget.scrollToItem(found[0])
 
     def _reset(self) -> None:
         try:

@@ -770,3 +770,114 @@ def test_a_rule_every_row_ignores_says_so_below_the_list(qtbot, tmp_path, monkey
             widget.ignore.click()
     assert widget.problems.text().splitlines()[0] == (
         "[WeiDU.log] stratagems should be installed before eet (ignored: tested)")
+
+
+# ----------------------------- several rows, keys, find (item 35)
+def ruled_page(qtbot, folder):
+    widget = OrderPage(str(folder), plan=Ruled(), preview=Preview())
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.start("EET", ALL, {})
+    widget.tabs.setCurrentIndex(1)
+    return widget
+
+
+def select(view, *rows):
+    view.clearSelection()
+    for row in rows:
+        view.item(row).setSelected(True)
+
+
+def test_a_block_of_rows_dropped_together_is_checked_at_once(qtbot, tmp_path):
+    widget = ruled_page(qtbot, tmp_path)
+    view = widget.tabs.widget(1)
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        # ub and ascension, rows 1-2, below EET_end: three rows now wrong
+        view.model().moveRows(QModelIndex(), 1, 2, QModelIndex(), 4)
+        assert texts(widget, 1) == ["eet", "EET_end", "ub", "ascension"]
+        assert [view.item(r).foreground().color() == RED for r in range(4)] == [
+            False, True, True, True]
+        assert "2 rule(s) broken" in widget.problems.text()
+
+
+def test_ctrl_down_moves_the_selected_rows_together_saved_and_planned_once(
+        qtbot, tmp_path, monkeypatch):
+    widget = ruled_page(qtbot, tmp_path)
+    view = widget.tabs.widget(1)
+    saves = []
+    real = api.save_install_order
+    monkeypatch.setattr(api, "save_install_order",
+                        lambda *args: saves.append(1) or real(*args))
+    calls = widget.plan.calls
+    select(view, 1, 2)                                     # ub, ascension
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.nudge(1)
+        assert texts(widget, 1) == ["eet", "EET_end", "ub", "ascension"]
+        assert sorted(i.row() for i in view.selectedIndexes()) == [2, 3]   # still selected
+    assert saves == [1] and widget.plan.calls == calls + 1
+    assert lines_of(tmp_path)[2:] == ["EET_end *", "ub *", "ascension *"]
+
+
+def test_nothing_moves_past_either_end(qtbot, tmp_path):
+    widget = ruled_page(qtbot, tmp_path)
+    view = widget.tabs.widget(1)
+    select(view, 0, 1)
+    widget.nudge(-1)
+    select(view, 3)
+    widget.nudge(1)
+    assert texts(widget, 1) == ["eet", "ub", "ascension", "EET_end"]
+    assert not (tmp_path / api.INSTALL_ORDER_FILE).exists()
+
+
+def test_the_keys_move_the_rows(qtbot, tmp_path):
+    from PySide6.QtTest import QTest
+    widget = ruled_page(qtbot, tmp_path)
+    widget.show()
+    with qtbot.waitActive(widget):
+        widget.activateWindow()
+    view = widget.tabs.widget(1)
+    view.setFocus()
+    view.setCurrentRow(2)                                  # ascension
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        QTest.keyClick(view, Qt.Key.Key_Up, Qt.KeyboardModifier.ControlModifier)
+    assert texts(widget, 1) == ["eet", "ascension", "ub", "EET_end"]
+
+
+def test_find_selects_the_matching_rows_of_the_tab_shown(qtbot, tmp_path):
+    widget = ruled_page(qtbot, tmp_path)
+    view = widget.tabs.widget(1)
+    widget.find.setText("eet")
+    assert sorted(i.row() for i in view.selectedIndexes()) == [0, 3]   # eet, EET_end
+    assert view.currentRow() == 0
+    widget.find.setText("ASC")
+    assert [i.row() for i in view.selectedIndexes()] == [2]
+    widget.find.setText("")
+    assert view.selectedIndexes() == []
+
+
+def test_coming_back_with_nothing_changed_keeps_the_plan(qtbot, tmp_path):
+    widget = ruled_page(qtbot, tmp_path)
+    calls = widget.plan.calls
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.start("EET", ALL, {})
+    assert widget.plan.calls == calls and widget.is_complete()
+    with qtbot.waitSignal(widget.planned, timeout=5000):  # another selection
+        widget.start("EET", ALL[:-1], {})
+    assert widget.plan.calls == calls + 1
+    api.save_decisions(str(tmp_path), {}, {"conflict-1": "fine"})     # a project file
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.start("EET", ALL[:-1], {})
+    assert widget.plan.calls == calls + 2
+
+
+def test_a_mod_staged_since_the_plan_is_planned_again(qtbot, tmp_path):
+    """Review of #82: back from the download page, a staged mod's own ini can
+    order it differently - the plan shown is not kept."""
+    widget = ruled_page(qtbot, tmp_path)
+    calls = widget.plan.calls
+    ini = tmp_path / "Mods" / "ub" / "ub.ini"                  # the project's target
+    ini.parent.mkdir(parents=True)
+    ini.write_text("[Metadata]\nAfter = ascension\n")
+    with qtbot.waitSignal(widget.planned, timeout=5000):
+        widget.start("EET", ALL, {})
+    assert widget.plan.calls == calls + 1

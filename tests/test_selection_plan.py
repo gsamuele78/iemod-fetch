@@ -533,3 +533,48 @@ def test_a_new_rule_the_row_breaks_shows_it_again(tmp_path):
          "severity": "warning"}]}))           # DlcMerger stays first: a new break
     again, _above = row(plan(tmp_path, rules=[os.path.join(MOCK, "rules"), str(rules)]), node)
     assert len(again["broken"]) > len(unit["broken"]) and again["ignored"] is None
+
+
+# ------------------------------------- nothing to check again (item 35)
+def test_the_digest_changes_with_what_a_check_reads_and_only_then(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+
+    def digest(chosen=CHOSEN, labels=None):
+        return api.selection_digest("EET", chosen, labels, folder=str(tmp_path),
+                                    data_dir=str(data))
+    first = digest()
+    assert digest() == first and api.selection_digest(
+        "eet", CHOSEN, None, folder=str(tmp_path), data_dir=str(data)) == first
+    assert digest(CHOSEN[:-1]) != first                       # a component fewer
+    assert digest(labels={CHOSEN[0]: "renamed"}) != first      # a label
+    api.save_install_order(str(tmp_path), [p["units"] for p in plan(tmp_path)["phases"]])
+    second = digest()
+    assert second != first                                     # the order set by hand
+    (data / "sources.json").write_text("{}")                    # the data refreshed
+    assert digest() != second
+
+
+def test_the_digest_follows_the_staged_mods_and_their_inis(tmp_path):
+    """Review of #82: the planner reads each staged mod's own ini and tp2,
+    and the data cache's copy of the inis - each changes the digest."""
+    data, target = tmp_path / "data", tmp_path / "Mods"
+    data.mkdir()
+    target.mkdir()
+
+    def digest():
+        return api.selection_digest("EET", CHOSEN, None, folder=str(tmp_path),
+                                    data_dir=str(data), target=str(target))
+    first = digest()
+    (target / "mymod").mkdir()                                  # a mod staged
+    staged = digest()
+    assert staged != first
+    ini = target / "mymod" / "mymod.ini"
+    ini.write_text("[Metadata]\nBefore = eet\n")                # its own ini
+    with_ini = digest()
+    assert with_ini != staged
+    os.utime(ini, ns=(1, 1))                                    # extracted again
+    again = digest()
+    assert again != with_ini
+    (data / "mod-metadata.json").write_text("{}")               # the inis' cache
+    assert digest() != again

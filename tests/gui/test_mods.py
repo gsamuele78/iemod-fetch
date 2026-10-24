@@ -528,3 +528,72 @@ def test_a_deselect_the_player_chose_elsewhere_is_not_asked_about_again(qtbot, t
     widget.deselect([(TP2, 0)])
     qtbot.wait(50)
     assert asked == [] and widget.chosen() == [(ADDON, 0)]
+
+
+# ------------------------- groups, forced options, no re-check (item 35)
+def test_a_mod_ticked_whole_takes_each_groups_first_option(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path)
+    mod = widget.tree.topLevelItem(0)
+    mod.setCheckState(0, Qt.CheckState.Checked)
+    # #10 "classic", the first of the Portraits group - not Qt's last, #11
+    assert widget.chosen() == [(TP2, 0), (TP2, 10), (TP2, 20)]
+
+
+def test_a_mod_ticked_whole_keeps_the_option_already_chosen(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path)
+    check(widget, (TP2, 11))
+    qtbot.wait(1)                                # two clicks: the event loop runs between
+    widget.tree.topLevelItem(0).setCheckState(0, Qt.CheckState.Checked)
+    assert widget.chosen() == [(TP2, 0), (TP2, 11), (TP2, 20)]
+
+
+FORCED = [dict(MODS[0], tp2s=[{"tp2": TP2, "origin": "tp2", "components": [
+    component(0, "Restoration"),
+    dict(component(10, "classic", "sub:Portraits", "Portraits"), forced=True),
+    dict(component(11, "new", "sub:Portraits", "Portraits"), forced=True)]}])]
+
+
+def test_the_only_option_of_a_forced_group_is_put_back(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, FORCED)
+    check(widget, (TP2, 0))
+    check(widget, (TP2, 10))
+    check(widget, (TP2, 10), on=False)
+    qtbot.waitUntil(lambda: (TP2, 10) in widget.chosen(), timeout=2000)
+    assert "needs one option of this group" in widget.status.text()
+    check(widget, (TP2, 11))                     # another option: allowed
+    assert widget.chosen() == [(TP2, 0), (TP2, 11)]
+
+
+def test_a_forced_group_goes_with_its_mod(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, FORCED)
+    check(widget, (TP2, 0))
+    check(widget, (TP2, 10))
+    widget.tree.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
+    qtbot.wait(50)
+    assert widget.chosen() == []
+
+
+def test_a_check_is_not_run_again_when_nothing_it_reads_changed(qtbot, tmp_path):
+    calls = []
+
+    def counting(*args):
+        calls.append(args[1])
+        return dict(no_check(), rules_checked=1)
+    widget = ModsPage(str(tmp_path), load=lambda game, project: json.loads(json.dumps(MODS)),
+                      check=counting)
+    qtbot.addWidget(widget)
+    with qtbot.waitSignal(widget.loaded, timeout=5000):
+        widget.start("EET")
+    check(widget, (TP2, 0))
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.check_conflicts()
+    ran = widget.checks
+    check(widget, (TP2, 0), on=False)            # undone before the check
+    check(widget, (TP2, 0))
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.check_conflicts()
+    assert widget.checks == ran                  # the same selection: not checked again
+    api.save_decisions(str(tmp_path), {}, {"conflict-1": "fine"})   # a decision changed
+    with qtbot.waitSignal(widget.checked, timeout=5000):
+        widget.check_conflicts()
+    assert widget.checks == ran + 1
