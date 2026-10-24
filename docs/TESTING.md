@@ -396,6 +396,31 @@ property over random orders, rules and moves). On 2026-10-23, p50/p95:
 stored on each row as a string and only the rows whose mark changes were
 painted again). No test asserts a time: a shared runner would make it flaky.
 
+### RAR archives, extracted against 7-Zip (GUI-AUDIT item 40)
+
+`tools/rar_measure.py corpus | reference | compare` downloads the distinct
+.rar links of lcc-docs' `mods.json`, extracts each with the official 7-Zip
+(the reference: it alone implements every RAR version) and then with each
+candidate, in an empty folder, and calls an archive identical only when the
+same files come out with the same SHA-256. The `RAR extractors` workflow runs
+it inside `debian:trixie` (bsdtar, unar, 7zip-dfsg: the floor's own packages)
+and on Windows and macOS runners (their system bsdtar, Homebrew's unar).
+On 2026-10-24 (CI): of lcc-docs' 131 distinct .rar links, 130 downloaded and
+the reference extracted 105 (98 RAR4, 7 RAR5; 7 solid); the other 25 are not
+RAR at all (the link serves something else). Archives each tool
+extracted to the same files:
+
+| Platform | bsdtar (libarchive) | unar | 7zip (dfsg) | Any |
+|---|---|---|---|---|
+| Debian trixie | 95 | 94 (RAR5: 0 of 7) | 1 | 100 |
+| Windows (`tar.exe`) | 95 | - | - | 95 |
+| macOS (system bsdtar, Homebrew unar) | 95 | 103 | - | 103 |
+
+bsdtar fails mostly on solid RAR4 archives (5 of 7 solid); trixie's unar on
+every RAR5 one, Homebrew's on none. Two solid RAR4 archives (027, 030) no
+open-source tool extracts. The numbers decide the extractor (an ADR); no
+test asserts them.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
