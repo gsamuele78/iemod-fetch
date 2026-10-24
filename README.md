@@ -231,9 +231,9 @@ it breaks no other rule and adds no error. Under the list, the selected row's ru
 red where broken, dimmed where they name a whole mod; *Ignore...* keeps a red row as your
 call, with why, in `decisions.json`, until it is dragged or breaks another rule. Several
 rows can be selected and dragged together, moved with Ctrl+Up / Ctrl+Down, or found by
-name. *Use the computed order* forgets it. Answers to WeiDU prompts come with the
-install step (M4): only BWS-NG describes prompts as data, for 4 components
-(ADR-0036).
+name. *Use the computed order* forgets it. WeiDU's prompts are answered at install
+(phase 5): from a log's `// @wlb-inputs:` answers, else by asking you (ADR-0045);
+only BWS-NG describes prompts as data, for 4 components (ADR-0036).
 
 **Phase 4, download and extraction** (ADR-0039): *Download* fetches every mod
 of the selection, checks it, unpacks it and checks it holds the tp2 it must,
@@ -251,7 +251,23 @@ because lcc-docs names them otherwise. A `manifest` in the ini still comes
 first. The command line does the same in the project when no
 `mod_downloads.json` is there (a manifest named with `-m` must exist).
 Back is locked while a download runs, and a changed selection starts the
-phase again. Installing is phase 5, with M4.
+phase again.
+
+**Phase 5, installation** (ADR-0045, ADR-0046): the install itself, in three
+steps that are each yours.
+1. *The programs*: mod_installer (the wizard's bundle carries 16.0.0) and WeiDU,
+   found where you point, in the bundle, on PATH, or - WeiDU only - downloaded
+   from its official release after a confirmation naming its source and licence
+   (GPL-2.0), checked against its sha256. What is wrong with one is said as is.
+2. *A backup of each game folder* (ADR-0042): *Back up now*, or one made before.
+   Without it, *Install* stays off.
+3. *Install*, after a last confirmation: the order of phase 3 is written to
+   `PROJECT/install-plan/` (as `--plan-order` writes it) and mod_installer runs
+   over it. Its output shows as it comes; a question no recorded answer covers
+   is asked in a dialog; *Cancel* stops it and everything it started. Nothing is
+   undone by itself: to start again, restore the backup
+   (`iemod-fetch --restore-backup`). The command line still runs nothing: its
+   scripts are for you to run (ADR-0022).
 
 ### Verifying a release download
 
@@ -432,7 +448,7 @@ Each community source is used for what it measures best (ADR-0036, measured on
 | conflicts and install order | krion64 and BWS-NG | as before |
 
 BWS-NG is also the only source that describes WeiDU prompts as data, for 4
-components; prompt answers arrive with the install step (M4).
+components; the wizard's install answers prompts from the logs or asks (ADR-0045).
 
 ### Health warnings
 
@@ -538,7 +554,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,722 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,745 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -787,7 +803,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,722, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,745, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

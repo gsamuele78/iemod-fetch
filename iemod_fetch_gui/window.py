@@ -14,11 +14,11 @@ from iemod_fetch import api
 from .pages.download import DownloadPage, Downloader, download_project
 from .pages.game import GamePage
 from .pages.mods import Checker, Loader, ModsPage, find_conflicts, load_choices
+from .pages.install import InstallPage, Services
 from .pages.order import OrderPage, Planner, Previewer, plan_selection, preview_selection
-from .pages.pending import PendingPage
 
 # BWS-NG's order (ADR-0031). Its download and extraction are one step per mod
-# in the engine, so one page here (ADR-0039); installing comes with M4.
+# in the engine, so one page here (ADR-0039); installing is M4's (ADR-0045).
 PHASES = ["Game and folders", "Mod selection", "Install order",
           "Download and extraction", "Installation"]
 
@@ -27,7 +27,8 @@ class MainWindow(QMainWindow):
     def __init__(self, project_dir: str, load: Loader = load_choices,
                  check: Checker = find_conflicts, plan: Planner = plan_selection,
                  download: Downloader = download_project,
-                 preview: Previewer = preview_selection) -> None:
+                 preview: Previewer = preview_selection,
+                 install: Services | None = None) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.setWindowTitle(f"iemod-fetch {api.__version__} - {project_dir}")
@@ -44,8 +45,9 @@ class MainWindow(QMainWindow):
         self.mods = ModsPage(project_dir, load, check)
         self.order = OrderPage(project_dir, plan, preview)
         self.download = DownloadPage(project_dir, download)
+        self.install = InstallPage(project_dir, install)
         self.pages: list[QWidget] = [self.game, self.mods, self.order, self.download,
-                                     PendingPage(PHASES[4], self.game, "M4")]
+                                     self.install]
         self.stack = QStackedWidget()
         for page in self.pages:
             self.stack.addWidget(page)
@@ -59,6 +61,7 @@ class MainWindow(QMainWindow):
         self.order.completeChanged.connect(lambda _complete: self._refresh())
         self.order.turn_off.connect(self._turn_off)
         self.download.completeChanged.connect(lambda _complete: self._refresh())
+        self.install.completeChanged.connect(lambda _complete: self._refresh())
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -103,6 +106,8 @@ class MainWindow(QMainWindow):
             self.order.start(self.mods.game, self.mods.chosen(), self.mods.labels())
         elif self.current == 2:
             self.download.prepare((self.mods.game, tuple(self.mods.chosen())))
+        elif self.current == 3:
+            self.install.prepare(self.mods.game, self.mods.chosen(), self.mods.labels())
         if self.current + 1 < len(self.pages):
             self.stack.setCurrentIndex(self.current + 1)
         self._refresh()
@@ -119,8 +124,12 @@ class MainWindow(QMainWindow):
         self.status.setText(f"saved {path}")
         self.order.start(self.mods.game, self.mods.chosen(), self.mods.labels())
 
+    def busy(self) -> bool:
+        """A download, backup or install is running: the selection must not change."""
+        return self.download.running() or self.install.running()
+
     def go_back(self) -> None:
-        if self.current > 0 and not self.download.running():
+        if self.current > 0 and not self.busy():
             self.stack.setCurrentIndex(self.current - 1)
         self._refresh()
 
@@ -128,7 +137,7 @@ class MainWindow(QMainWindow):
         page = self.pages[self.current]
         complete = getattr(page, "is_complete", lambda: True)()
         # the selection must not change under a running download
-        self.back.setEnabled(self.current > 0 and not self.download.running())
+        self.back.setEnabled(self.current > 0 and not self.busy())
         self.next.setEnabled(complete and self.current + 1 < len(self.pages))
         for row in range(self.phases.count()):
             item = self.phases.item(row)

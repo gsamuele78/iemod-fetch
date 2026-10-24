@@ -2820,6 +2820,37 @@ version up to the tag).
   API, not subprocess). The Windows tests run the stop against a child that
   ignores a polite stop, so only the job's kill passes them.
 
+### Item 22c: the wizard's page
+
+- **The plan the install runs is written to `PROJECT/install-plan/`.**
+  `api.write_install_plan` makes the same plan the order page shows (its
+  install-order.txt, decisions.json), applies the project's language
+  preference, and writes it as `--plan-order` writes it. Until now the
+  wizard only planned in a temporary folder. Each install writes it again,
+  so what runs is what the order page showed at that moment.
+- **The order of steps is fixed:** the programs, then a backup of each game
+  folder the project names, then the plan is written, then a confirmation
+  that names the folders, the backups and what the order still breaks.
+  Without a backup, *Install* is not offered.
+- **A backup counts only if it is of that folder as it is now** (review of
+  #87). It must be of that very folder (the manifest's `game_dir`), and
+  restoring it must change nothing: `plan_restore` against the game finds
+  no file to put back, displace or lose. That check hashes the game, so it
+  runs in a thread of its own when the page is entered. Otherwise the page
+  says so ("the game changed after the backup, N files differ"), and
+  *Back up now* makes a backup that counts.
+- **What the order breaks is named before anything runs.** The written
+  plan carries the order rules it breaks and its cycles, as the order page
+  shows them in red. The confirmation lists them (ten, then a count) and
+  becomes *Install anyway*. Saying no installs nothing; the plan stays
+  written.
+- **A question no recorded answer covers is asked in a dialog** on the
+  page's thread, while the install's thread waits. Cancelling the dialog,
+  or *Cancel* at any time, stops the install and everything it started.
+- **Nothing is undone by itself.** A failed or cancelled install leaves the
+  game as WeiDU left it, and the page names the backup to restore. Restoring
+  is the player's call, not an automatic step.
+
 ---
 
 ## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it
@@ -2880,6 +2911,19 @@ part of this project's build, until an upstream stable release includes it.
   this repository rather than by a third party's server: upstream may
   rewrite or delete its history, and our release still holds the source.
   The bundle's NOTICE names that file first and upstream second.
+- **Which version: the newest, measured against its neighbours** (asked
+  again by the maintainer). Upstream tags stop at v12.1.1. After it, main
+  holds 129 commits and "prep" commits for 13.2.1, 14.1 to 14.5.2, 15.0.0,
+  15.0.1 and 16.0.0, none of them tagged or released. The weidu.log bug
+  (`get_last_installed(...)?`) became harmless in 14.5.0, where a log that
+  cannot be read no longer stops the install; 16.0.0 still opens
+  `weidu.log` but carries on. 14.5.2, 15.0.1 and 16.0.0 were built here and
+  each passed the real-install tests on Linux (8 tests, the real WeiDU v251).
+  14.5.2 reports "config 1.2.0" to `--version`, so it cannot be recognised.
+  16.0.0 adds, over 15.0.1, closing its input properly (#325), passing
+  WeiDU's OCaml memory settings down against crashes on large installs
+  (#324) and better batching (#326). It stays the pin, and is the version
+  CI tests on Linux and Windows.
 - **Its Rust libraries are not vendored.** They are named, with their
   checksums, in the commit's Cargo.lock, and served by crates.io. They are
   MIT and Apache-2.0, not GPL. A `cargo vendor` archive would be the

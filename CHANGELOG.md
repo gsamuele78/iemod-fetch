@@ -47,6 +47,14 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Phase 5 of the wizard: installation** (GUI-AUDIT M4 item 22c, ADR-0045).
+  The programs (mod_installer from the bundle, WeiDU found or downloaded after
+  a confirmation that names its source and GPL-2.0 licence), a backup of each
+  game folder first, then *Install* after a last confirmation: the order page's
+  order is written to `PROJECT/install-plan/` (`api.write_install_plan`, with
+  the project's languages; `api.install_games`) and mod_installer runs over it
+  with its output shown live, WeiDU's unrecorded questions asked in a dialog,
+  and Cancel. Nothing is undone by itself; the backup is how to start again.
 - **The programs an install runs** (GUI-AUDIT M4 item 22b, ADR-0046).
   `api.find_tools` finds mod_installer where the player says, else beside the
   wizard's own program (the bundle carries it), else on PATH; it is never
