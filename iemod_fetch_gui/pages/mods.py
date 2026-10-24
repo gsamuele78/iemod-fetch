@@ -62,33 +62,6 @@ FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available",
 KIND_COLUMN = 3
 DISAGREE = "\u26a0 "        # the mark on a row whose sources disagree on its kind
 CHECK_DELAY_MS = 700      # a burst of clicks is checked once, after it ends
-class _Cascade(QTreeWidgetItem):
-    """
-    A mod's (or an EET tp2's) row: Qt ticks its components one by one when it
-    is ticked, and the page would keep the last option of each SUBCOMPONENT
-    group. The tick is caught here, and the groups settled once it is done.
-    """
-
-    def __init__(self, texts: list[str], page: ModsPage) -> None:
-        super().__init__(texts)
-        self.page = page
-
-    def setData(self, column: int, role: int, value: Any) -> None:  # noqa: N802 (Qt)
-        page = self.page
-        if (column != 0 or role != Qt.ItemDataRole.CheckStateRole or page._updating
-                or Qt.CheckState(value) != Qt.CheckState.Checked):
-            super().setData(column, role, value)
-            return
-        before = page._checked()
-        page._cascading += 1
-        try:
-            super().setData(column, role, value)
-        finally:
-            page._cascading -= 1
-        if not page._cascading:
-            page._settle(self, before)
-
-
 KRION_NOTE = ("Components from krion64's records: the mod is not downloaded yet. "
               "Its own tp2 decides once it is, and the choice is checked again then.")
 
@@ -97,6 +70,24 @@ def _target(project: dict) -> str:
     """The CLI's --target, resolved as the CLI resolves it when run in the project."""
     folder = os.path.dirname(project["path"])
     return os.path.join(folder, project.get("target") or "Mods")
+
+
+def _stale(item: QTreeWidgetItem) -> bool:
+    """
+    Whether `item`'s row still shows its state from before this change: Qt
+    ticks a row's components before it changes the row itself, while a
+    component ticked alone has its row brought up to date first (measured on
+    Qt 6; item 35). A Python subclass of the row caught this before; it gave
+    the collector a cycle to walk from worker threads (review of #82).
+    """
+    row = item.parent()
+    if row is None or row.childCount() == 0:
+        return False
+    states = {row.child(n).checkState(0) for n in range(row.childCount())}
+    shown = (Qt.CheckState.Checked if states == {Qt.CheckState.Checked}
+             else Qt.CheckState.Unchecked if states == {Qt.CheckState.Unchecked}
+             else Qt.CheckState.PartiallyChecked)
+    return bool(row.checkState(0) != shown)
 
 
 def _under(item: QTreeWidgetItem, row: QTreeWidgetItem) -> bool:
@@ -288,7 +279,10 @@ class ModsPage(QWidget):
         self.resolve.clicked.connect(self._resolve)
         self._unticked: set[Key] = set()    # unticked by the player, not yet asked about
         self._answered = ""                 # the digest the conflicts shown answer
-        self._cascading = 0                 # a mod row ticking its components
+        # components ticked since the event loop last ran, and what was chosen
+        # before them: a mod's row ticking its components (item 35)
+        self._burst: list[Key] = []
+        self._burst_before: set[Key] = set()
         self.checks = 0                     # checks run, not skipped (item 35)
         bar = QHBoxLayout()
         bar.addWidget(self.search, 1)
@@ -384,7 +378,7 @@ class ModsPage(QWidget):
         kind = ", ".join(kinds_of(mod))
         if mod.get("kind_disagreement"):
             kind = DISAGREE + kind
-        item = _Cascade([mod.get("name") or mod["key"], version, origin, kind], self)
+        item = QTreeWidgetItem([mod.get("name") or mod["key"], version, origin, kind])
         item.setData(0, ROLE, ("mod", mod["key"]))
         item.setToolTip(KIND_COLUMN, _said(mod) or kind)
         if not any(t["components"] and not t.get("refused") for t in tp2s):
@@ -397,7 +391,7 @@ class ModsPage(QWidget):
         for tp2 in tp2s:
             parent = item
             if len(tp2s) > 1:                       # EET: EET.tp2 and EET_end.tp2
-                parent = _Cascade([tp2["tp2"].rsplit("/", 1)[-1], "", tp2["origin"]], self)
+                parent = QTreeWidgetItem([tp2["tp2"].rsplit("/", 1)[-1], "", tp2["origin"]])
                 parent.setFlags(parent.flags() | Qt.ItemFlag.ItemIsUserCheckable
                                 | Qt.ItemFlag.ItemIsAutoTristate)
                 item.addChild(parent)
@@ -447,11 +441,20 @@ class ModsPage(QWidget):
             return
         data = item.data(0, ROLE)
         if not data or data[0] != "component":
+            # A mod's (or an EET tp2's) row: Qt ticks its components first and
+            # changes the row last. More than one ticked meanwhile is the row
+            # ticking them all: one option per SUBCOMPONENT group (item 35).
+            if len(self._burst) > 1 and item.checkState(0) != Qt.CheckState.Unchecked:
+                self._settle(item, self._burst_before)
             self._count()
             return
         if item.checkState(0) == Qt.CheckState.Checked:
-            if self._cascading:
-                return                  # the mod's row settles its groups after
+            if not self._burst:
+                self._burst_before = self._checked() - {data[1]}
+                QTimer.singleShot(0, self._burst.clear)
+            self._burst.append(data[1])
+            if _stale(item):
+                return                  # its row is ticking it: settled by the row
             self._updating = True
             try:
                 self._choose(item, set())
@@ -483,8 +486,8 @@ class ModsPage(QWidget):
     def _settle(self, row: QTreeWidgetItem, before: set[Key]) -> None:
         """
         After a mod's row ticked its components: one option per SUBCOMPONENT
-        group - the one chosen before, else the group's first - and what each
-        chosen component needs (M5b item 35).
+        group - the one chosen before, else the group's first, or the one left
+        when only one is - and what each chosen component needs (item 35).
         """
         mine = [item for key, item in self.items.items() if _under(item, row)]
         self._updating = True
@@ -495,8 +498,11 @@ class ModsPage(QWidget):
                 if component["exclusive"]:
                     groups.setdefault((tp2, component["exclusive"]), []).append(item)
             for options in groups.values():
+                ticked = [o for o in options if o.checkState(0) == Qt.CheckState.Checked]
+                if not ticked:
+                    continue
                 kept = next((o for o in options if o.data(0, ROLE)[1] in before),
-                            options[0])
+                            ticked[0] if len(ticked) == 1 else options[0])
                 for option in options:
                     option.setCheckState(0, Qt.CheckState.Checked if option is kept
                                          else Qt.CheckState.Unchecked)

@@ -542,6 +542,7 @@ def test_a_mod_ticked_whole_takes_each_groups_first_option(qtbot, tmp_path):
 def test_a_mod_ticked_whole_keeps_the_option_already_chosen(qtbot, tmp_path):
     widget = page(qtbot, tmp_path)
     check(widget, (TP2, 11))
+    qtbot.wait(1)                                # two clicks: the event loop runs between
     widget.tree.topLevelItem(0).setCheckState(0, Qt.CheckState.Checked)
     assert widget.chosen() == [(TP2, 0), (TP2, 11), (TP2, 20)]
 
