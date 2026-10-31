@@ -907,28 +907,39 @@ def _mod_files(mods_dir: str, folder: str) -> dict[str, str]:
 def install_questions(plan_dir: str, mods_dir: str) -> dict:
     """
     The questions the planned install will meet, before it starts (GUI-AUDIT
-    item 48, ADR-0049): for every component of `plan_dir`'s WeiDU logs, the
+    item 48, ADR-0049): for every component of `plan_dir`'s WeiDU-BGEE.log and
+    WeiDU.log - the two logs mod_installer installs, in that order - the
     READLNs its mod's files reach (iemod_fetch/readln.py, in the language the
-    log installs it in), and the answers the log records for it
-    (`// @wlb-inputs:`).
+    log installs it in), and the answers the log records (`// @wlb-inputs:`).
 
     Returns {"components": [{"log", "tp2", "number", "language", "questions":
     [{"key", "text", "known", "conditional", "repeats", "via", "file",
     "line"}], "recorded": [answers], "status", "unread": [...]}],
-    "unattended": bool, "counts": {status: n}}. A status is "none" (asks
-    nothing), "answered" (as many recorded answers as questions it surely
-    asks), "partial", "unanswered", or "unknown" (a question whose text is set
-    elsewhere, or a path the reading could not follow). "unattended" is a
-    forecast, not a promise: a lexical reading misses what runs at install
-    time, and a question under a condition may or may not come.
+    "unattended": bool, "counts": {status: n}}. A status is:
+      "unknown"     the mod is not in the mods folder, a question's text is set
+                    elsewhere, or reading the component could not follow a path
+                    (a question may sit there) - even when nothing was found;
+      "none"        it asks nothing that was found;
+      "answered"    an answer recorded for every question it may ask;
+      "maybe"       answers for the questions it surely asks, not for those
+                    under a condition, which may or may not come;
+      "partial"     fewer answers than the questions it surely asks;
+      "unanswered"  questions it surely asks, no answer.
+    A question that repeats until valid counts once: the recorded answer is
+    taken to be valid. "unattended" holds only with components and every one
+    "none" or "answered" - a forecast, not a promise: a lexical reading misses
+    what runs at install time. The wizard's planned logs carry no answers yet
+    (the phase-5 questionnaire is to write them), so there a component that
+    asks is "unanswered" or "maybe" today.
     """
     scans: dict[tuple[str, int], readln.ModPrompts] = {}
     files_of: dict[str, dict[str, str]] = {}
     components = []
-    for name in sorted(os.listdir(plan_dir)) if os.path.isdir(plan_dir) else []:
-        if not name.lower().endswith(".log"):
+    for name in ("WeiDU-BGEE.log", "WeiDU.log"):
+        path = os.path.join(plan_dir, name)
+        if not os.path.isfile(path):
             continue
-        with open(os.path.join(plan_dir, name), encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:   # a BOM is not a line
             lines = fh.read().splitlines()
         for line in lines:
             match = prompts._LOG_LINE.match(line)
@@ -944,16 +955,17 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
                 scans[(key, lang)] = readln.scan(key, files, language_index=lang)
             found = scans[(key, lang)]
             asked = found.of(number)
+            unread = found.unread_of(number) if key in files else list(found.unread)
             recorded = prompts.wlb_inputs(line) or []
             sure = [q for q in asked if not q.conditional]
-            if key not in files:
-                status = "unknown"                    # the mod is not there to read
+            if key not in files or unread or any(not q.keyed for q in asked):
+                status = "unknown"
             elif not asked:
                 status = "none"
-            elif any(not q.keyed for q in asked) or found.unread:
-                status = "unknown"
-            elif len(recorded) >= len(sure) and (sure or recorded):
+            elif len(recorded) >= len(asked):
                 status = "answered"
+            elif len(recorded) >= len(sure):
+                status = "maybe"
             elif recorded:
                 status = "partial"
             else:
@@ -963,13 +975,14 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
                 "questions": [{"key": q.key, "text": q.text, "known": q.keyed,
                                "conditional": q.conditional, "repeats": q.repeats,
                                "via": q.via, "file": q.file, "line": q.line} for q in asked],
-                "recorded": recorded, "status": status, "unread": list(found.unread)})
+                "recorded": recorded, "status": status, "unread": unread})
     counts: dict[str, int] = {}
     for c in components:
         status = str(c["status"])
         counts[status] = counts.get(status, 0) + 1
     return {"components": components, "counts": counts,
-            "unattended": all(c["status"] in ("none", "answered") for c in components)}
+            "unattended": bool(components) and all(c["status"] in ("none", "answered")
+                                                   for c in components)}
 
 
 def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,

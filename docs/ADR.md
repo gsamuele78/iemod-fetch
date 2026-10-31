@@ -3294,8 +3294,9 @@ variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
    (ADR-0045, item 63) - else by its text.
 2. **The player answers them in one place, before Install** (the coverage
    is `api.install_questions`: per component, its questions and the answers
-   the log records, and an unattended forecast; the questionnaire in phase 5
-   is next): the answers are kept with their key,
+   the log records, and an unattended forecast; the wizard's planned logs
+   carry no answers until the questionnaire in phase 5, next, writes them):
+   the answers are kept with their key,
    the mod's version and the component, and a preflight says whether the
    install can run unattended, listing what is still uncovered.
 3. **Never a timed answer.** A question with no answer stops and asks, as
