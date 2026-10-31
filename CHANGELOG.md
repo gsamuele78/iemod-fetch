@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **Ordering facts as planner regression tests** (GUI-AUDIT item 70):
+  facts from Chriz Easy BG's curation notes that the community data holds,
+  run in the community-data workflow on the data it has just fetched:
+  - held by BWS-NG's rules: BG1NPC before EET_end, Ascension before Spell
+    Revisions and SCS, Bubb's Spell Menu after a UI replacement;
+  - held by krion64's places: Yeslick before Crossmod, Artisan's Kitpack
+    after item mods.
+  Facts the data does not hold are listed in GUI-AUDIT, not invented.
 - **What each component of an install came to** (GUI-AUDIT item 69,
   ADR-0053): the result is not only mod_installer's exit code. Each planned
   component is installed, installed with warnings, not installed because of

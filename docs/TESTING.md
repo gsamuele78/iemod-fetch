@@ -196,6 +196,15 @@ fixture placed where WeiDU does not look. Opt in locally with
 downloads both pinned and sets `IEMOD_REQUIRE_REAL=1`, so a missing tool fails
 instead of skipping; so does the Windows job.
 
+### Ordering facts on the live data (GUI-AUDIT item 70)
+
+`tests/test_ordering_facts.py` gives the planner logs in the wrong order and
+checks the order it plans for facts from Chriz Easy BG's curation notes that
+our community data holds, and that the BWS-NG rule or krion64 place each
+rests on is still there. It needs a data cache: opt in with
+`IEMOD_FACTS_DATA=<data dir>` (as `iemod-fetch --update-data` fills it).
+The community-data workflow runs it nightly on what it has just fetched.
+
 ### Components before download: krion64 against WeiDU
 
 The wizard offers a mod's components before it is downloaded from krion64's
@@ -522,7 +531,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,954 collected (15 run the real WeiDU, 173 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,959 collected (15 run the real WeiDU, 173 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
