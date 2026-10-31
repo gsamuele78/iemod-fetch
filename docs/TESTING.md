@@ -447,9 +447,11 @@ First measurement (#96, 30 runs each, 2026-10-31): ubuntu-latest median
 over 100 ms. The three Windows gaps over 50 ms (58-64 ms) had no collection
 in them and came before the download had sent any event: between the click
 on Download and the run's first event. The 240 ms of the release gate is not
-reproduced in 30 runs; the stack dumps above are added to say what runs in
-that first stretch. The fix - in the code, or in what the test may honestly
-expect of a shared runner - waits for them.
+reproduced in 30 runs. The stack dumps of the next 30 named it: each time
+the download's thread was in `ssl._load_windows_store_certs`, building a
+TLS context for a new `HttpClient` - Windows' certificate store read and
+parsed with the GIL held. The fix is ADR-0048: one context per process,
+built by the wizard before its window is drawn; the limit stays 100 ms.
 
 ## What is deliberately not done
 
@@ -492,7 +494,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,781 collected (15 run the real WeiDU, 158 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,785 collected (15 run the real WeiDU, 159 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

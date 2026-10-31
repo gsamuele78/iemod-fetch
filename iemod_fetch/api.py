@@ -50,7 +50,7 @@ from .kinds import KindHint
 from .moddb import ModDatabase
 from .modmeta import find_metadata
 from .naming import normalize_key
-from .net import DEFAULT_MAX_BYTES, HttpClient
+from .net import DEFAULT_MAX_BYTES, HttpClient, https_context
 from .ordering import (EET_LOG, PRE_EET_LOG, OrderIndex, broken_after_move, broken_pairs,
                        bws_sequence, plan_order, render_plan_summary, reverse, tp2_key)
 from .ordering import order_fixes as _order_fixes
@@ -78,7 +78,7 @@ from .contract import SCHEMA_VERSION, stable_id
 from .weidu import ParsedLog, parse_weidu_files, parse_weidu_log, split_log_spec
 from . import __version__
 
-__all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
+__all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare_https",
            "backup_game", "verify_backup", "plan_restore", "restore_backup", "list_backups",
            "backups_dir",
            "selection_of_logs", "update_data", "data_status", "describe_mods",
@@ -250,6 +250,16 @@ def run(settings: Settings, stream=None, config=None, on_event=None,
         imported = _use_selection(settings, workdir)
         _emit_bio_code(settings, imported, stream)
         return _run(settings, stream, config, on_event, cancel)
+
+
+def prepare_https() -> None:
+    """
+    Build the process's TLS context now (ADR-0048): on Windows that reads the
+    whole certificate store while holding the GIL, which a window must not
+    wait on. The wizard calls this before its window is shown; a run that
+    finds it built does not build it again.
+    """
+    https_context()
 
 
 def update_data(settings: Settings | None = None, force: bool = False,

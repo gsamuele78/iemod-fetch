@@ -3185,3 +3185,40 @@ error.
   build. With 7-Zip installed - common there - the rest open.
 - The bundles stay as they are; this is no new dependency. The measurement
   workflow can be re-run when libarchive or unar change.
+
+## ADR-0048 — One TLS context per process, built by the wizard before its window is drawn
+
+**Context.** The release gate of 4.0.0 failed on the M3 test's limit: the
+wizard's window waited 240 ms during a download on windows-latest. The
+`GUI latency` workflow (docs/TESTING.md) measured it: 30 runs per OS,
+ubuntu-latest worst 13.8 ms, windows-latest worst 64 ms. Every Windows gap
+over 50 ms came before the download had sent its first event, with no
+garbage collection in it. A faulthandler watchdog, which needs no GIL and
+dumps every thread's stack when the loop has been held 40 ms, caught the
+download's thread each time in `ssl._load_windows_store_certs`, called from
+`HttpClient.__init__` → `urllib.request.build_opener` →
+`ssl.create_default_context`. urllib builds a new TLS context for every
+opener, and on Windows building one reads every certificate of the system
+store and parses it while the GIL is held, so no other thread runs, the
+window's included. Every `HttpClient` paid it: every download, catalogue
+update and conflict check started from the wizard.
+
+**Decision.** `net.https_context()` builds the default verifying context
+once per process, under a lock, with http.client's own settings (ALPN
+http/1.1), and every `HttpClient` passes it to its opener's
+`HTTPSHandler`. An `SSLContext` may serve connections from several threads.
+`api.prepare_https()` builds it ahead of time; `MainWindow` calls it in its
+constructor, before anything is drawn. The 100 ms limit of the M3 test
+stays.
+
+**Consequences.**
+- The trust store is read once per process, not once per client. The
+  wizard pays it at start-up, before its window appears; the command line
+  pays it once at its first HTTPS client.
+- What is accepted does not change: the same default context, certificate
+  and hostname verification required, the system's trust store (ADR-0003).
+  A trust store changed while the process runs is seen at the next start,
+  not the next download.
+- Tests: `tests/test_https_context.py` (one build, shared, still
+  verifying, built by `prepare_https`) and the wizard's test that the
+  constructor builds it. The `GUI latency` workflow re-measures it.
