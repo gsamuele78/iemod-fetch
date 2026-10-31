@@ -163,11 +163,17 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
             backup = os.path.join(backup_root, f"{folder}.{time.strftime('%Y%m%dT%H%M%S')}")
             atomic.move(dest, backup)
 
-        os.makedirs(dest, exist_ok=False)
-        count = 0
-        for entry in os.listdir(root):
-            atomic.move(os.path.join(root, entry), os.path.join(dest, entry))
-            count += 1
+        # The mod's folder moves in one rename, from the staging folder under
+        # target_root (one file system): never entry by entry, which a file
+        # held at the third left half in place (review of #102). If it fails,
+        # the copy it replaces comes back.
+        count = len(os.listdir(root))
+        try:
+            atomic.move(root, dest)
+        except OSError:
+            if backup is not None and not os.path.exists(dest):
+                atomic.move(backup, dest)
+            raise
 
         verified = verify_mod_dir(dest, folder, expect_tp2)
         if not verified:

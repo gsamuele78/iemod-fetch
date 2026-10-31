@@ -24,34 +24,46 @@ from typing import Any
 # 508256a; the idea, not its code).
 _HELD = frozenset({5, 32, 33})
 ATTEMPTS, FIRST_WAIT_S, LONGEST_WAIT_S = 12, 0.01, 1.0
+PATIENT_S = 5.3          # a download, an extraction, a backup: off the GUI's thread
+BRIEF_S = 0.15           # a small file written while the window waits (review of #102)
+
+
+def _for_good(target: str) -> bool:
+    """ERROR_ACCESS_DENIED that no wait ends: the target is a folder that is
+    already there, or a read-only file (review of #102)."""
+    return os.path.isdir(target) or (os.path.isfile(target) and not os.access(target, os.W_OK))
 
 
 def retried(operation: Callable[..., Any], *args: Any, windows: bool | None = None,
-            sleep: Callable[[float], Any] = time.sleep) -> Any:
+            sleep: Callable[[float], Any] = time.sleep, budget_s: float = PATIENT_S,
+            for_good: Callable[[], bool] = lambda: False) -> Any:
     """`operation(*args)`, tried again while Windows says another program holds
-    the file; any other error, and every error elsewhere, at once."""
+    the file, waiting at most `budget_s` in all; any other error, an access
+    denial `for_good` says no wait ends, and every error elsewhere, at once."""
     windows = os.name == "nt" if windows is None else windows
-    wait = FIRST_WAIT_S
+    wait, waited = FIRST_WAIT_S, 0.0
     for attempt in range(ATTEMPTS):
         try:
             return operation(*args)
         except PermissionError as exc:
-            if (not windows or getattr(exc, "winerror", None) not in _HELD
-                    or attempt == ATTEMPTS - 1):
+            code = getattr(exc, "winerror", None)
+            if (not windows or code not in _HELD or attempt == ATTEMPTS - 1
+                    or waited + wait > budget_s + 1e-9 or (code == 5 and for_good())):
                 raise
         sleep(wait)
+        waited += wait
         wait = min(wait * 2, LONGEST_WAIT_S)
     raise AssertionError("unreachable")           # the last attempt returns or raises
 
 
-def replace(source: str, target: str) -> None:
+def replace(source: str, target: str, budget_s: float = PATIENT_S) -> None:
     """os.replace, waiting out a file held for a moment on Windows."""
-    retried(os.replace, source, target)
+    retried(os.replace, source, target, budget_s=budget_s, for_good=lambda: _for_good(target))
 
 
-def rename(source: str, target: str) -> None:
+def rename(source: str, target: str, budget_s: float = PATIENT_S) -> None:
     """os.rename, waiting out a file held for a moment on Windows."""
-    retried(os.rename, source, target)
+    retried(os.rename, source, target, budget_s=budget_s, for_good=lambda: _for_good(target))
 
 
 def move(source: str, target: str) -> None:
@@ -96,7 +108,7 @@ def write_text(path: str, text: str, *, durable: bool = False) -> None:
                 os.fsync(fh.fileno())
         if mode is not None:
             os.chmod(temp, mode)
-        replace(temp, path)
+        replace(temp, path, budget_s=BRIEF_S)    # the GUI's thread may wait on it
     except BaseException:
         with contextlib.suppress(OSError):
             os.chmod(temp, 0o600)       # Windows refuses to delete a read-only file

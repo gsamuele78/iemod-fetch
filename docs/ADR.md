@@ -3351,31 +3351,41 @@ BG met it and retries such renames (`engine/src/fs_retry.rs`, MIT, read at
 508256a: 12 attempts, 10 ms doubling to 1 s, about 5.3 s). Here 11 places
 renamed: 8 `os.replace`/`os.rename` (`atomic.py`, `archives.py`, `backup.py`
 x2, `datasync.py` x2, `net.py`, `toolchain.py`) and 3 `shutil.move` in
-`install.py`, from the staging folder into the mods folder. Those three were
-worse than a refusal: when Windows refuses the rename, `shutil.move` copies
-and then deletes, and a file still held at the delete splits the mod between
-two folders.
+`install.py`, from the staging folder into the mods folder, entry by entry.
+Those were worse than a refusal: when Windows refuses the rename,
+`shutil.move` copies and then deletes, and a held file split the mod.
 
 **Decision.**
-- `atomic.retried(operation)`: on Windows, a `PermissionError` whose
-  `winerror` is 5, 32 or 33 is tried again, 12 times, waiting 10 ms doubling
-  to 1 s (about 5.3 s in all); any other error, and every error on other
-  systems, is raised at once. CEBG's measure, its idea; no code taken.
+- `atomic.retried(operation, budget_s=...)`: on Windows, a `PermissionError`
+  whose `winerror` is 5, 32 or 33 is tried again, waiting 10 ms doubling to
+  1 s, up to 12 attempts and at most `budget_s` in all; any other error, and
+  every error on other systems, is raised at once. CEBG's measure, its idea;
+  no code taken.
+- Two budgets (review of #102). `PATIENT_S`, 5.3 s, for what runs off the
+  GUI's thread: downloads, extraction, backups, data refreshes. `BRIEF_S`,
+  0.15 s, for `atomic.write_text`: it also runs on the GUI's thread (the
+  order page's drag, Save, the decisions), where a held file must not freeze
+  the window for seconds; small files are let go quickly.
+- An ERROR_ACCESS_DENIED no wait ends is raised at once: the target is a
+  folder that is already there (a leftover `.old`, a backup name taken
+  within one second) or a read-only file (review of #102).
 - `atomic.replace`, `atomic.rename` and `atomic.move` use it, and every
-  rename in the tool goes through them. `atomic.move` renames; it falls back
-  to `shutil.move` only across file systems (EXDEV), never because a file is
-  held. The three `install.py` moves are within the mods folder (the staging
-  folder is under it), so they are renames.
-- A test walks the package and fails on any `os.replace`, `os.rename` or
-  `shutil.move` outside `atomic.py`.
+  rename in the tool and the wizard goes through them. `atomic.move` renames;
+  it falls back to `shutil.move` only across file systems (EXDEV), never
+  because a file is held.
+- A mod's folder moves from the staging folder in **one** rename (the
+  staging folder is under the mods folder: one file system), never entry by
+  entry. If that rename fails, the copy it replaced (moved to `.backup/`) is
+  put back.
+- A test walks the tool and the wizard and fails on any `os.replace`,
+  `os.rename`, `os.renames` or `shutil.move` - called, or imported by name -
+  outside `atomic.py`.
 
 **Consequences.**
-- A file held for under about 5 s no longer stops a download, an extraction,
-  a backup or a data refresh on Windows; one held longer still does, as
-  before, with Windows' own error.
-- An ERROR_ACCESS_DENIED that is permanent (a read-only folder) now takes
-  about 5 s before it is said. Accepted: it is rare, and it cannot be told
-  from a held file by its code.
-- Measured on the test suite only: the hold itself is simulated (a fake
-  operation raising the Windows errors); no antivirus was run.
-
+- A file held for under about 5 s no longer stops a download, an
+  extraction, a backup or a data refresh on Windows; one held longer still
+  does, with Windows' own error. A project file written from the window
+  waits at most 0.15 s, then fails as before.
+- A mod is installed whole or not at all: the old copy stays or comes back.
+- Measured on the test suite only: the hold is simulated (a fake operation
+  raising the Windows errors); no antivirus was run.
