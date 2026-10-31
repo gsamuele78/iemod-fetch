@@ -3272,13 +3272,15 @@ reinventing the wheel. What they do, read on their code (GUI-AUDIT M8):
 
 Measured (`tools/readln_census.py`, 2026-10-31) on the WeiDU files of 105 of
 the reference build's 108 GitHub mods (3 did not clone): 8 mods hold a
-READLN, 51 READLNs in all. Read lexically, 46 (90%) are reached from a
+READLN, 51 READLNs in all. Read lexically, 45 (88%) are reached from a
 component - in its body, a function or macro it launches, a file it
 includes, its ALWAYS block, with `%COMPONENT_NUMBER%`, the preamble's
-constants and inlined files followed - and 45 of those (98%) have their
-question's text found in the language. The other 5 are SCS's, behind paths
-its SFO library builds while installing (`%sfo_loc%`). Nearly every question
-is `PRINT @n` then `ACTION_READLN var`: a .tra string.
+constants and inlined files followed. The question is known for 42 of those
+(93%): 25 are a .tra string, shown in the player's language, and 17 a fixed
+text in the code (English whatever the language); 3 are printed from a
+variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
+5 are SCS's, behind paths its SFO library builds while installing
+(`%sfo_loc%`), and 1 follows a `FAIL` (TDDz) and is never asked.
 
 ### Decision
 
@@ -3309,6 +3311,13 @@ is `PRINT @n` then `ACTION_READLN var`: a .tra string.
 
 ### Consequences
 
+- An unknown question (printed from a variable) is keyed by where it is asked
+  - file, line, variable - never by an empty or shared key, so one answer can
+  never answer two such questions; the questionnaire shows it as unknown.
+- The component cuts are tp2.py's: a line `BEGIN` followed by a line opening
+  with a string (`ACTION_DEFINE_ARRAY x` / `BEGIN` / `~a~`) would be taken
+  for a component; no tp2 of the corpus has one. A question printed inside a
+  function and read in its caller is found without its text.
 - A lexical reading misses what runs at install time: a path built from a
   variable set while installing (SCS's SFO library), a question inside a
   program the mod starts, a condition on an earlier component. A first

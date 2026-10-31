@@ -175,3 +175,130 @@ BEGIN @10
 def test_a_tp2_not_given_is_said_so():
     found = scan("mymod/setup-mymod.tp2", {})
     assert found.components == {} and found.unread == ["mymod/setup-mymod.tp2 (not given)"]
+
+
+# ---------------------------------------------------------- review of #101
+def test_a_laf_end_does_not_close_the_block_it_sits_in():
+    """`LAF name ... END` ends with an END of its own: a function body, an IF,
+    a loop and ALWAYS all go on after it (4,714 of 7,601 function spans in the
+    corpus were cut at their first LAF before)."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+ALWAYS
+  LAF HANDLE_CHARSETS INT_VAR infer_charsets = 1 END
+  INCLUDE ~mymod/lib/lib.tph~
+END
+BEGIN @10
+  LAF ask END
+BEGIN @11
+  ACTION_IF GAME_IS ~eet~ BEGIN
+    LAF HANDLE_AUDIO END
+    PRINT @2
+    ACTION_READLN chance
+  END
+BEGIN @12
+  OUTER_WHILE (x = 0) BEGIN
+    LAF HANDLE_AUDIO END
+    PRINT @2
+    ACTION_READLN chance
+  END
+""", mymod__lib__lib_tph="""
+DEFINE_ACTION_FUNCTION ask BEGIN
+  LAF HANDLE_AUDIO END
+  PRINT @1
+  ACTION_READLN portraits
+END
+"""))
+    assert [(p.ref, p.via) for p in found.of(0)] == [("@1", "function ask")]
+    assert [(p.conditional, p.repeats) for p in found.of(1)] == [(True, False)]
+    assert [(p.conditional, p.repeats) for p in found.of(2)] == [(False, True)]
+
+
+def test_a_match_default_branch_is_conditional_and_a_try_leaks_nothing():
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  ACTION_MATCH ~%x%~ WITH ~a~ BEGIN OUTER_SET y = 1 END
+  DEFAULT
+    PRINT @1
+    ACTION_READLN portraits
+  END
+  COPY_EXISTING ~a.itm~ ~override~
+    PATCH_TRY READ_LONG 0 z WITH DEFAULT END
+  INNER_ACTION BEGIN
+    PRINT @2
+    ACTION_READLN chance
+  END
+"""))
+    assert [(p.ref, p.conditional) for p in found.of(0)] == [("@1", True), ("@2", False)]
+
+
+def test_bash_for_repeats():
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  ACTION_BASH_FOR ~override~ ~.*\\.itm~ BEGIN
+    PRINT @2
+    ACTION_READLN chance
+  END
+"""))
+    assert found.of(0)[0].repeats
+
+
+def test_the_line_is_the_files_after_a_block_comment():
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  /* a comment
+     on three
+     lines */
+  PRINT @1
+  ACTION_READLN portraits
+"""))
+    assert found.of(0)[0].line == 12
+
+
+def test_a_readln_after_fail_is_never_asked():
+    """TDDz: `FAIL ~...press Enter~` then `ACTION_READLN pause` - FAIL stops."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  ACTION_IF NOT FILE_EXISTS ~x.bam~ BEGIN
+    FAIL ~Missing x.bam, press Enter~
+    ACTION_READLN pause
+  END
+"""))
+    assert found.of(0) == []
+
+
+def test_a_question_printed_from_a_variable_is_unknown_and_keyed_by_its_place():
+    """LCA: `PRINT ~%xa_prompt%~` - the text is set elsewhere. Two such
+    questions must not share a key, or one answer would answer both."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  OUTER_SPRINT p @1
+  PRINT ~%p%~
+  ACTION_READLN a
+BEGIN @11
+  OUTER_SPRINT p @2
+  PRINT ~%p%~
+  ACTION_READLN b
+"""))
+    first, second = found.of(0)[0], found.of(1)[0]
+    assert not first.keyed and first.text == "" and first.ref == ""
+    assert first.key != second.key and first.key and second.key
+
+
+def test_an_include_whose_whole_path_is_a_variable_is_unread():
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  INCLUDE %lib_path%
+"""))
+    assert found.unread == ["include %lib_path% (a path built from variables)"]
+
+
+def test_a_function_defined_in_a_tpc_file_is_followed():
+    """SCS keeps functions in .tpc files (sfo2e/sfo_init.tpc)."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+ALWAYS INCLUDE ~mymod/lib/init.tpc~ END
+BEGIN @10
+  LAF ask END
+""", mymod__lib__init_tpc="""
+DEFINE_ACTION_FUNCTION ask BEGIN PRINT @1 ACTION_READLN portraits END
+"""))
+    assert [p.ref for p in found.of(0)] == ["@1"]

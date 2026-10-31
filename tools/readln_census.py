@@ -13,7 +13,11 @@ attributes to a component (or to ALWAYS):
             macro it launches, or a file it includes
   unreached a READLN in the mod's files no component was found to reach:
             dead code, another tp2's, or a path the scanner could not follow
-  resolved  a reached READLN whose question text was found in the language
+  tra       a reached READLN whose question is a .tra string found in the
+            language (shown in the player's language)
+  text      a reached READLN whose question is known at all: a .tra string,
+            or a fixed text in the code (English whatever the language);
+            `PRINT ~%var%~` is not counted - its text is set elsewhere
 
 What it cannot measure: whether WeiDU really asks a reached READLN (a
 condition may skip it) - that takes a real install, which no runner has the
@@ -29,8 +33,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from iemod_fetch.readln import scan  # noqa: E402
-from iemod_fetch.weidu_lex import _strip  # noqa: E402
+from iemod_fetch.readln import scan, strip_keeping_lines  # noqa: E402
 
 _WEIDU = (".tp2", ".tpa", ".tph", ".tpp", ".tpc", ".tra")
 _READLN = re.compile(r"\b(?:ACTION|PATCH)_READLN\b", re.IGNORECASE)
@@ -61,7 +64,7 @@ def readlns(files: dict[str, str]) -> set[tuple[str, int]]:
     for path, text in files.items():
         if path.lower().endswith(".tra"):
             continue
-        clean = _strip(text)
+        clean = strip_keeping_lines(text)
         for m in _READLN.finditer(clean):
             out.add((path, clean.count("\n", 0, m.start()) + 1))
     return out
@@ -90,12 +93,14 @@ def main(argv=None) -> int:
                 for p in prompts:
                     entry = reached.setdefault((p.file, p.line), {
                         "file": p.file, "line": p.line, "ref": p.ref, "text": p.text[:120],
+                        "tra": bool(p.ref and p.text),
                         "via": p.via, "conditional": p.conditional, "repeats": p.repeats,
                         "components": []})
                     entry["components"].append(f"{os.path.basename(tp2)}#{number}")
         rows.append({"mod": mod, "tp2s": len(tp2s), "readlns": len(present),
                      "reached": len(reached),
                      "resolved": sum(1 for r in reached.values() if r["text"]),
+                     "tra": sum(1 for r in reached.values() if r["tra"]),
                      "unreached": sorted(f"{f}:{n}" for f, n in present - set(reached)),
                      "prompts": list(reached.values()),
                      "unread": sorted(set(unread))})
@@ -103,11 +108,13 @@ def main(argv=None) -> int:
     total = sum(r["readlns"] for r in rows)
     reach = sum(r["reached"] for r in rows)
     res = sum(r["resolved"] for r in rows)
+    tra = sum(r["tra"] for r in rows)
     print(f"{len(rows)} mods, {len(with_q)} with a READLN; {total} READLNs in their files, "
           f"{reach} reached from a component ({reach / total:.0%})" if total else
           f"{len(rows)} mods, no READLN")
     if reach:
-        print(f"question text found for {res} of {reach} reached ({res / reach:.0%})")
+        print(f"question known for {res} of {reach} reached ({res / reach:.0%}): "
+              f"{tra} a .tra string in the language, {res - tra} a fixed text in the code")
     for r in with_q[:args.show]:
         print(f"\n{r['mod']}: {r['readlns']} READLN, {r['reached']} reached, "
               f"{r['resolved']} with text; unreached {len(r['unreached'])}")

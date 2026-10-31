@@ -41,10 +41,19 @@ _INCLUDE = {"INCLUDE", "ACTION_INCLUDE", "PATCH_INCLUDE", "REINCLUDE", "ACTION_R
             "PATCH_REINCLUDE"}
 _READLN = {"ACTION_READLN", "PATCH_READLN"}
 _PRINT = {"PRINT", "PATCH_PRINT"}
-_CONDITION = {"ACTION_IF", "PATCH_IF", "ACTION_MATCH", "PATCH_MATCH", "ACTION_TRY",
-              "PATCH_TRY", "ELSE"}
+# words whose BEGIN opens a conditional or a repeating block
+_CONDITION = {"ACTION_IF", "PATCH_IF", "ELSE"}
 _LOOP = {"WHILE", "OUTER_WHILE", "PATCH_WHILE", "FOR", "OUTER_FOR", "PATCH_FOR",
-         "ACTION_FOR_EACH", "PATCH_FOR_EACH", "ACTION_PHP_EACH", "PHP_EACH"}
+         "ACTION_FOR_EACH", "PATCH_FOR_EACH", "ACTION_PHP_EACH", "PHP_EACH",
+         "ACTION_BASH_FOR", "PATCH_BASH_FOR"}
+# Forms closed by an END with no BEGIN of their own: `LAF name ... END`,
+# `ACTION_MATCH x WITH ... DEFAULT ... END`, `ACTION_TRY ... WITH ... END`.
+# Counting only BEGIN/END cuts a function body at its first LAF (review of #101).
+_END_OPENERS = {"LAF", "LPF", "LAUNCH_ACTION_FUNCTION", "LAUNCH_PATCH_FUNCTION"}
+_BRANCHING = {"ACTION_MATCH", "PATCH_MATCH", "ACTION_TRY", "PATCH_TRY"}   # conditional
+_OPENERS = {"BEGIN"} | _END_OPENERS | _BRANCHING
+_FAIL = {"FAIL", "PATCH_FAIL"}
+_WHOLE_VARIABLE = re.compile(r"\s*%[^%\s]+%\s*")
 _CONSTANT = re.compile(r"\bOUTER_(?:TEXT_)?SPRINT\s+~?(\w+)~?\s+~([^~\n]*)~", re.IGNORECASE)
 _COMPONENT_NUMBER = re.compile(r"%COMPONENT_NUMBER%", re.IGNORECASE)
 # a file written inside another: `<<<<<<<< name` ... `>>>>>>>>` (WeiDU's inlined files)
@@ -65,9 +74,16 @@ class Prompt:
     variable: str = ""         # the variable the answer goes to
 
     @property
+    def keyed(self) -> bool:
+        """The question is known: a .tra reference or a fixed text."""
+        return bool(self.ref or self.text)
+
+    @property
     def key(self) -> str:
-        """What an answer is stored under: the .tra reference, else the text."""
-        return self.ref or self.text
+        """What an answer is stored under: the .tra reference, else the text,
+        else (an unknown question) where it is asked - never empty, never shared
+        by two unknown questions."""
+        return self.ref or self.text or f"{self.file}:{self.line}:{self.variable}"
 
 
 @dataclass
@@ -116,13 +132,41 @@ def _block_end(tokens: list[_Token], start: int) -> int:
     """The index just past the END matching the BEGIN at or after `start`."""
     depth = 0
     for k in range(start, len(tokens)):
-        if tokens[k].word == "BEGIN":
+        if tokens[k].word in _OPENERS:
             depth += 1
         elif tokens[k].word == "END":
             depth -= 1
             if depth == 0:
                 return k + 1
     return len(tokens)
+
+
+def strip_keeping_lines(content: str) -> str:
+    """Comments out, strings kept, as weidu_lex._strip - but a /* ... */ keeps
+    its line breaks, so a line counted in the result is the file's line
+    (review of #101: SCS's install_sfo.tpa was reported 3 to 61 lines early)."""
+    out, i, n = [], 0, len(content)
+    while i < n:
+        c = content[i]
+        if content.startswith("//", i):
+            j = content.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if content.startswith("/*", i):
+            j = content.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(" " + "\n" * content.count("\n", i, j))
+            i = j
+            continue
+        if c in "~\"%":
+            value, j = _string(content, i)
+            if value is not None:
+                out.append(content[i:j])
+                i = j
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def _line(text: str, at: int) -> int:
@@ -152,8 +196,9 @@ class _Reader:
         self.unread: list[str] = []
         self.sources: dict[str, _Source] = {}
         self.functions: dict[str, tuple[_Source, int, int]] = {}
-        for key in self.files:
-            if key.endswith((".tpa", ".tph", ".tpp", ".tp2")):
+        # sorted: the same definitions on every platform (os.walk order is not)
+        for key in sorted(self.files):
+            if key.endswith((".tpa", ".tph", ".tpp", ".tpc", ".tp2")):
                 self._define(key)
 
     def source(self, key: str) -> _Source | None:
@@ -161,7 +206,8 @@ class _Reader:
             return None
         if key not in self.sources:
             path, text = self.files[key]
-            clean = _INLINED_FILE.sub(lambda m: "\n" * m.group(0).count("\n"), _strip(text))
+            clean = _INLINED_FILE.sub(lambda m: "\n" * m.group(0).count("\n"),
+                                      strip_keeping_lines(text))
             self.sources[key] = _Source(path, clean, _tokens(clean))
         return self.sources[key]
 
@@ -200,6 +246,8 @@ class _Reader:
         if tok.raw.startswith("@"):
             text, ok = _text(tok.raw, self.strings)
             return tok.raw, text if ok else ""
+        if tok.raw.startswith("%") or _WHOLE_VARIABLE.fullmatch(tok.value):
+            return "", ""          # `PRINT ~%xa_prompt%~`: the text is set elsewhere
         return "", tok.value
 
     def walk(self, src: _Source, start: int, stop: int, via: str, seen: frozenset[str],
@@ -208,12 +256,14 @@ class _Reader:
         toks = src.tokens
         out: list[Prompt] = []
         last_print: _Token | None = None
-        stack: list[tuple[bool, bool]] = []
+        # one frame per open block: (conditional, repeats, dead after a FAIL)
+        stack: list[tuple[bool, bool, bool]] = [(cond, loop, False)]
         pending: str | None = None
         k = start
         while k < stop:
             tok = toks[k]
             word = tok.word
+            c, lp, dead = stack[-1]
             if word in _DEFINE:
                 # a definition asks nothing until it is launched
                 begin = next((m for m in range(k + 2, stop) if toks[m].word == "BEGIN"), stop)
@@ -224,37 +274,43 @@ class _Reader:
             elif word in _LOOP:
                 pending = "loop"
             elif word == "BEGIN":
-                c, lp = (stack[-1] if stack else (cond, loop))
-                stack.append((c or pending == "cond", lp or pending == "loop"))
+                stack.append((c or pending == "cond", lp or pending == "loop", dead))
                 pending = None
+            elif word in _BRANCHING:
+                stack.append((True, lp, dead))          # MATCH/TRY ... END
             elif word == "END":
-                if stack:
+                if len(stack) > 1:
                     stack.pop()
+            elif word in _FAIL:
+                stack[-1] = (c, lp, True)               # what follows is never run
             elif word in _PRINT and k + 1 < stop:
                 last_print = toks[k + 1]
             elif word in _READLN and k + 1 < stop:
-                c, lp = (stack[-1] if stack else (cond, loop))
-                ref, text = self.text_of(last_print)
-                out.append(Prompt(ref, " ".join(text.split()), src.path, _line(src.text, tok.at),
-                                  via, c, lp, toks[k + 1].value))
+                if not dead:
+                    ref, text = self.text_of(last_print)
+                    out.append(Prompt(ref, " ".join(text.split()), src.path,
+                                      _line(src.text, tok.at), via, c, lp, toks[k + 1].value))
                 last_print = None
             elif word in _LAUNCH and k + 1 < stop:
                 name = toks[k + 1].value.upper()
-                c, lp = (stack[-1] if stack else (cond, loop))
-                if name in seen:
-                    pass
-                elif name in self.functions:
+                if word in _END_OPENERS:
+                    stack.append((c, lp, dead))         # LAF name ... END
+                if not dead and name not in seen and name in self.functions:
                     fsrc, b, e = self.functions[name]
                     out += self.walk(fsrc, b, e, via or f"function {toks[k + 1].value}",
                                      seen | {name}, number, c, lp)
-                # else: not the mod's own - WeiDU's function library
+                # a name the mod does not define is WeiDU's own library
                 # (HANDLE_CHARSETS, ADD_CRE_EFFECT, ...), which asks nothing
+                k += 2
+                continue
             elif word in _INCLUDE:
-                c, lp = (stack[-1] if stack else (cond, loop))
                 m = k + 1
                 while m < stop and toks[m].word == "":
-                    key = self.include_key(toks[m].value, number)
-                    if key is not None and key not in seen:
+                    raw = toks[m].raw
+                    key = (None if raw.startswith("%") else self.include_key(toks[m].value, number))
+                    if raw.startswith("%"):
+                        self.unread.append(f"include {raw} (a path built from variables)")
+                    if key is not None and key not in seen and not dead:
                         inc = self.source(key)
                         if inc is None and not c:
                             # inside an IF it is expected (FILE_EXISTS guards it)
@@ -344,7 +400,7 @@ def _block_end_from(tokens: list[_Token], k: int) -> int:
     """ALWAYS ... END has no BEGIN of its own: its END is the one at depth 0."""
     depth = 0
     for m in range(k, len(tokens)):
-        if tokens[m].word == "BEGIN":
+        if tokens[m].word in _OPENERS:
             depth += 1
         elif tokens[m].word == "END":
             if depth == 0:

@@ -16,9 +16,10 @@ Python API, which is internal.
   in the project's language, keyed by its .tra reference, and says which may
   not be asked (under a condition), which repeat until valid, and what could
   not be followed. Measured on 105 mods of the reference build
-  (`tools/readln_census.py`): 46 of 51 READLNs reached (90%), 45 of those with
-  their text (98%); the 5 missed are SCS's, behind paths built while
-  installing. Not wired into the wizard yet: the questionnaire before
+  (`tools/readln_census.py`): 45 of 51 READLNs reached (88%), the question
+  known for 42 of those (25 a .tra string in the player's language, 17 a fixed
+  English text); of the 6 not reached, 5 are SCS's, behind paths built while
+  installing, and 1 follows a FAIL. Not wired into the wizard yet: the questionnaire before
   Install is next.
 - ADR-0049: every question is known before the install starts, the player
   answers them in one place, a timer never answers, and a watchdog only warns
