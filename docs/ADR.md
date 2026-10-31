@@ -2980,8 +2980,9 @@ runs mod_installer.
   is not yet in the EET game (a resume past it is not warned), the raw
   `Personal` value (`winreg`, unexpanded) has a space, and the EET copy in
   the mods folder still has that shape of line at a line's start - any
-  variable letter, "tokens=3*", "do (set ...)" - with no line after it
-  keeping the whole path (matched, not copied - EET is GPL-3.0). The
+  variable letter, "tokens=3*", "do (set ...)" - unless it opens a block
+  that sets the whole path before closing - the one way a later line fixes
+  it; comments do not count (matched, not copied - EET is GPL-3.0). The
   message names the registered value and the folder EET will write its
   settings to (a `%VARIABLE%` in it shown expanded). The wizard puts it in
   the confirmation, "Install despite a known issue"; it is not a refusal:

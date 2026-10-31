@@ -55,7 +55,8 @@ def test_a_variable_in_the_value_is_shown_expanded(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("batch", [
     f'REM for /f "tokens=3,*" %%i in ({QUERY}) do set DOC_DIR=%%i\n',          # commented out
-    CUT + 'set "DOC_DIR=%%i %%j"\n',                                           # fixed after it
+    (f'for /f "tokens=3,*" %%i in ({QUERY}) do (set DOC_DIR=%%i\n'              # fixed in its block
+     '  set "DOC_DIR=%%i %%j"\n)\n'),
 ])
 def test_a_cut_commented_out_or_fixed_after_meets_nothing(tmp_path, batch):
     assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE) == []
@@ -155,3 +156,29 @@ def test_on_windows_the_registered_value_is_read():
 def test_the_api_says_the_same(tmp_path, monkeypatch):
     monkeypatch.setattr(install_run, "_documents_value", lambda: r"D:\My Documents")
     assert api.install_known_issues(GAMES, eet_mods(tmp_path))
+
+
+@pytest.mark.parametrize("after", [
+    'set "DOC_DIR=%%i %%j"\n',                     # after a one-line for: %%i is not its variable
+    'REM set "DOC_DIR=%%i %%j"\n',
+    '// was: set "DOC_DIR=%%i %%j"\n',
+    "echo x\n" * 50 + 'set "DOC_DIR=%%i %%j"\n',   # far away, another function
+])
+def test_a_line_that_does_not_fix_the_cut_does_not_hide_it(tmp_path, after):
+    """Review of #100: only a whole-path set inside the cut's own block fixes it."""
+    mods = eet_mods(tmp_path, CUT + after)
+    assert install_run.known_issues(GAMES, mods, documents=lambda: SPACE)
+
+
+def test_a_block_that_closes_before_a_fix_is_still_cut(tmp_path):
+    batch = (f'for /f "tokens=3,*" %%i in ({QUERY}) do (set DOC_DIR=%%i\n'
+             '  REM set "DOC_DIR=%%i %%j"\n)\nset "DOC_DIR=%%i %%j"\n')
+    assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE)
+
+
+@pytest.mark.parametrize("batch", [
+    f'@for /f "tokens=3,*" %%i in ({QUERY}) do set DOC_DIR=%%i\n',
+    f'for /f "tokens=3,*" %%i in ({QUERY}) do(set DOC_DIR=%%i)\n',
+])
+def test_an_at_sign_or_a_tight_parenthesis_is_the_same_cut(tmp_path, batch):
+    assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE)

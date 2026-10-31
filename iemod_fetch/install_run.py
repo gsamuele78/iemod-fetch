@@ -471,11 +471,29 @@ def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
 # Matched, not copied (EET is GPL-3.0): any variable letter, "tokens=3*"
 # without the comma, and a `do (set ...)` are the same cut.
 _EET_DOCUMENTS_CUT = re.compile(
-    r'^\s*for\s+/f\s+"tokens=3,?\*"\s+%%(\w)\s+in\b[^\n]*/v\s+Personal\b[^\n]*\bdo\s+\(?\s*'
-    r'set\s+"?DOC_DIR=%%\1"?\s*\)?\s*$', re.IGNORECASE | re.MULTILINE)
-# ... and a line after it that keeps the whole path (an EET that fixed it by
-# adding one): `set "DOC_DIR=%%a %%b"`
-_EET_DOCUMENTS_WHOLE = re.compile(r'^\s*[^\n]*\bset\s+"?DOC_DIR=%%\w\s+%%\w', re.IGNORECASE | re.MULTILINE)
+    r'^\s*@?for\s+/f\s+"tokens=3,?\*"\s+%%(\w)\s+in\b[^\n]*/v\s+Personal\b[^\n]*\bdo\s*'
+    r'(?P<open>\()?\s*set\s+"?DOC_DIR=%%\1"?\s*(?P<close>\))?\s*$', re.IGNORECASE | re.MULTILINE)
+_COMMENT = re.compile(r"^\s*(?:@?rem\b|::|//)", re.IGNORECASE)
+
+
+def _fixed_in_block(text: str, cut: re.Match) -> bool:
+    """A cut that opens a block - `do (set DOC_DIR=%%a` - and sets the whole
+    path within it before the block closes (`set "DOC_DIR=%%a %%b"`): the one
+    way a later line fixes it (review of #100). Comments do not count."""
+    if not cut.group("open") or cut.group("close"):
+        return False
+    var = cut.group(1)
+    whole = re.compile(r'^\s*set\s+"?DOC_DIR=%%' + var + r"\s+%%\w", re.IGNORECASE)
+    for line in text[cut.end():].splitlines():
+        if not line.strip() or _COMMENT.match(line):
+            continue
+        if line.strip().startswith(")"):
+            return False
+        if whole.match(line):
+            return True
+    return False
+
+
 _SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 
 
@@ -536,7 +554,7 @@ def known_issues(games: dict[str, str], mods_dir: str,
             with open(macros, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
             cut = _EET_DOCUMENTS_CUT.search(text)
-            if cut and not _EET_DOCUMENTS_WHOLE.search(text, cut.end()):
+            if cut and not _fixed_in_block(text, cut):
                 first = _shown(value.split(" ", 1)[0])
                 wrong = first + "\\Baldur's Gate - Enhanced Edition Trilogy"
                 issues.append(

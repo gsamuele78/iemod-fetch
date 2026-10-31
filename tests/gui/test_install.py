@@ -430,13 +430,13 @@ def test_a_known_issue_is_said_before_installing_and_the_player_decides(qtbot, w
     confirmation, not a refusal; no stops, yes installs."""
     backed_up(world)
     world["services"].known_issues = lambda games, mods: [
-        "EET's core will likely put the game's settings and saves in the wrong place"]
+        "EET's core will write the game's settings to a folder the game never reads"]
     page = page_of(qtbot, world, answers=(False, True))
     assert page.install_button.isEnabled()                 # not a refusal
     run_to_end(qtbot, page)
     title, text = page.confirmed[-1]
     assert title == "Install despite a known issue"
-    assert "Known issue(s) this install will meet:" in text and "wrong place" in text
+    assert "Known issue(s) this install will meet:" in text and "never reads" in text
     assert page.outcome is None                            # the player said no
     settled(qtbot, page)
     run_to_end(qtbot, page)
