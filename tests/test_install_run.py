@@ -209,8 +209,9 @@ def test_the_command_is_the_one_the_scripts_run(setup):
     assert argv[:2] == ["/mi", "eet"]
     assert argv[argv.index("--bg1-log-file") + 1].endswith("WeiDU-BGEE.log")
     assert argv[argv.index("--bg2-game-directory") + 1] == setup["games"]["EET"]
-    assert argv[-7:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
-                         "--language", "it_IT", "--download=false"]
+    assert argv[-8:] == ["--mod-directories", "/mods", "--weidu-binary", "/weidu",
+                         "--language", "it_IT", "--download=false",
+                         "--skip-installed=false"]
     one = command(setup["plan"], {"BG2EE": "/g"}, "/mods", "/mi", "/weidu")
     assert one[:6] == ["/mi", "normal", "--game-directory", "/g", "--log-file",
                        os.path.join(setup["plan"], "WeiDU.log")]
@@ -346,3 +347,155 @@ def test_an_accented_bgee_folder_is_not_refused(setup, tmp_path):
     setup["games"]["BGEE"] = str(folder)
     args = (setup["games"], setup["mods"], setup["program"], setup["program"])
     assert install_run.preflight(*args) == []
+
+
+# ------------------------------------------------------------ resuming (item 23)
+def lines(path):
+    from pathlib import Path
+    return [line for line in Path(path).read_text(encoding="utf-8").splitlines()
+            if line.startswith("~")]
+
+
+def test_a_stopped_eet_install_resumes_with_only_what_is_left(setup, monkeypatch):
+    """The fake fails at UB: BG:EE's part and EET's core are in. Resuming
+    runs the EET game alone, with UB only - nothing installed twice."""
+    monkeypatch.setenv("FAKE_FAIL", "setup-ub.tp2#0")
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    assert not install.run().ok
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "partial" and (progress["done"], progress["total"]) == (2, 3)
+    assert [p["next"] for p in progress["phases"]] == [None, "ub/setup-ub.tp2 #0"]
+
+    monkeypatch.delenv("FAKE_FAIL")
+    install, events = run(setup, monkeypatch, {}, resume=True)
+    assert install.argv[1] == "normal" and setup["games"]["EET"] in install.argv
+    assert setup["games"]["BGEE"] not in install.argv
+    assert install.run().ok
+    assert [line.split("~")[1] for line in lines(os.path.join(setup["games"]["EET"],
+                                                               "WeiDU.log"))] == \
+        ["EET/EET.TP2", "UB/SETUP-UB.TP2"]
+    assert len(lines(os.path.join(setup["games"]["BGEE"], "WeiDU.log"))) == 1
+    assert api.install_progress(setup["plan"], setup["games"])["state"] == "finished"
+
+
+def test_resuming_bgee_unfinished_runs_eet_mode_with_bgees_rest(setup, monkeypatch):
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67\n"
+        "~VIENXAY/VIENXAY.TP2~ #0 #1 // Vienxay banter\n")
+    Path(setup["games"]["BGEE"], "WeiDU.log").write_text(
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67\n")
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]}, resume=True)
+    assert install.argv[1] == "eet"
+    rest = install.argv[install.argv.index("--bg1-log-file") + 1]
+    assert [line.split("#")[-1].split()[0] for line in lines(rest)] == ["1"]
+    assert install.run().ok
+    assert len(lines(os.path.join(setup["games"]["BGEE"], "WeiDU.log"))) == 2
+
+
+def test_a_game_that_is_not_the_plans_beginning_is_not_resumed(setup, monkeypatch):
+    from pathlib import Path
+    Path(setup["games"]["BGEE"], "WeiDU.log").write_text("~OTHER/OTHER.TP2~ #0 #0 // x\n")
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "mismatch" and "not this plan's install" in progress["problem"]
+    with pytest.raises(ConfigError, match="cannot resume: .*restore the backup"):
+        run(setup, monkeypatch, {}, resume=True)
+
+
+def test_a_finished_install_has_nothing_to_resume(setup, monkeypatch):
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    assert install.run().ok
+    with pytest.raises(ConfigError, match="nothing to resume"):
+        run(setup, monkeypatch, {}, resume=True)
+
+
+def test_a_fresh_game_resumes_as_a_plain_install(setup, monkeypatch):
+    assert api.install_progress(setup["plan"], setup["games"])["state"] == "fresh"
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]}, resume=True)
+    assert install.argv[1] == "eet" and install.run().ok
+
+
+def test_an_eet_game_with_components_while_bgees_part_is_unfinished_is_not_resumed(
+        setup, monkeypatch):
+    """EET's log is only begun once BG:EE's part is whole (review of item 23)."""
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67\n"
+        "~VIENXAY/VIENXAY.TP2~ #0 #1 // Vienxay banter\n")
+    Path(setup["games"]["BGEE"], "WeiDU.log").write_text(
+        "~VIENXAY/VIENXAY.TP2~ #0 #0 // Vienxay NPC: 1.67\n")
+    Path(setup["games"]["EET"], "WeiDU.log").write_text("~EET/EET.TP2~ #0 #0 // EET core\n")
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "mismatch"
+    assert progress["problem"] == ("WeiDU.log: the game has 1 component(s) while "
+                                   "WeiDU-BGEE.log is not finished (1 of 2 in): the game "
+                                   "is not this plan's install")
+    with pytest.raises(ConfigError, match="cannot resume: WeiDU.log: the game has 1"):
+        run(setup, monkeypatch, {}, resume=True)
+
+
+def test_mod_installer_is_told_not_to_skip(setup, monkeypatch):
+    """Its skip reads `weidu.log` in lower case (16.0.0): what is left is ours."""
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    assert "--skip-installed=false" in install.argv
+
+
+def test_a_component_stopped_half_way_is_not_resumed(setup, monkeypatch):
+    """WeiDU's uninstall record of the next component is in the game while its
+    log line is not: a Cancel inside it (measured with WeiDU 251). Installing
+    it again would back up its own leftovers as the game's originals."""
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~SLOW/SLOW.TP2~ #0 #0 // Quick\n~SLOW/SLOW.TP2~ #0 #1 // Slow\n")
+    game = Path(setup["games"]["BGEE"])
+    (game / "WeiDU.log").write_text("~SLOW/SLOW.TP2~ #0 #0 // Quick\n")
+    (game / "SLOW").mkdir()
+    (game / "SLOW" / "slow.tp2").write_text("BACKUP ~slow/Backup~\nAUTHOR ~t~\n")
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "partial"                 # no record: resumable
+    (game / "SLOW" / "Backup" / "1").mkdir(parents=True)
+    (game / "SLOW" / "Backup" / "1" / "UNINSTALL.1").write_text("override/first.txt\n")
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "mismatch"
+    assert "slow/slow.tp2 #1 stopped half-way" in progress["problem"]
+    assert "UNINSTALL.1" in progress["problem"]
+    with pytest.raises(ConfigError, match="stopped half-way.*restore the backup"):
+        run(setup, monkeypatch, {}, resume=True)
+
+
+def test_resuming_the_eet_game_alone_still_answers_eets_bgee_question(setup, monkeypatch):
+    """BG:EE's part is in, EET's core failed (WeiDU undid it): the resume runs
+    the EET game alone, and EET's question still gets BG:EE's folder, not the
+    player (review of #89)."""
+    monkeypatch.setenv("FAKE_FAIL", "eet.tp2#0")
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    assert not install.run().ok
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert [p["next"] for p in progress["phases"]] == [None, "eet/eet.tp2 #0"]
+
+    monkeypatch.delenv("FAKE_FAIL")
+    asked = []
+    install, events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]},
+                          ask=lambda question, batch: asked.append(question), resume=True)
+    assert install.argv[1] == "normal" and install.bgee_dir == setup["games"]["BGEE"]
+    outcome = install.run()
+    assert outcome.ok, [e.text for e in events]
+    assert asked == [] and [a.source for a in outcome.answered] == ["EET"]
+
+
+def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~MYMOD/SETUP-MYMOD.TP2~ #0 #0 // a\n~MYMOD/SETUP-MYMOD.TP2~ #0 #1 // b\n")
+    game = Path(setup["games"]["BGEE"])
+    (game / "WeiDU.log").write_text("~MYMOD/SETUP-MYMOD.TP2~ #0 #0 // a\n")
+    (game / "MyMod").mkdir()
+    (game / "MyMod" / "setup-mymod.tp2").write_text("BACKUP ~%MOD_FOLDER%/saved~\n")
+    (game / "MyMod" / "saved" / "1").mkdir(parents=True)
+    (game / "MyMod" / "saved" / "1" / "UNINSTALL.1").write_text("override/x\n")
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "mismatch" and "stopped half-way" in progress["problem"]

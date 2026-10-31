@@ -42,7 +42,7 @@ import os
 from typing import Any
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QPushButton,
                                QSplitter, QTabWidget, QTextBrowser, QTreeWidget,
@@ -176,21 +176,58 @@ class _Worker(QObject):
             self.failed.emit(str(exc))
 
 
+class _Relay(QObject):
+    """
+    Hands the worker's result and end to `done`/`failed`/`finished` in the
+    thread that started it. A signal connected to a plain function runs it in
+    the emitting thread (measured with PySide6: the worker's), so a page's widgets would
+    be changed from the worker; a QObject's slot living here is queued, and
+    its result arrives before the thread's finished signal. A child of the
+    page whose callbacks these are: a page closed meanwhile takes its relay
+    along, and Qt drops the result instead of handing it to deleted widgets.
+    """
+
+    def __init__(self, done: Callable, failed: Callable, finished: Callable,
+                 owner: QObject | None) -> None:
+        super().__init__(owner)
+        self._done, self._failed, self._finished = done, failed, finished
+
+    @Slot(object)
+    def on_done(self, result: Any) -> None:
+        self._done(result)
+
+    @Slot(str)
+    def on_failed(self, message: str) -> None:
+        self._failed(message)
+
+    @Slot()
+    def on_finished(self) -> None:
+        self._finished()
+
+
 def _in_thread(call: Callable[[], Any], done: Callable, failed: Callable,
-               finished: Callable) -> QThread:
-    """Run `call` in a worker thread kept in _RUNNING until it ends."""
+               finished: Callable, owner: QObject | None = None) -> QThread:
+    """Run `call` in a worker thread kept in _RUNNING until it ends; `done`,
+    `failed` and `finished` are called in the thread that called this, while
+    `owner` (by default the object `done` is a method of) is alive."""
     thread = QThread()                          # no parent: see _RUNNING
     worker = _Worker(call)
+    bound = getattr(done, "__self__", None)
+    if owner is None and isinstance(bound, QObject):
+        owner = bound
+    relay = _Relay(done, failed, finished, owner)
     worker.moveToThread(thread)
     thread.started.connect(worker.run)
-    worker.done.connect(done)
-    worker.failed.connect(failed)
+    worker.done.connect(relay.on_done)
+    worker.failed.connect(relay.on_failed)
     for signal in (worker.done, worker.failed):
         signal.connect(thread.quit)
-    thread.finished.connect(finished)
-    def ended(held: _Worker = worker) -> None:     # holds the worker until the end
-        _RUNNING.discard(thread)
-        held.deleteLater()
+    thread.finished.connect(relay.on_finished)
+    def ended(held: _Worker = worker, kept: _Relay | None = None if owner else relay) -> None:
+        _RUNNING.discard(thread)                   # held to the end; an owned
+        held.deleteLater()                         # relay goes with its owner
+        if kept is not None:
+            kept.deleteLater()
 
     thread.finished.connect(ended)
     _RUNNING.add(thread)

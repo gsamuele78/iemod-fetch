@@ -121,3 +121,145 @@ def test_a_folder_answered_through_mod_installer_reaches_weidu(tmp_path, name):
     assert outcome.ok, transcript
     assert [a.source for a in outcome.answered] == ["recorded"], transcript
     assert (game / "askpath-result.txt").read_text().split() == ["found"], transcript
+
+
+TWO = """BACKUP ~two/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~1~
+
+BEGIN ~First~
+PRINT ~first~
+
+BEGIN ~Second~
+PRINT ~second~
+"""
+
+
+def test_a_resumed_install_installs_only_what_is_left(tmp_path):
+    """Item 23, against the real programs: mod_installer's own skip reads
+    `weidu.log` and, on Linux, would install the first component again
+    (measured), so it is turned off; the resume hands it only the second."""
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    mods = tmp_path / "mods"
+    (mods / "two").mkdir(parents=True)
+    (mods / "two" / "two.tp2").write_text(TWO)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+
+    def install(components, **extra):
+        (plan / "WeiDU.log").write_text(
+            "// Log of Currently Installed WeiDU Mods\n"
+            + "".join(f"~TWO/TWO.TP2~ #0 #{n} // x\n" for n in components))
+        lines = []
+        outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                    WEIDU, ask=lambda q, b: None,
+                                    on_event=lambda e: lines.append(e.text), **extra).run()
+        return outcome, "\n".join(lines)
+
+    outcome, transcript = install([0])                       # stopped after the first
+    assert outcome.ok, transcript
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~TWO/TWO.TP2~ #0 #0 // x\n~TWO/TWO.TP2~ #0 #1 // x\n")
+    assert api.install_progress(str(plan), {"BG2EE": str(game)})["done"] == 1
+    outcome, transcript = install([0, 1], resume=True)
+    assert outcome.ok, transcript
+    assert "Installing [Second]" in transcript, transcript
+    assert "Installing [First]" not in transcript, transcript       # not again
+    installed = [line for line in (game / "WeiDU.log").read_text().splitlines()
+                 if line.startswith("~")]
+    assert [line.split("#")[-1].split()[0] for line in installed] == ["0", "1"]
+
+
+SLOW = """BACKUP ~slow/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~1~
+
+BEGIN ~Quick~
+COPY ~slow/a.txt~ ~override/quick.txt~
+
+BEGIN ~Slow~
+COPY ~slow/a.txt~ ~override/marker.txt~
+OUTER_SET n = 0
+OUTER_WHILE n < 300000000 BEGIN OUTER_SET n = n + 1 END
+"""
+
+
+def test_a_component_cancelled_inside_is_not_resumed(tmp_path):
+    """Item 23, review: a Cancel inside a component leaves its files in the
+    game (marker.txt is the mod's now) and its uninstall record, not its
+    WeiDU.log line. The resume refuses it rather than let WeiDU back up the
+    mod's marker.txt as the game's."""
+    import threading
+    import time
+
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "override" / "marker.txt").write_text("original\n")
+    mods = tmp_path / "mods"
+    (mods / "slow").mkdir(parents=True)
+    (mods / "slow" / "slow.tp2").write_text(SLOW)
+    (mods / "slow" / "a.txt").write_text("mod\n")
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
+                                    "~SLOW/SLOW.TP2~ #0 #0 // Quick\n"
+                                    "~SLOW/SLOW.TP2~ #0 #1 // Slow\n")
+    lines: list[str] = []
+    install = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: None,
+                                on_event=lambda e: lines.append(e.text))
+
+    def cancel_inside():
+        deadline = time.monotonic() + 60
+        while not any("marker.txt" in line for line in lines) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        install.cancel()
+    threading.Thread(target=cancel_inside, daemon=True).start()
+    assert not install.run().ok
+    assert (game / "override" / "marker.txt").read_text() == "mod\n"     # left there
+    progress = api.install_progress(str(plan), {"BG2EE": str(game)})
+    assert progress["state"] == "mismatch", "\n".join(lines)
+    assert "slow/slow.tp2 #1 stopped half-way" in progress["problem"]
+
+
+BAD = """BACKUP ~bad/backup~
+AUTHOR ~iemod-fetch test~
+
+BEGIN ~Fine~
+COPY ~bad/a.txt~ ~override/fine.txt~
+
+BEGIN ~Broken~
+COPY ~bad/a.txt~ ~override/marker.txt~
+COPY ~bad/a.txt~ ~override/new.txt~
+FAIL ~broken~
+"""
+
+
+def test_a_component_that_fails_is_undone_by_weidu_and_resumes(tmp_path):
+    """The other way an install stops: WeiDU's own error. It undoes the
+    component it was in - the game's file back, the new one gone, no
+    uninstall record left - so the resume goes on from it."""
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "override" / "marker.txt").write_text("original\n")
+    mods = tmp_path / "mods"
+    (mods / "bad").mkdir(parents=True)
+    (mods / "bad" / "bad.tp2").write_text(BAD)
+    (mods / "bad" / "a.txt").write_text("mod\n")
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
+                                    "~BAD/BAD.TP2~ #0 #0 // Fine\n"
+                                    "~BAD/BAD.TP2~ #0 #1 // Broken\n")
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: None).run()
+    assert not outcome.ok
+    assert (game / "override" / "marker.txt").read_text() == "original\n"
+    assert not (game / "override" / "new.txt").exists()
+    progress = api.install_progress(str(plan), {"BG2EE": str(game)})
+    assert progress["state"] == "partial" and progress["phases"][0]["next"] == "bad/bad.tp2 #1"
