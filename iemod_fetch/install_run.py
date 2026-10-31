@@ -466,10 +466,13 @@ def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
 
 # EET's core finds the Documents folder with a batch file (EET/lib/macros.tph,
 # GET_USER_DIRECTORY, upstream since 38db44c): `for /f "tokens=3,*"` over
-# `reg query ... /v Personal`, then `set DOC_DIR=%%a` - the third token only,
-# so a value with a space is cut at it. Matched, not copied (EET is GPL-3.0).
-_EET_DOCUMENTS_CUT = re.compile(r'tokens=3,\*"[^\n]*/v\s+Personal[^\n]*set\s+DOC_DIR=%%a\s*$',
-                                re.IGNORECASE | re.MULTILINE)
+# `reg query ... /v Personal`, then `set DOC_DIR=` the first of the two
+# variables - the third token only, so a value with a space is cut at it.
+# Matched, not copied (EET is GPL-3.0): any variable letter, "tokens=3*"
+# without the comma, and a `do (set ...)` are the same cut.
+_EET_DOCUMENTS_CUT = re.compile(
+    r'tokens=3,?\*"\s+%%(\w)\s+in\b[^\n]*/v\s+Personal\b[^\n]*\bdo\s+\(?\s*set\s+'
+    r'"?DOC_DIR=%%\1"?\s*\)?\s*$', re.IGNORECASE | re.MULTILINE)
 _SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 
 
@@ -487,6 +490,17 @@ def _documents_value() -> str | None:
     return None
 
 
+def _eet_core_in(folder: str) -> bool:
+    """EET's core is already in this game's WeiDU.log: past the cut."""
+    for name in ("WeiDU.log", "weidu.log", "WEIDU.LOG"):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                return re.search(r"^\s*~[^~]*\beet\.tp2~\s+#\d+\s+#0\b", fh.read(),
+                                 re.IGNORECASE | re.MULTILINE) is not None
+    return False
+
+
 def known_issues(games: dict[str, str], mods_dir: str,
                  documents: Callable[[], str | None] | None = None) -> list[str]:
     """
@@ -495,26 +509,32 @@ def known_issues(games: dict[str, str], mods_dir: str,
 
     EET's core and a Documents folder whose registry value has a space
     (OneDrive's "OneDrive - Company\\Documents", "D:\\My Documents"): its
-    batch file keeps the path's first word, and the core stops. A user name
-    with a space is not this - the value is `%USERPROFILE%\\Documents`, and
-    the variable is expanded after the cut. Read in EET at c26a11a
-    (2026-10-29): still so.
+    batch file keeps the path up to the first space, and the core goes on
+    with it - it creates the game's settings folder there and copies
+    Baldur.lua into it (EET.tp2, read at c26a11a; WeiDU's MKDIR makes the
+    missing folders), so the game's settings and saves end up in the wrong
+    place, if it does not fail first. Read in the source, not run on Windows.
+    A user name with a space is not this: the value is
+    `%USERPROFILE%\\Documents`, expanded after the cut. Not said once EET's
+    core is in the EET game (a resume past it).
     """
     issues = []
-    if "EET" in games:
-        value = (documents or _documents_value)()
+    if "EET" in games and not _eet_core_in(games["EET"]):
+        value = ((documents or _documents_value)() or "").strip()
         macros = _in_folder(mods_dir, "EET/lib/macros.tph")
-        if value and " " in value.strip() and macros and os.path.isfile(macros):
+        if value and " " in value and macros and os.path.isfile(macros):
             with open(macros, encoding="utf-8", errors="replace") as fh:
                 cut = _EET_DOCUMENTS_CUT.search(fh.read())
             if cut:
-                first = value.strip().split(" ", 1)[0]
+                first = value.split(" ", 1)[0]
+                wrong = first + "\\Baldur's Gate - Enhanced Edition Trilogy"
                 issues.append(
-                    f"EET's core will likely stop: your Documents folder is registered as "
-                    f"{value.strip()!r}, and EET's installer (EET/lib/macros.tph, "
-                    f"GET_USER_DIRECTORY) keeps it only up to the first space ({first!r}). "
-                    f"A known EET bug on Windows. Until EET fixes it, a Documents folder "
-                    f"whose path has no space avoids it.")
+                    f"EET's core will likely put the game's settings and saves in the wrong "
+                    f"place: your Documents folder is registered as '{value}', and EET's "
+                    f"installer (EET/lib/macros.tph, GET_USER_DIRECTORY) keeps it only up "
+                    f"to the first space, so it uses '{wrong}' - or it may fail there. A "
+                    f"known EET bug on Windows. Until EET fixes it, a Documents folder whose "
+                    f"path has no space avoids it.")
     return issues
 
 

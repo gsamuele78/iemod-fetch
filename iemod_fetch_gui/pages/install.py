@@ -503,7 +503,8 @@ class InstallPage(QWidget):
                  "Known issue(s) this install will meet:\n"
                  + "\n".join(f"  - {issue}" for issue in issues) + "\n\n")
         if issues:
-            title = "Install despite a known issue" if not resuming else "Resume despite a known issue"
+            title = ("Resume" if resuming else "Install") + (" anyway," if broken else "") \
+                + " despite a known issue"
         stopped = ("" if not (resuming and self.cancelled_in) else
                    f"The last run was cancelled while it installed {self.cancelled_in}: "
                    f"if that left files in the game, restoring the backup is the safe "

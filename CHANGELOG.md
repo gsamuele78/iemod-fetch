@@ -14,8 +14,9 @@ Python API, which is internal.
   (a OneDrive folder such as "OneDrive - Company\Documents", or "D:\My
   Documents") and the EET copy still cuts that value at the first space
   (`EET/lib/macros.tph`, still so in EET at c26a11a), the wizard's install
-  confirmation says that EET's core will likely stop and why. It is a
-  warning, not a refusal.
+  confirmation says that EET's core will likely put the game's settings and
+  saves in the wrong folder - naming it - or fail. It is a warning, not a
+  refusal, and not said on a resume past EET's core.
 
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass

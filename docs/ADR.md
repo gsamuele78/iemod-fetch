@@ -2953,26 +2953,37 @@ version up to the tag).
 - **Context.** EET's core finds the Documents folder with a batch file
   (`EET/lib/macros.tph`, `GET_USER_DIRECTORY`, upstream since 38db44c): `for
   /f "tokens=3,*"` over `reg query ... User Shell Folders /v Personal`, then
-  `set DOC_DIR=%%a` - the third token only. A registered value with a space
-  is cut at it, and the core stops. Chriz Easy BG met it ("the community EET
-  failure", `docs/handover.md` L138-142) and patches EET's copy (MIT,
-  508256a). Read in EET's own repository at c26a11a (2026-10-29): still so.
-  The value is read before `%VARIABLES%` are expanded, so the usual
+  `set DOC_DIR=` the first variable - the third token only. A registered
+  value with a space is cut at it. What follows, read in EET's source at
+  c26a11a (2026-10-29) and not run on Windows (review of #100): the core
+  builds the game's settings folder from the cut path (`<cut>\Baldur's Gate
+  - Enhanced Edition Trilogy`), WeiDU's MKDIR makes the missing folders,
+  and `Baldur.lua` is copied or written there (EET.tp2 L1091-1157). So the
+  core most likely finishes, and the game's settings and saves go to the
+  wrong place - inside a OneDrive folder's parent, for one - if it does not
+  fail first. Chriz Easy BG met it ("the community EET failure",
+  `docs/handover.md` L138-142) and patches EET's copy (MIT, 508256a). The
+  value is read before `%VARIABLES%` are expanded, so the usual
   `%USERPROFILE%\Documents` has no space even when the user name has one;
   a folder moved by OneDrive ("OneDrive - Company\Documents") or chosen by
   hand ("D:\My Documents") has.
 - **Decision.** `install_run.known_issues` (api `install_known_issues`)
-  says it before installing, on Windows, when the plan has EET, the raw
+  says it before installing, on Windows, when the plan has EET, EET's core
+  is not yet in the EET game (a resume past it is not warned), the raw
   `Personal` value (`winreg`, unexpanded) has a space, and the EET copy in
-  the mods folder still has that shape of line (matched, not copied - EET
-  is GPL-3.0). The wizard puts it in the confirmation, "Install despite a
-  known issue"; it is not a refusal: the player decides, knowing. EET's file
-  is not patched: changing a mod's content needs item 52's ADR.
-- **Consequences.** A player who would have met a stopped EET core with no
-  word of why is told before, with the registered value and where the cut
-  is. An EET release that keeps the whole path no longer matches, and the
-  warning goes by itself. Reporting the bug to EET is the maintainer's call;
-  nothing has been opened.
+  the mods folder still has that shape of line - any variable letter,
+  "tokens=3*", "do (set ...)" (matched, not copied - EET is GPL-3.0). The
+  message names the registered value and the folder EET will use instead.
+  The wizard puts it in the confirmation, "Install despite a known issue";
+  it is not a refusal: the player decides, knowing. EET's file is not
+  patched: changing a mod's content needs item 52's ADR.
+- **Consequences.** A player whose settings and saves would have gone to an
+  unexpected folder - or whose core would have failed - with no word of why
+  is told before, with the registered value and where EET will write. An
+  EET release that keeps the whole path no longer matches, and the warning
+  goes by itself. The claim about the outcome is read in the source; no
+  Windows run confirms it. Reporting the bug to EET is the maintainer's
+  call; nothing has been opened.
 
 ---
 

@@ -427,13 +427,28 @@ def test_resuming_after_a_cancel_inside_a_component_says_so(qtbot, world):
 
 def test_a_known_issue_is_said_before_installing_and_the_player_decides(qtbot, world):
     """Item 65: EET's Documents-path bug, as the api says it - in the
-    confirmation, not a refusal."""
+    confirmation, not a refusal; no stops, yes installs."""
     backed_up(world)
     world["services"].known_issues = lambda games, mods: [
-        "EET's core will likely stop: your Documents folder is registered as 'D:\\\\My Docs'"]
-    page = page_of(qtbot, world, answers=(False,))
+        "EET's core will likely put the game's settings and saves in the wrong place"]
+    page = page_of(qtbot, world, answers=(False, True))
     assert page.install_button.isEnabled()                 # not a refusal
     run_to_end(qtbot, page)
     title, text = page.confirmed[-1]
     assert title == "Install despite a known issue"
-    assert "Known issue(s) this install will meet:" in text and "My Docs" in text
+    assert "Known issue(s) this install will meet:" in text and "wrong place" in text
+    assert page.outcome is None                            # the player said no
+    settled(qtbot, page)
+    run_to_end(qtbot, page)
+    assert page.confirmed[-1][0] == "Install despite a known issue" and page.outcome.ok
+
+
+def test_a_known_issue_while_resuming_says_resume(qtbot, world, monkeypatch):
+    backed_up(world)
+    world["state"]["plan_lines"] = ["~UB/SETUP-UB.TP2~ #0 #0 // x",
+                                    "~UB/SETUP-UB.TP2~ #0 #10 // y"]
+    (world["game"] / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n")
+    world["services"].known_issues = lambda games, mods: ["a known fault"]
+    page = page_of(qtbot, world, answers=(False,))
+    run_to_end(qtbot, page)
+    assert page.confirmed[-1][0] == "Resume despite a known issue"
