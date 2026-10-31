@@ -1254,6 +1254,19 @@ hand-written, reviewed changelog with one generated from commit messages.
   run is not available to that session, and an action bump used only at
   release time would otherwise first run on a real release.
 
+**Amendment (2026-10-31): `RELEASE_TOKEN` is checked, not trusted.** 4.0.0's
+run passed its gate, built and attested, then its publish step met "Bad
+credentials": the secret had expired, and `secrets.RELEASE_TOKEN ||
+github.token` takes any non-empty secret. Now only a release that needs the
+secret (workflow files differ from `main`'s) uses it, and the first job asks
+GitHub for the repository with it; only an HTTP 200 makes it the publishing
+token. A rejected one stops that release in the first job, in seconds; every
+other release uses the run's own token, whatever the secret. The check proves
+the token is live, not that it may write here (the repository is public).
+"Latest" is judged against `main`'s changelog, also on a tag pushed by hand,
+so a back-fill never displaces a newer release. How to renew the token, and
+why an old failed run must not be re-run: docs/RELEASING.md, "RELEASE_TOKEN".
+
 ---
 
 ## ADR-0028 — Dependencies: Dependabot for what it sees, an issue for what it cannot

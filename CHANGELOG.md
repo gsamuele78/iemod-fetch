@@ -19,6 +19,8 @@ Python API, which is internal.
   what the player answers is kept and given there next time. Answers that
   shifted against a mod's changed prompts no longer go in one question late.
 
+## [4.0.1] - 2026-10-31
+
 ### Fixed
 - The wizard's window no longer freezes on Windows when a download, a
   catalogue update or a conflict check starts (ADR-0048). Every HTTP client
@@ -35,6 +37,21 @@ Python API, which is internal.
   4.0.0 release gate measured one 240 ms gap on windows-latest (limit 100 ms)
   where CI on the same commit had passed; a faulthandler watchdog dumps every
   thread's stack while the loop is held, which named the cause above.
+
+### Release workflow
+- `RELEASE_TOKEN` is used only by a release that needs it (its commit's
+  workflow files differ from `main`'s), and then checked against GitHub in the
+  first job, not trusted for being set. 4.0.0's run built and attested for 15
+  minutes, then its publish step met "Bad credentials" from an expired token,
+  and no tag was made. Every other release is tagged with the run's own
+  token; a release that needs a token GitHub rejects stops at once, saying
+  what to renew. docs/RELEASING.md, "RELEASE_TOKEN", says how - and why an old
+  failed run must not be re-run once a newer release is out.
+- "Latest" is judged against `main`'s changelog, also on a tag pushed by hand.
+- 4.0.0 joins `BACKFILL`: with a working `RELEASE_TOKEN` it is tagged on its
+  own commit by the next automatic run after 4.0.1, or at once by *Run
+  workflow* with version 4.0.0 (its workflow files differ from `main`'s, so
+  the run's own token may not create that tag).
 
 ## [4.0.0] - 2026-10-31
 

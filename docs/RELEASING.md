@@ -102,11 +102,64 @@ section with its release and rewrites a body that no longer matches. It keeps
 the release's "Verify this download" block, because that digest belongs to the
 artifacts. Editing a release creates no tag, so no extra token is needed.
 
-**Back-fills listed in the workflow** (`BACKFILL`, now `2.1.0`) are released
-by the automatic run once the newest version is tagged, one per run. Each one
-needs the `RELEASE_TOKEN` secret described above; until it exists the run
-skips it with a notice, not a failure, and the next merge to `main` releases
-it once the secret is there.
+**Back-fills listed in the workflow** (`BACKFILL`, now `2.1.0,4.0.0`) are
+released by the automatic run once the newest version is tagged, one per run.
+Each one needs a working `RELEASE_TOKEN` (below); until GitHub accepts one the
+run skips it with a warning, not a failure. Renewing the secret starts
+nothing by itself: the back-fill happens at the next automatic run (a merge to
+`main` that changes CHANGELOG.md or `iemod_fetch/__init__.py`, after the
+newest version is tagged) or at once with *Actions → Release → Run workflow*
+and that version.
+
+### RELEASE_TOKEN
+
+**When it is needed.** Only to tag a commit whose `.github/workflows` differ
+from `main`'s - a back-fill, or a release whose commit was followed by a
+workflow change (4.0.0: `gui-latency.yml` was added after it). GitHub never
+lets the run's own `GITHUB_TOKEN` create such a ref. Every other release is
+tagged with the run's own token, and `RELEASE_TOKEN` may be absent.
+
+**How the workflow checks it.** Only a release that needs the secret uses it,
+and only then is it checked: the first job (`What to release, and which
+commit`) asks GitHub for this repository with it. HTTP 200: it tags and
+publishes. 401 ("Bad credentials": expired or revoked) or no answer: a
+`RELEASE_TOKEN rejected` warning, it is not used, and the run stops there - an
+automatic run with a warning, a run started by hand with an error - instead of
+failing at the publish step after the build. What the check cannot see: the
+repository is public, so any live token gets a 200, also one made for another
+repository or without *Contents*/*Workflows* write; such a token still fails
+at the publish step. Give it exactly the permissions below. A release that
+does not need it never uses it, so a wrong secret cannot break it.
+
+**Creating or renewing it** (the repository owner, on github.com):
+1. *Settings (of your account) → Developer settings → Personal access tokens
+   → Fine-grained tokens → Generate new token*.
+2. *Resource owner*: the account that owns this repository; *Repository
+   access*: *Only select repositories* → this repository only.
+3. *Repository permissions*: **Contents: Read and write** and **Workflows:
+   Read and write**. Metadata (read) is added by GitHub. Nothing else.
+4. *Expiration*: the shortest that suits you (90 days is a common choice);
+   note the date - an expired token is what stopped 4.0.0.
+5. Copy it once, then in this repository: *Settings → Secrets and variables →
+   Actions → Repository secrets → `RELEASE_TOKEN`* → *Update* (or *New
+   repository secret*). Never paste it anywhere else - not in an issue, a
+   commit, a chat.
+6. Release: *Actions → Release → Run workflow* with the version (for 4.0.0:
+   `4.0.0`). That run plans again with today's state: which commit, and
+   whether it is "Latest". **Do not use *Re-run failed jobs* on an old failed
+   run** once a newer version is out: a re-run reuses that run's plan,
+   including "Latest", so 4.0.0's run of 2026-10-31 re-run after 4.0.1 would
+   make 4.0.0 the Latest release. (A run stopped by the check has nothing to
+   re-run anyway: nothing was built.)
+
+**Without a token.** Push the tag by hand: `git tag -a vX.Y.Z -m X.Y.Z
+<commit> && git push origin vX.Y.Z`. The push starts the *tagged commit's
+own* release workflow; when that one can run (4.0.0's can), it publishes the
+release - do not then also *Run workflow*, which would publish it a second
+time. An older workflow judges "Latest" from its own commit's changelog, so a
+back-fill published this way may be marked Latest: on the newer release's
+page, *Edit → Set as the latest release* puts it back. Today's workflow judges
+"Latest" from `main`'s changelog, also on a tag push.
 
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.
