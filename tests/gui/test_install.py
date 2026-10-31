@@ -690,5 +690,16 @@ def test_room_and_weidu_are_said_in_the_confirmation_never_refused(qtbot, world)
     run_to_end(qtbot, page)
     assert seen and seen[0][1]                                   # WeiDU's path given
     text = page.confirmed[-1][1]
-    assert "Before installing, check (item 49):" in text and "1.0 GiB is free" in text
+    assert "Before installing, check:" in text and "1.0 GiB is free" in text
     assert page.outcome.ok
+
+
+def test_a_readiness_check_that_fails_says_nothing_and_none_adds_nothing(qtbot, world):
+    backed_up(world)
+
+    def broken(games, mods, weidu):
+        raise OSError("drive gone")
+    world["services"].readiness = broken
+    page = page_of(qtbot, world)
+    run_to_end(qtbot, page)
+    assert "Before installing, check" not in page.confirmed[-1][1] and page.outcome.ok

@@ -467,7 +467,8 @@ class InstallPage(QWidget):
         self._cancel = threading.Event()
         self.output.clear()
         self.outcome = None
-        self._say("Writing the install order...")
+        self._say("Writing the install order and reading the mods (their questions, "
+                  "the room they need)...")
         games = dict(self.games)
         weidu = self.found["weidu"].path if self.found.get("weidu") else None
         self._run(lambda: _plan_and_questions(services, game, chosen, labels, folder,
@@ -522,7 +523,7 @@ class InstallPage(QWidget):
                  + "\n".join(f"  - {issue}" for issue in issues) + "\n\n")
         room = plan.get("readiness") or []           # item 49: warnings, never a refusal
         if room:
-            known += ("Before installing, check (item 49):\n"
+            known += ("Before installing, check:\n"
                       + "\n".join(f"  - {line}" for line in room) + "\n\n")
         if issues:
             title = ("Resume" if resuming else "Install") + (" anyway," if broken else "") \
@@ -801,15 +802,17 @@ def _plan_and_questions(services: Services, game: str, chosen: list, labels: dic
     of #107) - and whether there is room and the right WeiDU (item 49: it
     walks every game and staged mod). A reading that fails says nothing."""
     plan = services.plan(game, chosen, labels, folder)
-    mods = services.mods_dir(folder)
     try:
+        mods = services.mods_dir(folder)
         plan["questions"] = services.questions(plan["plan_dir"], mods)
     except Exception:
         plan["questions"] = {}
     try:
         # the backups are made already (the page asks for them first): the
         # install's room and WeiDU are what is left to say
-        plan["readiness"] = services.readiness(games or {}, mods, weidu) if games else []
+        # an estimate for the whole plan, also on a resume (which needs less)
+        plan["readiness"] = (services.readiness(games or {}, services.mods_dir(folder), weidu)
+                             if games else [])
     except Exception:
         plan["readiness"] = []
     return plan
