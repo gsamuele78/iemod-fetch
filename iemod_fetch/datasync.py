@@ -53,6 +53,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from collections.abc import Callable, Sequence
 
+from . import atomic
 from .atomic import write_text
 from .catalogues import CatalogueSet
 from .errors import ModFetchError
@@ -304,8 +305,8 @@ def _sync_one(client, data_dir: str, source: Source, entry: dict, force: bool,
     retired = live + ".old"
     shutil.rmtree(retired, ignore_errors=True)
     if os.path.isdir(live):
-        os.replace(live, retired)
-    os.replace(staging, live)
+        atomic.replace(live, retired)
+    atomic.replace(staging, live)
     shutil.rmtree(retired, ignore_errors=True)
 
     removed = len(set(old_files) - set(listed))

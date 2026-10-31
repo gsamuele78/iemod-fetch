@@ -30,6 +30,18 @@ def test_a_program_in_a_game_folder_is_found_and_others_are_not(tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
+def test_this_program_in_the_game_folder_is_never_the_game():
+    """Review of #105: iemod-fetch unpacked beside Baldur.exe - its own
+    process and executable are under the folder, and cannot be closed by
+    the player they are asking."""
+    folder = os.path.dirname(os.path.realpath(sys.executable))
+    other = os.path.join(folder, "Baldur.exe")
+    found = gamelock.running_in({"BGEE": folder}, [(os.getpid(), sys.executable),
+                                                   (os.getpid() + 1, sys.executable),
+                                                   (os.getpid() + 2, other)])
+    assert found == [f"BGEE: {other} (pid {os.getpid() + 2})"]
+
+
 def test_a_game_folder_reached_by_a_link_is_the_same_folder(tmp_path):
     real = tmp_path / "real"
     real.mkdir()
@@ -124,7 +136,7 @@ def _a_program_that_waits(folder):
     else:
         source, args = shutil.which("sleep") or "/bin/sleep", ["30"]
     target = os.path.join(folder, "Baldur" + (".exe" if sys.platform == "win32" else ""))
-    shutil.copy2(source, target)
+    shutil.copy(source, target)          # copy2 fails on macOS's system-file flags
     return [target, *args]
 
 

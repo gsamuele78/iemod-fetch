@@ -32,6 +32,7 @@ Contents/Resources). A listing that fails says nothing rather than refusing.
 """
 import contextlib
 import os
+import posixpath
 import subprocess
 import sys
 import time
@@ -61,7 +62,8 @@ def _wine_path(arg: str, prefix: str | None) -> str | None:
         if arg[0].lower() == "z":
             return "/" + rest
         if prefix:
-            return os.path.join(prefix, "dosdevices", arg[0].lower() + ":", rest)
+            # a Linux path: posixpath, not os.path (C: would reset it on Windows)
+            return posixpath.join(prefix, "dosdevices", arg[0].lower() + ":", rest)
     return None
 
 
@@ -194,11 +196,15 @@ def running_in(folders: dict[str, str], running: Iterable[Running] | None,
                ignore: Iterable[str] = ()) -> list[str]:
     """`name: path (pid N)` for each process seen under one of the folders
     ({name: folder}), once per process, but this install's own tools
-    (`ignore`)."""
+    (`ignore`) and this program's own process and executable."""
     if running is None:
         return []
-    skip = {os.path.normcase(os.path.realpath(path)) for path in ignore if path}
-    found, seen = [], set()
+    # this program itself is never the game, even unpacked into its folder
+    # (the Windows zip or the GUI beside Baldur.exe): it cannot be closed by
+    # the player it is asking (review of #105)
+    skip = {os.path.normcase(os.path.realpath(path))
+            for path in (*ignore, sys.executable) if path}
+    found, seen = [], {os.getpid()}
     for pid, path in dict.fromkeys(running):          # the executable first
         if pid in seen or os.path.normcase(os.path.realpath(path)) in skip:
             continue

@@ -9,13 +9,16 @@ Invariants (ADR-0007):
     directory, and only when --force is given;
   * a failure at any point leaves the destination exactly as it was.
 """
+import contextlib
 import json
 import os
 import shutil
+import stat
 import time
 import uuid
 from dataclasses import dataclass, field
 
+from . import atomic
 from .atomic import write_text
 from .archives import safe_extract
 from .errors import InstallConflict, NotThisMod, VerificationFailed
@@ -121,7 +124,7 @@ def fold_root_tp2(root: str, tp2_file: str, name: str) -> str:
     mod_dir = os.path.join(root, children[0])
     inner = os.path.join(mod_dir, tp2_file)
     if not os.path.exists(inner):
-        shutil.move(os.path.join(root, tp2_file), inner)
+        atomic.move(os.path.join(root, tp2_file), inner)
     return mod_dir
 
 
@@ -160,13 +163,36 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
             backup_root = os.path.join(target_root, BACKUP_DIR)
             os.makedirs(backup_root, exist_ok=True)
             backup = os.path.join(backup_root, f"{folder}.{time.strftime('%Y%m%dT%H%M%S')}")
-            shutil.move(dest, backup)
+            atomic.move(dest, backup)
 
-        os.makedirs(dest, exist_ok=False)
-        count = 0
-        for entry in os.listdir(root):
-            shutil.move(os.path.join(root, entry), os.path.join(dest, entry))
-            count += 1
+        # The mod's folder moves in one rename, from the staging folder under
+        # target_root (one file system): never entry by entry, which a file
+        # held at the third left half in place (review of #102). If it fails,
+        # the copy it replaces comes back.
+        count = len(os.listdir(root))
+        # The folder comes as the archive made it: one read-only there (some
+        # unpackers restore 0555) cannot be renamed into another folder on
+        # POSIX (the rename rewrites its "..") and would stop WeiDU writing
+        # its backup folder inside it. Its owner may write it, set while it
+        # is still in staging (reviews of #102). If that fails, the move says
+        # why.
+        with contextlib.suppress(OSError):
+            mode = stat.S_IMODE(os.stat(root).st_mode)
+            if mode & stat.S_IRWXU != stat.S_IRWXU:
+                os.chmod(root, mode | stat.S_IRWXU)
+        try:
+            atomic.move(root, dest)
+        except OSError as exc:
+            if backup is None or os.path.exists(dest):
+                raise
+            try:
+                atomic.move(backup, dest)
+            except OSError as again:
+                # one message: what failed, and where the old copy is safe
+                raise OSError(exc.errno, f"{folder}: not installed ({exc}); the copy it was "
+                                         f"to replace is kept in {backup} - putting it back "
+                                         f"failed too ({again})") from exc
+            raise
 
         verified = verify_mod_dir(dest, folder, expect_tp2)
         if not verified:
