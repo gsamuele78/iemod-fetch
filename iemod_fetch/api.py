@@ -58,7 +58,8 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, choices, install_run, limits, pi, premeta, prompts, readln, sortorder, toolchain
+from . import (bio, choices, install_run, launch, limits, pi, premeta, prompts, readln,
+               sortorder, toolchain)
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
@@ -1192,6 +1193,26 @@ def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:
     never reads).
     """
     return install_run.known_issues(games, mods_dir)
+
+
+def install_launch_advice(plan_dir: str, platform: str | None = None) -> list[dict]:
+    """
+    How to start the game once `plan_dir`'s planned install is done
+    (GUI-AUDIT M8 item 71, ADR-0054): for each planned log that installs a
+    mod replacing how the game starts - EEex's main component - {"log",
+    "tp2", "component", "program", "why", "platform_note"}. `platform`
+    defaults to sys.platform; off Windows the note says what EEex needs
+    there. Nothing is written; [] when no planned log asks for it.
+    """
+    logs = {}
+    for name in (PRE_EET_LOG, EET_LOG):
+        path = os.path.join(plan_dir, name)
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                logs[name] = fh.read()
+        except OSError:
+            continue
+    return launch.launch_advice(logs, platform or sys.platform)
 
 
 def install_progress(plan_dir: str, games: dict[str, str]) -> dict:
