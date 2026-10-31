@@ -157,9 +157,20 @@ does not need it never uses it, so a wrong secret cannot break it.
 own* release workflow; when that one can run (4.0.0's can), it publishes the
 release - do not then also *Run workflow*, which would publish it a second
 time. An older workflow judges "Latest" from its own commit's changelog, so a
-back-fill published this way may be marked Latest: on the newer release's
-page, *Edit → Set as the latest release* puts it back. Today's workflow judges
+back-fill published this way may be marked Latest. Today's workflow judges
 "Latest" from `main`'s changelog, also on a tag push.
+
+**A back-fill's tag starts a second run.** The tag a back-fill creates with
+`RELEASE_TOKEN` starts the *tagged commit's own* release workflow (a tag
+pushed with a personal token starts workflows; one pushed with GITHUB_TOKEN
+does not). That run rebuilds and republishes the same release, and an older
+workflow marks it Latest - 4.0.0's tag run did so over 4.0.1 on 2026-10-31.
+It can be cancelled (*Actions → Release*, the run on the tag) once the
+back-fill is published. If it is not, "Latest" is put back on the newest
+release by `tools/release_notes.py latest`: by release-latest.yml every six
+hours, and by release.yml's notes job at the next push to `main` that changes
+CHANGELOG.md or the version. It reads every release in one call and fails,
+changing nothing, when GitHub does not answer. By hand: the newer release's page, *Edit → Set as the latest release*.
 
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.

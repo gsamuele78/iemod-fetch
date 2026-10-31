@@ -8,6 +8,15 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Release workflow
+- "Latest" is put back on the newest release of CHANGELOG.md
+  (`tools/release_notes.py latest`) every six hours (release-latest.yml) and
+  at every push to `main` that changes CHANGELOG.md or the version: a
+  back-fill's tag starts the tagged commit's own, older release workflow,
+  which marked 4.0.0 Latest over 4.0.1 on 2026-10-31. It fails, changing
+  nothing, when GitHub does not answer. docs/RELEASING.md says how to cancel
+  that second run.
+
 ### Added
 - **The questions a mod will ask, read before installing** (GUI-AUDIT item
   48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
