@@ -254,7 +254,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir trixie-check && unzip -q gui-dist/iemod-fetch-gui-linux-*.zip -d trixie-check
-          python -c "import sys; sys.path.insert(0, 'packaging'); import cli_bundle; cli_bundle.check_glibc('trixie-check')"
+          # a commit made before this check has no ceiling of trixie's to hold it to
+          if [ -f packaging/cli_bundle.py ]; then
+            python -c "import sys; sys.path.insert(0, 'packaging'); import cli_bundle; cli_bundle.check_glibc('trixie-check')"
+          fi
           image=""
           for candidate in debian:trixie public.ecr.aws/docker/library/debian:trixie; do
             if docker pull -q "$candidate"; then image="$candidate"; break; fi
@@ -425,8 +428,9 @@ jobs:
             fi
             if ls dist/iemod-fetch-cli-*.zip > /dev/null 2>&1; then
               echo 'The command line without Python: `iemod-fetch-cli-<os>-<arch>.zip` (Linux x86_64 with'
-              echo 'glibc 2.41 or newer - Debian trixie, the minimum, or newer - Windows x86_64, macOS on Apple'
-              echo 'silicon), for a system whose Python is older than this release needs: Debian trixie, macOS.'
+              echo 'Debian trixie, the minimum - started there before release - and Ubuntu 24.04, where it is built;'
+              echo 'Windows x86_64, macOS on Apple silicon), for a system whose Python is older than this release'
+              echo 'needs: Debian trixie, Ubuntu 24.04, macOS.'
             fi
           } >> NOTES.md
 

@@ -124,11 +124,12 @@ for why, `docs/ADR.md` for the design decisions, `docs/GUIDE.md` to use it.
 
 Python **3.14** (ADR-0043: one version, the one in `.python-version`; an
 older Python is told so and stops). Where the system's Python is older
-(Ubuntu 22.04 and 24.04, Debian 12 and 13, macOS's own `python3`), take a
-release bundle, which carries its own: `iemod-fetch-cli-<os>-<arch>.zip` for
-the command line (Linux x86_64 with glibc 2.41 or newer - Debian trixie, the
-minimum platform, or newer - Windows x86_64, macOS
-on Apple silicon), `iemod-fetch-gui-...` for the wizard. Unzip it and run
+(Debian trixie's is 3.13, Ubuntu 24.04's 3.12, macOS's own `python3` 3.9),
+take a release bundle, which carries its own: `iemod-fetch-cli-<os>-<arch>.zip`
+for the command line (Linux x86_64: Debian trixie, the minimum platform, where
+each release is started before it is published, and Ubuntu 24.04, where it is
+built; not Debian 12 or Ubuntu 22.04, whose glibc is too old - Windows x86_64,
+macOS on Apple silicon), `iemod-fetch-gui-...` for the wizard. Unzip it and run
 `iemod-fetch` inside the folder; it is attested and in `SHA256SUMS` like the
 other assets, and not signed by a publisher (see below). On macOS, a zip
 downloaded with a browser is quarantined: `xattr -dr com.apple.quarantine

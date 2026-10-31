@@ -106,7 +106,11 @@ def test_a_linux_bundle_that_would_not_start_on_debian_trixie_stops_the_build(tm
         cli.check_glibc(str(tmp_path))
     elf(tmp_path / cli.NAME, [2, 17, 38, 41])
     cli.check_glibc(str(tmp_path))
-    # packed relative relocations need 2.36, which trixie has
+    # packed relative relocations need 2.36 with no GLIBC_2.36 in sight -
+    # which trixie has; below it the bundle stops
     (tmp_path / cli.NAME).write_bytes(b"\x7fELF" + b"\0" * 60 + b"GLIBC_2.17\0GLIBC_ABI_DT_RELR\0")
+    assert cli.glibc_needed(str(tmp_path)) == (2, 36)
     cli.check_glibc(str(tmp_path))
+    with pytest.raises(SystemExit, match="glibc 2.36"):
+        cli.check_glibc(str(tmp_path), limit=(2, 35))
     assert cli.MAX_GLIBC == (2, 41)
