@@ -9,6 +9,7 @@ Invariants (ADR-0007):
     directory, and only when --force is given;
   * a failure at any point leaves the destination exactly as it was.
 """
+import contextlib
 import json
 import os
 import shutil
@@ -169,6 +170,16 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
         # held at the third left half in place (review of #102). If it fails,
         # the copy it replaces comes back.
         count = len(os.listdir(root))
+        # The folder comes as the archive made it: one read-only there (some
+        # unpackers restore 0555) cannot be renamed into another folder on
+        # POSIX (the rename rewrites its "..") and would stop WeiDU writing
+        # its backup folder inside it. Its owner may write it, set while it
+        # is still in staging (reviews of #102). If that fails, the move says
+        # why.
+        with contextlib.suppress(OSError):
+            mode = stat.S_IMODE(os.stat(root).st_mode)
+            if mode & stat.S_IRWXU != stat.S_IRWXU:
+                os.chmod(root, mode | stat.S_IRWXU)
         try:
             atomic.move(root, dest)
         except OSError as exc:
@@ -182,12 +193,6 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
                                          f"to replace is kept in {backup} - putting it back "
                                          f"failed too ({again})") from exc
             raise
-        # The folder came as the archive made it: one read-only there (some
-        # unpackers restore 0555) would stop WeiDU writing its backup folder
-        # inside it (review of #102). Its owner may write it.
-        mode = stat.S_IMODE(os.stat(dest).st_mode)
-        if mode & stat.S_IRWXU != stat.S_IRWXU:
-            os.chmod(dest, mode | stat.S_IRWXU)
 
         verified = verify_mod_dir(dest, folder, expect_tp2)
         if not verified:

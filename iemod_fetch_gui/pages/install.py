@@ -64,6 +64,7 @@ class Services:
     mods_dir: Callable[[str], str] = _mods_dir
     restore_plan: Callable[[str, str], dict] = api.plan_restore
     progress: Callable[[str, dict], dict] = api.install_progress
+    known_issues: Callable[[dict, str], list] = api.install_known_issues
     start: Callable[..., Any] = api.start_install
     timing: dict = field(default_factory=dict)    # start_install's quiet_s, grace_s...
 
@@ -493,12 +494,23 @@ class InstallPage(QWidget):
                 if resuming else f"Install {len(chosen)} component(s) into:")
         title = ("Resume anyway" if resuming else "Install anyway") if broken else \
             ("Resume" if resuming else "Install")
+        try:                              # what is known to go wrong (item 65)
+            issues = self.services.known_issues(dict(self.games),
+                                                self.services.mods_dir(self.project_dir))
+        except Exception:                 # a check that cannot run says nothing
+            issues = []
+        known = ("" if not issues else
+                 "Known issue(s) this install will meet:\n"
+                 + "\n".join(f"  - {issue}" for issue in issues) + "\n\n")
+        if issues:
+            title = ("Resume" if resuming else "Install") + (" anyway," if broken else "") \
+                + " despite a known issue"
         stopped = ("" if not (resuming and self.cancelled_in) else
                    f"The last run was cancelled while it installed {self.cancelled_in}: "
                    f"if that left files in the game, restoring the backup is the safe "
                    f"way.\n\n")
         if not self.confirm(title, (
-                f"{what}\n{folders}\n\n{stopped}{warning}"
+                f"{what}\n{folders}\n\n{stopped}{known}{warning}"
                 f"mod_installer and WeiDU change these folders. Nothing is undone by "
                 f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
             self._say("Not installed: the plan is written in "

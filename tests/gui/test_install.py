@@ -423,3 +423,41 @@ def test_resuming_after_a_cancel_inside_a_component_says_so(qtbot, world):
     assert title == "Resume"
     assert "cancelled while it installed setup-ub.tp2 #10" in text
     assert "restoring the backup is the safe way" in text
+
+
+def test_a_known_issue_is_said_before_installing_and_the_player_decides(qtbot, world):
+    """Item 65: EET's Documents-path bug, as the api says it - in the
+    confirmation, not a refusal; no stops, yes installs."""
+    backed_up(world)
+    world["services"].known_issues = lambda games, mods: [
+        "EET's core will write the game's settings to a folder the game never reads"]
+    page = page_of(qtbot, world, answers=(False, True))
+    assert page.install_button.isEnabled()                 # not a refusal
+    run_to_end(qtbot, page)
+    title, text = page.confirmed[-1]
+    assert title == "Install despite a known issue"
+    assert "Known issue(s) this install will meet:" in text and "never reads" in text
+    assert page.outcome is None                            # the player said no
+    settled(qtbot, page)
+    run_to_end(qtbot, page)
+    assert page.confirmed[-1][0] == "Install despite a known issue" and page.outcome.ok
+
+
+def test_a_known_issue_while_resuming_says_resume(qtbot, world, monkeypatch):
+    backed_up(world)
+    world["state"]["plan_lines"] = ["~UB/SETUP-UB.TP2~ #0 #0 // x",
+                                    "~UB/SETUP-UB.TP2~ #0 #10 // y"]
+    (world["game"] / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n")
+    world["services"].known_issues = lambda games, mods: ["a known fault"]
+    page = page_of(qtbot, world, answers=(False,))
+    run_to_end(qtbot, page)
+    assert page.confirmed[-1][0] == "Resume despite a known issue"
+
+
+def test_a_known_issue_and_broken_rules_say_both_in_the_title(qtbot, world):
+    backed_up(world)
+    world["state"]["violations"] = ["UB before EET"]
+    world["services"].known_issues = lambda games, mods: ["a known fault"]
+    page = page_of(qtbot, world, answers=(False,))
+    run_to_end(qtbot, page)
+    assert page.confirmed[-1][0] == "Install anyway, despite a known issue"

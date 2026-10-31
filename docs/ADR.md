@@ -2948,6 +2948,54 @@ version up to the tag).
   dark0dave/mod_installer. Whether to report it is the maintainer's call;
   nothing has been opened.
 
+### GUI-AUDIT M8 item 65: a known upstream fault is said before installing
+
+Kept in ADR-0045 on purpose: it is part of what the wizard says before it
+runs mod_installer.
+
+- **Context.** EET's core finds the Documents folder with a batch file
+  (`EET/lib/macros.tph`, `GET_USER_DIRECTORY`, upstream since 38db44c): `for
+  /f "tokens=3,*"` over `reg query ... User Shell Folders /v Personal`, then
+  `set DOC_DIR=` the first variable - the third token only. A registered
+  value with a space is cut at it. What follows, read in EET's source at
+  c26a11a (2026-10-29) and not run on Windows (reviews of #100): the core
+  builds a settings folder from the cut path (`<cut>\Baldur's Gate -
+  Enhanced Edition Trilogy`), WeiDU's MKDIR makes the missing folders, and
+  `Baldur.lua` - language, active campaign, EET's installation state - is
+  copied or written there, with an empty `save` folder (EET.tp2
+  L1091-1157). The game finds its own Documents folder through
+  `engine.lua`'s `engine_name` and never reads that one. So the core most
+  likely finishes; the saves stay where they belong; EET's settings, and
+  the `Baldur.lua` carried over from BG2:EE with its language, never reach
+  the real folder - a player not playing in English may start in the
+  default language and settings - and a stray folder is left at the cut
+  path. Chriz Easy BG met it ("the community EET failure",
+  `docs/handover.md` L138-142) and patches EET's copy (MIT, 508256a). The
+  value is read before `%VARIABLES%` are expanded, so the usual
+  `%USERPROFILE%\Documents` has no space even when the user name has one;
+  a folder moved by OneDrive ("OneDrive - Company\Documents") or chosen by
+  hand ("D:\My Documents") has.
+- **Decision.** `install_run.known_issues` (api `install_known_issues`)
+  says it before installing, on Windows, when the plan has EET, EET's core
+  is not yet in the EET game (a resume past it is not warned), the raw
+  `Personal` value (`winreg`, unexpanded) has a space, and the EET copy in
+  the mods folder still has that shape of line at a line's start - any
+  variable letter, "tokens=3*", "do (set ...)" - unless it opens a block
+  that sets the whole path before closing - the one way a later line fixes
+  it; comments do not count (matched, not copied - EET is GPL-3.0). The
+  message names the registered value and the folder EET will write its
+  settings to (a `%VARIABLE%` in it shown expanded). The wizard puts it in
+  the confirmation, "Install despite a known issue"; it is not a refusal:
+  the player decides, knowing. EET's file is not patched: changing a mod's
+  content needs item 52's ADR.
+- **Consequences.** A player whose EET settings and language would have
+  gone to a folder the game never reads - or whose core would have failed -
+  with no word of why is told before, with the registered value and where
+  EET will write. An EET release that keeps the whole path no longer
+  matches, and the warning goes by itself. The claim about the outcome is
+  read in the source; no Windows run confirms it. Reporting the bug to EET
+  is the maintainer's call; nothing has been opened.
+
 ---
 
 ## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it
@@ -3384,8 +3432,11 @@ Those were worse than a refusal: when Windows refuses the rename,
   the old copy is kept. `install.py` now has 4 `atomic.move`s: the tp2
   fold, the old copy aside, the mod in, the old copy back.
 - The folder keeps the mode the unpacker gave it; one its owner cannot
-  write (some unpackers restore 0555) is made writable by its owner, so
-  WeiDU can create `<mod>/backup/` in it (second review of #102).
+  write (some unpackers restore 0555) is made writable by its owner while
+  it is still in staging, before the move: on POSIX a folder its owner
+  cannot write cannot be renamed into another folder (the rename rewrites
+  its `..`), and WeiDU must create `<mod>/backup/` in it (second and third
+  reviews of #102; the test runs as a non-root user to show it).
 - A test walks the tool and the wizard and fails on any `os.replace`,
   `os.rename`, `os.renames` or `shutil.move` - called, or imported by name -
   outside `atomic.py`.

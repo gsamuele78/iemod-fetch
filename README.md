@@ -276,7 +276,10 @@ steps that are each yours.
    (GPL-2.0), checked against its sha256. What is wrong with one is said as is.
 2. *A backup of each game folder* (ADR-0042): *Back up now*, or one made before.
    Without it, *Install* stays off.
-3. *Install*, after a last confirmation: the order of phase 3 is written to
+3. *Install*, after a last confirmation - which also names a known upstream fault
+   the install will meet, without refusing it (today: EET's core and a Documents
+   folder registered with a space, on Windows - EET's settings would go to a folder the
+   game never reads; ADR-0045): the order of phase 3 is written to
    `PROJECT/install-plan/` (as `--plan-order` writes it) and mod_installer runs
    over it. Its output shows as it comes; a question no recorded answer covers
    is asked in a dialog; *Cancel* stops it and everything it started. Nothing is
@@ -576,7 +579,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,846 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,876 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -830,7 +833,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,846, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,876, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
