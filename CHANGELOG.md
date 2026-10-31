@@ -8,6 +8,15 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **A recorded answer goes only to a question it fits** (GUI-AUDIT M8 item
+  63, ADR-0045). A log's `// @wlb-inputs:` answer is sent only when the
+  question offers it ("[y]es or [n]o", "select 1 or 2", "1-3") and, from the
+  second install on, when the question is the one asked there before
+  (`install-plan/answers.json`). Otherwise the player is asked, with the
+  reason, and the batch's other recorded answers are not used: answers that
+  shifted against a mod's changed prompts no longer go in one question late.
+
 ### Fixed
 - The wizard's window no longer freezes on Windows when a download, a
   catalogue update or a conflict check starts (ADR-0048). Every HTTP client

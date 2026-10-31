@@ -499,3 +499,49 @@ def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
     (game / "MyMod" / "saved" / "1" / "UNINSTALL.1").write_text("override/x\n")
     progress = api.install_progress(setup["plan"], setup["games"])
     assert progress["state"] == "mismatch" and "stopped half-way" in progress["problem"]
+
+
+# ------------------------------------------- answers that fit (item 63)
+def test_a_recorded_answer_that_does_not_fit_is_asked_of_the_player(setup, monkeypatch):
+    """UB's log answer is "2", its question takes y or n: the player is asked,
+    told why, and the answer they give goes in."""
+    from pathlib import Path
+    log = Path(setup["plan"], "WeiDU.log")
+    log.write_text(log.read_text().replace("Restorations: v30",
+                                           "Restorations: v30 // @wlb-inputs: 2"))
+    asked = []
+    install, events = run(setup, monkeypatch, {
+        "eet.tp2#0": [EET_QUESTION],
+        "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]},
+        ask=lambda question, batch: asked.append(question) or "y")
+    outcome = install.run()
+    assert outcome.ok and len(asked) == 1
+    assert asked[0].startswith("Restore the tavern? [y]es or [n]o\n\n(Not answered from the log")
+    assert answers(setup)[-1] == "y"
+    assert any("Not answered from the log: the recorded answer '2'" in e.text for e in events)
+
+
+def test_the_question_an_answer_went_to_is_kept_and_checked_next_time(setup, monkeypatch):
+    import json
+    from pathlib import Path
+    log = Path(setup["plan"], "WeiDU.log")
+    log.write_text(log.read_text().replace("Restorations: v30",
+                                           "Restorations: v30 // @wlb-inputs: y"))
+    install, _events = run(setup, monkeypatch, {
+        "eet.tp2#0": [EET_QUESTION], "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]})
+    assert install.run().ok
+    kept = json.loads(Path(setup["plan"], "answers.json").read_text())
+    assert kept["asked"]["setup-ub.tp2#0"] == {"0": "Restore the tavern? [y]es or [n]o"}
+
+    for game in setup["games"].values():                   # the games as new again
+        for name in os.listdir(game):
+            if name != "chitin.key":
+                os.remove(os.path.join(game, name))
+    asked = []
+    install, events = run(setup, monkeypatch, {             # UB's prompt changed since
+        "eet.tp2#0": [EET_QUESTION], "setup-ub.tp2#0": ["Remove the tavern? [y]es or [n]o"]},
+        ask=lambda question, batch: asked.append(question) or "n")
+    assert install.run().ok
+    assert len(asked) == 1 and asked[0].startswith("Remove the tavern? [y]es or [n]o")
+    assert "asked something else here" in asked[0]
+    assert any("asked something else here" in e.text for e in events)

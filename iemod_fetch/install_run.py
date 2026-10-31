@@ -21,6 +21,7 @@ killpg; Windows: `taskkill /T /F`). The WeiDU.log in the game folder says
 what was installed: resuming from it is item 23.
 """
 import contextlib
+import json
 import os
 import queue
 import re
@@ -61,6 +62,30 @@ class Outcome:
     @property
     def ok(self) -> bool:
         return self.returncode == 0 and not self.cancelled
+
+
+ASKED_FILE = "answers.json"
+
+
+def load_asked(path: str | None) -> dict:
+    """{(tp2, component): {n: question}}: the question each recorded answer was
+    given for (item 63); {} when there is none yet or it is unreadable."""
+    try:
+        with open(path or "", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return {(str(tp2), int(number)): {int(n): str(q) for n, q in by.items()}
+                for tp2, number, by in ((*k.rsplit("#", 1), v)
+                                        for k, v in data.get("asked", {}).items())}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def save_asked(path: str | None, asked: dict) -> None:
+    if path and asked:
+        data = {"asked": {f"{tp2}#{number}": {str(n): q for n, q in sorted(by.items())}
+                          for (tp2, number), by in sorted(asked.items())}}
+        with contextlib.suppress(OSError):
+            write_text(path, json.dumps(data, indent=1, ensure_ascii=False) + "\n")
 
 
 def _has_mods(game_dir: str) -> str:
@@ -176,7 +201,8 @@ class InstallRun:
                  ask: Callable[[str, tuple], str | None],
                  on_event: Callable[[Event], None] = lambda _event: None,
                  bgee_dir: str | None = None, quiet_s: float = QUIET_S,
-                 grace_s: float = GRACE_S, drain_s: float = DRAIN_S) -> None:
+                 grace_s: float = GRACE_S, drain_s: float = DRAIN_S,
+                 asked_file: str | None = None) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -186,7 +212,10 @@ class InstallRun:
                 continue
         self.argv, self.cwd, self.ask, self.on_event = argv, cwd, ask, on_event
         self.bgee_dir = bgee_dir
-        self.answers = Answers(recorded)
+        # what earlier installs asked where a recorded answer went (item 63)
+        self.asked_file = asked_file
+        self.asked = load_asked(asked_file)
+        self.answers = Answers(recorded, self.asked)
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
@@ -212,6 +241,7 @@ class InstallRun:
         try:
             self._pump(process, outcome)
         finally:
+            save_asked(self.asked_file, self.asked)
             # Only standard input is closed here: the output belongs to the
             # thread reading it, which closes it at its end. Closing it from
             # here while that thread waits on it would wait as long as anything
@@ -275,11 +305,20 @@ class InstallRun:
         if self.bgee_dir and EET_FOLDER_QUESTION in text.lower():
             answer, source = self.bgee_dir, "EET"
         else:
-            recorded = self.answers.next()
-            if recorded is not None:
+            recorded = self.answers.next(text)
+            if recorded is not None and self.answers.last is not None:
                 answer, source = recorded, "recorded"
+                key, n = self.answers.last
+                self.asked.setdefault(key, {})[n] = text
             else:
-                given = self.ask(text, question.batch)
+                shown = text
+                if self.answers.refused:
+                    # a recorded answer that does not fit is not sent: it may
+                    # have shifted against the mod's changed prompts (item 63)
+                    why = f"Not answered from the log: {self.answers.refused}"
+                    self.on_event(Event("line", why, question.batch))
+                    shown = f"{text}\n\n({why}.)"
+                given = self.ask(shown, question.batch)
                 if given is None:
                     return False
                 answer, source = given, "player"
@@ -517,6 +556,7 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     (resume.py) - only the rest is installed; a game whose log is not the
     plan's beginning is refused.
     """
+    asked_file = os.path.join(plan_dir, ASKED_FILE)   # beside the plan, not its rest
     # EET's core asks for BG:EE's folder: known from the games as given, also
     # when a resume runs the EET game alone (review of #89)
     bgee_dir = games.get("BGEE") if "EET" in games else None
@@ -536,4 +576,4 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     argv = command(plan_dir, games, mods_dir, mod_installer, weidu, language)
     logs = [os.path.join(plan_dir, name) for name in (PRE_EET_LOG, EET_LOG)]
     return InstallRun(argv, logs, cwd=mods_dir, ask=ask, on_event=on_event,
-                      bgee_dir=bgee_dir, **timing)
+                      bgee_dir=bgee_dir, asked_file=asked_file, **timing)

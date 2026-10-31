@@ -2935,6 +2935,40 @@ version up to the tag).
   dark0dave/mod_installer. Whether to report it is the maintainer's call;
   nothing has been opened.
 
+### GUI-AUDIT M8 item 63: a recorded answer goes only to a question it fits
+
+- **Context.** The log's `// @wlb-inputs:` answers were sent in order, one per
+  question, whatever the question. A mod whose prompts changed between the
+  version a log was recorded on and the one installed shifts them silently:
+  a "2" meant for "select 1 or 2" answers a new "[y]es or [n]o", and every
+  answer after it lands one question late. Chriz Easy BG (MIT, read at
+  508256a) sends each answer only after its expected question text appears
+  (`engine/src/weidu/runner.rs`, `PromptMatcher`); its recipe authors that
+  text. Our logs come from players and BIO, and hold answers only.
+- **Decision.** `@wlb-inputs` stays as BIO writes it - logs players exchange
+  keep working, and no question text is added to them. Two checks instead,
+  in `prompts.Answers`:
+  1. *The answer must be one the question offers*, when the question says:
+     "[y]es or [n]o", "(y/n)"; after select/choose/pick/enter/type, a list
+     with "or" ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and
+     100" (`prompts.offered`). A path, a free number or "Press Enter" offers
+     nothing said, and takes any answer, as before. This works from the
+     first install of a log.
+  2. *The question must be the one an earlier install asked there.* Each
+     recorded answer's question is kept in `install-plan/answers.json`
+     (component, the answer's place, the question); the next install of that
+     component with another question at that place does not send it.
+  When either fails, the answer is not sent and the player is asked, with
+  the reason both in the output and in the question shown. The batch's other
+  recorded answers are not used either: once one shifted, the rest have too.
+- **Consequences.** A shift is caught when the shifted answer is the wrong
+  kind (a number for a yes/no, or out of the offered numbers) or, from the
+  second install on, when the question changed. Not caught: a shift between
+  two questions of the same kind on a first install (a yes/no recorded for
+  another yes/no) - nothing in an answers-only log tells them apart. The
+  question patterns are deliberately few; a question they do not read takes
+  any answer, as before, rather than refusing a right one.
+
 ---
 
 ## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it

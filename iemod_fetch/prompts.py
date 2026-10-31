@@ -130,18 +130,83 @@ class OutputReader:
         return Event("question", text, self.batch)
 
 
+# What a question offers, when it says so (GUI-AUDIT M8 item 63): "[y]es or
+# [n]o", "(y/n)"; after select/choose/pick/enter/type, a list with "or"
+# ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and 100". Anything
+# else - a path, a free number, "Press Enter" - offers nothing said.
+_YES_NO = re.compile(r"\[y\]es\s+or\s+\[n\]o|\(y/n\)|\[y/n\]|\by/n\b", re.IGNORECASE)
+_VERB = r"\b(?:select|choose|pick|enter|type)\b"
+_LIST = re.compile(_VERB + r"[^.?!\n]*?\b(\d{1,3}(?:\s*(?:,|or)\s*\d{1,3})*\s*or\s*\d{1,3})\b",
+                   re.IGNORECASE)
+_RANGE = re.compile(_VERB + r"[^.?!\n]*?(?:\b(\d{1,3})\s*-\s*(\d{1,3})\b"
+                    r"|\bbetween\s+(\d{1,3})\s+and\s+(\d{1,3})\b)", re.IGNORECASE)
+
+
+def offered(question: str) -> set[str] | None:
+    """The answers `question` says it takes, lower-case; None when it does not
+    say (then any answer may be right)."""
+    if _YES_NO.search(question):
+        return {"y", "n", "yes", "no"}
+    match = _RANGE.search(question)
+    if match:
+        low, high = (int(n) for n in (match[1] or match[3], match[2] or match[4]))
+        if low <= high <= low + 200:
+            return {str(n) for n in range(low, high + 1)}
+    match = _LIST.search(question)
+    if match:
+        return set(re.findall(r"\d{1,3}", match[1]))
+    return None
+
+
+def fits(question: str, answer: str) -> bool:
+    """Whether a recorded answer is one `question` offers (or it offers none)."""
+    choices = offered(question)
+    return choices is None or answer.strip().lower() in choices
+
+
+def same_question(one: str, other: str) -> bool:
+    """Two askings of one question: the same words, spacing and case aside."""
+    return " ".join(one.lower().split()) == " ".join(other.lower().split())
+
+
 @dataclass
 class Answers:
-    """The recorded answers of a log, handed out batch by batch, in order."""
+    """
+    The recorded answers of a log, handed out batch by batch, in order - each
+    only for a question it fits (item 63): one the question offers, and, when
+    an earlier install asked this component's question here, that question.
+    After one does not fit, the batch's other recorded answers are not used:
+    answers that shifted against a mod's changed prompts would go on wrong.
+    """
     recorded: dict[Key, list[str]]
+    asked_before: dict[Key, dict[int, str]] = field(default_factory=dict)
     _queue: deque = field(default_factory=deque)
     _batch: tuple[Key, ...] = ()
+    refused: str | None = None        # why the last recorded answer was not given
+    last: tuple[Key, int] | None = None   # the component and place of the one given
 
     def start(self, batch: tuple[Key, ...]) -> None:
         """A batch starts: its components' answers, in the batch's order."""
         self._batch = batch
-        self._queue = deque(answer for key in batch for answer in self.recorded.get(key, ()))
+        self._queue = deque((key, n, answer) for key in batch
+                            for n, answer in enumerate(self.recorded.get(key, ())))
 
-    def next(self) -> str | None:
-        """The next recorded answer of the batch, None when there is none."""
-        return self._queue.popleft() if self._queue else None
+    def next(self, question: str = "") -> str | None:
+        """The next recorded answer of the batch for `question`, None when there
+        is none or it does not fit (then `refused` says why)."""
+        self.refused = None
+        if not self._queue:
+            return None
+        key, n, answer = self._queue[0]
+        before = self.asked_before.get(key, {}).get(n)
+        if question and before is not None and not same_question(before, question):
+            self.refused = (f"{key[0]} #{key[1]} asked something else here when this answer "
+                            f"was given ({before!r})")
+        elif question and not fits(question, answer):
+            self.refused = f"the recorded answer {answer!r} is not one this question offers"
+        if self.refused:
+            self._queue.clear()
+            return None
+        self._queue.popleft()
+        self.last = (key, n)
+        return str(answer)
