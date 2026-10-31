@@ -39,6 +39,14 @@ Python API, which is internal.
   `.python-version`; a test holds them together.
 
 ### Documentation
+- **What Chriz Easy BG and the HD-remaster thread teach** (GUI-AUDIT M8 items
+  62-71): read on chriz-bg-collection (MIT, 508256a) and Gibberlings3 thread
+  41637. Ten proposals, ideas and credited facts only: a size allowance from a
+  pinned size, answers sent only after their question, real prompts as test
+  cases, the EET Documents-path bug on Windows, Windows rename retries, the game
+  not running before each batch, a gated download supplied by hand, a result per
+  component, ordering facts as tests, and how to start the game after EEex mods.
+  No HD mod is new to the catalogue.
 - **The plan after three audits** (GUI-AUDIT M5b-M8): editing the order by
   component with fixes after a manual move (measured against BWS-NG, Infinity
   Mod Runner and Project Infinity); one Python version and the libraries that

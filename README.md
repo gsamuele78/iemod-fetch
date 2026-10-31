@@ -49,7 +49,9 @@ first: BWS-NG's per-component order, then a kind only where the sources agree
 three audits the plan also holds editing the order by component with fixes
 after a manual move (M5b), **4.0.0 on one Python version, 3.14**, with the
 libraries that earn their place (M6, ADR-0043), defects to fix (M7) and what
-the other projects do that this tool does not (M8)
+the other projects do that this tool does not (M8, which since 2026-10-31
+also holds ten ideas read in Chriz Easy BG, an MIT installer for one curated
+EET collection: items 62-71)
 ([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
