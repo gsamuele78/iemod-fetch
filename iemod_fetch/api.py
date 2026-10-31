@@ -971,6 +971,7 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
                 "recorded": recorded, "status": _status(read, asked, recorded),
                 "unread": unread})
     _one_batch_at_a_time(components)
+    _by_question(components)
     return _coverage(components)
 
 
@@ -1067,6 +1068,30 @@ def _one_batch_at_a_time(components: list[dict]) -> None:
                 open_ = True
 
 
+def _by_question(components: list[dict]) -> None:
+    """
+    Marks each question "by_question": answered by its key when it comes
+    (start_install) - its text known and long enough to tell apart
+    (prompts.recognisable), one mod_installer puts to anyone at all
+    (prompts.mod_installer_asks; else WeiDU waits for its timeout), and no
+    other component of its batch asking the same (match_question would not
+    know whose it is). The questionnaire offers these and counts them
+    answered; no other (review of #111).
+    """
+    for batch in _batches(components):
+        seen: dict[str, set[int]] = {}
+        for c in batch:
+            for q in c["questions"]:
+                if q["known"] and q["text"]:
+                    seen.setdefault(" ".join(q["text"].split()), set()).add(c["number"])
+        for c in batch:
+            for q in c["questions"]:
+                text = " ".join(q["text"].split()) if q["known"] else ""
+                q["by_question"] = bool(
+                    text and prompts.recognisable(text) and prompts.mod_installer_asks(text)
+                    and seen.get(text, set()) == {c["number"]})
+
+
 INSTALL_ANSWERS_FILE = "install-answers.json"
 
 
@@ -1075,7 +1100,7 @@ def writable_answer(answer: str) -> bool:
     return prompts.writable(answer)
 
 
-def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
+def load_install_answers(folder: str) -> dict[str, dict[str, str | None]]:
     """
     The answers the player gave in the phase-5 questionnaire (ADR-0049),
     kept in `folder`/install-answers.json: {"tp2#number": {question key:
@@ -1094,11 +1119,14 @@ def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
     answers = data.get("answers") if isinstance(data, dict) else None
     if not isinstance(answers, dict):
         return {}
-    return {str(component): {str(k): str(v) for k, v in given.items() if writable_answer(str(v))}
+    # None: the player left it to be asked during the install (kept, so the
+    # questionnaire does not offer it every time)
+    return {str(component): {str(k): (None if v is None else str(v)) for k, v in given.items()
+                             if v is None or writable_answer(str(v))}
             for component, given in answers.items() if isinstance(given, dict)}
 
 
-def save_install_answers(folder: str, answers: dict[str, dict[str, str]]) -> str:
+def save_install_answers(folder: str, answers: dict[str, dict[str, str | None]]) -> str:
     """Keep the questionnaire's answers in `folder` (load_install_answers)."""
     path = os.path.join(folder, INSTALL_ANSWERS_FILE)
     write_text(path, json.dumps({"v": 1, "answers": answers}, indent=1, sort_keys=True,
@@ -1112,7 +1140,7 @@ def answer_key(component: dict) -> str:
 
 
 def write_install_answers(plan_dir: str, mods_dir: str,
-                          answers: dict[str, dict[str, str]],
+                          answers: dict[str, dict[str, str | None]],
                           coverage: dict | None = None) -> dict:
     """
     Put the player's answers into the planned logs (ADR-0049 point 5), as
@@ -1134,9 +1162,10 @@ def write_install_answers(plan_dir: str, mods_dir: str,
             given = answers.get(answer_key(component), {})
             row: list[str] = []
             for question in component["questions"]:
-                if open_ or not question["beforehand"] or question["key"] not in given:
+                answer = given.get(question["key"])
+                if open_ or not question["beforehand"] or answer is None:
                     break
-                row.append(given[question["key"]])
+                row.append(answer)
             if not _covers_all(component, len(row)):
                 open_ = True
             if row:
@@ -1148,7 +1177,8 @@ def write_install_answers(plan_dir: str, mods_dir: str,
             # answered by question during the install (start_install): a
             # question whose text is known, with the player's answer for it
             if status in ("maybe", "partial", "unanswered") and all(
-                    i < len(recorded) or (q["known"] and q["text"] and q["key"] in given)
+                    i < len(recorded) or (q.get("by_question")
+                                          and given.get(q["key"]) is not None)
                     for i, q in enumerate(component["questions"])):
                 status = "answered"
             components.append({**component, "recorded": recorded, "status": status})
@@ -1167,7 +1197,7 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                   ask: Callable[[str, tuple], str | None],
                   on_event: Callable[[Any], None] | None = None,
                   language: str = "en_US", allow_existing: bool = False,
-                  resume: bool = False, answers: dict[str, dict[str, str]] | None = None,
+                  resume: bool = False, answers: dict[str, dict[str, str | None]] | None = None,
                   questions: dict | None = None,
                   **timing: float) -> install_run.InstallRun:
     """
@@ -1198,16 +1228,28 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
             questions = {"components": []}
     expected: dict[prompts.Key, list[tuple[str, str]]] = {}
     by_key: dict[prompts.Key, dict[str, str]] = {}
+    row_keys: dict[prompts.Key, list[str]] = {}
     for component in questions.get("components", []):
         key = (prompts.tp2_name(component["tp2"]), component["number"])
         expected[key] = [(q["key"], q["text"] if q["known"] else "")
                          for q in component["questions"]]
-        if answers and answer_key(component) in answers:
-            by_key[key] = dict(answers[answer_key(component)])
+        given = (answers or {}).get(answer_key(component), {})
+        by_key[key] = {k: v for k, v in given.items() if v is not None}
+        # the recorded answers are this program's row (write_install_answers):
+        # each one's question is known; any other row is handed out in order
+        row = []
+        for q in component["questions"]:
+            if not q["beforehand"] or given.get(q["key"]) is None:
+                break
+            row.append(given[q["key"]])
+        recorded = list(component.get("recorded", []))
+        if recorded and recorded == row[:len(recorded)] and len(recorded) == len(row):
+            row_keys[key] = [q["key"] for q in component["questions"][:len(row)]]
     return install_run.start(plan_dir, games, mods_dir, mod_installer, weidu, ask,
                              on_event or (lambda _event: None), language=language,
                              allow_existing=allow_existing, resume_install=resume,
-                             expected=expected, by_key=by_key, **timing)
+                             expected=expected, by_key=by_key, row_keys=row_keys,
+                             **timing)
 
 
 def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:

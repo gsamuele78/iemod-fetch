@@ -529,10 +529,12 @@ def test_the_questionnaire_dialog_fills_what_is_kept_and_refuses_a_comma(qtbot):
     components = [{"tp2": "UB/SETUP-UB.TP2", "number": 0, "questions": [
         {"key": "@1", "text": "Which portraits?", "beforehand": True, "repeats": False,
          "known": True, "conditional": False},
-        {"key": "@2", "text": "Only sometimes?", "beforehand": False, "repeats": False,
-         "known": True, "conditional": True},
-        {"key": "@2", "text": "Only sometimes?", "beforehand": False, "repeats": False,
-         "known": True, "conditional": True},                    # once: one answer
+        {"key": "@2", "text": "Do you want it sometimes?", "beforehand": False,
+         "repeats": False, "known": True, "conditional": True, "by_question": True},
+        {"key": "@2", "text": "Do you want it sometimes?", "beforehand": False,
+         "repeats": False, "known": True, "conditional": True, "by_question": True},  # once
+        {"key": "@3", "text": "How many?", "beforehand": False, "repeats": False,
+         "known": True, "conditional": True, "by_question": False},  # not recognisable
         {"key": "x.tp2:9:v#0", "text": "", "beforehand": False, "repeats": False,
          "known": False, "conditional": False}]}]                  # unknown: not offered
     QWidget = pytest.importorskip("PySide6.QtWidgets").QWidget
@@ -550,7 +552,8 @@ def test_the_questionnaire_dialog_fills_what_is_kept_and_refuses_a_comma(qtbot):
     assert "line break" in dialog.problem.text()
     assert dialog.result() != dialog.DialogCode.Accepted
     dialog.fields[0][2].setText(" 4 ")
-    assert dialog.answers() == {"setup-ub.tp2#0": {"@1": "4", "@2": ""}}
+    # left empty: asked during the install (None), not an Enter
+    assert dialog.answers() == {"setup-ub.tp2#0": {"@1": "4", "@2": None}}
 
 
 CONDITIONAL_TP2 = ("BACKUP ~ub/backup~\nLANGUAGE ~English~ ~english~\n"
@@ -558,7 +561,7 @@ CONDITIONAL_TP2 = ("BACKUP ~ub/backup~\nLANGUAGE ~English~ ~english~\n"
                    "  ACTION_IF NOT FILE_EXISTS ~ub/prefs.txt~ BEGIN\n"
                    "    PRINT ~Which portraits do you want, old or new?~\n"
                    "    ACTION_READLN portraits\n  END\n"
-                   "  PRINT ~How many extra kits should be installed?~\n"
+                   "  PRINT ~Please enter how many extra kits should be installed:~\n"
                    "  ACTION_READLN kits\n")
 
 
@@ -568,7 +571,7 @@ def test_a_question_under_a_condition_is_answered_by_its_text(qtbot, world, monk
     backed_up(world)
     (world["tmp"] / "mods" / "ub" / "setup-ub.tp2").write_text(CONDITIONAL_TP2)
     monkeypatch.setenv("FAKE_QUESTIONS", json.dumps({"setup-ub.tp2#0": [
-        "Which portraits do you want, old or new?", "How many extra kits should be installed?"]}))
+        "Which portraits do you want, old or new?", "Please enter how many extra kits should be installed:"]}))
     monkeypatch.setenv("FAKE_TRANSCRIPT", str(world["tmp"] / "answers.txt"))
     page = page_of(qtbot, world)
     shown, live = [], []
@@ -576,12 +579,12 @@ def test_a_question_under_a_condition_is_answered_by_its_text(qtbot, world, monk
     def answer(components, kept):
         shown.extend(q["text"] for c in components for q in c["questions"])
         return {"setup-ub.tp2#0": {"Which portraits do you want, old or new?": "new",
-                                   "How many extra kits should be installed?": "3"}}
+                                   "Please enter how many extra kits should be installed:": "3"}}
     page.answer_questions = answer
     page.ask_player = lambda question: live.append(question) or "9"
     run_to_end(qtbot, page)
     assert shown == ["Which portraits do you want, old or new?",
-                     "How many extra kits should be installed?"]
+                     "Please enter how many extra kits should be installed:"]
     assert live == [] and page.outcome.ok
     assert (world["tmp"] / "answers.txt").read_text().split() == ["new", "3"]
     assert "-> new  (by question)" in page.output.toPlainText()
@@ -595,12 +598,12 @@ def test_a_question_under_a_condition_that_is_not_asked_shifts_nothing(qtbot, wo
     backed_up(world)
     (world["tmp"] / "mods" / "ub" / "setup-ub.tp2").write_text(CONDITIONAL_TP2)
     monkeypatch.setenv("FAKE_QUESTIONS", json.dumps({"setup-ub.tp2#0": [
-        "How many extra kits should be installed?"]}))
+        "Please enter how many extra kits should be installed:"]}))
     monkeypatch.setenv("FAKE_TRANSCRIPT", str(world["tmp"] / "answers.txt"))
     page = page_of(qtbot, world)
     page.answer_questions = lambda components, kept: {"setup-ub.tp2#0": {
         "Which portraits do you want, old or new?": "new",
-        "How many extra kits should be installed?": "3"}}
+        "Please enter how many extra kits should be installed:": "3"}}
     page.ask_player = lambda question: "9"
     run_to_end(qtbot, page)
     assert (world["tmp"] / "answers.txt").read_text().split() == ["3"]

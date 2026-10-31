@@ -680,3 +680,36 @@ def test_the_phases_are_the_games_command_gives_mod_installer(setup):
         (os.path.join(plan, "WeiDU.log"), games["EET"])]
     with pytest.raises(ConfigError, match="not BG2EE, IWDEE"):        # review of #109
         install_run.phases(plan, {"BG2EE": games["EET"], "IWDEE": games["BGEE"]})
+
+
+def test_a_question_asked_again_gets_its_stored_answer_once(tmp_path):
+    """Review of #111: a loop refusing the stored answer would get it again
+    forever; the second time in a batch, the player answers."""
+    from iemod_fetch.install_run import InstallRun
+    asked = []
+    run = InstallRun(["x"], [], cwd=str(tmp_path), ask=lambda q, b: asked.append(q) or "4",
+                     expected={("a.tp2", 0): [("@1", "Please enter a number between 1 and 5:")]},
+                     by_key={("a.tp2", 0): {"@1": "9"}})
+    run.answers.start((("a.tp2", 0),))
+    window = "Installing [A]\nPlease enter a number between 1 and 5:"
+    assert run._by_question(window, (("a.tp2", 0),)) == ("9", "by question")
+    assert run._by_question(window, (("a.tp2", 0),)) is None        # -> the player
+    run.answers.start((("a.tp2", 0),))
+    run._given = set()                     # a new batch: given again
+    assert run._by_question(window, (("a.tp2", 0),)) == ("9", "by question")
+
+
+def test_recorded_answers_of_another_tool_are_handed_out_in_order(tmp_path):
+    """Review of #111: without this program's row keys an Orchestrator-style
+    log (answers as asked, skipped ones left out) still goes in order."""
+    from iemod_fetch.install_run import InstallRun
+    log = tmp_path / "WeiDU.log"
+    log.write_text("~A/A.TP2~ #0 #0 // a // @wlb-inputs: a1,a3\n")
+    run = InstallRun(["x"], [str(log)], cwd=str(tmp_path), ask=lambda q, b: None,
+                     expected={("a.tp2", 0): [("@1", "Please enter the first value:"),
+                                              ("@2", "Do you want the optional part?"),
+                                              ("@3", "Please enter the third value:")]})
+    run.answers.start((("a.tp2", 0),))
+    # @2 skipped this run: @3 comes second and gets a3, not "nothing"
+    assert run._by_question("Please enter the first value:", (("a.tp2", 0),)) == ("a1", "recorded")
+    assert run._by_question("Please enter the third value:", (("a.tp2", 0),)) == ("a3", "recorded")

@@ -156,6 +156,10 @@ class Answers:
         """The next recorded answer of the batch, None when there is none."""
         return str(self._queue.popleft()[2]) if self._queue else None
 
+    def keyed(self, component: Key) -> bool:
+        """This component's recorded answers know their questions."""
+        return bool(self.keys.get(component))
+
     def take(self, component: Key, question: str) -> str | None:
         """The recorded answer for this component's question, taken out of
         the queue wherever it is; None when none is recorded for it."""
@@ -174,14 +178,50 @@ _VARIABLE = re.compile(r"%[^%\s]+%")
 
 def _expected_pattern(text: str) -> re.Pattern | None:
     """The question's text as it ends WeiDU's output: any run of white space
-    for white space, anything for a %variable% (WeiDU fills it in)."""
+    for white space, a %variable% as anything on its line (WeiDU fills it in),
+    starting a word. None when the text says too little to be told apart:
+    fewer than MIN_TEXT characters besides its variables, or ending in a
+    variable (anything after its last words would match; review of #111)."""
     words = text.split()
     literal = _VARIABLE.sub("", " ".join(words))
-    if len(literal.replace(" ", "")) < MIN_TEXT:
+    if len(literal.replace(" ", "")) < MIN_TEXT or not words:
+        return None
+    if not _VARIABLE.sub("", words[-1]).strip(".,:;!?()[]\"'"):
         return None
     parts = [_VARIABLE.sub(lambda _m: "\x00", word) for word in words]
-    body = r"\s+".join(re.escape(part).replace("\x00", ".*?") for part in parts)
-    return re.compile(body + r"\s*\Z", re.DOTALL)
+    # white space between words as any white space (mod_installer's window
+    # puts its own indented blank lines between WeiDU's lines); the text
+    # starts the window or a word
+    body = r"\s+".join(re.escape(part).replace("\x00", r"[^\n]*?") for part in parts)
+    return re.compile(r"(?:\A|(?<=\s))" + body + r"\s*\Z")
+
+
+def recognisable(text: str) -> bool:
+    """match_question can tell this question apart by its text at all."""
+    return bool(text) and _expected_pattern(text) is not None
+
+
+# What mod_installer 16.0.0 takes for a question (src/config/parser_config.rs,
+# string_looks_like_question): it puts nothing else to anyone - WeiDU waits
+# until its timeout (ADR-0049, measured).
+_CHOICE_WORDS = frozenset({"choice", "choose", "select", "enter"})
+_CHOICE_PHRASES = ("do you want", "would you like", "answer [y]es or [n]o.", "is this correct?",
+                   "[y]es or [n]o", "please select", "please enter", "enter a new",
+                   "leave blank", "[a]ccept, [r]etry, [c]ancel", "[y]es, [n]o, [c]ancel")
+
+
+def mod_installer_asks(text: str) -> bool:
+    """mod_installer would put this text to the player as a question: a
+    choice phrase or word, or a bell, and not a progress word."""
+    line = text.strip().lower()
+    if "\x07" in line:
+        return True
+    if "installing" in line or "creating" in line:
+        return False
+    if any(phrase in line for phrase in _CHOICE_PHRASES):
+        return True
+    return any("".join(c for c in word if c.isalpha()) in _CHOICE_WORDS
+               for word in line.split())
 
 
 def match_question(window: str, expected: list[tuple[Key, str, str]]) -> tuple[Key, str] | None:

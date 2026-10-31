@@ -49,7 +49,8 @@ def project(tmp_path, log_lines):
     (mods / "tra" / "english").mkdir(parents=True)
     (mods / "setup-mymod.tp2").write_text(TP2, encoding="utf-8")
     (mods / "tra" / "english" / "setup.tra").write_text(
-        "@1 = ~Which portraits?~\n@2 = ~A percentage:~\n@3 = ~How big?~\n", encoding="utf-8")
+        "@1 = ~Please select the portraits to use:~\n@2 = ~Please enter a percentage:~\n"
+        "@3 = ~Please enter how big it should be:~\n", encoding="utf-8")
     plan = tmp_path / "install-plan"
     plan.mkdir()
     (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
@@ -114,14 +115,28 @@ def test_answers_go_into_the_planned_log_in_order(tmp_path):
     # one batch: #10's later questions would take #20's answers - none written
     assert "#20 // c20\n" in log and "#40 // c40\n" in log and "#30 // c30\n" in log
     assert found[0]["status"] == "answered"
-    # the rest have the player's answers by key: answered by question during the
-    # install (start_install), not by their place in the log
-    assert found[10]["status"] == "answered" and found[20]["status"] == "answered"
-    # without them: what the log's order leaves
-    plan, mods = project(tmp_path / "b", ALL)
-    found = by_number(api.write_install_answers(plan, mods, {"setup-mymod.tp2#0": {"@1": "2", "@3": ""},
-                                                          "setup-mymod.tp2#10": {"@1": "y"}}))
+    # the rest are the same texts in several components of one batch: which
+    # component asks is not known when they come, so not answered by question
+    # either (review of #111) - asked during the install
     assert found[10]["status"] == "partial" and found[20]["status"] == "unanswered"
+    assert not any(q["by_question"] for q in found[20]["questions"])
+
+
+def test_a_question_under_a_condition_is_answered_by_question(tmp_path):
+    """Its text known, long enough, one mod_installer asks, and unique in
+    its batch: offered and counted answered, given by its key when it comes."""
+    plan, mods = two_mod(tmp_path, ["~TWO/SETUP-TWO.TP2~ #0 #10 // a",
+                                    "~TWO/SETUP-TWO.TP2~ #0 #20 // c"])
+    found = by_number(api.install_questions(plan, mods))
+    assert [q["by_question"] for q in found[10]["questions"]] == [True, True]
+    assert ahead(found[20]) == [False] and found[20]["questions"][0]["by_question"]
+    found = by_number(api.write_install_answers(plan, mods, {
+        "setup-two.tp2#10": {"@1": "y", "@2": "n"}, "setup-two.tp2#20": {"@3": "z"}}))
+    assert found[10]["status"] == "answered" and found[20]["status"] == "answered"
+    # left to be asked (None): not answered
+    found = by_number(api.write_install_answers(plan, mods, {
+        "setup-two.tp2#10": {"@1": "y", "@2": None}, "setup-two.tp2#20": {"@3": "z"}}))
+    assert found[10]["status"] == "maybe"          # the conditional one may come
 
 
 def test_a_missing_answer_ends_the_row_and_a_rewrite_replaces_the_old_one(tmp_path):
@@ -182,7 +197,8 @@ def two_mod(tmp_path, lines):
     mod.mkdir(parents=True)
     (mod / "setup-two.tp2").write_text(BATCH_TP2, encoding="utf-8")
     (mod / "english.tra").write_text(
-        "@1 = ~First?~\n@2 = ~Only sometimes?~\n@3 = ~Third?~\n@4 = ~A value?~\n",
+        "@1 = ~Please enter the first value:~\n@2 = ~Do you want the optional part?~\n"
+        "@3 = ~Please enter the third value:~\n@4 = ~Please enter a value here:~\n",
         encoding="utf-8")
     plan = tmp_path / "install-plan"
     plan.mkdir()

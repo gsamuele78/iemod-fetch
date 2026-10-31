@@ -3517,21 +3517,32 @@ offer the questions under a condition too.
 player's answers (`load_install_answers`). When mod_installer puts a question
 to this program, `prompts.match_question` looks for the batch's expected
 question texts - read from the mods' files in the log's language - at the
-**end** of mod_installer's window: white space read loosely, a `%variable%`
-as anything (WeiDU fills it in), a text of fewer than 12 letters never
-(too short to tell apart), the longest matching text winning (a shorter one
-may be its tail) and two different questions matching equally meaning no
-match. Recognised, the question is answered by its key: the player's
+**end** of mod_installer's window, starting a word: white space read
+loosely, a `%variable%` as anything on its line (WeiDU fills it in); never a
+text with fewer than 12 characters besides its variables, nor one ending in
+a variable (anything after its words would match); the longest matching text
+winning (a shorter one may be its tail), and two different questions
+matching equally meaning no match. A stored answer is given **once per
+question per batch**: asked again - a loop refusing it, or a question asked
+on purpose several times - the player answers (independent review of #111,
+reproduced with the real binaries: a refused answer had been given again
+16 times in 40 s). A recorded answer knows its question only on a row this
+program wrote (`write_install_answers`); another tool's row - answers as
+asked, skipped ones left out - is handed out in order, as before. Recognised, the question is answered by its key: the player's
 answer, else the log's recorded answer for that very question (taken out
 of the queue wherever it is, so the others stay in step); with neither, it
 is asked - a recorded answer meant for another question is never given to
 it. Not recognised, it takes the next recorded answer, as before: nothing
 changes for a question the texts do not cover.
 
-So the questionnaire now offers every question whose text is known - also
-those under a condition, after one asked until valid, or after a component
-that may still ask - and a component whose every question has an answer
-counts as answered. The log's `@wlb-inputs` still carries only the answers
+So the questionnaire now offers every question answerable by question
+(`install_questions`' `by_question`): its text known and recognisable as
+above, one mod_installer puts to anyone at all (its choice words, below),
+and no other component of its batch asking the same - also those under a
+condition, after one asked until valid, or after a component that may still
+ask. A component whose every question has an answer, by its place or by
+question, counts as answered; no other question counts. A field left empty
+is asked during the install (kept as such, so it is not offered again). The log's `@wlb-inputs` still carries only the answers
 whose place is sure (the rules above), for other tools that read it.
 
 **Measured with the real mod_installer 16.0.0 and WeiDU v251**

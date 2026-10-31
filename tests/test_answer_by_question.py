@@ -54,3 +54,22 @@ def test_without_keys_the_answers_go_in_order_as_before():
     answers = Answers({A: ["1", "2"]})
     answers.start((A,))
     assert answers.take(A, "@1") is None and answers.next() == "1"
+
+
+def test_a_trailing_variable_or_a_word_part_is_never_matched():
+    """Review of #111: a text ending in a %variable% would swallow every line
+    after it; a variable stays on its line; the text starts a word."""
+    assert match_question("The game was detected in /x.\nInstalling\nWhich kit? Choose 1-3:",
+                          [(A, "@1", "The game was detected in %dir%")]) is None
+    assert match_question("Use the kit Fighter now?\nInstall Y? [y/n]",
+                          [(A, "@1", "Use the kit %kit% Y? [y/n]")]) is None
+    assert match_question("Reinstall the portraits now? (y/n)",
+                          [(A, "@1", "install the portraits now? (y/n)")]) is None
+
+
+def test_what_mod_installer_puts_to_anyone():
+    from iemod_fetch.prompts import mod_installer_asks, recognisable
+    assert mod_installer_asks("Please enter a number between 1 and 5:")
+    assert mod_installer_asks("Do you want the new portraits?")
+    assert not mod_installer_asks("How many extra kits should be installed?")
+    assert not recognisable("Install to %dir%") and recognisable("Please enter a number:")

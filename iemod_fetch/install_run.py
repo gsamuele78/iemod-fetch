@@ -273,7 +273,8 @@ class InstallRun:
                  phases: list[tuple[str, str]] | None = None,
                  results_file: str | None = None,
                  expected: dict[Key, list[tuple[str, str]]] | None = None,
-                 by_key: dict[Key, dict[str, str]] | None = None) -> None:
+                 by_key: dict[Key, dict[str, str]] | None = None,
+                 row_keys: dict[Key, list[str]] | None = None) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -294,8 +295,10 @@ class InstallRun:
         # order its files ask them, and the player's answers by key
         self.expected = expected or {}
         self.by_key = by_key or {}
-        self.answers = Answers(recorded, {component: [key for key, _text in questions]
-                                          for component, questions in self.expected.items()})
+        self._given: set[tuple[Key, str]] = set()      # answered by key in this batch
+        # the question of each recorded answer, only for the rows this program
+        # wrote in that order (an Orchestrator log records them as asked)
+        self.answers = Answers(recorded, row_keys or {})
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
@@ -385,6 +388,7 @@ class InstallRun:
             for event in reader.feed(line):
                 if event.kind == "batch":
                     self.answers.start(event.batch)
+                    self._given = set()
                 self.on_event(event)
                 if event.kind == "batch":
                     self._game_started(event.batch)
@@ -446,8 +450,17 @@ class InstallRun:
         component, key = found
         positional = self.answers.take(component, key)       # kept in step
         stored = self.by_key.get(component, {}).get(key)
+        if (component, key) in self._given:
+            # asked again in this batch: a loop refusing the answer, or a
+            # question asked on purpose several times - the player answers
+            # (review of #111: never the same stored answer forever)
+            return (positional, "recorded") if positional is not None else None
         if stored is not None:
+            self._given.add((component, key))
             return stored, "by question"
+        if positional is None and not self.answers.keyed(component):
+            # another tool's row (answers as asked): in order, as before
+            positional = self.answers.next()
         return (positional, "recorded") if positional is not None else None
 
     def _stop(self, process: subprocess.Popen) -> None:
@@ -796,7 +809,8 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
           language: str = "en_US", allow_existing: bool = False,
           resume_install: bool = False,
           expected: dict[Key, list[tuple[str, str]]] | None = None,
-          by_key: dict[Key, dict[str, str]] | None = None, **timing) -> InstallRun:
+          by_key: dict[Key, dict[str, str]] | None = None,
+          row_keys: dict[Key, list[str]] | None = None, **timing) -> InstallRun:
     """
     An install ready to run, after the checks; ConfigError says what stops
     it. `resume_install`: go on where the games' WeiDU.logs say it stopped
@@ -827,4 +841,4 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
                       bgee_dir=bgee_dir, games=games, tools=(mod_installer, weidu),
                       asked_file=asked_file, phases=phases(plan_dir, games),
                       results_file=os.path.join(results_dir, RESULTS_FILE),
-                      expected=expected, by_key=by_key, **timing)
+                      expected=expected, by_key=by_key, row_keys=row_keys, **timing)

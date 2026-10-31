@@ -548,7 +548,7 @@ class InstallPage(QWidget):
                                      tools["mod_installer"], tools["weidu"],
                                      ask=self._from_install, on_event=on_event,
                                      resume=resuming, answers=self._kept,
-                                     questions=plan.get("questions") or None,
+                                     questions=coverage or None,
                                      **services.timing)
             self._install = install
             if cancel.is_set():                 # Cancel while it was being set up
@@ -718,7 +718,7 @@ class InstallPage(QWidget):
 def _offered(question: dict) -> bool:
     """A question the window offers: answerable by its place in the log, or
     recognisable by its text during the install (ADR-0049)."""
-    return bool(question["beforehand"] or (question["known"] and question["text"]))
+    return bool(question["beforehand"] or question.get("by_question"))
 
 
 def _plan_and_questions(services: Services, game: str, chosen: list, labels: dict,
@@ -752,7 +752,7 @@ class _Questionnaire(QDialog):
                 if not _offered(question) or question["key"] in shown:
                     continue
                 shown.add(question["key"])        # one answer per question text
-                edit = QLineEdit(self.kept.get(name, {}).get(question["key"], ""))
+                edit = QLineEdit(self.kept.get(name, {}).get(question["key"]) or "")
                 edit.setAccessibleName(question["text"])
                 hint = (" (asked until the answer is valid)" if question["repeats"] else
                         " (asked only in some cases)" if question["conditional"] else "")
@@ -771,9 +771,10 @@ class _Questionnaire(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(_plain(
             "These questions come during the install. Answered here, the install "
-            "gives the answers itself; an empty field is an Enter. Questions that "
-            "depend on a condition or on what happens while installing are asked "
-            "then, as before."))
+            "gives the answer itself when the question comes - once; if the mod "
+            "asks it again (the answer was refused), you are asked. A field left "
+            "empty is asked during the install. A question marked \"asked only in "
+            "some cases\" may not come at all."))
         layout.addWidget(scroll)
         layout.addWidget(self.problem)
         layout.addWidget(buttons)
@@ -789,7 +790,8 @@ class _Questionnaire(QDialog):
 
     def answers(self) -> dict:
         for name, key, edit in self.fields:
-            self.kept.setdefault(name, {})[key] = edit.text().strip()
+            # empty: asked during the install, and not offered here again
+            self.kept.setdefault(name, {})[key] = edit.text().strip() or None
         return self.kept
 
 

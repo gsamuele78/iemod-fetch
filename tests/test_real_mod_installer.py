@@ -506,3 +506,43 @@ def test_the_real_window_is_recognised_and_answered_by_question(tmp_path, asked_
     expected = ["new", "3"] if asked_first else ["preset", "3"]
     assert (game / "cond-answers.txt").read_text().split() == expected, transcript
     assert {a.source for a in outcome.answered} == {"by question"}, transcript
+
+
+ASKED_UNTIL_VALID = """BACKUP ~rep/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks until the answer is valid~
+OUTER_SET n = 0
+OUTER_WHILE (n < 1 OR n > 5) BEGIN
+  PRINT ~Please enter a number between 1 and 5:~
+  ACTION_READLN n
+END
+APPEND_OUTER ~rep-answer.txt~ ~%n%~
+"""
+
+
+def test_a_stored_answer_the_mod_refuses_is_given_once_then_the_player_answers(tmp_path):
+    """Review of #111, reproduced with the real binaries: a loop asking until
+    valid got the same refused stored answer forever (16 in 40 s). Given
+    once; asked again, the player answers."""
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "rep-answer.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "rep").mkdir(parents=True)
+    (mods / "rep" / "rep.tp2").write_text(ASKED_UNTIL_VALID)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
+                                    "~REP/REP.TP2~ #0 #0 // Asks until the answer is valid\n")
+    asked, lines = [], []
+    outcome = api.start_install(
+        str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER, WEIDU,
+        ask=lambda q, b: asked.append(q) or "3", on_event=lambda e: lines.append(e.text),
+        answers={"rep.tp2#0": {"Please enter a number between 1 and 5:": "9"}}).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and len(asked) == 1, transcript
+    assert [a.source for a in outcome.answered] == ["by question", "player"], transcript
+    assert (game / "rep-answer.txt").read_text().split() == ["3"]
