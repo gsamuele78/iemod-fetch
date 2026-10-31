@@ -52,6 +52,8 @@ jobs:
       sha: ${{ steps.plan.outputs.sha }}
       latest: ${{ steps.plan.outputs.latest }}
       workflows_differ: ${{ steps.plan.outputs.workflows_differ }}
+      # 'true' only when RELEASE_TOKEN is set AND GitHub accepts it
+      release_token: ${{ steps.gate.outputs.release_token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false, fetch-depth: 0, fetch-tags: true }
@@ -68,7 +70,7 @@ jobs:
           REPO: ${{ github.repository }}
           # Released by the automatic run once the newest version is tagged,
           # one per run, if still untagged (ADR-0027).
-          BACKFILL: "2.1.0"
+          BACKFILL: "2.1.0,4.0.0"
         run: |
           if [ "$EVENT" = "pull_request" ]; then
             if [ "$HEAD_REPO" = "$REPO" ]; then
@@ -84,32 +86,62 @@ jobs:
           else
             python tools/release_plan.py $VERSION >> "$GITHUB_OUTPUT"
           fi
-          newest=$(python -c "import tools.release_plan as r; print(r.newest_release(open('CHANGELOG.md', encoding='utf-8').read()))")
+          # "latest" is judged against main's changelog: on a tag pushed by hand
+          # the checkout is the tagged commit, whose changelog may not know a
+          # newer release (4.0.0 tagged after 4.0.1 must not become Latest).
+          git show origin/main:CHANGELOG.md > /tmp/main-changelog.md 2>/dev/null || cp CHANGELOG.md /tmp/main-changelog.md
+          newest=$(python -c "import tools.release_plan as r; print(r.newest_release(open('/tmp/main-changelog.md', encoding='utf-8').read()))")
           tag=$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT" | tail -1)
           if [ "$tag" = "v$newest" ]; then echo "latest=true"; else echo "latest=false"; fi >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
       # GITHUB_TOKEN cannot create a tag on a commit whose workflow files differ
       # from main's (it can never hold the `workflows` permission): GitHub
       # answers 403 at the very last step. Say so now, with the two ways out.
-      # An automatic back-fill waits for the token quietly; one asked for by
-      # hand fails, so the person who asked sees why.
+      # RELEASE_TOKEN is used, and so checked, only when the release needs it
+      # (its commit's workflow files differ from main's); every other release
+      # is tagged with the run's own token, so a wrong or expired secret cannot
+      # break it. When needed, it is checked against GitHub here, not trusted
+      # for being set: 4.0.0's run built and attested for 15 minutes, then the
+      # publish step met "Bad credentials" from an expired token. The check
+      # proves the token is live (a 401 is caught); the repository is public,
+      # so it cannot prove the token may write to it - a token for the wrong
+      # repository still fails at the publish step (docs/RELEASING.md,
+      # "RELEASE_TOKEN").
+      # An automatic back-fill waits quietly; one asked for by hand fails, so
+      # the person who asked sees why.
       - name: The tag can be created with the token this run has
         id: gate
         env:
           DIFFER: ${{ steps.plan.outputs.workflows_differ }}
-          HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+          RELEASE: ${{ steps.plan.outputs.release }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG: ${{ steps.plan.outputs.tag }}
           SHA: ${{ steps.plan.outputs.sha }}
           EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
         run: |
           go=true
-          if [ "$DIFFER" = "true" ] && [ "$HAS_TOKEN" != "true" ]; then
-            why="$TAG is on $SHA, whose workflow files differ from main's; GITHUB_TOKEN may not create that tag. Add a RELEASE_TOKEN secret (contents and workflows write), or push the tag by hand (git tag $TAG $SHA && git push origin $TAG) and run this workflow with this version. See docs/RELEASING.md."
+          usable=false
+          if [ "$RELEASE" = "true" ] && [ "$DIFFER" = "true" ] && [ -n "$RELEASE_TOKEN" ]; then
+            code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $RELEASE_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO") || code=000
+            if [ "$code" = "200" ]; then
+              usable=true
+            else
+              echo "::warning title=RELEASE_TOKEN rejected::GitHub answered HTTP $code to the RELEASE_TOKEN secret (401: expired or revoked; 000: GitHub not reached). It is not used. Renew it: docs/RELEASING.md, \"RELEASE_TOKEN\"."
+            fi
+          fi
+          if [ "$RELEASE" = "true" ] && [ "$DIFFER" = "true" ] && [ "$usable" != "true" ]; then
+            if [ -n "$RELEASE_TOKEN" ]; then state="the RELEASE_TOKEN secret is set but GitHub rejects it"; else state="there is no RELEASE_TOKEN secret"; fi
+            why="$TAG is on $SHA, whose workflow files differ from main's, so GITHUB_TOKEN may not create that tag, and $state. Renew RELEASE_TOKEN (a fine-grained token for this repository: Contents and Workflows, read and write) and re-run this workflow, or push the tag by hand (git tag $TAG $SHA && git push origin $TAG). See docs/RELEASING.md, \"RELEASE_TOKEN\"."
             if [ "$EVENT" = "workflow_dispatch" ]; then echo "::error::$why"; exit 1; fi
-            echo "::notice::not released yet - $why"
+            echo "::warning title=$TAG not released yet::$why"
             go=false
           fi
           echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "release_token=$usable" >> "$GITHUB_OUTPUT"
 
   # Published notes follow CHANGELOG.md: a corrected section reaches its
   # release on the next push. Editing a release creates no ref, so the run's
@@ -447,8 +479,9 @@ jobs:
           draft: false
           make_latest: ${{ needs.decide.outputs.latest }}
           # Optional: only a back-fill onto a commit with other workflow files
-          # needs a token with the `workflows` permission (ADR-0027).
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          # needs a token with the `workflows` permission (ADR-0027). Used only
+          # then, and only when the decide job found that GitHub accepts it.
+          token: ${{ needs.decide.outputs.workflows_differ == 'true' && needs.decide.outputs.release_token == 'true' && secrets.RELEASE_TOKEN || github.token }}
           fail_on_unmatched_files: true
 
   # The macOS bundle is built apart (release-macos.yml, ADR-0040); starting it

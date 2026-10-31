@@ -35,7 +35,9 @@ The standard library at runtime, plus two libraries that earn their place
 of the community data at a time; ADR-0043), carried inside the one file -
 nothing to install but Python 3.14.
 
-**Current release: 4.0.0** - one Python version, 3.14, and the wizard that
+**Current release: 4.0.1** - the wizard's window no longer freezes on
+Windows when a download starts (ADR-0048). 4.0.0 brought one Python version,
+3.14, and the wizard that
 installs (milestones M5, M5b, M6, and M4 but for its item 24, a real
 end-to-end job on Windows). The wizard now goes from game and
 folders to a finished install: mod selection with conflicts and presets, the
