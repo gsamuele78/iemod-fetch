@@ -3140,8 +3140,10 @@ error.
 - **unar runs with `-D` and `-f`**: the archive's own layout, as the
   measurement compared it, with no folder of unar's own around it.
 - **Each tool extracts into a folder of its own** beside the destination,
-  deleted when the tool fails; only a tool that exits 0 has its files moved
-  into place, then audited as before (ADR-0003). The 7z listing, when
+  deleted when the tool fails, read-only folders included; only a tool that
+  exits 0 has its files moved into place, then audited as before (ADR-0003).
+  A move that fails (on Windows, an antivirus holding a file) counts as that
+  tool's failure: what it moved is taken back and the next tool is tried. The 7z listing, when
   7-Zip can read the archive, still holds it to the zip/tar rules first.
 - **When no tool is installed, the message says what to install per
   system** - and that Debian's 7zip cannot read RAR. It no longer suggests
@@ -3152,7 +3154,8 @@ error.
 - On Debian and Ubuntu a RAR is extracted right or not at all: the silent
   wrong extraction is gone. `tests/test_archive_tools.py` pins the order,
   the fresh folder per tool (a tool that writes then fails leaves nothing),
-  Windows' tar.exe, unar's flags and the message; each failed before.
+  Windows' tar.exe, unar's flags, a failed move, a read-only leftover and
+  the message; each failed before.
 - Two solid RAR4 archives (027 and 030 in the measurement) no open-source
   tool opens; on trixie a solid RAR5 (023) too - bsdtar refuses its
   dictionary size and trixie's unar reads no RAR5, Homebrew's does. Those

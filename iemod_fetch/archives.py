@@ -5,6 +5,7 @@ Threat model: a mod archive is untrusted input from a forum download or a
 release asset nobody checksums. It may contain `../` members, absolute paths,
 symlinks pointing at the game install, or be a decompression bomb.
 """
+import contextlib
 import enum
 import gzip
 import os
@@ -295,6 +296,23 @@ def _preflight_external(path: str) -> None:
                 f"uncompressed size exceeds {MAX_TOTAL_BYTES} bytes (archive bomb?)")
 
 
+def _writable_again(function, path, _exc) -> None:
+    """rmtree's onexc: a read-only folder an archive restored is made
+    writable and the removal tried again (review of #93)."""
+    os.chmod(os.path.dirname(path) or path, 0o700)
+    if os.path.isdir(path):
+        os.chmod(path, 0o700)
+    function(path)
+
+
+def _remove(path: str) -> None:
+    """A file or folder an unpacker wrote, gone - read-only parts included."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, onexc=_writable_again)
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
 def _extract_external(path: str, dest: str, kind: Kind) -> None:
     """
     Hand the container to an unpacker. A .exe is never executed - it is only
@@ -324,13 +342,23 @@ def _extract_external(path: str, dest: str, kind: Kind) -> None:
                 failures.append(f"{tool}: {exc}")
                 continue
             if proc.returncode == 0:
-                for entry in os.listdir(work):
-                    os.replace(os.path.join(work, entry), os.path.join(dest, entry))
-                return
+                moved: list[str] = []
+                try:
+                    for entry in os.listdir(work):
+                        os.replace(os.path.join(work, entry), os.path.join(dest, entry))
+                        moved.append(entry)
+                    return
+                except OSError as exc:          # e.g. an antivirus holding a file
+                    for entry in moved:         # take back what went in
+                        _remove(os.path.join(dest, entry))
+                    failures.append(f"{tool}: extracted, but could not be moved into "
+                                    f"place: {exc}")
+                    continue
             failures.append(f"{tool}: exit {proc.returncode}: "
                             f"{proc.stdout.decode('utf-8', 'replace').strip()[:200]}")
         finally:
-            shutil.rmtree(work, ignore_errors=True)
+            with contextlib.suppress(OSError):     # a leftover, not a failure
+                _remove(work)
     raise ExtractionError(f"all unpackers failed for {os.path.basename(path)}: "
                           + "; ".join(failures))
 

@@ -119,7 +119,59 @@ def test_unar_keeps_the_archives_own_layout(monkeypatch, rar, tmp_path):
     monkeypatch.setattr(archives.subprocess, "run", run)
     with pytest.raises(ExtractionError):
         safe_extract(rar, str(tmp_path / "out"))
-    assert "-D" in seen[0]
+    assert "-D" in seen[0] and "-f" in seen[0]
+
+
+def test_a_move_that_fails_counts_as_that_tools_failure(monkeypatch, rar, tmp_path):
+    """Moving the files into place can fail (on Windows, an antivirus still
+    holding one): that tool counts as failed, what it moved is taken out
+    again, and the next tool is tried - no bare OSError (review of #93)."""
+    tools = Tools(monkeypatch, {
+        "bsdtar": (0, {"mod/a.txt": "bsdtar", "zz.txt": "bsdtar"}),
+        "unar": (0, {"mod/a.txt": "unar"})})
+    real, moved = os.replace, []
+
+    def replace(src, dst):
+        if not moved:                       # bsdtar's first entry goes in ...
+            moved.append(dst)
+            return real(src, dst)
+        if len(moved) == 1:                 # ... its second does not
+            moved.append(dst)
+            raise PermissionError(13, "in use", src)
+        return real(src, dst)
+    monkeypatch.setattr(archives.os, "replace", replace)
+    out = tmp_path / "out"
+    safe_extract(rar, str(out))
+    assert tools.calls == ["bsdtar", "unar"]
+    assert _tree(out) == {"mod/a.txt": "unar"}
+
+
+def test_a_read_only_folder_a_tool_left_is_still_removed(monkeypatch, rar, tmp_path):
+    """A failed tool may restore a read-only folder from the archive; its
+    scratch folder is removed all the same, not left beside the destination
+    (review of #93). The refusal is simulated - the first removal of the
+    file is denied, as in a read-only folder - so the test holds as root."""
+    def run(cmd, **_kw):
+        locked = os.path.join(_out_dir(cmd), "locked")
+        os.makedirs(locked)
+        with open(os.path.join(locked, "f.txt"), "w", encoding="utf-8") as fh:
+            fh.write("x")
+        return subprocess.CompletedProcess(cmd, 1, b"", b"")
+    real_unlink, denied = os.unlink, []
+
+    def unlink(name, *args, **kwargs):
+        if os.path.basename(str(name)) == "f.txt" and not denied:
+            denied.append(name)
+            raise PermissionError(13, "Permission denied", name)
+        return real_unlink(name, *args, **kwargs)
+    monkeypatch.setattr(archives, "find_tool",
+                        lambda name: "/fake/bsdtar" if name == "bsdtar" else None)
+    monkeypatch.setattr(archives.subprocess, "run", run)
+    monkeypatch.setattr(os, "unlink", unlink)
+    with pytest.raises(ExtractionError):
+        safe_extract(rar, str(tmp_path / "out"))
+    assert denied
+    assert [n for n in os.listdir(tmp_path) if n.startswith(".unpack-")] == []
 
 
 def test_windows_own_tar_is_libarchive(monkeypatch, tmp_path):
