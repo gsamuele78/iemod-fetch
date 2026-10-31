@@ -450,3 +450,99 @@ def test_weidus_debug_file_for_a_skipped_component_in_a_batch(tmp_path):
     found = results.results([("skips.tp2", n) for n in (0, 1, 2)], "",
                             (game / "WeiDU.log").read_text(), debug)
     assert [x.status for x in found] == [results.OK, results.NOT_REACHED, results.OK]
+
+
+UNDER_A_CONDITION = """BACKUP ~cond/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks under a condition, then always~
+ACTION_IF NOT FILE_EXISTS ~cond/prefs.txt~ BEGIN
+  PRINT ~Which portraits do you want, old or new?~
+  ACTION_READLN portraits
+END ELSE BEGIN
+  OUTER_SPRINT portraits ~preset~
+END
+PRINT ~Please enter how many extra kits should be installed:~
+ACTION_READLN kits
+APPEND_OUTER ~cond-answers.txt~ ~%portraits% %kits%~
+"""
+
+
+@pytest.mark.parametrize("asked_first", [True, False])
+def test_the_real_window_is_recognised_and_answered_by_question(tmp_path, asked_first):
+    """ADR-0049: a question under a condition, which the log's order cannot
+    answer, is recognised by its text in the real mod_installer's window and
+    answered by its key - and when the condition skips it (prefs.txt there),
+    the next question still gets its own answer. Measured: mod_installer
+    16.0.0 flags a question only when its window holds one of its choice
+    words or phrases (parser_config.rs: "enter", "please enter", "do you
+    want"...); a question with none ("How many kits?" alone) is never put
+    to anyone and WeiDU waits until mod_installer's timeout, 3 hours - so
+    the second question says "Please enter"."""
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "cond-answers.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "cond").mkdir(parents=True)
+    (mods / "cond" / "cond.tp2").write_text(UNDER_A_CONDITION)
+    if not asked_first:
+        (mods / "cond" / "prefs.txt").write_text("")      # copied into the game with the mod
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~COND/COND.TP2~ #0 #0 // Asks under a condition, then always\n")
+    answers = {"cond.tp2#0": {"Which portraits do you want, old or new?": "new",
+                              "Please enter how many extra kits should be installed:": "3"}}
+    lines, asked = [], []
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: asked.append(q) or None,
+                                on_event=lambda e: lines.append(e.text),
+                                answers=answers).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and asked == [], transcript
+    expected = ["new", "3"] if asked_first else ["preset", "3"]
+    assert (game / "cond-answers.txt").read_text().split() == expected, transcript
+    assert {a.source for a in outcome.answered} == {"by question"}, transcript
+
+
+ASKED_UNTIL_VALID = """BACKUP ~rep/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks until the answer is valid~
+OUTER_SET n = 0
+OUTER_WHILE (n < 1 OR n > 5) BEGIN
+  PRINT ~Please enter a number between 1 and 5:~
+  ACTION_READLN n
+END
+APPEND_OUTER ~rep-answer.txt~ ~%n%~
+"""
+
+
+def test_a_stored_answer_the_mod_refuses_is_given_once_then_the_player_answers(tmp_path):
+    """Review of #111, reproduced with the real binaries: a loop asking until
+    valid got the same refused stored answer forever (16 in 40 s). Given
+    once; asked again, the player answers."""
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "rep-answer.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "rep").mkdir(parents=True)
+    (mods / "rep" / "rep.tp2").write_text(ASKED_UNTIL_VALID)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
+                                    "~REP/REP.TP2~ #0 #0 // Asks until the answer is valid\n")
+    asked, lines = [], []
+    outcome = api.start_install(
+        str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER, WEIDU,
+        ask=lambda q, b: asked.append(q) or "3", on_event=lambda e: lines.append(e.text),
+        answers={"rep.tp2#0": {"Please enter a number between 1 and 5:": "9"}}).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and len(asked) == 1, transcript
+    assert [a.source for a in outcome.answered] == ["by question", "player"], transcript
+    assert (game / "rep-answer.txt").read_text().split() == ["3"]

@@ -128,6 +128,7 @@ class InstallPage(QWidget):
         self._install: Any = None
         self._asking: _Question | None = None
         self._plan_written: dict | None = None
+        self._kept: dict = {}             # the questionnaire's answers, for start()
         self._checking: QThread | None = None
         self._check_round = 0
         self._last = 0.0
@@ -546,7 +547,9 @@ class InstallPage(QWidget):
             install = services.start(plan["plan_dir"], games, services.mods_dir(folder),
                                      tools["mod_installer"], tools["weidu"],
                                      ask=self._from_install, on_event=on_event,
-                                     resume=resuming, **services.timing)
+                                     resume=resuming, answers=self._kept,
+                                     questions=coverage or None,
+                                     **services.timing)
             self._install = install
             if cancel.is_set():                 # Cancel while it was being set up
                 install.cancel()
@@ -567,17 +570,18 @@ class InstallPage(QWidget):
         """
         services, folder = self.services, self.project_dir
         mods = services.mods_dir(folder)
+        self._kept = {}
         coverage = plan.get("questions") or {}
         if not coverage:                  # could not be read: nothing to say
             return {}
         kept = services.load_answers(folder)
         open_ = [c for c in coverage["components"]
-                 if any(q["beforehand"] and q["key"] not in kept.get(api.answer_key(c), {})
+                 if any(_offered(q) and q["key"] not in kept.get(api.answer_key(c), {})
                         for q in c["questions"])]
         if open_:
             given = self.answer_questions(
                 [c for c in coverage["components"]
-                 if any(q["beforehand"] for q in c["questions"])], kept)
+                 if any(_offered(q) for q in c["questions"])], kept)
             if given is None:
                 self._say("Not installed: the questions were not answered. The plan is "
                           f"written in {plan['plan_dir']}, nothing else was done.")
@@ -587,6 +591,7 @@ class InstallPage(QWidget):
                 services.save_answers(folder, kept)
             except OSError as exc:
                 self._append(f"The answers could not be kept in the project: {exc}")
+        self._kept = kept                 # answered by question during the install
         try:
             return services.write_answers(plan["plan_dir"], mods, kept, coverage=coverage)
         except (OSError, ValueError) as exc:
@@ -710,6 +715,12 @@ class InstallPage(QWidget):
         return bool(self.outcome is not None and getattr(self.outcome, "ok", False))
 
 
+def _offered(question: dict) -> bool:
+    """A question the window offers: answerable by its place in the log, or
+    recognisable by its text during the install (ADR-0049)."""
+    return bool(question["beforehand"] or question.get("by_question"))
+
+
 def _plan_and_questions(services: Services, game: str, chosen: list, labels: dict,
                         folder: str) -> dict:
     """On a worker thread: write the plan, then read the questions its mods
@@ -736,12 +747,15 @@ class _Questionnaire(QDialog):
         for component in components:
             name = api.answer_key(component)
             form.addRow(_plain(f"{component['tp2']} #{component['number']}"))
+            shown: set[str] = set()
             for question in component["questions"]:
-                if not question["beforehand"]:
+                if not _offered(question) or question["key"] in shown:
                     continue
-                edit = QLineEdit(self.kept.get(name, {}).get(question["key"], ""))
+                shown.add(question["key"])        # one answer per question text
+                edit = QLineEdit(self.kept.get(name, {}).get(question["key"]) or "")
                 edit.setAccessibleName(question["text"])
-                hint = " (asked until the answer is valid)" if question["repeats"] else ""
+                hint = (" (asked until the answer is valid)" if question["repeats"] else
+                        " (asked only in some cases)" if question["conditional"] else "")
                 form.addRow(_plain(question["text"] + hint), edit)
                 self.fields.append((name, question["key"], edit))
         inner = QWidget()
@@ -757,9 +771,10 @@ class _Questionnaire(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(_plain(
             "These questions come during the install. Answered here, the install "
-            "gives the answers itself; an empty field is an Enter. Questions that "
-            "depend on a condition or on what happens while installing are asked "
-            "then, as before."))
+            "gives the answer itself when the question comes - once; if the mod "
+            "asks it again (the answer was refused), you are asked. A field left "
+            "empty is asked during the install. A question marked \"asked only in "
+            "some cases\" may not come at all."))
         layout.addWidget(scroll)
         layout.addWidget(self.problem)
         layout.addWidget(buttons)
@@ -775,7 +790,8 @@ class _Questionnaire(QDialog):
 
     def answers(self) -> dict:
         for name, key, edit in self.fields:
-            self.kept.setdefault(name, {})[key] = edit.text().strip()
+            # empty: asked during the install, and not offered here again
+            self.kept.setdefault(name, {})[key] = edit.text().strip() or None
         return self.kept
 
 
