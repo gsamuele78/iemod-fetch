@@ -8,7 +8,27 @@ Python API, which is internal.
 
 ## [Unreleased]
 
-### Changed (breaking: 4.0.0)
+## [4.0.0] - 2026-10-31
+
+### Upgrading from 3.x
+- **Python 3.14** is needed to run the `.pyz` or a pip install; an older one
+  stops with one sentence saying so. Where the system's Python is older
+  (Debian trixie's 3.13, Ubuntu 24.04's 3.12, macOS's own 3.9), take a release
+  bundle instead: `iemod-fetch-cli-<os>-<arch>.zip` for the command line,
+  `iemod-fetch-gui-...` for the wizard. Both carry their own Python.
+- **Linux bundles need Debian trixie or Ubuntu 24.04** (glibc 2.39 or newer);
+  they are no longer checked on Debian 12 or Ubuntu 22.04.
+- **RAR archives** are opened with the system's tools (ADR-0047): on Debian
+  and Ubuntu `apt install libarchive-tools unar`; macOS and Windows 10/11
+  have libarchive built in, and `brew install unar` helps on macOS. An
+  installed 7-Zip or WinRAR is still used, last. Debian's own `7zip` package
+  cannot read RAR - it was extracting them wrong before this release.
+- A `decisions.json` written by 4.0.0 can name `keep-both`; an older
+  iemod-fetch refuses it.
+- The command line, its flags, exit codes and JSON reports are otherwise
+  unchanged; the Python API stays internal.
+
+### Changed (breaking)
 - **Debian trixie is the minimum platform for the Linux bundles** (ADR-0043
   amendment of 2026-10-31). Both are built on `ubuntu-24.04`, may need glibc
   up to 2.41 (trixie's; was 2.35) and are started inside `debian:trixie`
@@ -209,7 +229,7 @@ Python API, which is internal.
   (krion64's per-component categories split 242 components) or has no data
   (BWS-NG classifies no component on its own).
 - **The command line as a program that needs no Python** (GUI-AUDIT M6 item
-  36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
+  36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian trixie and
   macOS's own `python3` are older. Each release now carries
   `iemod-fetch-cli-<os>-<arch>.zip` for Linux, Windows and macOS: a
   PyInstaller folder (one folder, not one file, which unpacks itself on

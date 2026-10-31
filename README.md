@@ -35,23 +35,21 @@ The standard library at runtime, plus two libraries that earn their place
 of the community data at a time; ADR-0043), carried inside the one file -
 nothing to install but Python 3.14.
 
-**Current release: 3.0.0** - the desktop wizard up to download (milestone
-M3): game and folders, mod selection with conflicts and presets, install
-order, then download and extraction with cancel and resume, also as a program
-that needs no Python (Linux and Windows zips, macOS added when built). 3.0 is
-the plan's number for the milestone, not a break: the command line only gains
-(a `mod_extracting` event; with no `mod_downloads.json`, the community
-catalogue as the source) and is fixed, nothing is removed or renamed.
-Installation from the wizard is the next milestone (M4); then M5, the order
-and the selection by kind of mod for what krion64 does not place - measured
-first: BWS-NG's per-component order, then a kind only where the sources agree
-(ADR-0041) - with Infinity Mod Runner and its Forge as references. After
-three audits the plan also holds editing the order by component with fixes
-after a manual move (M5b), **4.0.0 on one Python version, 3.14**, with the
-libraries that earn their place (M6, ADR-0043), defects to fix (M7) and what
-the other projects do that this tool does not (M8, which since 2026-10-31
-also holds ten ideas read in Chriz Easy BG, an MIT installer for one curated
-EET collection: items 62-71)
+**Current release: 4.0.0** - one Python version, 3.14, and the wizard that
+installs (milestones M5, M5b, M6, and M4 but for its item 24, a real
+end-to-end job on Windows). The wizard now goes from game and
+folders to a finished install: mod selection with conflicts and presets, the
+order - by kind for what krion64 does not place (ADR-0041), and edited by
+component, with fixes after a manual move - download and extraction, then a
+backup checked against the game as it is, mod_installer run with WeiDU's
+questions answered, and a stopped install resumed from the games' WeiDU.log.
+Both the wizard and the command line come as programs that need no Python,
+for Linux (Debian trixie, the minimum, and Ubuntu 24.04), Windows and macOS.
+4.0 breaks: Python 3.14 for the `.pyz` and pip, RAR archives through the
+system's tools (ADR-0047) - see *Upgrading from 3.x* in the changelog. Next
+in the plan: M4's item 24, defects to fix (M7) and what the other projects do that this
+tool does not (M8, which since 2026-10-31 also holds ten ideas read in Chriz
+Easy BG, an MIT installer for one curated EET collection: items 62-71)
 ([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
