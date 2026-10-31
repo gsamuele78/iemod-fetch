@@ -40,6 +40,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from . import atomic
 from .errors import ConfigError, ModFetchError, VerificationFailed
 
 SCHEMA_VERSION = 1
@@ -329,7 +330,7 @@ def create(game_dir: str, backups_dir: str, name: str | None = None,
     if len(_scan(os.path.join(work, FILES))[0]) != len(hashes):
         raise ConfigError(f"{backups_dir}: two files of the game are one file there (names "
                           f"that differ only in case?); back up to another drive")
-    os.replace(work, final)
+    atomic.replace(work, final)
     _emit(on_progress, event="backup_finished", path=final, files=len(hashes), bytes=total)
     return final
 
@@ -586,7 +587,7 @@ def _move(source: str, target: str) -> None:
     if not (stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode)):
         raise OSError(f"{source}: not a file or a link, not moved")
     try:
-        os.rename(source, target)
+        atomic.rename(source, target)
         return
     except OSError as exc:
         if exc.errno != errno.EXDEV:
