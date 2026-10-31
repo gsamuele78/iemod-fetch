@@ -9,6 +9,13 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Changed (breaking: 4.0.0)
+- **Debian trixie is the minimum platform for the Linux bundles** (ADR-0043
+  amendment of 2026-10-31). Both are built on `ubuntu-24.04`, may need glibc
+  up to 2.41 (trixie's; was 2.35) and are started inside `debian:trixie`
+  before a release - the command line with `--version` and `--help`, the
+  wizard with `--check` (it was never started on an older system before).
+  Debian 12 and Ubuntu 22.04 are no longer checked. The Python stays 3.14:
+  on trixie the bundles carry it; the `.pyz` and pip need one installed.
 - **One Python version: 3.14** (ADR-0043, GUI-AUDIT M6 item 36). `requires-python
   = ">=3.14"`; an older Python stops with one sentence saying so, instead of a
   syntax error. `.python-version` names it and every workflow reads it (20

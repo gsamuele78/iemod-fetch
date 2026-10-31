@@ -126,7 +126,8 @@ Python **3.14** (ADR-0043: one version, the one in `.python-version`; an
 older Python is told so and stops). Where the system's Python is older
 (Ubuntu 22.04 and 24.04, Debian 12 and 13, macOS's own `python3`), take a
 release bundle, which carries its own: `iemod-fetch-cli-<os>-<arch>.zip` for
-the command line (Linux x86_64 with glibc 2.35 or newer, Windows x86_64, macOS
+the command line (Linux x86_64 with glibc 2.41 or newer - Debian trixie, the
+minimum platform, or newer - Windows x86_64, macOS
 on Apple silicon), `iemod-fetch-gui-...` for the wizard. Unzip it and run
 `iemod-fetch` inside the folder; it is attested and in `SHA256SUMS` like the
 other assets, and not signed by a publisher (see below). On macOS, a zip
