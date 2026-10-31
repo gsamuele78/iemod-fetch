@@ -45,7 +45,7 @@ jobs:
         run: |
           mkdir -p traces
           for i in $(seq -w 1 "$RUNS"); do
-            IEMOD_LATENCY_TRACE="traces/trace-$i.json" \
+            IEMOD_LATENCY_TRACE="$PWD/traces/trace-$i.json" \
               python -m pytest -q -p no:cacheprovider tests/gui/test_m3_end_to_end.py \
               > "traces/pytest-$i.txt" 2>&1 || echo "run $i: the test failed"
           done

@@ -344,6 +344,8 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
     # 4. Download: cancelled while cdtweaks arrives -------------------------
     page, mods_dir = main.download, project / "Mods"
     trace = os.environ.get("IEMOD_LATENCY_TRACE")
+    if trace:       # the test has changed directory by now: relative to where pytest ran
+        trace = os.path.join(str(request.config.invocation_params.dir), trace)
     collections: list[tuple[float, float, int]] = []
     received: list[tuple[float, str, str]] = []
     if trace:
