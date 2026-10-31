@@ -3874,8 +3874,10 @@ Measured with the real mod_installer 16.0.0 and WeiDU v251:
   the log alone decides, which the note says.
 - Measured with the real binaries on Linux; the WeiDU verdict strings are
   the same on every system.
-- Not shown in the wizard yet: the install page belongs to the other
-  session's work.
+- The install page lists the components that need a look (with warnings,
+  errors, not reached, the two sources disagreeing) and counts them all; a
+  note that says nothing went wrong ("no word on it in the debug file",
+  "already installed before this run") is not listed.
 
 ---
 
@@ -3916,11 +3918,13 @@ Chriz Easy BG's `docs/curation/components/EEEX.md` L28-29 says the same.
      Linux and macOS games cannot start it.
 3. **`api.install_launch_advice(plan_dir, platform=None)`** reads
    `plan_dir`'s planned logs and returns those entries. It writes nothing.
-   The install page shows them; that part is the other session's work.
+   The install page says them after a successful install, for the game that
+   is played (in EET the EET game's log), and only when this run did not
+   report the loader's component as not installed or not reached.
 
 ### Consequences
 
-- A player who installs EEex is told, before and after the install, which
+- A player who installs EEex is told, after the install, which
   program starts the game, and on Linux or macOS what that requires.
 - Only EEex is listed, because only it was read. Mods that need EEex and do
   nothing without it (BGEE Graphics Enhanced, BG2 HD; G3 thread 40143) are
