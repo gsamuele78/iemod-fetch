@@ -73,7 +73,7 @@ def recorded_answers(log_text: str) -> dict[Key, list[str]]:
 
 @dataclass
 class Event:
-    kind: str                  # "line" | "batch" | "question"
+    kind: str                  # "line" | "batch" | "question" | "answer" | "watchdog"
     text: str = ""
     batch: tuple[Key, ...] = ()
 
