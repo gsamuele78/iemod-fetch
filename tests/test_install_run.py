@@ -529,11 +529,11 @@ def test_a_game_started_during_the_install_is_said_once_not_stopped(setup, monke
     install = install_run.start(setup["plan"], setup["games"], setup["mods"],
                                 setup["program"], setup["program"], ask=lambda *_a: None,
                                 on_event=events.append, quiet_s=0.3,
-                                running=lambda: [exe, tool, setup["program"]])
+                                running=lambda: [(1, exe), (2, tool), (3, setup["program"])])
     install.tools = (*install.tools, tool)
     outcome = install.run()
     assert outcome.ok
     warnings = [e.text for e in events if e.kind == "line" and e.text.startswith("warning:")]
-    assert warnings == [(f"warning: EET: {exe} is running from the game folder while it is "
+    assert warnings == [(f"warning: EET: {exe} (pid 1) is running from the game folder while it is "
                          "installed into - WeiDU fails if it cannot write dialog.tlk; close it")]
     assert len([e for e in events if e.kind == "batch"]) == 3      # every batch looked

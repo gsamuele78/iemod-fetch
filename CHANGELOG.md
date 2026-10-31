@@ -11,10 +11,21 @@ Python API, which is internal.
 ### Added
 - **The game closed before an install starts** (GUI-AUDIT item 67,
   ADR-0051): before an install or a resume, a program running from a game
-  folder (the game, a launcher, another WeiDU) and, on Windows, a
-  `dialog*.tlk` another program holds open stop it, named, with "close it
-  first". mod_installer starts each batch's WeiDU itself, so at each batch
-  a program found is only said, once, as a warning; the install goes on.
+  folder (the game, a launcher, another WeiDU; under Wine or Proton found by
+  its command line) stops it, named with its pid; so does, on Windows, a
+  `dialog*.tlk` another program still holds after a short retry. Each says
+  to close it and try again. mod_installer starts each batch's WeiDU
+  itself, so at each batch a program found is only said, once, as a
+  warning; the install goes on.
+- **A known EET fault is said before installing** (GUI-AUDIT M8 item 65,
+  ADR-0045). On Windows, when the Documents folder is registered with a space
+  (a OneDrive folder such as "OneDrive - Company\Documents", or "D:\My
+  Documents") and the EET copy still cuts that value at the first space
+  (`EET/lib/macros.tph`, still so in EET at c26a11a), the wizard's install
+  confirmation says that EET's core will write the game's settings
+  (Baldur.lua: language, campaign...) to a folder the game never reads -
+  naming it - or fail; saves are not affected. It is a warning, not a refusal,
+  and not said on a resume past EET's core.
 - `api.install_questions(plan_dir, mods_dir)` (GUI-AUDIT item 48, ADR-0049):
   for every component of the planned WeiDU logs, the questions its mod's
   files reach - read in the language the log installs it in - and the answers

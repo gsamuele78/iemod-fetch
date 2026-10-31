@@ -2948,6 +2948,54 @@ version up to the tag).
   dark0dave/mod_installer. Whether to report it is the maintainer's call;
   nothing has been opened.
 
+### GUI-AUDIT M8 item 65: a known upstream fault is said before installing
+
+Kept in ADR-0045 on purpose: it is part of what the wizard says before it
+runs mod_installer.
+
+- **Context.** EET's core finds the Documents folder with a batch file
+  (`EET/lib/macros.tph`, `GET_USER_DIRECTORY`, upstream since 38db44c): `for
+  /f "tokens=3,*"` over `reg query ... User Shell Folders /v Personal`, then
+  `set DOC_DIR=` the first variable - the third token only. A registered
+  value with a space is cut at it. What follows, read in EET's source at
+  c26a11a (2026-10-29) and not run on Windows (reviews of #100): the core
+  builds a settings folder from the cut path (`<cut>\Baldur's Gate -
+  Enhanced Edition Trilogy`), WeiDU's MKDIR makes the missing folders, and
+  `Baldur.lua` - language, active campaign, EET's installation state - is
+  copied or written there, with an empty `save` folder (EET.tp2
+  L1091-1157). The game finds its own Documents folder through
+  `engine.lua`'s `engine_name` and never reads that one. So the core most
+  likely finishes; the saves stay where they belong; EET's settings, and
+  the `Baldur.lua` carried over from BG2:EE with its language, never reach
+  the real folder - a player not playing in English may start in the
+  default language and settings - and a stray folder is left at the cut
+  path. Chriz Easy BG met it ("the community EET failure",
+  `docs/handover.md` L138-142) and patches EET's copy (MIT, 508256a). The
+  value is read before `%VARIABLES%` are expanded, so the usual
+  `%USERPROFILE%\Documents` has no space even when the user name has one;
+  a folder moved by OneDrive ("OneDrive - Company\Documents") or chosen by
+  hand ("D:\My Documents") has.
+- **Decision.** `install_run.known_issues` (api `install_known_issues`)
+  says it before installing, on Windows, when the plan has EET, EET's core
+  is not yet in the EET game (a resume past it is not warned), the raw
+  `Personal` value (`winreg`, unexpanded) has a space, and the EET copy in
+  the mods folder still has that shape of line at a line's start - any
+  variable letter, "tokens=3*", "do (set ...)" - unless it opens a block
+  that sets the whole path before closing - the one way a later line fixes
+  it; comments do not count (matched, not copied - EET is GPL-3.0). The
+  message names the registered value and the folder EET will write its
+  settings to (a `%VARIABLE%` in it shown expanded). The wizard puts it in
+  the confirmation, "Install despite a known issue"; it is not a refusal:
+  the player decides, knowing. EET's file is not patched: changing a mod's
+  content needs item 52's ADR.
+- **Consequences.** A player whose EET settings and language would have
+  gone to a folder the game never reads - or whose core would have failed -
+  with no word of why is told before, with the registered value and where
+  EET will write. An EET release that keeps the whole path no longer
+  matches, and the warning goes by itself. The claim about the outcome is
+  read in the source; no Windows run confirms it. Reporting the bug to EET
+  is the maintainer's call; nothing has been opened.
+
 ---
 
 ## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it
@@ -3376,8 +3424,21 @@ no point between two batches at which it could hold mod_installer back.
    - on Windows, a `dialog*.tlk` (at the root, or in `lang/*/`) cannot be
      opened for reading and writing with no sharing.
 
-   Each problem names the program or the file and says "close it first".
-   The ConfigError carries it, like the other preflight refusals.
+   The two refusals are told apart. "The game is running" names the
+   program and its pid; "is open in another program" names the talk table.
+   Each says to close it and try again, and the ConfigError carries it,
+   like the other preflight refusals. There is no "install anyway": what
+   stops the install is closed by the player (review of #105).
+   - **Wine and Proton (Linux)**: for a Windows program, `/proc/<pid>/exe`
+     is Wine's loader (`wine64-preloader`), not the game. When the loader
+     is a wine binary or the command line names an `.exe`, the command
+     line's first two words are read as well. A `Z:\...` path is `/...`;
+     another drive is resolved through the process's `WINEPREFIX` (else
+     `~/.wine`) `dosdevices` link. The working folder is not used: Wine's
+     own helpers (services.exe, explorer.exe) may inherit the game's
+     folder and outlive the game.
+   - **A talk table held for a moment** (an antivirus, the indexer) is
+     tried again, 5 times about 30 ms apart, before it is refused.
 2. **At each batch during the run**, only the programs are listed again. A
    program found there is said once, as a warning in the install's output,
    and the install goes on. The warning names the program and says why
@@ -3391,8 +3452,11 @@ no point between two batches at which it could hold mod_installer back.
 ### Consequences
 
 - What is not seen:
-  - a process this user may not inspect (another account's, or an elevated
-    one on Windows);
+  - a process this user may not inspect: another account's, which `/proc`
+    refuses with EACCES and which is skipped without an error, or an
+    elevated one on Windows;
+  - a Wine game started through a launcher whose command line names
+    neither the game's `.exe` nor a path under its folder;
   - on macOS, a game whose executable is outside the folder given, when the
     folder is an .app's `Contents/Resources` and its executable is in
     `Contents/MacOS`.

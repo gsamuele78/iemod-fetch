@@ -22,9 +22,10 @@ def test_a_program_in_a_game_folder_is_found_and_others_are_not(tmp_path):
     exe = str(game / "x64" / "Baldur.exe")
     beside = str(tmp_path / "Baldur's Gate EE 2" / "Baldur.exe")     # a prefix, not under
     tools = str(game / "weidu.exe")
-    found = gamelock.running_in({"BGEE": str(game)}, [exe, beside, "/usr/bin/python3", tools],
-                                ignore=[tools])
-    assert found == [f"BGEE: {exe}"]
+    found = gamelock.running_in({"BGEE": str(game)},
+                                [(7, exe), (7, str(game)), (8, beside), (9, "/usr/bin/python3"),
+                                 (10, tools)], ignore=[tools])
+    assert found == [f"BGEE: {exe} (pid 7)"]                       # once per process
     assert gamelock.running_in({"BGEE": str(game)}, None) == []      # not listed: nothing said
 
 
@@ -34,7 +35,8 @@ def test_a_game_folder_reached_by_a_link_is_the_same_folder(tmp_path):
     real.mkdir()
     (tmp_path / "link").symlink_to(real)
     exe = str(real / "BaldursGate")
-    assert gamelock.running_in({"EET": str(tmp_path / "link")}, [exe]) == [f"EET: {exe}"]
+    assert gamelock.running_in({"EET": str(tmp_path / "link")}, [(3, exe)]) == \
+        [f"EET: {exe} (pid 3)"]
 
 
 def test_every_talk_table_is_found_whatever_the_case(tmp_path):
@@ -61,10 +63,31 @@ def test_a_talk_table_held_by_another_program_is_named(tmp_path):
     held.write_text("")
     readonly.write_text("")
     errors = {str(held): gamelock.SHARING_VIOLATION, str(readonly): 5}
-    found = gamelock.held_talk_tables({"EET": str(tmp_path)}, lambda p: errors.get(p, 0))
+    waits = []
+    found = gamelock.held_talk_tables({"EET": str(tmp_path)}, lambda p: errors.get(p, 0),
+                                      sleep=waits.append)
     assert found == [f"EET: {readonly} cannot be opened for writing (Windows error 5)",
-                     f"EET: {held} is open in another program"]
+                     (f"EET: {held} is open in another program (the game, Near Infinity, "
+                     "an editor)")]
+    assert len(waits) == gamelock.HELD_TRIES - 1             # tried again, then said
     assert gamelock.held_talk_tables({"EET": str(tmp_path)}, lambda _p: 0) == []
+
+
+def test_a_talk_table_held_for_a_moment_is_not_refused(tmp_path):
+    """Review of #105: an antivirus or the indexer opens it briefly."""
+    (tmp_path / "dialog.tlk").write_text("")
+    answers = iter([gamelock.SHARING_VIOLATION, gamelock.SHARING_VIOLATION, 0])
+    assert gamelock.held_talk_tables({"EET": str(tmp_path)}, lambda _p: next(answers),
+                                     sleep=lambda _s: None) == []
+
+
+def test_a_path_under_wine_is_this_systems_path():
+    assert gamelock._wine_path(r"Z:\home\me\BG\Baldur.exe", None) == "/home/me/BG/Baldur.exe"
+    assert gamelock._wine_path(r"C:\GOG\BG\Baldur.exe", "/home/me/.wine") == \
+        "/home/me/.wine/dosdevices/c:/GOG/BG/Baldur.exe"
+    assert gamelock._wine_path(r"C:\GOG\Baldur.exe", None) is None    # no prefix known
+    assert gamelock._wine_path("/opt/bg/Baldur", None) == "/opt/bg/Baldur"
+    assert gamelock._wine_path("--debug", None) is None
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows locks files")
@@ -76,11 +99,11 @@ def test_elsewhere_nothing_locks_a_talk_table_so_none_is_checked(tmp_path):
 def test_both_checks_say_close_it_first(tmp_path):
     (tmp_path / "dialog.tlk").write_text("")
     exe = str(tmp_path / "Baldur.exe")
-    found = gamelock.problems({"BG2EE": str(tmp_path)}, lambda: [exe],
-                              lambda _p: gamelock.SHARING_VIOLATION)
-    assert found == [f"BG2EE: {exe} is running from the game folder - close it first",
-                     (f"BG2EE: {tmp_path / 'dialog.tlk'} is open in another program - "
-                      "close it first")]
+    found = gamelock.problems({"BG2EE": str(tmp_path)}, lambda: [(42, exe)],
+                              lambda _p: gamelock.SHARING_VIOLATION, sleep=lambda _s: None)
+    assert found == [f"the game is running: BG2EE: {exe} (pid 42) - close it and try again",
+                     (f"BG2EE: {tmp_path / 'dialog.tlk'} is open in another program (the "
+                      "game, Near Infinity, an editor) - close it and try again")]
 
 
 # --------------------------------------------------- against this system
@@ -88,8 +111,8 @@ def test_this_systems_processes_are_listed():
     running = gamelock.running_executables()
     assert running, "no process listed"
     if sys.platform != "darwin":         # ps names a framework's Python otherwise
-        seen = {os.path.normcase(os.path.realpath(p)) for p in running}
-        assert os.path.normcase(os.path.realpath(sys.executable)) in seen
+        seen = {(pid, os.path.normcase(os.path.realpath(p))) for pid, p in running}
+        assert (os.getpid(), os.path.normcase(os.path.realpath(sys.executable))) in seen
 
 
 def _a_program_that_waits(folder):
@@ -114,8 +137,8 @@ def test_a_game_really_running_from_the_folder_is_refused(tmp_path):
         while not found and time.monotonic() < deadline:
             found = gamelock.problems({"BGEE": str(tmp_path)})
             time.sleep(0.1)
-        assert len(found) == 1 and "is running from the game folder" in found[0]
-        assert os.path.basename(argv[0]) in found[0]
+        assert found == [(f"the game is running: BGEE: {argv[0]} (pid {process.pid}) - "
+                         "close it and try again")]
     finally:
         process.kill()
         process.wait()
@@ -128,5 +151,26 @@ def test_a_talk_table_really_held_open_is_refused_on_windows(tmp_path):
     tlk.write_bytes(b"TLK V1  ")
     with open(tlk, "rb"):
         found = gamelock.problems({"BGEE": str(tmp_path)})
-    assert found == [f"BGEE: {tlk} is open in another program - close it first"]
+    assert found == [(f"BGEE: {tlk} is open in another program (the game, Near Infinity, an "
+                     "editor) - close it and try again")]
     assert gamelock.problems({"BGEE": str(tmp_path)}) == []
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Wine runs on Linux")
+def test_a_game_under_wine_is_found_by_its_command_line(tmp_path):
+    """Review of #105: under Wine or Proton /proc's exe is Wine's loader,
+    outside the game folder; the game's own path is in its command line."""
+    game = os.path.realpath(tmp_path)
+    as_wine = "Z:" + os.path.join(game, "Baldur.exe").replace("/", "\\")
+    process = subprocess.Popen([as_wine, "30"], executable=shutil.which("sleep") or "/bin/sleep")
+    try:
+        deadline = time.monotonic() + 10
+        found = []
+        while not found and time.monotonic() < deadline:
+            found = gamelock.problems({"BGEE": game})
+            time.sleep(0.1)
+        assert found == [(f"the game is running: BGEE: {os.path.join(game, 'Baldur.exe')} "
+                         f"(pid {process.pid}) - close it and try again")]
+    finally:
+        process.kill()
+        process.wait()
