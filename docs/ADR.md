@@ -2982,7 +2982,10 @@ runs mod_installer.
   the mods folder still has that shape of line at a line's start - any
   variable letter, "tokens=3*", "do (set ...)" - unless it opens a block
   that sets the whole path before closing - the one way a later line fixes
-  it; comments do not count (matched, not copied - EET is GPL-3.0). The
+  it; comments do not count, a block nested in it (`if (` over lines,
+  `) else (`, a `)` in quotes or after `^`) does not close it, and a set
+  inside a nested block depends on its condition and does not count
+  (matched, not copied - EET is GPL-3.0). The
   message names the registered value and the folder EET will write its
   settings to (a `%VARIABLE%` in it shown expanded). The wizard puts it in
   the confirmation, "Install despite a known issue"; it is not a refusal:

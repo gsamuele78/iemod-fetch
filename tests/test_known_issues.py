@@ -182,3 +182,22 @@ def test_a_block_that_closes_before_a_fix_is_still_cut(tmp_path):
 ])
 def test_an_at_sign_or_a_tight_parenthesis_is_the_same_cut(tmp_path, batch):
     assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE)
+
+
+@pytest.mark.parametrize("batch", [
+    (f'for /f "tokens=3,*" %%i in ({QUERY}) do (set DOC_DIR=%%i\n'
+     '  if not "%%j"=="" (\n    echo "a ) in quotes"\n  ) else (\n    echo none\n  )\n'
+     '  set "DOC_DIR=%%i %%j"\n)\n'),
+    (f'for /f "tokens=3,*" %%i in ({QUERY}) do (set DOC_DIR=%%i\n'
+     '  echo one ^) escaped\n  set "DOC_DIR=%%i %%j"\n)\n'),
+])
+def test_a_block_nested_before_the_fix_does_not_close_the_cuts_block(tmp_path, batch):
+    """Review of #100's merge: `if (` over lines and `) else (` before the
+    fix, a `)` in quotes or escaped with ^, leave the cut's block open."""
+    assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE) == []
+
+
+def test_a_fix_inside_a_nested_block_depends_on_its_condition_and_does_not_count(tmp_path):
+    batch = (f'for /f "tokens=3,*" %%i in ({QUERY}) do (set DOC_DIR=%%i\n'
+             '  if defined X (\n    set "DOC_DIR=%%i %%j"\n  )\n)\n')
+    assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE)

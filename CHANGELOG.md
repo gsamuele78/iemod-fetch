@@ -64,6 +64,12 @@ Python API, which is internal.
   ratio guard. `--max-bytes` defaults to 2 GiB, not the 300 MB one measuring run
   used.
 
+### Fixed
+- EET's Documents-path warning (item 65): a block nested in the cut's own
+  (`if (` over lines, `) else (`) no longer ends it early, so an EET copy
+  that sets the whole path after such a block is not warned about; a set
+  inside the nested block, which depends on its condition, still is.
+
 ## [4.0.1] - 2026-10-31
 
 ### Fixed
