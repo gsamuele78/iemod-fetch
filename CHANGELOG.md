@@ -17,6 +17,13 @@ Python API, which is internal.
   - WeiDU is older than the one this program is tested with, or than a
     staged mod requires (`WEIDU_VER >= N`).
   Not shown in the wizard yet.
+- **The install page says what each component came to and how to start the
+  game** (GUI-AUDIT items 69 and 71): after an install the components that
+  need a look - with warnings, not installed because of errors, not
+  reached, or where WeiDU.log and WeiDU's debug file disagree - are listed in
+  the output and all are counted in the summary; after a successful one,
+  EEex's advice (start InfinityLoader.exe) is said for the game that is
+  played - in EET the EET game's log, not BG:EE's, which is not played.
 - **Questions answered by question during the install** (GUI-AUDIT item 48,
   ADR-0049 amendment): a question mod_installer puts to this program is
   recognised by its expected text (read from the mod's files in the log's
