@@ -3962,6 +3962,16 @@ warnings in words. They never refuse: the player decides.
    drive the estimate is the staged mods' bytes (what WeiDU may copy into
    the game) plus what a backup copies (what WeiDU may back up before it
    overwrites, into each mod's backup folder in the game).
+2b. **What lands on one drive is added up** (review of #114). In EET,
+   BG:EE, EET and the backups folder are often on one drive. The needs
+   (each game's install estimate, the backup) are grouped by device
+   (`os.stat(...).st_dev` of the nearest existing folder) and their sum is
+   compared with that drive's free space. The staged mods are counted once
+   per drive, because each mod goes into one game. The warning lists what
+   lands there. The backup part is exact. The game part counts only what a
+   backup copies: the root files, `override/` and the talk tables, never
+   `data/` or `movies/`. It therefore overestimates by at most the size of
+   `override/` and the talk tables, not by the size of the game.
 3. **WeiDU's version.** `--version` (toolchain.version_of) is compared with
    the version this program is tested with (`toolchain.VERIFIED`, 25100),
    and with the highest `WEIDU_VER >= N` (or `> N`, as N + 1) found in a

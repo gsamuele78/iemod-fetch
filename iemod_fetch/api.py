@@ -1293,8 +1293,10 @@ def install_readiness(games: dict[str, str], mods_dir: str, weidu: str | None,
     upper estimate, said as one), and WeiDU's version against the one this
     program is tested with and against what a staged mod requires. A drive
     whose free space cannot be read (a network path, a drive that is not
-    there) is not measured: nothing is said of it, never an error. It walks
-    each game folder and the mods folder - call it off a window's thread.
+    there) is not measured: nothing is said of it, never an error. What
+    lands on one drive is added up. It reads every game folder and every
+    staged mod - seconds to minutes on a large install - so call it off a
+    window's thread.
     """
     return readiness.findings(games, mods_dir, weidu, backups_dir)
 

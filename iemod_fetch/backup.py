@@ -116,7 +116,13 @@ def size(game_dir: str) -> int:
     for 40,000 files on Linux with the folder cached, more on a cold disk
     or on Windows - so a window calls it off its own thread (ADR-0048)."""
     present, _folders, _links, _mounts = _scan(os.path.abspath(game_dir))
-    return sum(os.path.getsize(full) for rel, full in present.items() if _is_copied(rel))
+    total = 0
+    for rel, full in present.items():
+        if _is_copied(rel):
+            # a file gone since the scan (the game, a scanner) counts nothing
+            with contextlib.suppress(OSError):
+                total += os.path.getsize(full)
+    return total
 
 
 def _mount_points() -> dict[str, int]:

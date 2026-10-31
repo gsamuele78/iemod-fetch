@@ -76,30 +76,64 @@ def weidu_needed(mods_dir: str) -> tuple[int, str] | None:
     return best
 
 
+def _nearest(path: str) -> str:
+    while path and not os.path.exists(path):
+        parent = os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return path or "."
+
+
+def _device(path: str) -> object:
+    """Which drive `path` is on: its nearest existing folder's device; the
+    path itself when that cannot be read (measured on its own)."""
+    try:
+        return os.stat(_nearest(path)).st_dev
+    except OSError:
+        return path
+
+
 def findings(games: dict[str, str], mods_dir: str, weidu: str | None,
              backups_dir: str | None = None,
              free: Callable[[str], int | None] = _free,
-             version: Callable[[str, str], str | None] = toolchain.version_of) -> list[str]:
-    """What may stop the install or its backup, in words; [] when nothing."""
+             version: Callable[[str, str], str | None] = toolchain.version_of,
+             device: Callable[[str], object] = _device) -> list[str]:
+    """What may stop the install or its backup, in words; [] when nothing.
+
+    What lands on one drive is added up: in EET, BG:EE, EET and the backups
+    folder are often on the same one (review of #114)."""
     out: list[str] = []
     staged = _tree_size(mods_dir) if os.path.isdir(mods_dir) else 0
     sizes = {name: backup.size(folder) for name, folder in games.items()
              if os.path.isfile(os.path.join(folder, "chitin.key"))}
-    if backups_dir is not None:
-        needed = sum(sizes.values())
-        room = free(backups_dir)
-        if room is not None and room < needed:
-            out.append(f"the backup needs {_gib(needed)} in {backups_dir}; "
-                       f"{_gib(room)} is free there")
+    # drive -> (a path on it, [(what, bytes)])
+    drives: dict[object, tuple[str, list[tuple[str, int]]]] = {}
+
+    def need(path: str, what: str, count: int) -> None:
+        drives.setdefault(device(path), (path, []))[1].append((what, count))
+
+    if backups_dir is not None and sizes:
+        need(backups_dir, f"the backup in {backups_dir}", sum(sizes.values()))
+    staged_on: set[object] = set()
     for name, folder in games.items():
         if name not in sizes:
             continue
-        estimate = staged + sizes[name]
-        room = free(folder)
-        if room is not None and room < estimate:
-            out.append(f"{name}: the install may need up to {_gib(estimate)} in {folder} "
-                       f"(an estimate: the staged mods and what WeiDU may back up); "
-                       f"{_gib(room)} is free there")
+        # the staged mods once a drive (each goes into one game); what WeiDU
+        # may back up, at most what a backup copies, for each game
+        mods_here = staged if device(folder) not in staged_on else 0
+        staged_on.add(device(folder))
+        need(folder, f"the install into {name}", mods_here + sizes[name])
+    for path, needs in drives.values():
+        total = sum(count for _what, count in needs)
+        room = free(path)
+        if room is None or room >= total:
+            continue
+        parts = "; ".join(f"{what}: {_gib(count)}" for what, count in needs)
+        estimate = (" (an estimate for an install: the staged mods and what WeiDU may "
+                    "back up)" if any(w.startswith("the install") for w, _c in needs) else "")
+        out.append(f"{_gib(total)} may be needed on the drive of {path}{estimate} - "
+                   f"{parts}; {_gib(room)} is free there")
     if weidu:
         have = version(toolchain.WEIDU, weidu)
         tested = max(int(v) for v in toolchain.VERIFIED[toolchain.WEIDU])

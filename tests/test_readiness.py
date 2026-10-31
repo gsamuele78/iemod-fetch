@@ -41,20 +41,53 @@ def test_a_backup_is_measured_as_it_is_made(tmp_path):
 
 def test_no_room_for_the_backup_is_said(tmp_path):
     folder = game(tmp_path)
-    found = readiness.findings({"BG2EE": folder}, mods(tmp_path), None,
-                               backups_dir=str(tmp_path / "backups"),
-                               free=lambda path: 10**9 if "bg2ee" in path else 500)
-    assert len(found) == 1 and "the backup needs" in found[0] and "500" not in found[0]
-    assert "MiB is free" in found[0]
+    backups = str(tmp_path / "backups")
+    found = readiness.findings({"BG2EE": folder}, mods(tmp_path), None, backups_dir=backups,
+                               free=lambda path: 10**9 if "bg2ee" in path else 500,
+                               device=lambda path: "bg2ee" in path)
+    assert len(found) == 1 and f"the backup in {backups}" in found[0]
+    assert "an estimate" not in found[0] and "MiB is free" in found[0]
 
 
 def test_no_room_for_the_install_is_an_estimate_said_as_one(tmp_path):
     folder, staged = game(tmp_path), mods(tmp_path)
     found = readiness.findings({"BG2EE": folder}, staged, None, free=lambda _path: 4000)
-    assert len(found) == 1 and found[0].startswith("BG2EE: the install may need up to")
+    assert len(found) == 1 and "the install into BG2EE" in found[0]
     assert "an estimate" in found[0]
     assert readiness.findings({"BG2EE": folder}, staged, None,
                               free=lambda _path: 10**9) == []
+
+
+def test_what_lands_on_one_drive_is_added_up(tmp_path):
+    """Review of #114: BG:EE, EET and the backups on one drive - each fits
+    alone, all together do not."""
+    bgee, eet = game(tmp_path, "bgee"), game(tmp_path, "eet")
+    staged = mods(tmp_path, size=0)
+    one = backup.size(bgee)                                     # each game's own need
+    games = {"BGEE": bgee, "EET": eet}
+    plenty = one * 2 + 100                                      # more than any one need
+    found = readiness.findings(games, staged, None, backups_dir=str(tmp_path / "backups"),
+                               free=lambda _p: plenty, device=lambda _p: "C:")
+    assert len(found) == 1
+    assert "the backup in" in found[0] and "the install into BGEE" in found[0]
+    assert "the install into EET" in found[0] and "an estimate" in found[0]
+    # on drives of their own, each fits
+    assert readiness.findings(games, staged, None, backups_dir=str(tmp_path / "backups"),
+                              free=lambda _p: plenty, device=lambda p: p) == []
+
+
+def test_a_file_gone_during_the_scan_counts_nothing(tmp_path, monkeypatch):
+    """Review of #114: the game or a scanner removes a file between the scan
+    and its size."""
+    folder = game(tmp_path)
+    real = os.path.getsize
+
+    def gone(path):
+        if path.endswith("a.itm"):
+            raise FileNotFoundError(path)
+        return real(path)
+    monkeypatch.setattr(backup.os.path, "getsize", gone)
+    assert backup.size(folder) == 100 + 200
 
 
 def test_a_weidu_older_than_tested_or_than_a_mod_needs(tmp_path):
