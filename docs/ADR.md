@@ -2945,29 +2945,51 @@ version up to the tag).
   508256a) sends each answer only after its expected question text appears
   (`engine/src/weidu/runner.rs`, `PromptMatcher`); its recipe authors that
   text. Our logs come from players and BIO, and hold answers only.
+- **What a question is (measured; review of #98).** mod_installer does not
+  send the question alone. When a line looks like a question, its parser
+  copies in WeiDU's last `lookback` lines, 10 by default (`src/parser.rs`,
+  `src/config/args.rs`), then collects until the output goes quiet. With the
+  real 16.0.0 and WeiDU 251 the text was WeiDU's version line, "Installing
+  [First] [v30]", "Copying 1 file ...", and only then the question; an
+  earlier question of the batch stays in the window when it is near. That
+  context helps the player and is shown to them whole, but only the
+  question's own line - the window's last line, `prompts.question_line` - is
+  this question. `--lookback 1` was not taken: it would drop a menu's
+  options from what the player sees.
 - **Decision.** `@wlb-inputs` stays as BIO writes it - logs players exchange
-  keep working, and no question text is added to them. Two checks instead,
-  in `prompts.Answers`:
-  1. *The answer must be one the question offers*, when the question says:
-     "[y]es or [n]o", "(y/n)"; after select/choose/pick/enter/type, a list
-     with "or" ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and
-     100" (`prompts.offered`). A path, a free number or "Press Enter" offers
-     nothing said, and takes any answer, as before. This works from the
-     first install of a log.
-  2. *The question must be the one an earlier install asked there.* Each
-     recorded answer's question is kept in `install-plan/answers.json`
-     (component, the answer's place, the question); the next install of that
-     component with another question at that place does not send it.
+  keep working, and no question text is added to them. Checks instead, in
+  `prompts.Answers`, all on the question's own line:
+  1. *The answer must be one the line offers*, when it says: "[y]es or
+     [n]o", "(y/n)"; after select/choose/pick/enter/type, a list with "or"
+     ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and 100"
+     (`prompts.offered`). A line that says nothing - a path, a free number,
+     a menu whose choices are on lines above, "Press Enter" - takes any
+     answer, as before; so does one that also names a default, a skip, a
+     blank or "or Enter" ("(1-3), or 0 to skip").
+  2. *It must be the question an earlier install asked there.* Each
+     recorded answer's question line is kept in `install-plan/answers.json`
+     (component, the answer's place, `{"q": ...}`); another line at that
+     place on a later install does not get it. A version bump, a reordered
+     plan or a resume does not change the line.
   When either fails, the answer is not sent and the player is asked, with
   the reason both in the output and in the question shown. The batch's other
   recorded answers are not used either: once one shifted, the rest have too.
+  3. *What the player answers there is kept* with the question line
+     (`{"q": ..., "a": ...}`), for the refused place and the places after it
+     in the batch, and given ("remembered") whenever that question comes
+     there again - the player answers a changed question once, not on every
+     install.
 - **Consequences.** A shift is caught when the shifted answer is the wrong
-  kind (a number for a yes/no, or out of the offered numbers) or, from the
-  second install on, when the question changed. Not caught: a shift between
-  two questions of the same kind on a first install (a yes/no recorded for
-  another yes/no) - nothing in an answers-only log tells them apart. The
-  question patterns are deliberately few; a question they do not read takes
-  any answer, as before, rather than refusing a right one.
+  kind for the question's line (a number for a yes/no, or out of the offered
+  numbers) or, from the second install on, when the question changed. Not
+  caught: a shift between two questions of the same kind on a first install
+  (a yes/no recorded for another yes/no) - nothing in an answers-only log
+  tells them apart. The line patterns are deliberately few; a line they do
+  not read takes any answer, as before, rather than refusing a right one.
+  Tested on the real window: the stand-in mod_installer sends WeiDU's last
+  10 lines with each question, and the real mod_installer and WeiDU install
+  a component asking a yes/no then "select 1 or 2" from its recorded "y,2"
+  with nobody asked.
 
 ---
 

@@ -17,7 +17,7 @@ import pytest
 from iemod_fetch import api
 from iemod_fetch.errors import ConfigError
 from iemod_fetch.install_run import command, preflight
-from iemod_fetch.prompts import OutputReader, recorded_answers, wlb_inputs
+from iemod_fetch.prompts import OutputReader, question_line, recorded_answers, wlb_inputs
 
 HERE = os.path.dirname(__file__)
 FAKE = os.path.join(HERE, "data", "fake_mod_installer.py")
@@ -143,7 +143,10 @@ def test_eet_is_installed_answering_each_question_from_where_it_should(setup, mo
     assert answers(setup) == ["1", "", setup["games"]["BGEE"], "y"]
     assert [a.source for a in outcome.answered] == ["recorded", "recorded", "EET", "player"]
     # the player was asked only what nothing recorded, with its component
-    assert asked == [("Restore the tavern? [y]es or [n]o", (("setup-ub.tp2", 0),))]
+    # the question comes with WeiDU's lines before it, as mod_installer sends it
+    assert [(question_line(q), b) for q, b in asked] == \
+        [("Restore the tavern? [y]es or [n]o", (("setup-ub.tp2", 0),))]
+    assert "Installing [SETUP-UB.TP2 component 0]" in asked[0][0]
     # each game's WeiDU.log now names what went in, the recorded answers not copied
     eet_log = read(setup["games"]["EET"], "WeiDU.log")
     assert "EET core" in eet_log and "SETUP-UB.TP2" in eet_log
@@ -316,7 +319,7 @@ def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
         ask=lambda question, batch: asked.append(question) or "2")
     outcome = install.run()
     assert outcome.ok
-    assert asked == ["And another"]
+    assert [question_line(q) for q in asked] == ["And another"]
     assert answers(setup)[:2] == ["1", "2"]
     assert [a.source for a in outcome.answered][:2] == ["recorded", "player"]
 
@@ -502,13 +505,26 @@ def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
 
 
 # ------------------------------------------- answers that fit (item 63)
+# The fake sends a question as mod_installer does: WeiDU's last 10 lines -
+# its version, "Installing [x] [vN]", earlier questions - then the question.
+def with_answers(setup, answers_text):
+    from pathlib import Path
+    log = Path(setup["plan"], "WeiDU.log")
+    log.write_text(log.read_text().replace(
+        "Restorations: v30", f"Restorations: v30 // @wlb-inputs: {answers_text}"))
+
+
+def fresh_games(setup):
+    for game in setup["games"].values():
+        for name in os.listdir(game):
+            if name != "chitin.key":
+                os.remove(os.path.join(game, name))
+
+
 def test_a_recorded_answer_that_does_not_fit_is_asked_of_the_player(setup, monkeypatch):
     """UB's log answer is "2", its question takes y or n: the player is asked,
     told why, and the answer they give goes in."""
-    from pathlib import Path
-    log = Path(setup["plan"], "WeiDU.log")
-    log.write_text(log.read_text().replace("Restorations: v30",
-                                           "Restorations: v30 // @wlb-inputs: 2"))
+    with_answers(setup, "2")
     asked = []
     install, events = run(setup, monkeypatch, {
         "eet.tp2#0": [EET_QUESTION],
@@ -516,32 +532,65 @@ def test_a_recorded_answer_that_does_not_fit_is_asked_of_the_player(setup, monke
         ask=lambda question, batch: asked.append(question) or "y")
     outcome = install.run()
     assert outcome.ok and len(asked) == 1
-    assert asked[0].startswith("Restore the tavern? [y]es or [n]o\n\n(Not answered from the log")
+    assert "Restore the tavern? [y]es or [n]o\n\n(Not answered from the log" in asked[0]
     assert answers(setup)[-1] == "y"
     assert any("Not answered from the log: the recorded answer '2'" in e.text for e in events)
 
 
-def test_the_question_an_answer_went_to_is_kept_and_checked_next_time(setup, monkeypatch):
+def test_an_earlier_question_in_the_window_is_not_this_one(setup, monkeypatch):
+    """Review of #98: the yes/no before it is in the window sent with "select
+    1 or 2"; the recorded "2" still goes to it, nobody is asked."""
+    with_answers(setup, "y,2")
+    asked = []
+    install, _events = run(setup, monkeypatch, {
+        "eet.tp2#0": [EET_QUESTION],
+        "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o",
+                           "Please select 1 or 2 and press Enter."]},
+        ask=lambda question, batch: asked.append(question) or "x")
+    outcome = install.run()
+    assert outcome.ok and asked == []
+    assert answers(setup)[-2:] == ["y", "2"]
+    assert [a.source for a in outcome.answered][-2:] == ["recorded", "recorded"]
+
+
+def test_the_players_answer_stands_for_a_changed_question_from_then_on(setup, monkeypatch):
+    """Review of #98: the question kept is the question's own line (a version
+    bump between installs does not change it); when it changed, the player's
+    answer is kept and given on every install after - not asked each time."""
     import json
     from pathlib import Path
-    log = Path(setup["plan"], "WeiDU.log")
-    log.write_text(log.read_text().replace("Restorations: v30",
-                                           "Restorations: v30 // @wlb-inputs: y"))
-    install, _events = run(setup, monkeypatch, {
-        "eet.tp2#0": [EET_QUESTION], "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]})
+    with_answers(setup, "y")
+    restore = {"eet.tp2#0": [EET_QUESTION],
+               "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]}
+    monkeypatch.setenv("FAKE_VERSION", "v30")
+    install, _events = run(setup, monkeypatch, restore)
     assert install.run().ok
     kept = json.loads(Path(setup["plan"], "answers.json").read_text())
-    assert kept["asked"]["setup-ub.tp2#0"] == {"0": "Restore the tavern? [y]es or [n]o"}
+    assert kept["asked"]["setup-ub.tp2#0"] == {"0": {"q": "Restore the tavern? [y]es or [n]o"}}
 
-    for game in setup["games"].values():                   # the games as new again
-        for name in os.listdir(game):
-            if name != "chitin.key":
-                os.remove(os.path.join(game, name))
+    fresh_games(setup)
+    monkeypatch.setenv("FAKE_VERSION", "v31")                 # a new version, same question
     asked = []
-    install, events = run(setup, monkeypatch, {             # UB's prompt changed since
-        "eet.tp2#0": [EET_QUESTION], "setup-ub.tp2#0": ["Remove the tavern? [y]es or [n]o"]},
-        ask=lambda question, batch: asked.append(question) or "n")
+    install, _events = run(setup, monkeypatch, restore,
+                           ask=lambda question, batch: asked.append(question) or "n")
+    assert install.run().ok and asked == []
+
+    changed = {"eet.tp2#0": [EET_QUESTION],
+               "setup-ub.tp2#0": ["Remove the tavern? [y]es or [n]o"]}
+    fresh_games(setup)
+    install, events = run(setup, monkeypatch, changed,
+                          ask=lambda question, batch: asked.append(question) or "n")
     assert install.run().ok
-    assert len(asked) == 1 and asked[0].startswith("Remove the tavern? [y]es or [n]o")
-    assert "asked something else here" in asked[0]
+    assert len(asked) == 1 and "asked something else here" in asked[0]
     assert any("asked something else here" in e.text for e in events)
+    kept = json.loads(Path(setup["plan"], "answers.json").read_text())
+    assert kept["asked"]["setup-ub.tp2#0"] == {
+        "0": {"q": "Remove the tavern? [y]es or [n]o", "a": "n"}}
+
+    for _again in range(2):                                   # installs 4 and 5
+        fresh_games(setup)
+        install, _events = run(setup, monkeypatch, changed,
+                               ask=lambda question, batch: asked.append(question) or "y")
+        outcome = install.run()
+        assert outcome.ok and len(asked) == 1                 # not asked again
+        assert answers(setup)[-1] == "n" and outcome.answered[-1].source == "remembered"

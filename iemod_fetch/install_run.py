@@ -37,7 +37,8 @@ from . import resume
 from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
-from .prompts import EET_FOLDER_QUESTION, Answers, Event, OutputReader, recorded_answers
+from .prompts import (EET_FOLDER_QUESTION, Answers, Event, OutputReader, question_line,
+                      recorded_answers)
 
 # What the planned logs are called (ordering.PRE_EET_LOG, EET_LOG)
 PRE_EET_LOG, EET_LOG = "WeiDU-BGEE.log", "WeiDU.log"
@@ -50,7 +51,7 @@ DRAIN_S = 2.0            # its output still open this long after it ended: stop 
 class Answered:
     question: str
     answer: str
-    source: str           # "EET" | "recorded" | "player"
+    source: str           # "EET" | "recorded" | "remembered" | "player"
 
 
 @dataclass
@@ -68,21 +69,26 @@ ASKED_FILE = "answers.json"
 
 
 def load_asked(path: str | None) -> dict:
-    """{(tp2, component): {n: question}}: the question each recorded answer was
-    given for (item 63); {} when there is none yet or it is unreadable."""
+    """{(tp2, component): {n: {"q": question, "a"?: answer}}}: the question each
+    recorded answer went to, and the player's answer where one stood in for
+    it (item 63); {} when there is none yet or it is unreadable."""
     try:
         with open(path or "", encoding="utf-8") as fh:
             data = json.load(fh)
-        return {(str(tp2), int(number)): {int(n): str(q) for n, q in by.items()}
-                for tp2, number, by in ((*k.rsplit("#", 1), v)
-                                        for k, v in data.get("asked", {}).items())}
+        out: dict = {}
+        for name, by in data.get("asked", {}).items():
+            tp2, number = name.rsplit("#", 1)
+            out[(str(tp2), int(number))] = {
+                int(n): {k: str(v) for k, v in kept.items() if k in ("q", "a")}
+                for n, kept in by.items() if isinstance(kept, dict)}
+        return out
     except (OSError, ValueError, TypeError, AttributeError):
         return {}
 
 
 def save_asked(path: str | None, asked: dict) -> None:
     if path and asked:
-        data = {"asked": {f"{tp2}#{number}": {str(n): q for n, q in sorted(by.items())}
+        data = {"asked": {f"{tp2}#{number}": {str(n): kept for n, kept in sorted(by.items())}
                           for (tp2, number), by in sorted(asked.items())}}
         with contextlib.suppress(OSError):
             write_text(path, json.dumps(data, indent=1, ensure_ascii=False) + "\n")
@@ -307,9 +313,12 @@ class InstallRun:
         else:
             recorded = self.answers.next(text)
             if recorded is not None and self.answers.last is not None:
-                answer, source = recorded, "recorded"
+                answer, source = recorded, self.answers.source
                 key, n = self.answers.last
-                self.asked.setdefault(key, {})[n] = text
+                kept = {"q": question_line(text)}
+                if source == "remembered":
+                    kept["a"] = answer
+                self.asked.setdefault(key, {})[n] = kept
             else:
                 shown = text
                 if self.answers.refused:
@@ -322,6 +331,12 @@ class InstallRun:
                 if given is None:
                     return False
                 answer, source = given, "player"
+                place = self.answers.answered_by_player()
+                if place is not None:
+                    # the player's answer stands for the refused one: kept with
+                    # its question, given next time it comes here (review of #98)
+                    self.asked.setdefault(place[0], {})[place[1]] = {
+                        "q": question_line(text), "a": answer}
         try:
             if process.stdin is None:
                 raise OSError("no standard input")

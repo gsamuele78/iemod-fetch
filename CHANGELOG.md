@@ -11,10 +11,12 @@ Python API, which is internal.
 ### Added
 - **A recorded answer goes only to a question it fits** (GUI-AUDIT M8 item
   63, ADR-0045). A log's `// @wlb-inputs:` answer is sent only when the
-  question offers it ("[y]es or [n]o", "select 1 or 2", "1-3") and, from the
-  second install on, when the question is the one asked there before
-  (`install-plan/answers.json`). Otherwise the player is asked, with the
-  reason, and the batch's other recorded answers are not used: answers that
+  question's own line offers it ("[y]es or [n]o", "select 1 or 2", "1-3") and,
+  from the second install on, when that line is the one asked there before
+  (`install-plan/answers.json`). mod_installer sends WeiDU's last 10 lines
+  with each question; only the last is the question. Otherwise the player is
+  asked, with the reason; the batch's other recorded answers are not used, and
+  what the player answers is kept and given there next time. Answers that
   shifted against a mod's changed prompts no longer go in one question late.
 
 ### Fixed

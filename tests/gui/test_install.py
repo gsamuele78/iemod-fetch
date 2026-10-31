@@ -195,7 +195,9 @@ def test_a_question_is_asked_on_the_page_and_its_answer_goes_back(qtbot, world, 
     questions = []
     page.ask_player = lambda question: questions.append(question) or "2"
     run_to_end(qtbot, page)
-    assert questions == ["Which portraits?"] and page.outcome.ok
+    # shown whole, WeiDU's lines before it as context, as mod_installer sends it
+    assert len(questions) == 1 and questions[0].endswith("Which portraits?")
+    assert "Installing [SETUP-UB.TP2 component 0]" in questions[0] and page.outcome.ok
     assert (world["tmp"] / "answers.txt").read_text().split() == ["2"]
     assert "-> 2  (player)" in page.output.toPlainText()
 
