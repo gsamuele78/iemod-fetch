@@ -71,7 +71,7 @@ class Services:
     questions: Callable[[str, str], dict] = api.install_questions
     load_answers: Callable[[str], dict] = api.load_install_answers
     save_answers: Callable[[str, dict], Any] = api.save_install_answers
-    write_answers: Callable[[str, str, dict], dict] = api.write_install_answers
+    write_answers: Callable[..., dict] = api.write_install_answers
     timing: dict = field(default_factory=dict)    # start_install's quiet_s, grace_s...
 
 
@@ -464,7 +464,8 @@ class InstallPage(QWidget):
         self.output.clear()
         self.outcome = None
         self._say("Writing the install order...")
-        self._run(lambda: services.plan(game, chosen, labels, folder), self._planned)
+        self._run(lambda: _plan_and_questions(services, game, chosen, labels, folder),
+                  self._planned)
 
     def _planned(self, plan: dict) -> None:
         """The plan is written: ask, then install (after _finished has run)."""
@@ -566,9 +567,8 @@ class InstallPage(QWidget):
         """
         services, folder = self.services, self.project_dir
         mods = services.mods_dir(folder)
-        try:
-            coverage = services.questions(plan["plan_dir"], mods)
-        except Exception:                 # a check that cannot run says nothing
+        coverage = plan.get("questions") or {}
+        if not coverage:                  # could not be read: nothing to say
             return {}
         kept = services.load_answers(folder)
         open_ = [c for c in coverage["components"]
@@ -588,7 +588,7 @@ class InstallPage(QWidget):
             except OSError as exc:
                 self._append(f"The answers could not be kept in the project: {exc}")
         try:
-            return services.write_answers(plan["plan_dir"], mods, kept)
+            return services.write_answers(plan["plan_dir"], mods, kept, coverage=coverage)
         except (OSError, ValueError) as exc:
             self._say(f"Not installed: the answers could not be written - {exc}")
             return None
@@ -710,6 +710,19 @@ class InstallPage(QWidget):
         return bool(self.outcome is not None and getattr(self.outcome, "ok", False))
 
 
+def _plan_and_questions(services: Services, game: str, chosen: list, labels: dict,
+                        folder: str) -> dict:
+    """On a worker thread: write the plan, then read the questions its mods
+    will ask - every mod's files, too slow for the window's thread (review
+    of #107). A reading that fails says nothing: {}."""
+    plan = services.plan(game, chosen, labels, folder)
+    try:
+        plan["questions"] = services.questions(plan["plan_dir"], services.mods_dir(folder))
+    except Exception:
+        plan["questions"] = {}
+    return plan
+
+
 class _Questionnaire(QDialog):
     """Every question that can be answered before the install, one field
     each, under its component; what is kept is filled in (ADR-0049)."""
@@ -753,9 +766,10 @@ class _Questionnaire(QDialog):
 
     def _accept(self) -> None:
         bad = [edit.accessibleName() for _name, _key, edit in self.fields
-               if "," in edit.text()]
+               if any(ch in edit.text() for ch in ",\r\n")]
         if bad:
-            self.problem.setText("An answer cannot hold a comma: " + "; ".join(bad))
+            self.problem.setText("An answer cannot hold a comma or a line break: "
+                                 + "; ".join(bad))
             return
         self.accept()
 

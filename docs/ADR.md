@@ -3453,12 +3453,19 @@ from the component's first question:
 
 - the run stops **before** a question under a condition: if it were not
   asked, its answer would go to the next question;
-- it stops **before** a question whose text is unknown (point 1: never
-  answered from a stored answer);
+- it stops **before** a question whose key came already in the component:
+  two questions that read alike would share one answer;
 - it ends **after** a question asked until valid: an answer it refused would
   go to the next question, while with nothing left WeiDU's next try is
   asked of the player;
-- a component whose reading could not follow a path (`unknown`) has none.
+- a component whose reading could not follow a path, or with a question
+  whose text is unknown (status `unknown`), has none at all;
+- **in a batch** - mod_installer 16.0.0 runs consecutive components of one
+  mod together and `prompts.Answers` hands their answers out from one
+  queue - a component has none unless every component before it in the
+  batch can be answered in full (every question beforehand, none asked
+  until valid): else a question of an earlier one, left to the player,
+  would take this one's answer (independent review of #107, reproduced).
 
 Before *Install*, the questions marked `beforehand` that have no kept answer
 are put to the player in one window, under their component, with the kept
@@ -3467,7 +3474,11 @@ answers filled in. The answers are kept in `PROJECT/install-answers.json` as
 `// @wlb-inputs:`, up to each component's first question with no answer
 (`api.write_install_answers`). The confirmation then names the components
 that may still stop to ask. Cancel in the window installs nothing. An answer
-cannot hold a comma, the format's separator; the window refuses one.
+cannot hold a comma, the format's separator, nor a line break; the window
+refuses both, and a kept answer holding one (a file edited by hand) is not
+loaded, so it is asked again instead of failing every install. The mods'
+files are read for the questions on the worker thread that writes the plan,
+not on the window's.
 
 Not done here, and still to come:
 - the mod's version beside the answers (point 2): a mod whose questions
@@ -3479,7 +3490,8 @@ Not done here, and still to come:
 **Measured** (the 105-mod corpus of point 1, the same scan, 2026-10-31): 159
 components reach a question, 1,187 questions counted per component (one
 question reached by several components counts for each). Only **3** are
-answerable beforehand under this rule (DLC Merger, EET's mod converter, EEUI
+answerable beforehand under this rule, counted per component (the batch rule
+can only lower it: the corpus has no install order) (DLC Merger, EET's mod converter, EEUI
 Tweaks: 1 each), and 1 component has all its questions answerable. Without
 SCS, whose 1,144 are its SFO library's, reached by every component and
 unread or conditional: 3 of 43. What stops the first question of each

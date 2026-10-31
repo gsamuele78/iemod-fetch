@@ -69,17 +69,28 @@ def ahead(component):
     return [q["beforehand"] for q in component["questions"]]
 
 
+def alone(tmp_path, number):
+    """One component as its own batch: what it can have answered by itself."""
+    plan, mods = project(tmp_path / str(number), [ALL[(0, 10, 20, 30, 40).index(number)]])
+    return api.install_questions(plan, mods)["components"][0]
+
+
 def test_which_questions_can_be_answered_beforehand(tmp_path):
-    found = by_number(api.install_questions(*project(tmp_path, ALL)))
-    assert ahead(found[0]) == [True, True]                 # both surely asked, in order
+    assert ahead(alone(tmp_path, 0)) == [True, True]         # both surely asked, in order
     # under a condition: if it were not asked, its answer would go to the next
-    assert ahead(found[10]) == [True, False, False]
+    assert ahead(alone(tmp_path, 10)) == [True, False, False]
     # asked until valid: answered, but nothing after it (a refused answer would
     # go to the next question)
-    assert ahead(found[20]) == [True, False]
+    assert ahead(alone(tmp_path, 20)) == [True, False]
     # unknown text (status unknown): nothing beforehand
-    assert found[30]["status"] == "unknown" and ahead(found[30]) == [False, False]
-    assert found[40]["questions"] == []
+    unknown = alone(tmp_path, 30)
+    assert unknown["status"] == "unknown" and ahead(unknown) == [False, False]
+    assert alone(tmp_path, 40)["questions"] == []
+    # all five in one batch: #0 answered in full, #10 may leave a question that
+    # would take the next one's answer - nothing after it
+    found = by_number(api.install_questions(*project(tmp_path / "all", ALL)))
+    assert ahead(found[0]) == [True, True] and ahead(found[10]) == [True, False, False]
+    assert ahead(found[20]) == [False, False]
 
 
 def test_answers_are_kept_in_the_project(tmp_path):
@@ -100,10 +111,10 @@ def test_answers_go_into_the_planned_log_in_order(tmp_path):
     assert "#0 // c0 // @wlb-inputs: 2,\n" in log
     # only the answer before the condition: the others are asked during the install
     assert "#10 // c10 // @wlb-inputs: y\n" in log
-    assert "#20 // c20 // @wlb-inputs: 30\n" in log
-    assert "#40 // c40\n" in log and "#30 // c30\n" in log
+    # one batch: #10's later questions would take #20's answers - none written
+    assert "#20 // c20\n" in log and "#40 // c40\n" in log and "#30 // c30\n" in log
     assert found[0]["status"] == "answered"
-    assert found[10]["status"] == "partial" and found[20]["status"] == "partial"
+    assert found[10]["status"] == "partial" and found[20]["status"] == "unanswered"
 
 
 def test_a_missing_answer_ends_the_row_and_a_rewrite_replaces_the_old_one(tmp_path):
@@ -134,3 +145,92 @@ def test_set_inputs_keeps_every_other_line():
                                              ("setup-b.tp2", 5): ["y"]}
     assert prompts.set_inputs(out, {("setup-a.tp2", 0): []}).splitlines()[1] == \
         "~A/SETUP-A.TP2~ #0 #0 // a"
+
+
+BATCH_TP2 = """BACKUP ~two/backup~
+LANGUAGE ~English~ ~english~ ~two/english.tra~
+BEGIN @10 DESIGNATED 10
+  PRINT @1
+  ACTION_READLN a
+  ACTION_IF NOT FILE_EXISTS ~two/x~ BEGIN
+    PRINT @2
+    ACTION_READLN b
+  END
+BEGIN @11 DESIGNATED 20
+  PRINT @3
+  ACTION_READLN c
+BEGIN @12 DESIGNATED 30
+  PRINT @4
+  ACTION_READLN d
+BEGIN @13 DESIGNATED 40
+  PRINT @4
+  ACTION_READLN e
+  PRINT @4
+  ACTION_READLN f
+"""
+
+
+def two_mod(tmp_path, lines):
+    mod = tmp_path / "Mods" / "two"
+    mod.mkdir(parents=True)
+    (mod / "setup-two.tp2").write_text(BATCH_TP2, encoding="utf-8")
+    (mod / "english.tra").write_text(
+        "@1 = ~First?~\n@2 = ~Only sometimes?~\n@3 = ~Third?~\n@4 = ~A value?~\n",
+        encoding="utf-8")
+    plan = tmp_path / "install-plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+    return str(plan), str(tmp_path / "Mods")
+
+
+def test_in_a_batch_nothing_after_a_component_left_with_something_to_ask(tmp_path):
+    """Review of #107: mod_installer runs consecutive components of one mod as
+    one batch and hands their answers out from one queue - #10's conditional
+    question, if asked, would take #20's answer."""
+    plan, mods = two_mod(tmp_path, ["~TWO/SETUP-TWO.TP2~ #0 #10 // a",
+                                    "~TWO/SETUP-TWO.TP2~ #0 #20 // c"])
+    found = by_number(api.install_questions(plan, mods))
+    assert ahead(found[10]) == [True, False] and ahead(found[20]) == [False]
+    api.write_install_answers(plan, mods, {"setup-two.tp2#10": {"@1": "y", "@2": "n"},
+                                           "setup-two.tp2#20": {"@3": "z"}})
+    log = (tmp_path / "install-plan" / "WeiDU.log").read_text(encoding="utf-8")
+    assert "#10 // a // @wlb-inputs: y\n" in log and "#20 // c\n" in log
+    # delivered as the install delivers them: #20's question goes to the player
+    queue = prompts.Answers(prompts.recorded_answers(log))
+    queue.start((("setup-two.tp2", 10), ("setup-two.tp2", 20)))
+    assert [queue.next(), queue.next()] == ["y", None]
+
+
+def test_another_mod_between_them_is_another_batch(tmp_path):
+    plan, mods = two_mod(tmp_path, ["~TWO/SETUP-TWO.TP2~ #0 #10 // a",
+                                    "~MYMOD/SETUP-MYMOD.TP2~ #0 #40 // x",
+                                    "~TWO/SETUP-TWO.TP2~ #0 #20 // c"])
+    assert ahead(by_number(api.install_questions(plan, mods))[20]) == [True]
+
+
+def test_a_component_answered_in_full_leaves_the_next_one_answerable(tmp_path):
+    plan, mods = two_mod(tmp_path, ["~TWO/SETUP-TWO.TP2~ #0 #20 // c",
+                                    "~TWO/SETUP-TWO.TP2~ #0 #30 // d"])
+    found = api.write_install_answers(plan, mods, {"setup-two.tp2#20": {"@3": "1"},
+                                                   "setup-two.tp2#30": {"@4": "2"}})
+    assert [c["status"] for c in found["components"]] == ["answered", "answered"]
+    assert found["unattended"]
+    # an answer missing for #20 leaves #30's unwritten too
+    plan, mods = two_mod(tmp_path / "b", ["~TWO/SETUP-TWO.TP2~ #0 #20 // c",
+                                          "~TWO/SETUP-TWO.TP2~ #0 #30 // d"])
+    api.write_install_answers(plan, mods, {"setup-two.tp2#30": {"@4": "2"}})
+    assert "@wlb-inputs" not in (tmp_path / "b" / "install-plan" / "WeiDU.log").read_text()
+
+
+def test_two_questions_that_read_alike_do_not_share_an_answer(tmp_path):
+    plan, mods = two_mod(tmp_path, ["~TWO/SETUP-TWO.TP2~ #0 #40 // e"])
+    [component] = api.install_questions(plan, mods)["components"]
+    assert ahead(component) == [True, False]
+
+
+def test_an_answer_the_log_cannot_carry_is_not_loaded(tmp_path):
+    """Review of #107: one kept with a comma or a line end would fail every
+    install; left out, the questionnaire asks it again."""
+    (tmp_path / api.INSTALL_ANSWERS_FILE).write_text(
+        '{"v": 1, "answers": {"a#0": {"@1": "1,2", "@2": "x\\ny", "@3": "ok"}}}')
+    assert api.load_install_answers(str(tmp_path)) == {"a#0": {"@3": "ok"}}

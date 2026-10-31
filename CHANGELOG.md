@@ -13,8 +13,9 @@ Python API, which is internal.
   ADR-0049 points 2 and 5): before *Install*, the wizard puts the questions
   the mods will ask to the player in one window - those whose place is sure:
   not under a condition, not printed from a variable, none after a question
-  asked until valid (an answer given in order would otherwise land on the
-  wrong question). The answers are kept in `PROJECT/install-answers.json`
+  asked until valid, and in a batch of one mod's components none after a
+  component that may still ask (an answer given in order would otherwise
+  land on the wrong question). The answers are kept in `PROJECT/install-answers.json`
   by question key, so the next install does not ask again, and written into
   the planned logs as `// @wlb-inputs:`; the confirmation lists the components
   that may still stop to ask. Cancel installs nothing. New in the api:

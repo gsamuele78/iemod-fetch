@@ -536,7 +536,11 @@ def test_the_questionnaire_dialog_fills_what_is_kept_and_refuses_a_comma(qtbot):
     assert [(key, field.text()) for _name, key, field in dialog.fields] == [("@1", "3")]
     dialog.fields[0][2].setText("1,2")
     dialog._accept()
-    assert "cannot hold a comma: Which portraits?" in dialog.problem.text()
+    assert "cannot hold a comma or a line break: Which portraits?" in dialog.problem.text()
+    dialog.problem.setText("")
+    dialog.fields[0][2].setText("a\nb")              # pasted: a QLineEdit keeps it
+    dialog._accept()
+    assert "line break" in dialog.problem.text()
     assert dialog.result() != dialog.DialogCode.Accepted
     dialog.fields[0][2].setText(" 4 ")
     assert dialog.answers() == {"setup-ub.tp2#0": {"@1": "4"}}

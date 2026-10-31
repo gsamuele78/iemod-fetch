@@ -958,27 +958,36 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
             asked = found.of(number)
             unread = found.unread_of(number) if key in files else list(found.unread)
             recorded = prompts.wlb_inputs(line) or []
-            sure = [q for q in asked if not q.conditional]
-            if key not in files or unread or any(not q.keyed for q in asked):
-                status = "unknown"
-            elif not asked:
-                status = "none"
-            elif len(recorded) >= len(asked):
-                status = "answered"
-            elif len(recorded) >= len(sure):
-                status = "maybe"
-            elif recorded:
-                status = "partial"
-            else:
-                status = "unanswered"
-            ahead = 0 if status == "unknown" else _beforehand(asked)
+            read = key in files and not unread and all(q.keyed for q in asked)
+            ahead = _beforehand(asked) if read else 0
             components.append({
                 "log": name, "tp2": tp2, "number": number, "language": lang,
                 "questions": [{"key": q.key, "text": q.text, "known": q.keyed,
                                "conditional": q.conditional, "repeats": q.repeats,
                                "via": q.via, "file": q.file, "line": q.line,
                                "beforehand": i < ahead} for i, q in enumerate(asked)],
-                "recorded": recorded, "status": status, "unread": unread})
+                "recorded": recorded, "status": _status(read, asked, recorded),
+                "unread": unread})
+    _one_batch_at_a_time(components)
+    return _coverage(components)
+
+
+def _status(read: bool, asked: Sequence[Any], recorded: Sequence[str]) -> str:
+    """install_questions' status of one component (its docstring says each)."""
+    conditional = [q.conditional if isinstance(q, readln.Prompt) else q["conditional"]
+                   for q in asked]
+    if not read:
+        return "unknown"
+    if not asked:
+        return "none"
+    if len(recorded) >= len(asked):
+        return "answered"
+    if len(recorded) >= conditional.count(False):
+        return "maybe"
+    return "partial" if recorded else "unanswered"
+
+
+def _coverage(components: list[dict]) -> dict:
     counts: dict[str, int] = {}
     for c in components:
         status = str(c["status"])
@@ -995,22 +1004,73 @@ def _beforehand(asked: Sequence[readln.Prompt]) -> int:
     are given in order, one per question, so an answer is only safe where
     the questions before it are surely asked once: the run stops before a
     question under a condition (if it were not asked, its answer would go
-    to the next one) and before an unknown one (asked, never answered from
-    a stored answer), and ends after a question asked until valid (an
-    answer it refused would go to the next one; with nothing left, WeiDU's
-    next try is asked of the player).
+    to the next one) and before a question whose key came already (two
+    questions that read alike would share one answer), and ends after a
+    question asked until valid (an answer it refused would go to the next
+    one). A component with an unknown question has none (install_questions).
     """
-    count = 0
+    count, seen = 0, set()
     for q in asked:
-        if q.conditional or not q.keyed:
+        if q.conditional or not q.keyed or q.key in seen:
             break
+        seen.add(q.key)
         count += 1
         if q.repeats:
             break
     return count
 
 
+def _batches(components: list[dict]) -> list[list[dict]]:
+    """
+    The components as mod_installer runs them: one log after the other, the
+    consecutive components of one mod in one batch (16.0.0's
+    WeiduBatchedComponents). prompts.Answers hands a batch's recorded
+    answers out from one queue, so one component's question left without
+    its own answer takes the next component's.
+    """
+    out: list[list[dict]] = []
+    for c in components:
+        name = (c["log"], prompts.tp2_name(c["tp2"]))
+        if out and (out[-1][0]["log"], prompts.tp2_name(out[-1][0]["tp2"])) == name:
+            out[-1].append(c)
+        else:
+            out.append([c])
+    return out
+
+
+def _covers_all(component: dict, given: int) -> bool:
+    """`given` answers leave this component nothing to ask - so nothing of
+    the next component's can be taken: every question answered, none asked
+    until valid (a refused answer takes the next one), all of it read."""
+    questions = component["questions"]
+    return (component["status"] != "unknown" and given == len(questions)
+            and not any(q["repeats"] for q in questions))
+
+
+def _one_batch_at_a_time(components: list[dict]) -> None:
+    """
+    In a batch, a component's questions are answerable beforehand only when
+    every component before it in the batch can be answered in full: else a
+    question of an earlier one, left to the player, would take this one's
+    answer (review of #107). Marks the rest not "beforehand".
+    """
+    for batch in _batches(components):
+        open_ = False
+        for c in batch:
+            if open_:
+                for q in c["questions"]:
+                    q["beforehand"] = False
+            ahead = sum(1 for q in c["questions"] if q["beforehand"])
+            if not _covers_all(c, ahead):
+                open_ = True
+
+
 INSTALL_ANSWERS_FILE = "install-answers.json"
+
+
+def _writable(answer: str) -> bool:
+    """An answer the log can carry: no comma (its separator), no line end."""
+    return not any(ch in answer for ch in ",\r\n")
 
 
 def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
@@ -1019,7 +1079,10 @@ def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
     kept in `folder`/install-answers.json: {"tp2#number": {question key:
     answer}}. A question is keyed by its .tra reference, else its text
     (readln.Prompt.key), so a reordered or re-planned install finds them
-    again. {} when there are none or the file cannot be read.
+    again. {} when there are none or the file cannot be read; an answer the
+    log cannot carry (a comma, a line end - a file edited by hand) is left
+    out, so the questionnaire asks it again rather than every install
+    failing on it (review of #107).
     """
     try:
         with open(os.path.join(folder, INSTALL_ANSWERS_FILE), encoding="utf-8") as fh:
@@ -1029,7 +1092,7 @@ def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
     answers = data.get("answers") if isinstance(data, dict) else None
     if not isinstance(answers, dict):
         return {}
-    return {str(component): {str(k): str(v) for k, v in given.items()}
+    return {str(component): {str(k): str(v) for k, v in given.items() if _writable(str(v))}
             for component, given in answers.items() if isinstance(given, dict)}
 
 
@@ -1047,27 +1110,40 @@ def answer_key(component: dict) -> str:
 
 
 def write_install_answers(plan_dir: str, mods_dir: str,
-                          answers: dict[str, dict[str, str]]) -> dict:
+                          answers: dict[str, dict[str, str]],
+                          coverage: dict | None = None) -> dict:
     """
     Put the player's answers into the planned logs (ADR-0049 point 5), as
     `// @wlb-inputs:` on each component's line, for the questions that can
     be answered beforehand (install_questions' "beforehand"), in order, up
-    to the first one with no answer. A component with nothing to give keeps
-    its line as the plan wrote it. Then install_questions again: what the
-    install will still ask.
+    to the first one with no answer; in a batch, nothing after a component
+    left with something to ask (its question would take the answers meant
+    for the next). A component with nothing to give keeps its line as the
+    plan wrote it. `coverage`: install_questions(plan_dir, mods_dir) when
+    already read (it reads every mod's files). Returns the coverage with
+    the answers written: what the install will still ask.
     """
-    coverage = install_questions(plan_dir, mods_dir)
+    coverage = coverage if coverage is not None else install_questions(plan_dir, mods_dir)
     inputs: dict[str, dict[prompts.Key, list[str]]] = {}
-    for component in coverage["components"]:
-        given = answers.get(answer_key(component), {})
-        row: list[str] = []
-        for question in component["questions"]:
-            if not question["beforehand"] or question["key"] not in given:
-                break
-            row.append(given[question["key"]])
-        if row:
-            key = (prompts.tp2_name(component["tp2"]), component["number"])
-            inputs.setdefault(component["log"], {})[key] = row
+    components = []
+    for batch in _batches(coverage["components"]):
+        open_ = False
+        for component in batch:
+            given = answers.get(answer_key(component), {})
+            row: list[str] = []
+            for question in component["questions"]:
+                if open_ or not question["beforehand"] or question["key"] not in given:
+                    break
+                row.append(given[question["key"]])
+            if not _covers_all(component, len(row)):
+                open_ = True
+            if row:
+                key = (prompts.tp2_name(component["tp2"]), component["number"])
+                inputs.setdefault(component["log"], {})[key] = row
+            recorded = row or component["recorded"]
+            components.append({**component, "recorded": recorded,
+                               "status": _status(component["status"] != "unknown",
+                                                 component["questions"], recorded)})
     for name, rows in inputs.items():
         path = os.path.join(plan_dir, name)
         # read as text, written as text: the line ends are this system's,
@@ -1075,7 +1151,7 @@ def write_install_answers(plan_dir: str, mods_dir: str,
         with open(path, encoding="utf-8-sig", errors="replace") as fh:
             text = fh.read()
         write_text(path, prompts.set_inputs(text, rows))
-    return install_questions(plan_dir, mods_dir)
+    return _coverage(components)
 
 
 def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
