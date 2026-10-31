@@ -579,6 +579,8 @@ Some measurements need the network and run as their own workflows: which
 open-source tool extracts the catalogue's RAR archives as 7-Zip does, on
 Debian trixie (the minimum platform), Windows and macOS, is
 `tools/rar_measure.py` in the `RAR extractors` workflow (docs/TESTING.md).
+What holds the wizard's window during a download, on Linux and Windows, is
+traced by the `GUI latency` workflow (`tools/gui_latency_summary.py`).
 
 ## Community data, kept current
 

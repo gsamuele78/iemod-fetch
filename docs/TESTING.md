@@ -135,7 +135,8 @@ One mod trickles in as a slow mirror does; the player cancels it, the page
 says so and the target holds only the mods that finished; Download again
 fetches only the rest. A 10 ms timer measures the event loop during both
 downloads and the test fails on a gap of 100 ms or more (11-16 ms on Linux,
-32 ms with every core busy). The catalogue, the conflict check and the planner
+32 ms with every core busy; once 240 ms on windows-latest, see "The event
+loop on Windows" below). The catalogue, the conflict check and the planner
 are injected (the real ones fetch community data), and a socket guard fails
 the test on any connection but to 127.0.0.1.
 
@@ -420,6 +421,22 @@ bsdtar fails mostly on solid RAR4 archives (5 of 7 solid); trixie's unar on
 every RAR5 one, Homebrew's on none. Two solid RAR4 archives (027, 030) no
 open-source tool extracts. The numbers decide the extractor (an ADR); no
 test asserts them.
+
+### The event loop on Windows, traced (GUI-AUDIT M3)
+
+The release gate of 4.0.0 failed on one assertion: the M3 test measured a
+240 ms gap on windows-latest, where the CI run of the same commit had passed
+(Linux, locally: 11-20 ms). A gap that size can be the garbage collector
+holding the GIL, the worker thread holding it in pure-Python code, or the
+runner not scheduling the window's thread at all. With
+`IEMOD_LATENCY_TRACE=<file>` the test writes when every gap ended, every
+collection with its generation and length (`gc.callbacks`), and every event
+the page received; `tools/gui_latency_summary.py` lines them up and, for each
+gap over 50 ms, says which collection overlapped it and what the download
+was doing. The `GUI latency` workflow runs the test 30 times on
+ubuntu-latest and windows-latest and publishes that summary; the fix - in
+the code, or in what the test may honestly expect of a shared runner - waits
+for its numbers.
 
 ## What is deliberately not done
 

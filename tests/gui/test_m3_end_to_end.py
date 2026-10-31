@@ -18,6 +18,7 @@ The catalogue, the conflict check and the planner are injected, as in the
 other GUI tests: the real ones fetch community data. Nothing but 127.0.0.1 is
 reached; a guard makes any other connection fail the test.
 """
+import gc
 import http.server
 import json
 import os
@@ -215,10 +216,16 @@ def loopback_only(monkeypatch):
 
 
 class Latency:
-    """The event loop's longest wait between two 10 ms ticks."""
+    """The event loop's longest wait between two 10 ms ticks.
+
+    With IEMOD_LATENCY_TRACE set to a file, the run also writes when each gap
+    ended, every garbage collection with its length, and each event the page
+    received - what tools/gui_latency_summary.py lines up to say what held a
+    long gap (measured on the Windows runner, where one gap reached 240 ms)."""
 
     def __init__(self):
         self.gaps, self._last = [], None
+        self.ends: list[float] = []
         self.timer = QTimer()
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.setInterval(10)
@@ -228,6 +235,7 @@ class Latency:
         now = time.perf_counter()
         if self._last is not None:
             self.gaps.append(now - self._last)
+            self.ends.append(now)
         self._last = now
 
     def start(self):
@@ -244,7 +252,7 @@ def states(page):
 
 
 def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
-        qtbot, tmp_path, monkeypatch, server, loopback_only):
+        qtbot, tmp_path, monkeypatch, server, loopback_only, request):
     data = tmp_path / "data"                 # krion64 files bg1ub before the conversion
     (data / "krion64" / "data" / "mods").mkdir(parents=True)
     (data / "krion64" / "data" / "categories.json").write_text(json.dumps(
@@ -335,6 +343,21 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
 
     # 4. Download: cancelled while cdtweaks arrives -------------------------
     page, mods_dir = main.download, project / "Mods"
+    trace = os.environ.get("IEMOD_LATENCY_TRACE")
+    collections: list[tuple[float, float, int]] = []
+    received: list[tuple[float, str, str]] = []
+    if trace:
+        started = {}
+
+        def collected(phase, info):
+            if phase == "start":
+                started["t"] = time.perf_counter()
+            elif "t" in started:
+                collections.append((started.pop("t"), time.perf_counter(), info["generation"]))
+        gc.callbacks.append(collected)
+        request.addfinalizer(lambda: gc.callbacks.remove(collected))
+        page._bridge.event.connect(lambda event: received.append(
+            (time.perf_counter(), str(event.get("event")), str(event.get("folder", "")))))
     latency = Latency()
     latency.start()
     with qtbot.waitSignal(page.finished, timeout=30000):
@@ -376,6 +399,12 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
     gaps = first_run + latency.gaps
     assert first_run and latency.gaps        # the loop was measured in both runs
     worst = max(gaps)
+    if trace:
+        with open(trace, "w", encoding="utf-8") as fh:
+            # latency.gaps holds both runs: start() does not clear it
+            json.dump({"gaps": [[end, gap] for end, gap in zip(latency.ends, latency.gaps,
+                                                               strict=True)],
+                       "collections": collections, "events": received}, fh)
     print(f"\nM3: {len(first_run)} + {len(latency.gaps)} event-loop ticks during the "
           f"downloads, the longest gap {worst * 1000:.1f} ms; done before the cancel: "
           f"{sorted(done)}; requests: {server.hits}")

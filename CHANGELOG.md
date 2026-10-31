@@ -8,6 +8,13 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- `GUI latency` workflow and `tools/gui_latency_summary.py`: the M3 test, run
+  30 times on Linux and Windows with `IEMOD_LATENCY_TRACE`, lines up each long
+  event-loop gap with the garbage collections and the download's events. The
+  4.0.0 release gate measured one 240 ms gap on windows-latest (limit 100 ms)
+  where CI on the same commit had passed; the fix waits for these numbers.
+
 ## [4.0.0] - 2026-10-31
 
 ### Upgrading from 3.x
