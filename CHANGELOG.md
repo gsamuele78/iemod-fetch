@@ -8,6 +8,15 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **A known EET fault is said before installing** (GUI-AUDIT M8 item 65,
+  ADR-0045). On Windows, when the Documents folder is registered with a space
+  (a OneDrive folder such as "OneDrive - Company\Documents", or "D:\My
+  Documents") and the EET copy still cuts that value at the first space
+  (`EET/lib/macros.tph`, still so in EET at c26a11a), the wizard's install
+  confirmation says that EET's core will likely stop and why. It is a
+  warning, not a refusal.
+
 ## [4.0.1] - 2026-10-31
 
 ### Fixed

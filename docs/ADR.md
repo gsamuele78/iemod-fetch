@@ -2948,6 +2948,32 @@ version up to the tag).
   dark0dave/mod_installer. Whether to report it is the maintainer's call;
   nothing has been opened.
 
+### GUI-AUDIT M8 item 65: a known upstream fault is said before installing
+
+- **Context.** EET's core finds the Documents folder with a batch file
+  (`EET/lib/macros.tph`, `GET_USER_DIRECTORY`, upstream since 38db44c): `for
+  /f "tokens=3,*"` over `reg query ... User Shell Folders /v Personal`, then
+  `set DOC_DIR=%%a` - the third token only. A registered value with a space
+  is cut at it, and the core stops. Chriz Easy BG met it ("the community EET
+  failure", `docs/handover.md` L138-142) and patches EET's copy (MIT,
+  508256a). Read in EET's own repository at c26a11a (2026-10-29): still so.
+  The value is read before `%VARIABLES%` are expanded, so the usual
+  `%USERPROFILE%\Documents` has no space even when the user name has one;
+  a folder moved by OneDrive ("OneDrive - Company\Documents") or chosen by
+  hand ("D:\My Documents") has.
+- **Decision.** `install_run.known_issues` (api `install_known_issues`)
+  says it before installing, on Windows, when the plan has EET, the raw
+  `Personal` value (`winreg`, unexpanded) has a space, and the EET copy in
+  the mods folder still has that shape of line (matched, not copied - EET
+  is GPL-3.0). The wizard puts it in the confirmation, "Install despite a
+  known issue"; it is not a refusal: the player decides, knowing. EET's file
+  is not patched: changing a mod's content needs item 52's ADR.
+- **Consequences.** A player who would have met a stopped EET core with no
+  word of why is told before, with the registered value and where the cut
+  is. An EET release that keeps the whole path no longer matches, and the
+  warning goes by itself. Reporting the bug to EET is the maintainer's call;
+  nothing has been opened.
+
 ---
 
 ## ADR-0046 — mod_installer 16.0.0, built from source into the wizard's bundle, until upstream releases it

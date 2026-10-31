@@ -464,6 +464,60 @@ def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
     return record if record is not None and os.path.isfile(record) else None
 
 
+# EET's core finds the Documents folder with a batch file (EET/lib/macros.tph,
+# GET_USER_DIRECTORY, upstream since 38db44c): `for /f "tokens=3,*"` over
+# `reg query ... /v Personal`, then `set DOC_DIR=%%a` - the third token only,
+# so a value with a space is cut at it. Matched, not copied (EET is GPL-3.0).
+_EET_DOCUMENTS_CUT = re.compile(r'tokens=3,\*"[^\n]*/v\s+Personal[^\n]*set\s+DOC_DIR=%%a\s*$',
+                                re.IGNORECASE | re.MULTILINE)
+_SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+
+
+def _documents_value() -> str | None:
+    """The Documents folder as the registry holds it, before %VARIABLES% are
+    expanded - what EET's batch file reads; None off Windows or unreadable."""
+    if sys.platform == "win32":
+        import winreg  # noqa: PLC0415 (Windows only)
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _SHELL_FOLDERS) as key:
+                value, _kind = winreg.QueryValueEx(key, "Personal")
+            return str(value)
+        except OSError:
+            return None
+    return None
+
+
+def known_issues(games: dict[str, str], mods_dir: str,
+                 documents: Callable[[], str | None] | None = None) -> list[str]:
+    """
+    Known upstream faults this install will meet, in words; [] when none.
+    Not refusals: the player decides, knowing (GUI-AUDIT M8 item 65).
+
+    EET's core and a Documents folder whose registry value has a space
+    (OneDrive's "OneDrive - Company\\Documents", "D:\\My Documents"): its
+    batch file keeps the path's first word, and the core stops. A user name
+    with a space is not this - the value is `%USERPROFILE%\\Documents`, and
+    the variable is expanded after the cut. Read in EET at c26a11a
+    (2026-10-29): still so.
+    """
+    issues = []
+    if "EET" in games:
+        value = (documents or _documents_value)()
+        macros = _in_folder(mods_dir, "EET/lib/macros.tph")
+        if value and " " in value.strip() and macros and os.path.isfile(macros):
+            with open(macros, encoding="utf-8", errors="replace") as fh:
+                cut = _EET_DOCUMENTS_CUT.search(fh.read())
+            if cut:
+                first = value.strip().split(" ", 1)[0]
+                issues.append(
+                    f"EET's core will likely stop: your Documents folder is registered as "
+                    f"{value.strip()!r}, and EET's installer (EET/lib/macros.tph, "
+                    f"GET_USER_DIRECTORY) keeps it only up to the first space ({first!r}). "
+                    f"A known EET bug on Windows. Until EET fixes it, a Documents folder "
+                    f"whose path has no space avoids it.")
+    return issues
+
+
 def resume_state(plan_dir: str, games: dict[str, str]) -> resume.Resume:
     """How far the planned install went in the games: each game's WeiDU.log
     against its planned log (resume.py), and whether the component it
