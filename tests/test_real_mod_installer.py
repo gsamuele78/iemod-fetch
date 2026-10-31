@@ -450,3 +450,59 @@ def test_weidus_debug_file_for_a_skipped_component_in_a_batch(tmp_path):
     found = results.results([("skips.tp2", n) for n in (0, 1, 2)], "",
                             (game / "WeiDU.log").read_text(), debug)
     assert [x.status for x in found] == [results.OK, results.NOT_REACHED, results.OK]
+
+
+UNDER_A_CONDITION = """BACKUP ~cond/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks under a condition, then always~
+ACTION_IF NOT FILE_EXISTS ~cond/prefs.txt~ BEGIN
+  PRINT ~Which portraits do you want, old or new?~
+  ACTION_READLN portraits
+END ELSE BEGIN
+  OUTER_SPRINT portraits ~preset~
+END
+PRINT ~Please enter how many extra kits should be installed:~
+ACTION_READLN kits
+APPEND_OUTER ~cond-answers.txt~ ~%portraits% %kits%~
+"""
+
+
+@pytest.mark.parametrize("asked_first", [True, False])
+def test_the_real_window_is_recognised_and_answered_by_question(tmp_path, asked_first):
+    """ADR-0049: a question under a condition, which the log's order cannot
+    answer, is recognised by its text in the real mod_installer's window and
+    answered by its key - and when the condition skips it (prefs.txt there),
+    the next question still gets its own answer. Measured: mod_installer
+    16.0.0 flags a question only when its window holds one of its choice
+    words or phrases (parser_config.rs: "enter", "please enter", "do you
+    want"...); a question with none ("How many kits?" alone) is never put
+    to anyone and WeiDU waits until mod_installer's timeout, 3 hours - so
+    the second question says "Please enter"."""
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "cond-answers.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "cond").mkdir(parents=True)
+    (mods / "cond" / "cond.tp2").write_text(UNDER_A_CONDITION)
+    if not asked_first:
+        (mods / "cond" / "prefs.txt").write_text("")      # copied into the game with the mod
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~COND/COND.TP2~ #0 #0 // Asks under a condition, then always\n")
+    answers = {"cond.tp2#0": {"Which portraits do you want, old or new?": "new",
+                              "Please enter how many extra kits should be installed:": "3"}}
+    lines, asked = [], []
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: asked.append(q) or None,
+                                on_event=lambda e: lines.append(e.text),
+                                answers=answers).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and asked == [], transcript
+    expected = ["new", "3"] if asked_first else ["preset", "3"]
+    assert (game / "cond-answers.txt").read_text().split() == expected, transcript
+    assert {a.source for a in outcome.answered} == {"by question"}, transcript

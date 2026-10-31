@@ -9,6 +9,18 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **Questions answered by question during the install** (GUI-AUDIT item 48,
+  ADR-0049 amendment): a question mod_installer puts to this program is
+  recognised by its expected text (read from the mod's files in the log's
+  language) at the end of its window and answered by its key - the player's
+  answer from the questionnaire, else the log's recorded answer for that
+  very question; a recorded answer meant for another question is never
+  given to it. So the questionnaire now offers every question whose text is
+  known, also those under a condition. A question not recognised takes the
+  next recorded answer, as before. Measured with the real mod_installer
+  16.0.0: it asks only questions holding one of its choice words ("enter",
+  "choose", "do you want"...); 11 of the corpus' 42 known questions have
+  none, and WeiDU then waits until mod_installer's 3-hour timeout.
 - **What each component of an install came to** (GUI-AUDIT item 69,
   ADR-0053): the result is not only mod_installer's exit code. Each planned
   component is installed, installed with warnings, not installed because of

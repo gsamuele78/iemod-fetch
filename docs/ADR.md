@@ -3511,6 +3511,50 @@ it comes - by its expected text, which point 1 knows - and answered by its
 key, not by its place: the next step (item 48), after which the window can
 offer the questions under a condition too.
 
+### Amendment (2026-10-31): answered by question during the install
+
+`api.start_install` now takes the questions (`install_questions`) and the
+player's answers (`load_install_answers`). When mod_installer puts a question
+to this program, `prompts.match_question` looks for the batch's expected
+question texts - read from the mods' files in the log's language - at the
+**end** of mod_installer's window: white space read loosely, a `%variable%`
+as anything (WeiDU fills it in), a text of fewer than 12 letters never
+(too short to tell apart), the longest matching text winning (a shorter one
+may be its tail) and two different questions matching equally meaning no
+match. Recognised, the question is answered by its key: the player's
+answer, else the log's recorded answer for that very question (taken out
+of the queue wherever it is, so the others stay in step); with neither, it
+is asked - a recorded answer meant for another question is never given to
+it. Not recognised, it takes the next recorded answer, as before: nothing
+changes for a question the texts do not cover.
+
+So the questionnaire now offers every question whose text is known - also
+those under a condition, after one asked until valid, or after a component
+that may still ask - and a component whose every question has an answer
+counts as answered. The log's `@wlb-inputs` still carries only the answers
+whose place is sure (the rules above), for other tools that read it.
+
+**Measured with the real mod_installer 16.0.0 and WeiDU v251**
+(`tests/test_real_mod_installer.py`): a question under a condition is
+recognised in the real window and answered by question; when the condition
+skips it, the next question gets its own answer.
+
+**Measured, a limit of mod_installer that this does not lift**: it puts a
+question to this program only when its window holds one of its choice words
+or phrases (`src/config/parser_config.rs`: "choose", "select", "enter", "do
+you want", "[y]es or [n]o", "is this correct?"...) or a bell character. A
+question with none is never put to anyone: WeiDU waits until mod_installer's
+timeout per mod, 3 hours by default, and the install then fails. Of the 42
+distinct READLNs of the corpus whose text is known, **11** have none: 8 are
+SCS's SFO library pausing ("press a key to continue", in its debugging
+paths), 2 EET's mod converter (a developer tool), 1 DLC Merger's "Try again
+(y/n)?" after a DLC it could not find. mod_installer reads its words from a
+parser config (`confy`, `parser.toml` in its own configuration folder);
+adding the expected texts there would make it ask them - on Linux and macOS
+through the child's configuration folder, on Windows only in the player's own
+folder (the known-folder API ignores the environment). That is a decision
+still to take (the warn-only watchdog, point 4, will at least say it).
+
 ---
 
 ## ADR-0050 — A rename waits out a file Windows holds for a moment

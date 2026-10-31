@@ -132,19 +132,80 @@ class OutputReader:
 
 @dataclass
 class Answers:
-    """The recorded answers of a log, handed out batch by batch, in order."""
+    """
+    The recorded answers of a log, handed out batch by batch, in order. With
+    `keys` ({component: its questions' keys, in the order its files ask
+    them}), each recorded answer also knows the question it was given for,
+    so an answer given by question (take) leaves the others in step.
+    """
     recorded: dict[Key, list[str]]
+    keys: dict[Key, list[str]] = field(default_factory=dict)
     _queue: deque = field(default_factory=deque)
     _batch: tuple[Key, ...] = ()
 
     def start(self, batch: tuple[Key, ...]) -> None:
         """A batch starts: its components' answers, in the batch's order."""
         self._batch = batch
-        self._queue = deque(answer for key in batch for answer in self.recorded.get(key, ()))
+        self._queue = deque()
+        for key in batch:
+            names = self.keys.get(key, [])
+            for i, answer in enumerate(self.recorded.get(key, ())):
+                self._queue.append((key, names[i] if i < len(names) else None, answer))
 
     def next(self) -> str | None:
         """The next recorded answer of the batch, None when there is none."""
-        return self._queue.popleft() if self._queue else None
+        return str(self._queue.popleft()[2]) if self._queue else None
+
+    def take(self, component: Key, question: str) -> str | None:
+        """The recorded answer for this component's question, taken out of
+        the queue wherever it is; None when none is recorded for it."""
+        for entry in self._queue:
+            if entry[0] == component and entry[1] == question:
+                self._queue.remove(entry)
+                return str(entry[2])
+        return None
+
+
+# A question is recognised by its text only when that text says enough:
+# "y/n?" alone would match the end of too many questions (ADR-0049).
+MIN_TEXT = 12
+_VARIABLE = re.compile(r"%[^%\s]+%")
+
+
+def _expected_pattern(text: str) -> re.Pattern | None:
+    """The question's text as it ends WeiDU's output: any run of white space
+    for white space, anything for a %variable% (WeiDU fills it in)."""
+    words = text.split()
+    literal = _VARIABLE.sub("", " ".join(words))
+    if len(literal.replace(" ", "")) < MIN_TEXT:
+        return None
+    parts = [_VARIABLE.sub(lambda _m: "\x00", word) for word in words]
+    body = r"\s+".join(re.escape(part).replace("\x00", ".*?") for part in parts)
+    return re.compile(body + r"\s*\Z", re.DOTALL)
+
+
+def match_question(window: str, expected: list[tuple[Key, str, str]]) -> tuple[Key, str] | None:
+    """
+    Which expected question mod_installer's window ends with (item 48,
+    ADR-0049): `expected` is (component, question key, question text) for
+    the batch's components, the texts read from their files in the language
+    the log installs them in. The longest text that ends the window wins (a
+    shorter one may be its tail); None when none does, or when two different
+    questions are as likely - never a guess.
+    """
+    best: list[tuple[int, Key, str]] = []
+    for component, key, text in expected:
+        pattern = _expected_pattern(text) if text else None
+        if pattern is None or not pattern.search(window):
+            continue
+        best.append((len(_VARIABLE.sub("", " ".join(text.split()))), component, key))
+    if not best:
+        return None
+    top = max(length for length, _c, _k in best)
+    winners = {(c, k) for length, c, k in best if length == top}
+    if len({k for _c, k in winners}) != 1 or len(winners) != 1:
+        return None
+    return next(iter(winners))
 
 
 def question_line(text: str) -> str:

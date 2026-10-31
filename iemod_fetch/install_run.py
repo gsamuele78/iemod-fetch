@@ -38,8 +38,8 @@ from . import results as verdicts
 from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
-from .prompts import (EET_FOLDER_QUESTION, Answers, Event, OutputReader, question_line,
-                      recorded_answers)
+from .prompts import (EET_FOLDER_QUESTION, Answers, Event, Key, OutputReader,
+                      match_question, question_line, recorded_answers)
 
 # What the planned logs are called (ordering.PRE_EET_LOG, EET_LOG)
 PRE_EET_LOG, EET_LOG = "WeiDU-BGEE.log", "WeiDU.log"
@@ -52,7 +52,7 @@ DRAIN_S = 2.0            # its output still open this long after it ended: stop 
 class Answered:
     question: str
     answer: str
-    source: str           # "EET" | "recorded" | "player"
+    source: str           # "EET" | "recorded" | "by question" | "player"
 
 
 @dataclass
@@ -271,7 +271,9 @@ class InstallRun:
                  running: Callable[[], list[gamelock.Running] | None] = gamelock.running_executables,
                  asked_file: str | None = None,
                  phases: list[tuple[str, str]] | None = None,
-                 results_file: str | None = None) -> None:
+                 results_file: str | None = None,
+                 expected: dict[Key, list[tuple[str, str]]] | None = None,
+                 by_key: dict[Key, dict[str, str]] | None = None) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -288,7 +290,12 @@ class InstallRun:
         # item 67: a game started during the run is said at the next batch
         self.games, self.tools, self.running = games or {}, tools, running
         self._said: set[str] = set()
-        self.answers = Answers(recorded)
+        # item 48 (ADR-0049): each component's questions, (key, text) in the
+        # order its files ask them, and the player's answers by key
+        self.expected = expected or {}
+        self.by_key = by_key or {}
+        self.answers = Answers(recorded, {component: [key for key, _text in questions]
+                                          for component, questions in self.expected.items()})
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
@@ -402,9 +409,9 @@ class InstallRun:
         if self.bgee_dir and EET_FOLDER_QUESTION in text.lower():
             answer, source = self.bgee_dir, "EET"
         else:
-            recorded = self.answers.next()
-            if recorded is not None:
-                answer, source = recorded, "recorded"
+            known = self._by_question(text, question.batch)
+            if known is not None:
+                answer, source = known
             else:
                 given = self.ask(text, question.batch)
                 if given is None:
@@ -420,6 +427,28 @@ class InstallRun:
         outcome.answered.append(Answered(text, answer, source))
         self.on_event(Event("answer", f"{answer}  ({source})", question.batch))
         return True
+
+    def _by_question(self, text: str, batch: tuple) -> tuple[str, str] | None:
+        """
+        The answer to give without asking, and where it came from. A question
+        recognised by its expected text (match_question) is answered by its
+        key - the player's answer for it, else the log's recorded answer for
+        that very question - and when neither has one it is asked: a
+        recorded answer meant for another question is never given to it.
+        One not recognised takes the next recorded answer, as ADR-0045 does.
+        """
+        expected = [(component, key, question) for component in batch
+                    for key, question in self.expected.get(component, ())]
+        found = match_question(text, expected) if expected else None
+        if found is None:
+            recorded = self.answers.next()
+            return (recorded, "recorded") if recorded is not None else None
+        component, key = found
+        positional = self.answers.take(component, key)       # kept in step
+        stored = self.by_key.get(component, {}).get(key)
+        if stored is not None:
+            return stored, "by question"
+        return (positional, "recorded") if positional is not None else None
 
     def _stop(self, process: subprocess.Popen) -> None:
         """Stop mod_installer and what it started: terminate, then kill."""
@@ -765,7 +794,9 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
           weidu: str, ask: Callable[[str, tuple], str | None],
           on_event: Callable[[Event], None] = lambda _event: None,
           language: str = "en_US", allow_existing: bool = False,
-          resume_install: bool = False, **timing) -> InstallRun:
+          resume_install: bool = False,
+          expected: dict[Key, list[tuple[str, str]]] | None = None,
+          by_key: dict[Key, dict[str, str]] | None = None, **timing) -> InstallRun:
     """
     An install ready to run, after the checks; ConfigError says what stops
     it. `resume_install`: go on where the games' WeiDU.logs say it stopped
@@ -795,4 +826,5 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     return InstallRun(argv, logs, cwd=mods_dir, ask=ask, on_event=on_event,
                       bgee_dir=bgee_dir, games=games, tools=(mod_installer, weidu),
                       asked_file=asked_file, phases=phases(plan_dir, games),
-                      results_file=os.path.join(results_dir, RESULTS_FILE), **timing)
+                      results_file=os.path.join(results_dir, RESULTS_FILE),
+                      expected=expected, by_key=by_key, **timing)

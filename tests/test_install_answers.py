@@ -114,6 +114,13 @@ def test_answers_go_into_the_planned_log_in_order(tmp_path):
     # one batch: #10's later questions would take #20's answers - none written
     assert "#20 // c20\n" in log and "#40 // c40\n" in log and "#30 // c30\n" in log
     assert found[0]["status"] == "answered"
+    # the rest have the player's answers by key: answered by question during the
+    # install (start_install), not by their place in the log
+    assert found[10]["status"] == "answered" and found[20]["status"] == "answered"
+    # without them: what the log's order leaves
+    plan, mods = project(tmp_path / "b", ALL)
+    found = by_number(api.write_install_answers(plan, mods, {"setup-mymod.tp2#0": {"@1": "2", "@3": ""},
+                                                          "setup-mymod.tp2#10": {"@1": "y"}}))
     assert found[10]["status"] == "partial" and found[20]["status"] == "unanswered"
 
 

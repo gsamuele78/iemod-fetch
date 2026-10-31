@@ -1143,9 +1143,15 @@ def write_install_answers(plan_dir: str, mods_dir: str,
                 key = (prompts.tp2_name(component["tp2"]), component["number"])
                 inputs.setdefault(component["log"], {})[key] = row
             recorded = row or component["recorded"]
-            components.append({**component, "recorded": recorded,
-                               "status": _status(component["status"] != "unknown",
-                                                 component["questions"], recorded)})
+            status = _status(component["status"] != "unknown", component["questions"],
+                             recorded)
+            # answered by question during the install (start_install): a
+            # question whose text is known, with the player's answer for it
+            if status in ("maybe", "partial", "unanswered") and all(
+                    i < len(recorded) or (q["known"] and q["text"] and q["key"] in given)
+                    for i, q in enumerate(component["questions"])):
+                status = "answered"
+            components.append({**component, "recorded": recorded, "status": status})
     for name, rows in inputs.items():
         path = os.path.join(plan_dir, name)
         # read as text, written as text: the line ends are this system's,
@@ -1161,7 +1167,9 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                   ask: Callable[[str, tuple], str | None],
                   on_event: Callable[[Any], None] | None = None,
                   language: str = "en_US", allow_existing: bool = False,
-                  resume: bool = False, **timing: float) -> install_run.InstallRun:
+                  resume: bool = False, answers: dict[str, dict[str, str]] | None = None,
+                  questions: dict | None = None,
+                  **timing: float) -> install_run.InstallRun:
     """
     An install of a planned order ready to run (GUI-AUDIT M4 item 22,
     ADR-0045): mod_installer over `plan_dir`'s WeiDU logs, the mods in
@@ -1176,11 +1184,30 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
     23): go on where the games' WeiDU.logs say an earlier install stopped -
     only what is left runs; a game that is not the plan's beginning is
     refused (install_progress says which, beforehand).
+
+    `answers` (load_install_answers' shape) and `questions`
+    (install_questions(plan_dir, mods_dir), read if not given): a question
+    mod_installer shows is recognised by its expected text and answered by
+    its key (ADR-0049) - also one under a condition, which the log's order
+    cannot answer; one not recognised takes the log's next answer, as before.
     """
+    if questions is None:
+        try:
+            questions = install_questions(plan_dir, mods_dir)
+        except (OSError, ValueError):     # not read: answered in order, as before
+            questions = {"components": []}
+    expected: dict[prompts.Key, list[tuple[str, str]]] = {}
+    by_key: dict[prompts.Key, dict[str, str]] = {}
+    for component in questions.get("components", []):
+        key = (prompts.tp2_name(component["tp2"]), component["number"])
+        expected[key] = [(q["key"], q["text"] if q["known"] else "")
+                         for q in component["questions"]]
+        if answers and answer_key(component) in answers:
+            by_key[key] = dict(answers[answer_key(component)])
     return install_run.start(plan_dir, games, mods_dir, mod_installer, weidu, ask,
                              on_event or (lambda _event: None), language=language,
                              allow_existing=allow_existing, resume_install=resume,
-                             **timing)
+                             expected=expected, by_key=by_key, **timing)
 
 
 def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:
