@@ -63,6 +63,7 @@ class Services:
     games: Callable[[str], dict] = api.install_games
     mods_dir: Callable[[str], str] = _mods_dir
     restore_plan: Callable[[str, str], dict] = api.plan_restore
+    progress: Callable[[str, dict], dict] = api.install_progress
     start: Callable[..., Any] = api.start_install
     timing: dict = field(default_factory=dict)    # start_install's quiet_s, grace_s...
 
@@ -109,6 +110,7 @@ class InstallPage(QWidget):
         self.found: dict[str, Any] = {}
         self.games: dict[str, str] = {}
         self.backed_up: dict[str, str] = {}     # game folder -> its newest backup
+        self.progress: dict = {"state": "fresh"}    # how far an earlier install went
         self.outcome: Any = None
         self._thread: QThread | None = None
         self._cancel = threading.Event()
@@ -158,6 +160,7 @@ class InstallPage(QWidget):
         self.cancel_button.clicked.connect(self.stop)
         self.summary = _plain("")
         self.needs = _plain("")
+        self.resume_state = _plain("")
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
         self.output.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
@@ -169,6 +172,7 @@ class InstallPage(QWidget):
         buttons.addStretch(1)
         run = QVBoxLayout()
         run.addLayout(buttons)
+        run.addWidget(self.resume_state)
         run.addWidget(self.needs)
         run.addWidget(self.summary)
         run.addWidget(self.output, 1)
@@ -197,7 +201,21 @@ class InstallPage(QWidget):
     def refresh(self) -> None:
         self._refresh_tools()
         self._refresh_backups()
+        self._refresh_progress()
         self._buttons()
+
+    def plan_dir(self) -> str:
+        return os.path.join(self.project_dir, api.INSTALL_PLAN_DIR)
+
+    def _refresh_progress(self) -> None:
+        """How far the last install went (item 23): the games' WeiDU.logs
+        against the plan last written here."""
+        try:
+            self.progress = (self.services.progress(self.plan_dir(), self.games)
+                             if self.games else {"state": "fresh"})
+        except Exception as exc:          # an unreadable log: said, not a crash
+            self.progress = {"state": "mismatch", "problem": str(exc)}
+        self.resume_state.setText(_progress_text(self.progress))
 
     def _refresh_tools(self) -> None:
         self.found = self.services.find(self.given["mod_installer"], self.given["weidu"])
@@ -285,15 +303,20 @@ class InstallPage(QWidget):
                     out[folder] = {"error": str(exc)}
             return out
 
+        # the check has ended once its result is shown: the thread's finished
+        # signal may arrive before its result does (it is not queued behind it)
         def done(results: dict) -> None:
             if round_ == self._check_round:
                 self._checked(newest, results)
+                self._checking = None
+                self._buttons()
 
-        def ended() -> None:
+        def failed(_message: str) -> None:
             if round_ == self._check_round:
                 self._checking = None
+                self._buttons()
 
-        self._checking = _in_thread(check, done, lambda _message: None, ended)
+        self._checking = _in_thread(check, done, failed, lambda: None, owner=self)
 
     def _checked(self, newest: dict[str, dict], results: dict) -> None:
         for folder, result in results.items():
@@ -306,6 +329,14 @@ class InstallPage(QWidget):
             if result.get("error"):
                 label.setText(f"{folder}\nthe backup {backup['path']} cannot be checked: "
                               f"{result['error']}")
+            elif changed and self.progress.get("state") == "partial":
+                # what changed is the install that stopped: the backup is from
+                # before it, and is what to restore to start from scratch
+                self.backed_up[folder] = backup["path"]
+                label.setText(
+                    f"{folder}\nbacked up {backup['created']}: {backup['path']} - before "
+                    f"the install that stopped ({changed} file(s) changed since); "
+                    f"restoring it goes back to before that install")
             elif changed:
                 label.setText(
                     f"{folder}\nthe game changed after the backup of {backup['created']} "
@@ -400,6 +431,8 @@ class InstallPage(QWidget):
                 missing.append(f"{name}: {found.problem if found else 'not looked for'}")
         if not self.games:
             missing.append("no game folders: set them on the first page")
+        if self.progress.get("state") == "mismatch":
+            missing.append(f"the install cannot resume: {self.progress.get('problem')}")
         for folder in self.games.values():
             if folder not in self.backed_up:
                 missing.append(f"no backup of {folder or 'a game folder'} as it is now"
@@ -430,6 +463,16 @@ class InstallPage(QWidget):
 
     def _confirm_and_run(self, plan: dict) -> None:
         game, chosen, _labels = self.wanted or ("", [], {})
+        progress = self.services.progress(plan["plan_dir"], self.games)
+        state = progress.get("state")
+        if state == "mismatch":
+            self._say(f"Not installed: {progress.get('problem')}. Restore the backup "
+                      f"to start again.")
+            return
+        if state == "finished":
+            self._say("Nothing to install: every planned component is already in the games.")
+            return
+        resuming = state == "partial"
         folders = "\n".join(f"  {name}: {folder}" for name, folder in self.games.items())
         backups = "\n".join(f"  {path}" for path in self.backed_up.values())
         broken = list(plan.get("violations", [])) + [
@@ -440,8 +483,14 @@ class InstallPage(QWidget):
         warning = ("" if not broken else
                    f"The order still breaks {len(broken)} rule(s) - in red on the order "
                    f"page. Going on installs it as it is:\n" + "\n".join(shown) + "\n\n")
-        if not self.confirm("Install anyway" if broken else "Install", (
-                f"Install {len(chosen)} component(s) into:\n{folders}\n\n{warning}"
+        what = (f"Resume the install that stopped: {progress['done']} of "
+                f"{progress['total']} component(s) are already in; the other "
+                f"{progress['total'] - progress['done']} install now, into:"
+                if resuming else f"Install {len(chosen)} component(s) into:")
+        title = ("Resume anyway" if resuming else "Install anyway") if broken else \
+            ("Resume" if resuming else "Install")
+        if not self.confirm(title, (
+                f"{what}\n{folders}\n\n{warning}"
                 f"mod_installer and WeiDU change these folders. Nothing is undone by "
                 f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
             self._say("Not installed: the plan is written in "
@@ -465,14 +514,14 @@ class InstallPage(QWidget):
             install = services.start(plan["plan_dir"], games, services.mods_dir(folder),
                                      tools["mod_installer"], tools["weidu"],
                                      ask=self._from_install, on_event=on_event,
-                                     **services.timing)
+                                     resume=resuming, **services.timing)
             self._install = install
             if cancel.is_set():                 # Cancel while it was being set up
                 install.cancel()
             bridge.status.emit("Installing...")
             return install.run()
 
-        self._say("Installing...")
+        self._say("Resuming..." if resuming else "Installing...")
         self._run(run, self._installed)
 
     def _from_install(self, question: str, _batch: tuple) -> str | None:
@@ -515,20 +564,30 @@ class InstallPage(QWidget):
         backups = ", ".join(self.backed_up.values())
         if outcome.ok:
             self._say("Installed. Each game's WeiDU.log lists what went in.")
-        elif outcome.cancelled:
-            self._say(f"Cancelled. What was installed until then stays: to start "
-                      f"again, restore the backup ({backups}).")
+            return
+        # where it stopped decides what is said: a component stopped inside
+        # cannot be resumed (resume.half_way), only restored
+        self._refresh_progress()
+        state, restore = self.progress.get("state"), f"restore the backup ({backups})"
+        if state == "mismatch":
+            then = (f"It cannot resume - {self.progress.get('problem')}: {restore} to start "
+                    f"again.")
+        elif state == "partial":
+            then = f"Install resumes from there, or {restore} to start again."
+        else:
+            then = f"Install starts it again, or {restore} if the game changed."
+        if outcome.cancelled:
+            self._say(f"Cancelled. What was installed until then stays. {then}")
         else:
             self._say(f"mod_installer stopped with exit status {outcome.returncode}: "
-                      f"the output above says where. To start again, restore the "
-                      f"backup ({backups}).")
+                      f"the output above says where; once it is fixed: {then}")
 
     # ------------------------------------------------------------ plumbing
     def running(self) -> bool:
         return self._thread is not None
 
     def _run(self, call: Callable[[], Any], done: Callable[[Any], None]) -> None:
-        self._thread = _in_thread(call, done, self._failed, self._finished)
+        self._thread = _in_thread(call, done, self._failed, self._finished, owner=self)
         self._buttons()
         self.completeChanged.emit(False)
 
@@ -572,6 +631,21 @@ class InstallPage(QWidget):
     def is_complete(self) -> bool:
         """The install ran to its end without an error."""
         return bool(self.outcome is not None and getattr(self.outcome, "ok", False))
+
+
+def _progress_text(progress: dict) -> str:
+    state = progress.get("state")
+    if state == "partial":
+        nexts = [p["next"] for p in progress.get("phases", []) if p.get("next")]
+        return (f"An install stopped here: {progress['done']} of {progress['total']} "
+                f"component(s) are in" + (f", next {nexts[0]}" if nexts else "")
+                + ". Install resumes from there; nothing in is installed again.")
+    if state == "finished":
+        return "Every planned component is in the games."
+    if state == "mismatch":
+        return (f"The install cannot resume - {progress.get('problem')}. Restore the "
+                f"backup to start again.")
+    return ""
 
 
 def _same(one: str, other: str) -> bool:

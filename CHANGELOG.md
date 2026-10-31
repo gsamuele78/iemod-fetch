@@ -47,6 +47,21 @@ Python API, which is internal.
   tool does not. ADR-0044: lcc-docs' dates as a second update signal.
 
 ### Added
+- **Resume a stopped install** (GUI-AUDIT M4 item 23, ADR-0045). After a
+  failure or a Cancel, each game's own WeiDU.log says what went in: when it is
+  the plan's beginning, `api.start_install(resume=True)` and the wizard's
+  *Install* run only the rest (`api.install_progress` says "N of M"); when it
+  is not, nothing runs, each diverging line is named (tp2, language and
+  component) and the backup is how to start again. A component stopped
+  half-way by a Cancel (its uninstall record in the game, no log line) is not
+  resumed either: WeiDU would back up its leftovers as the originals
+  (measured). mod_installer runs with `--skip-installed=false`: on Linux its
+  skip reads `weidu.log` and installed the first component again (measured
+  on 16.0.0).
+- **Fixed: the wizard's background work reported back from its own thread.**
+  A worker's result reached the page in the worker's thread (measured with
+  PySide6), changing widgets from there; it now arrives in the GUI thread,
+  before the thread's end, and is dropped if the page closed meanwhile.
 - **Phase 5 of the wizard: installation** (GUI-AUDIT M4 item 22c, ADR-0045).
   The programs (mod_installer from the bundle, WeiDU found or downloaded after
   a confirmation that names its source and GPL-2.0 licence), a backup of each

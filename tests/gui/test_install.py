@@ -43,7 +43,7 @@ def world(tmp_path):
         program.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
         program.chmod(0o755)
     state = {"backups": [], "downloads": [], "plans": [], "find": [], "weidu": True,
-             "changed": [], "violations": []}
+             "changed": [], "violations": [], "plan_lines": ["~UB/SETUP-UB.TP2~ #0 #0 // x"]}
 
     def find(mod_installer=None, weidu=None):
         state["find"].append((mod_installer, weidu))
@@ -71,7 +71,7 @@ def world(tmp_path):
         plan_dir.mkdir(exist_ok=True)
         (plan_dir / "WeiDU.log").write_text(
             "// Log of Currently Installed WeiDU Mods\n"
-            "~UB/SETUP-UB.TP2~ #0 #0 // Restorations: v30\n")
+            + "".join(line + "\n" for line in state["plan_lines"]))
         return {"plan_dir": str(plan_dir), "logs": [], "languages": ["languages: en_US"],
                 "violations": list(state["violations"]), "cycles": []}
 
@@ -334,3 +334,76 @@ def test_a_real_backup_then_a_changed_game_file_is_seen(qtbot, world, tmp_path):
     settled(qtbot, page)
     assert folder not in page.backed_up
     assert "changed after the backup" in page.backup_state[folder].text()
+
+
+# ------------------------------------------------------------ resuming (item 23)
+def game_lines(world):
+    path = world["game"] / "WeiDU.log"
+    return [line for line in path.read_text().splitlines() if line.startswith("~")] \
+        if path.exists() else []
+
+
+def test_a_stopped_install_resumes_with_only_what_is_left(qtbot, world, monkeypatch):
+    backed_up(world)
+    world["state"]["plan_lines"] = ["~UB/SETUP-UB.TP2~ #0 #0 // x",
+                                    "~UB/SETUP-UB.TP2~ #0 #10 // y"]
+    monkeypatch.setenv("FAKE_FAIL", "setup-ub.tp2#10")
+    page = page_of(qtbot, world)
+    run_to_end(qtbot, page)
+    assert not page.outcome.ok and "Install resumes from there" in page.summary.text()
+    settled(qtbot, page)
+    assert page.progress["state"] == "partial"
+    assert "1 of 2 component(s) are in, next ub/setup-ub.tp2 #10" in page.resume_state.text()
+    assert page.install_button.isEnabled()          # the backup from before still counts
+
+    monkeypatch.delenv("FAKE_FAIL")
+    run_to_end(qtbot, page)
+    title, text = page.confirmed[-1]
+    assert title == "Resume" and "1 of 2 component(s) are already in" in text
+    assert page.outcome.ok
+    assert [line.split("#")[-1].split()[0] for line in game_lines(world)] == ["0", "10"]
+    settled(qtbot, page)
+    assert page.resume_state.text() == "Every planned component is in the games."
+
+
+def test_games_that_are_not_the_plans_install_are_not_installed_into(qtbot, world):
+    backed_up(world)
+    plan_dir = world["tmp"] / "install-plan"
+    plan_dir.mkdir()
+    (plan_dir / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n")
+    (world["game"] / "WeiDU.log").write_text("~OTHER/OTHER.TP2~ #0 #0 // x\n")
+    page = page_of(qtbot, world)
+    assert page.progress["state"] == "mismatch" and not page.install_button.isEnabled()
+    assert "not this plan's install" in page.needs.text()
+    assert "Restore the backup to start again" in page.resume_state.text()
+
+
+def test_while_resuming_the_backup_from_before_counts_though_the_game_changed(qtbot, world):
+    backed_up(world)
+    world["state"]["changed"] = ["override/ub.itm"]
+    plan_dir = world["tmp"] / "install-plan"
+    plan_dir.mkdir()
+    (plan_dir / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n"
+                                        "~UB/SETUP-UB.TP2~ #0 #10 // y\n")
+    (world["game"] / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n")
+    page = page_of(qtbot, world)
+    folder = str(world["game"])
+    assert page.progress["state"] == "partial" and folder in page.backed_up
+    assert "before the install that stopped" in page.backup_state[folder].text()
+
+
+def test_a_component_stopped_half_way_is_said_and_not_installed_into(qtbot, world):
+    """Review of item 23: WeiDU's uninstall record of the next component is in
+    the game, its log line is not - restoring the backup is the way."""
+    backed_up(world)
+    plan_dir = world["tmp"] / "install-plan"
+    plan_dir.mkdir()
+    (plan_dir / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n"
+                                        "~UB/SETUP-UB.TP2~ #0 #10 // y\n")
+    (world["game"] / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n")
+    (world["game"] / "UB" / "backup" / "10").mkdir(parents=True)
+    (world["game"] / "UB" / "backup" / "10" / "UNINSTALL.10").write_text("override/x\n")
+    page = page_of(qtbot, world)
+    assert page.progress["state"] == "mismatch" and not page.install_button.isEnabled()
+    assert "ub/setup-ub.tp2 #10 stopped half-way" in page.resume_state.text()
+    assert "Restore the backup to start again" in page.resume_state.text()

@@ -23,6 +23,7 @@ what was installed: resuming from it is item 23.
 import contextlib
 import os
 import queue
+import re
 import signal
 import subprocess
 import sys
@@ -31,6 +32,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from . import resume
+from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
 from .prompts import EET_FOLDER_QUESTION, Answers, Event, OutputReader, recorded_answers
@@ -143,9 +146,12 @@ def command(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: 
     `games` is {"BGEE": ..., "EET": ...} for EET, else one game."""
     # --download=false: a mod missing is an error, not mod_installer asking for
     # a URL and downloading it itself (ADR-0046) - the generated scripts leave
-    # that to the player at their terminal
+    # that to the player at their terminal. --skip-installed=false: its skip
+    # reads `weidu.log` in lower case (16.0.0), so on Linux it skips nothing
+    # while elsewhere it would; what is left to install is worked out here
+    # (resume.py), the same on every system (item 23)
     tail = ["--mod-directories", mods_dir, "--weidu-binary", weidu, "--language", language,
-            "--download=false"]
+            "--download=false", "--skip-installed=false"]
     if "EET" in games and "BGEE" in games:
         return [mod_installer, "eet",
                 "--bg1-game-directory", games["BGEE"],
@@ -386,12 +392,138 @@ def _new_job(process: subprocess.Popen) -> int:
     raise OSError("Job Objects are Windows'")
 
 
+RESUME_DIR = "resume"
+
+
+def _game_log(folder: str) -> str:
+    """The game's own WeiDU.log ("" when it has none), whatever its case."""
+    for name in ("WeiDU.log", "weidu.log", "WEIDU.LOG"):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+    return ""
+
+
+def _phases(plan_dir: str, games: dict[str, str]) -> list[tuple[str, str]]:
+    """(planned log, game folder) for each log the install runs, in order."""
+    if "EET" in games and "BGEE" in games:
+        pairs = [(PRE_EET_LOG, games["BGEE"]), (EET_LOG, games["EET"])]
+    else:
+        (game, folder), = games.items()
+        log = PRE_EET_LOG if game == "BGEE" and not os.path.isfile(
+            os.path.join(plan_dir, EET_LOG)) else EET_LOG
+        pairs = [(log, folder)]
+    return [(log, folder) for log, folder in pairs
+            if os.path.isfile(os.path.join(plan_dir, log))]
+
+
+def _in_folder(base: str, relative: str) -> str | None:
+    """`relative` under `base`, each part matched whatever its case (WeiDU
+    and the mods mix them; Linux does not); None when it is not there."""
+    path = base
+    for part in relative.replace("\\", "/").split("/"):
+        if part in ("", "."):
+            continue
+        if part == ".." or not os.path.isdir(path):
+            return None
+        exact = os.path.join(path, part)
+        if os.path.exists(exact):
+            path = exact
+            continue
+        found = [name for name in os.listdir(path) if name.lower() == part.lower()]
+        if not found:
+            return None
+        path = os.path.join(path, found[0])
+    return path
+
+
+_BACKUP = re.compile(r"^\s*BACKUP\s+[~\"%](?P<dir>[^~\"%]+)[~\"%]", re.MULTILINE)
+
+
+def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
+    """
+    The uninstall record a component stopped half-way leaves in the game:
+    WeiDU keeps <its BACKUP folder>/<n>/UNINSTALL.<n> from the component's
+    start, and writes its WeiDU.log line only at its end. Measured with
+    WeiDU 251, a Cancel inside a component: the files it had copied stay in
+    the game, the record lists them, the log does not.
+    """
+    tp2_path = _in_folder(folder, tp2)
+    backup = None
+    if tp2_path is not None and os.path.isfile(tp2_path):
+        with open(tp2_path, encoding="utf-8", errors="replace") as fh:
+            match = _BACKUP.search(fh.read())
+        backup = match["dir"].strip() if match else None
+    if backup is None:
+        backup = os.path.dirname(tp2.replace("\\", "/")) + "/backup"
+    record = _in_folder(folder, f"{backup}/{number}/UNINSTALL.{number}")
+    return record if record is not None and os.path.isfile(record) else None
+
+
+def resume_state(plan_dir: str, games: dict[str, str]) -> resume.Resume:
+    """How far the planned install went in the games: each game's WeiDU.log
+    against its planned log (resume.py), and whether the component it
+    stopped in was left half-way."""
+    state = resume.Resume()
+    for log, folder in _phases(plan_dir, games):
+        with open(os.path.join(plan_dir, log), encoding="utf-8", errors="replace") as fh:
+            phase = resume.progress(fh.read(), _game_log(folder))
+        if phase.problem is None and phase.done < phase.total:
+            tp2, _language, number = phase.planned[phase.done]
+            record = _left_half_way(folder, tp2, number)
+            if record is not None:
+                phase.problem = resume.half_way(phase.next or tp2, record)
+        state.phases[log] = phase
+    return state
+
+
+def _write_rest(plan_dir: str, games: dict[str, str],
+                state: resume.Resume) -> tuple[str, dict[str, str]]:
+    """The logs of what is left, in plan_dir/resume/, and the games to run
+    them on. EET: BG:EE not finished - the eet run with BG:EE's rest and the
+    whole EET log (its game must have nothing yet); finished - the EET game
+    alone with its rest, as a normal install."""
+    rest_dir = os.path.join(plan_dir, RESUME_DIR)
+    os.makedirs(rest_dir, exist_ok=True)
+    for stale in (PRE_EET_LOG, EET_LOG):
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(os.path.join(rest_dir, stale))
+    pre, eet = state.phases.get(PRE_EET_LOG), state.phases.get(EET_LOG)
+    if "EET" in games and "BGEE" in games and pre is not None and eet is not None:
+        if pre.finished:
+            write_text(os.path.join(rest_dir, EET_LOG), eet.rest())
+            return rest_dir, {"EET": games["EET"]}
+        # EET's game is fresh here: Resume.problem refuses it otherwise
+        write_text(os.path.join(rest_dir, PRE_EET_LOG), pre.rest())
+        write_text(os.path.join(rest_dir, EET_LOG), eet.rest())
+        return rest_dir, games
+    for log, phase in state.phases.items():
+        write_text(os.path.join(rest_dir, log), phase.rest())
+    return rest_dir, games
+
+
 def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: str,
           weidu: str, ask: Callable[[str, tuple], str | None],
           on_event: Callable[[Event], None] = lambda _event: None,
           language: str = "en_US", allow_existing: bool = False,
-          **timing) -> InstallRun:
-    """An install ready to run, after the checks; ConfigError says what stops it."""
+          resume_install: bool = False, **timing) -> InstallRun:
+    """
+    An install ready to run, after the checks; ConfigError says what stops
+    it. `resume_install`: go on where the games' WeiDU.logs say it stopped
+    (resume.py) - only the rest is installed; a game whose log is not the
+    plan's beginning is refused.
+    """
+    if resume_install:
+        state = resume_state(plan_dir, games)
+        if state.state == "mismatch":
+            raise ConfigError(f"cannot resume: {state.problem} - restore the backup to "
+                              f"start again")
+        if state.state == "finished":
+            raise ConfigError("nothing to resume: every planned component is installed")
+        if state.state == "partial":
+            plan_dir, games = _write_rest(plan_dir, games, state)
+            allow_existing = True
     problems = preflight(games, mods_dir, mod_installer, weidu, allow_existing)
     if problems:
         raise ConfigError("; ".join(problems))

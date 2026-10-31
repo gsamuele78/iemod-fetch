@@ -86,7 +86,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection",
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
-           "ignore_order", "unignore_order", "selection_digest", "start_install",
+           "ignore_order", "unignore_order", "selection_digest", "start_install", "install_progress",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
            "selection_plan", "write_install_plan", "install_games", "INSTALL_PLAN_DIR",
            "save_install_order", "reset_install_order",
@@ -865,7 +865,7 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                   ask: Callable[[str, tuple], str | None],
                   on_event: Callable[[Any], None] | None = None,
                   language: str = "en_US", allow_existing: bool = False,
-                  **timing: float) -> install_run.InstallRun:
+                  resume: bool = False, **timing: float) -> install_run.InstallRun:
     """
     An install of a planned order ready to run (GUI-AUDIT M4 item 22,
     ADR-0045): mod_installer over `plan_dir`'s WeiDU logs, the mods in
@@ -876,11 +876,32 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
     `ask(question, batch)` answers what neither EET's folder nor the log's
     recorded `// @wlb-inputs:` answer - None cancels. ConfigError names what
     stops the install before it starts: a folder that is not a game, a game
-    with mods already, the mods missing, a program missing.
+    with mods already, the mods missing, a program missing. `resume` (item
+    23): go on where the games' WeiDU.logs say an earlier install stopped -
+    only what is left runs; a game that is not the plan's beginning is
+    refused (install_progress says which, beforehand).
     """
     return install_run.start(plan_dir, games, mods_dir, mod_installer, weidu, ask,
                              on_event or (lambda _event: None), language=language,
-                             allow_existing=allow_existing, **timing)
+                             allow_existing=allow_existing, resume_install=resume,
+                             **timing)
+
+
+def install_progress(plan_dir: str, games: dict[str, str]) -> dict:
+    """
+    How far the planned install in `plan_dir` went in `games` (GUI-AUDIT M4
+    item 23): {"state": "fresh" | "partial" | "finished" | "mismatch",
+    "done", "total", "problem", "phases": [{"log", "done", "total",
+    "next"}]} - `next` names the first component left. The games' own
+    WeiDU.logs are the state; nothing is written.
+    """
+    if not any(os.path.isfile(os.path.join(plan_dir, name)) for name in (PRE_EET_LOG, EET_LOG)):
+        return {"state": "fresh", "done": 0, "total": 0, "problem": None, "phases": []}
+    state = install_run.resume_state(plan_dir, games)
+    return {"state": state.state, "done": state.done, "total": state.total,
+            "problem": state.problem,
+            "phases": [{"log": log, "done": phase.done, "total": phase.total,
+                        "next": phase.next} for log, phase in state.phases.items()]}
 
 
 def default_tools_dir() -> str:
