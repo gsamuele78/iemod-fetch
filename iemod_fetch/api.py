@@ -58,7 +58,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, choices, install_run, limits, pi, premeta, sortorder, toolchain
+from . import bio, choices, install_run, limits, pi, premeta, prompts, readln, sortorder, toolchain
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
@@ -79,6 +79,7 @@ from .weidu import ParsedLog, parse_weidu_files, parse_weidu_log, split_log_spec
 from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare_https",
+           "install_questions",
            "backup_game", "verify_backup", "plan_restore", "restore_backup", "list_backups",
            "backups_dir",
            "selection_of_logs", "update_data", "data_status", "describe_mods",
@@ -86,7 +87,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
-           "ignore_order", "unignore_order", "selection_digest", "start_install", "install_progress",
+           "ignore_order", "unignore_order", "selection_digest", "start_install", "install_progress", "install_known_issues",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
            "selection_plan", "write_install_plan", "install_games", "INSTALL_PLAN_DIR",
            "save_install_order", "reset_install_order",
@@ -874,6 +875,116 @@ def save_decisions(folder: str, choose: dict | None = None,
     return _write_whole(folder, DECISIONS_FILE, text)
 
 
+_WEIDU_FILES = (".tp2", ".tpa", ".tph", ".tpp", ".tpc", ".tra")
+
+
+def _mod_files(mods_dir: str, folder: str) -> dict[str, str]:
+    """Every WeiDU file of a mod folder, by its path from the game folder."""
+    files: dict[str, str] = {}
+    # the log may spell the folder in capitals; on Linux the name must match
+    try:
+        actual = next((n for n in os.listdir(mods_dir) if n.lower() == folder.lower()), folder)
+    except OSError:
+        return files
+    root = os.path.join(mods_dir, actual)
+    for base, _dirs, names in os.walk(root):
+        for name in names:
+            if name.lower().endswith(_WEIDU_FILES):
+                path = os.path.join(base, name)
+                try:
+                    with open(path, "rb") as fh:
+                        data = fh.read()
+                except OSError:
+                    continue
+                try:
+                    text = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = data.decode("cp1252", errors="replace")
+                files[os.path.relpath(path, mods_dir).replace(os.sep, "/")] = text
+    return files
+
+
+def install_questions(plan_dir: str, mods_dir: str) -> dict:
+    """
+    The questions the planned install will meet, before it starts (GUI-AUDIT
+    item 48, ADR-0049): for every component of `plan_dir`'s WeiDU-BGEE.log and
+    WeiDU.log - the two logs mod_installer installs, in that order - the
+    READLNs its mod's files reach (iemod_fetch/readln.py, in the language the
+    log installs it in), and the answers the log records (`// @wlb-inputs:`).
+
+    Returns {"components": [{"log", "tp2", "number", "language", "questions":
+    [{"key", "text", "known", "conditional", "repeats", "via", "file",
+    "line"}], "recorded": [answers], "status", "unread": [...]}],
+    "unattended": bool, "counts": {status: n}}. A status is:
+      "unknown"     the mod is not in the mods folder, a question's text is set
+                    elsewhere, or reading the component could not follow a path
+                    (a question may sit there) - even when nothing was found;
+      "none"        it asks nothing that was found;
+      "answered"    an answer recorded for every question it may ask;
+      "maybe"       answers for the questions it surely asks, not for those
+                    under a condition, which may or may not come;
+      "partial"     fewer answers than the questions it surely asks;
+      "unanswered"  questions it surely asks, no answer.
+    A question that repeats until valid counts once: the recorded answer is
+    taken to be valid. "unattended" holds only with components and every one
+    "none" or "answered" - a forecast, not a promise: a lexical reading misses
+    what runs at install time. The wizard's planned logs carry no answers yet
+    (the phase-5 questionnaire is to write them), so there a component that
+    asks is "unanswered" or "maybe" today.
+    """
+    scans: dict[tuple[str, int], readln.ModPrompts] = {}
+    files_of: dict[str, dict[str, str]] = {}
+    components = []
+    for name in ("WeiDU-BGEE.log", "WeiDU.log"):
+        path = os.path.join(plan_dir, name)
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:   # a BOM is not a line
+            lines = fh.read().splitlines()
+        for line in lines:
+            match = prompts._LOG_LINE.match(line)
+            if not match:
+                continue
+            tp2 = match["path"].replace("\\", "/")
+            folder, number, lang = tp2.split("/", 1)[0], int(match["number"]), int(match["lang"])
+            if folder.lower() not in files_of:
+                files_of[folder.lower()] = _mod_files(mods_dir, folder)
+            files = files_of[folder.lower()]
+            key = next((k for k in files if k.lower() == tp2.lower()), tp2)
+            if (key, lang) not in scans:
+                scans[(key, lang)] = readln.scan(key, files, language_index=lang)
+            found = scans[(key, lang)]
+            asked = found.of(number)
+            unread = found.unread_of(number) if key in files else list(found.unread)
+            recorded = prompts.wlb_inputs(line) or []
+            sure = [q for q in asked if not q.conditional]
+            if key not in files or unread or any(not q.keyed for q in asked):
+                status = "unknown"
+            elif not asked:
+                status = "none"
+            elif len(recorded) >= len(asked):
+                status = "answered"
+            elif len(recorded) >= len(sure):
+                status = "maybe"
+            elif recorded:
+                status = "partial"
+            else:
+                status = "unanswered"
+            components.append({
+                "log": name, "tp2": tp2, "number": number, "language": lang,
+                "questions": [{"key": q.key, "text": q.text, "known": q.keyed,
+                               "conditional": q.conditional, "repeats": q.repeats,
+                               "via": q.via, "file": q.file, "line": q.line} for q in asked],
+                "recorded": recorded, "status": status, "unread": unread})
+    counts: dict[str, int] = {}
+    for c in components:
+        status = str(c["status"])
+        counts[status] = counts.get(status, 0) + 1
+    return {"components": components, "counts": counts,
+            "unattended": bool(components) and all(c["status"] in ("none", "answered")
+                                                   for c in components)}
+
+
 def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                   mod_installer: str, weidu: str,
                   ask: Callable[[str, tuple], str | None],
@@ -899,6 +1010,17 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                              on_event or (lambda _event: None), language=language,
                              allow_existing=allow_existing, resume_install=resume,
                              **timing)
+
+
+def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:
+    """
+    Known upstream faults the install of `games` with the mods in `mods_dir`
+    will meet, each in words (GUI-AUDIT M8 item 65): said before installing,
+    never a refusal. Today: EET's core and a Documents folder registered
+    with a space, on Windows (EET's settings would go to a folder the game
+    never reads).
+    """
+    return install_run.known_issues(games, mods_dir)
 
 
 def install_progress(plan_dir: str, games: dict[str, str]) -> dict:

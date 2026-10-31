@@ -568,6 +568,20 @@ def test_a_run_that_answers_nothing_leaves_no_earlier_record(setup, monkeypatch)
         {"v": 1, "answered": []}
 
 
+def test_a_run_that_cannot_start_leaves_no_earlier_record(setup, monkeypatch):
+    """Review of #98: mod_installer that will not start (gone, not a
+    program) still replaces the record of the run before."""
+    import json
+    from pathlib import Path
+    Path(setup["plan"], "answers.json").write_text('{"v": 1, "answered": [{"answer": "old"}]}')
+    install, _events = run(setup, monkeypatch, {})
+    install.argv = [str(Path(setup["plan"], "no-such-program")), *install.argv[1:]]
+    with pytest.raises(OSError):
+        install.run()
+    assert json.loads(Path(setup["plan"], "answers.json").read_text()) == \
+        {"v": 1, "answered": []}
+
+
 def test_batch_mode_from_the_environment_does_not_reach_mod_installer(monkeypatch):
     """One batch is one mod's consecutive components only while
     mod_installer's BATCH_MODE (clap reads it from the environment) is off;

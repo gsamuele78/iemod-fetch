@@ -15,6 +15,37 @@ Python API, which is internal.
   on every install run. Recorded answers still go in order: no rule on a
   question's text can tell which answers a mod takes (Tweaks Anthology #3210
   takes 0 outside its "between 6 and 15"), so none holds one back.
+- **A known EET fault is said before installing** (GUI-AUDIT M8 item 65,
+  ADR-0045). On Windows, when the Documents folder is registered with a space
+  (a OneDrive folder such as "OneDrive - Company\Documents", or "D:\My
+  Documents") and the EET copy still cuts that value at the first space
+  (`EET/lib/macros.tph`, still so in EET at c26a11a), the wizard's install
+  confirmation says that EET's core will write the game's settings
+  (Baldur.lua: language, campaign...) to a folder the game never reads -
+  naming it - or fail; saves are not affected. It is a warning, not a refusal,
+  and not said on a resume past EET's core.
+- `api.install_questions(plan_dir, mods_dir)` (GUI-AUDIT item 48, ADR-0049):
+  for every component of the planned WeiDU logs, the questions its mod's
+  files reach - read in the language the log installs it in - and the answers
+  the log records; each component is "none", "answered", "maybe" (answers
+  for what it surely asks, not for a question under a condition), "partial",
+  "unanswered" or "unknown" (a question whose text is set elsewhere, a path its
+  reading could not follow, the mod not in the mods folder), and the plan is
+  forecast unattended only when every component is none or answered. A
+  forecast, not a promise. The wizard's planned logs carry no answers yet, so
+  there a component that asks is "unanswered" or "maybe" until the phase-5
+  questionnaire writes them. Not in the wizard yet.
+
+### Release workflow
+- "Latest" is put back on the newest release of CHANGELOG.md
+  (`tools/release_notes.py latest`) every six hours (release-latest.yml) and
+  at every push to `main` that changes CHANGELOG.md or the version: a
+  back-fill's tag starts the tagged commit's own, older release workflow,
+  which marked 4.0.0 Latest over 4.0.1 on 2026-10-31. It fails, changing
+  nothing, when GitHub does not answer. docs/RELEASING.md says how to cancel
+  that second run.
+
+### Added
 - **The questions a mod will ask, read before installing** (GUI-AUDIT item
   48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
   `ACTION_READLN` it may reach - in its body, the functions and macros it

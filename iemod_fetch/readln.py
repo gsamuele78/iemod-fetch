@@ -100,10 +100,17 @@ class ModPrompts:
     # ALWAYS block's first (`via` "always"), WeiDU runs that before each one
     components: dict[int, list[Prompt]] = field(default_factory=dict)
     unread: list[str] = field(default_factory=list)   # what could not be followed
+    # by component: what its own reading could not follow (its ALWAYS block's
+    # included) - a component that asks nothing found may still ask there
+    unread_by: dict[int, list[str]] = field(default_factory=dict)
 
     def of(self, number: int) -> list[Prompt]:
         """The questions installing component `number` may ask, in order."""
         return self.components.get(number, [])
+
+    def unread_of(self, number: int) -> list[str]:
+        """What reading component `number` could not follow."""
+        return self.unread_by.get(number, [])
 
 
 @dataclass
@@ -409,6 +416,7 @@ def scan(tp2_path: str, files: Mapping[str, str], language_index: int = 0,
         number = component_number(src.text[start:stop_at], number)
         lo = next((k for k, t in enumerate(toks) if t.at >= start), len(toks))
         hi = next((k for k, t in enumerate(toks) if t.at >= stop_at), len(toks))
+        mark = len(reader.unread)
         prompts = (reader.walk(src, always[0], always[1], "always", frozenset({tp2_key}), number)
                    if always else [])
         prompts += reader.walk(src, lo, hi, "", frozenset({tp2_key}), number)
@@ -416,6 +424,8 @@ def scan(tp2_path: str, files: Mapping[str, str], language_index: int = 0,
             prompt.component = number
         if prompts:
             found.components[number] = prompts
+        if len(reader.unread) > mark:
+            found.unread_by[number] = list(dict.fromkeys(reader.unread[mark:]))
     found.unread = list(dict.fromkeys(reader.unread))
     return found
 
