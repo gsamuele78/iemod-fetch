@@ -325,7 +325,13 @@ installing a large EET setup.
 | 71 | **After installing EEex mods, say how to start the game**: InfinityLoader (or `EEex.exe`), else they do nothing - BGEE Graphics Enhanced and BG2 HD need EEex. Part of item 53's report. | CEBG `EEEX.md` L28-29; G3 thread 40143 | S |
 
 Items 62-71 come from reading Chriz Easy BG and the Gibberlings3 thread on an
-HD remaster (41637), 2026-10-31. From the thread, nothing joins the catalogue:
+HD remaster (41637), 2026-10-31. **Read, not measured here**: each states what
+CEBG's code or notes do at 508256a (file and lines given, checked against a
+clone) or what the thread's posts and the mods' own files say; none was run.
+The sizes in item 62 are pinned values (CEBG's artifact files, BWS-NG), not
+downloads. Item 65's bug is read in EET's code at 74e91d72; whether EET has
+fixed it since is open. Each item is to be measured before it is built, like
+the others in M8. From the thread, nothing joins the catalogue:
 every installable HD mod is already known to lcc-docs, BWS-NG or krion64
 (BGGO, BGEE Graphics Enhanced, the AI Denoised Areas mods, Infinity UI++).
 BG2 HD is unreleased, rewrites `Baldur.exe` and targets BG2:EE alone; Project
