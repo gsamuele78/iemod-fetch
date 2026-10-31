@@ -112,7 +112,9 @@ def _scan(root: str):
 
 def size(game_dir: str) -> int:
     """The bytes a backup of `game_dir` copies: what create() would copy
-    (item 49). Nothing is written."""
+    (item 49). Nothing is written. It walks the whole game folder - 0.9 s
+    for 40,000 files on Linux with the folder cached, more on a cold disk
+    or on Windows - so a window calls it off its own thread (ADR-0048)."""
     present, _folders, _links, _mounts = _scan(os.path.abspath(game_dir))
     return sum(os.path.getsize(full) for rel, full in present.items() if _is_copied(rel))
 

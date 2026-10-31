@@ -88,3 +88,11 @@ def test_the_api_says_the_same_with_the_real_disk(tmp_path):
     folder = game(tmp_path)
     assert api.install_readiness({"BG2EE": folder}, mods(tmp_path), None,
                                  backups_dir=str(tmp_path / "not-yet" / "backups")) == []
+
+
+def test_a_drive_that_cannot_be_read_is_not_measured(tmp_path):
+    """Review of #114: a network path or a drive that is not there is never
+    an error - nothing is said of it."""
+    folder = game(tmp_path)
+    assert readiness.findings({"BG2EE": folder}, mods(tmp_path), None,
+                              backups_dir=str(tmp_path / "b"), free=lambda _p: None) == []
