@@ -73,3 +73,9 @@ def test_what_mod_installer_puts_to_anyone():
     assert mod_installer_asks("Do you want the new portraits?")
     assert not mod_installer_asks("How many extra kits should be installed?")
     assert not recognisable("Install to %dir%") and recognisable("Please enter a number:")
+
+
+def test_a_question_after_a_quote_or_a_bracket_is_found():
+    """Second review of #111: the text starts a word, not only after white space."""
+    assert match_question('"Please enter a number between 1 and 5:',
+                          [(A, "@1", "Please enter a number between 1 and 5:")]) == (A, "@1")

@@ -193,7 +193,7 @@ def _expected_pattern(text: str) -> re.Pattern | None:
     # puts its own indented blank lines between WeiDU's lines); the text
     # starts the window or a word
     body = r"\s+".join(re.escape(part).replace("\x00", r"[^\n]*?") for part in parts)
-    return re.compile(r"(?:\A|(?<=\s))" + body + r"\s*\Z")
+    return re.compile(r"(?<!\w)" + body + r"\s*\Z")
 
 
 def recognisable(text: str) -> bool:

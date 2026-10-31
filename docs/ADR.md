@@ -3542,7 +3542,10 @@ and no other component of its batch asking the same - also those under a
 condition, after one asked until valid, or after a component that may still
 ask. A component whose every question has an answer, by its place or by
 question, counts as answered; no other question counts. A field left empty
-is asked during the install (kept as such, so it is not offered again). The log's `@wlb-inputs` still carries only the answers
+is asked during the install (kept as such, so it is not offered again) -
+so an answer that is just Enter (a default) cannot be given beforehand any
+more; one kept as "" from before still is, until the window saves that field
+again. The log's `@wlb-inputs` still carries only the answers
 whose place is sure (the rules above), for other tools that read it.
 
 **Measured with the real mod_installer 16.0.0 and WeiDU v251**
