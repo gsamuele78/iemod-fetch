@@ -8,6 +8,8 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-10-31
+
 ### Fixed
 - The wizard's window no longer freezes on Windows when a download, a
   catalogue update or a conflict check starts (ADR-0048). Every HTTP client
@@ -24,6 +26,17 @@ Python API, which is internal.
   4.0.0 release gate measured one 240 ms gap on windows-latest (limit 100 ms)
   where CI on the same commit had passed; a faulthandler watchdog dumps every
   thread's stack while the loop is held, which named the cause above.
+
+### Release workflow
+- `RELEASE_TOKEN` is checked against GitHub in the first job, not trusted for
+  being set. 4.0.0's run built and attested for 15 minutes, then its publish
+  step met "Bad credentials" from an expired token, and no tag was made. A
+  token GitHub rejects is now not used: the run's own token publishes when it
+  may (same workflow files as `main`), and otherwise the run stops at once
+  saying what to renew. docs/RELEASING.md, "RELEASE_TOKEN", says how.
+- 4.0.0 joins `BACKFILL`: it is tagged on its own commit by the first run
+  after 4.0.1 that has a working `RELEASE_TOKEN` (its workflow files differ
+  from `main`'s, so the run's own token may not create that tag).
 
 ## [4.0.0] - 2026-10-31
 

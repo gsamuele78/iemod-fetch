@@ -102,11 +102,48 @@ section with its release and rewrites a body that no longer matches. It keeps
 the release's "Verify this download" block, because that digest belongs to the
 artifacts. Editing a release creates no tag, so no extra token is needed.
 
-**Back-fills listed in the workflow** (`BACKFILL`, now `2.1.0`) are released
-by the automatic run once the newest version is tagged, one per run. Each one
-needs the `RELEASE_TOKEN` secret described above; until it exists the run
-skips it with a notice, not a failure, and the next merge to `main` releases
-it once the secret is there.
+**Back-fills listed in the workflow** (`BACKFILL`, now `2.1.0,4.0.0`) are
+released by the automatic run once the newest version is tagged, one per run.
+Each one needs a working `RELEASE_TOKEN` (below); until GitHub accepts one the
+run skips it with a warning, not a failure, and the next merge to `main`
+releases it once the secret works.
+
+### RELEASE_TOKEN
+
+**When it is needed.** Only to tag a commit whose `.github/workflows` differ
+from `main`'s - a back-fill, or a release whose commit was followed by a
+workflow change (4.0.0: `gui-latency.yml` was added after it). GitHub never
+lets the run's own `GITHUB_TOKEN` create such a ref. Every other release is
+tagged with the run's own token, and `RELEASE_TOKEN` may be absent.
+
+**How the workflow checks it.** The first job (`What to release, and which
+commit`) asks GitHub for this repository with the secret. HTTP 200: it is used
+to tag and publish. Anything else (401 "Bad credentials": expired or revoked;
+404: not given this repository): a `RELEASE_TOKEN rejected` warning, and it is
+not used. If the release needs it, the run stops there - an automatic run with
+a warning, a run started by hand with an error - instead of failing at the
+publish step after the build.
+
+**Creating or renewing it** (the repository owner, on github.com):
+1. *Settings (of your account) → Developer settings → Personal access tokens
+   → Fine-grained tokens → Generate new token*.
+2. *Resource owner*: the account that owns this repository; *Repository
+   access*: *Only select repositories* → this repository only.
+3. *Repository permissions*: **Contents: Read and write** and **Workflows:
+   Read and write**. Metadata (read) is added by GitHub. Nothing else.
+4. *Expiration*: the shortest that suits you (90 days is a common choice);
+   note the date - an expired token is what stopped 4.0.0.
+5. Copy it once, then in this repository: *Settings → Secrets and variables →
+   Actions → Repository secrets → `RELEASE_TOKEN`* → *Update* (or *New
+   repository secret*). Never paste it anywhere else - not in an issue, a
+   commit, a chat.
+6. Re-run: on the failed *Release* run, *Re-run failed jobs* (the built and
+   attested artifacts are reused), or *Actions → Release → Run workflow* with
+   the version.
+
+**Without a token.** Delete the secret (an empty or absent one is never
+tried) and push the tag by hand, as in A above: `git tag -a vX.Y.Z -m X.Y.Z
+<commit> && git push origin vX.Y.Z`, then *Run workflow* with that version.
 
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.

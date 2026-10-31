@@ -1254,6 +1254,15 @@ hand-written, reviewed changelog with one generated from commit messages.
   run is not available to that session, and an action bump used only at
   release time would otherwise first run on a real release.
 
+**Amendment (2026-10-31): `RELEASE_TOKEN` is checked, not trusted.** 4.0.0's
+run passed its gate, built and attested, then its publish step met "Bad
+credentials": the secret had expired, and `secrets.RELEASE_TOKEN ||
+github.token` takes any non-empty secret. The first job now asks GitHub for
+the repository with the secret; only an HTTP 200 makes it the publishing
+token. A rejected one gives a warning and is not used: the run's own token
+publishes when it may, and a release that needs the secret stops in that
+first job, in seconds. How to renew it: docs/RELEASING.md, "RELEASE_TOKEN".
+
 ---
 
 ## ADR-0028 — Dependencies: Dependabot for what it sees, an issue for what it cannot
