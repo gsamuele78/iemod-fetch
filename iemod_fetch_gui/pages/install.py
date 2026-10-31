@@ -649,7 +649,7 @@ class InstallPage(QWidget):
         backups = ", ".join(self.backed_up.values())
         shown = self._show_results(getattr(outcome, "results", []) or [])
         if outcome.ok:
-            start = self._launch_advice()
+            start = self._launch_advice(getattr(outcome, "results", []) or [])
             self._say("Installed. Each game's WeiDU.log lists what went in"
                       + (f"; {shown}" if shown else "") + "." + (f" {start}" if start else ""))
             return
@@ -679,7 +679,7 @@ class InstallPage(QWidget):
         counts: dict[str, int] = {}
         for result in results:
             counts[result.status] = counts.get(result.status, 0) + 1
-        looks = [r for r in results if r.status != "installed" or r.note]
+        looks = [r for r in results if r.status != "installed" or r.note not in _QUIET_NOTES]
         if looks:
             self._append("== What each component came to (WeiDU.log and WeiDU's own word):")
             for r in looks[:MAX_SHOWN]:
@@ -692,10 +692,13 @@ class InstallPage(QWidget):
         order = ("installed", "installed with warnings", "not installed (errors)", "not reached")
         return ", ".join(f"{counts[status]} {status}" for status in order if counts.get(status))
 
-    def _launch_advice(self) -> str:
+    def _launch_advice(self, results: list | None = None) -> str:
         """How to start the game now (item 71, ADR-0054): for the game that
         is played - in EET, the EET game's log, not BG:EE's, which is not
-        played. A check that cannot run says nothing."""
+        played - and only when this run did not leave the loader's component
+        out (`results`: one it reports not installed or not reached says
+        nothing; one it does not report, an earlier run's, is kept). A check
+        that cannot run says nothing."""
         plan = self._installing or {}
         try:
             advice = self.services.launch(plan.get("plan_dir", "")) if plan else []
@@ -703,6 +706,10 @@ class InstallPage(QWidget):
             return ""
         if "EET" in self.games:
             advice = [a for a in advice if a.get("log") == "WeiDU.log"]
+        came = {tuple(r.key): r.status for r in results or []}
+        advice = [a for a in advice
+                  if came.get((a.get("tp2"), a.get("component")), "installed")
+                  in ("installed", "installed with warnings")]
         said = []
         for entry in advice:
             text = entry.get("why", "")
@@ -841,6 +848,10 @@ class _Questionnaire(QDialog):
             # empty: asked during the install, and not offered here again
             self.kept.setdefault(name, {})[key] = edit.text().strip() or None
         return self.kept
+
+
+# notes that say nothing went wrong (results.py): not listed as needing a look
+_QUIET_NOTES = ("", "already installed before this run", "no word on it in the debug file")
 
 
 def _questions_text(coverage: dict) -> str:

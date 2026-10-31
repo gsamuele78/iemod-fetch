@@ -653,3 +653,24 @@ def test_a_component_that_needs_a_look_is_listed(qtbot, world):
     out = page.output.toPlainText()
     assert "a.tp2 #1 B: installed with warnings" in out and "b.tp2 #0: not reached" in out
     assert "a.tp2 #0" not in out
+
+
+def test_eeex_left_out_by_this_run_is_not_advised_and_quiet_notes_are_not_listed(qtbot, world):
+    """Review of #113: the advice follows what was installed, not only the
+    plan; an earlier run's EEex (not in this run's results) still counts.
+    A note that says nothing went wrong is not a look."""
+    from types import SimpleNamespace
+    page = InstallPage(str(world["tmp"]), world["services"])
+    qtbot.addWidget(page)
+    page.games = {"BG2EE": "/g"}
+    page._installing = {"plan_dir": "/p"}
+    page.services.launch = lambda plan_dir: [
+        {"log": "WeiDU.log", "tp2": "eeex.tp2", "component": 1, "why": "use the loader",
+         "platform_note": ""}]
+    skipped = [SimpleNamespace(key=("eeex.tp2", 1), name="", status="not reached", note="")]
+    assert page._launch_advice(skipped) == ""
+    assert page._launch_advice([]) == "use the loader"           # an earlier run's
+    quiet = [SimpleNamespace(key=("a.tp2", 0), name="A", status="installed",
+                             note="no word on it in the debug file")]
+    assert page._show_results(quiet) == "1 installed"
+    assert "a.tp2 #0" not in page.output.toPlainText()
