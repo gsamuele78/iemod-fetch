@@ -3086,3 +3086,78 @@ under all three names: 4 real tests passed, none skipped
 
 The refusal is lifted. What stays unmeasured: real game data, and EET's own
 tp2 rather than a test mod that reads a path the same way.
+
+---
+
+## ADR-0047 — RAR and 7z archives: the system's libarchive, then unar, then the player's own 7-Zip or WinRAR; none shipped
+
+**Context.** About half of lcc-docs' direct download links (150 of 290) are
+.rar, .7z or .exe. GUI-AUDIT item 40 planned "7-Zip in the bundles, after a
+licence review of the unRAR clause". The review: 7-Zip's RAR code carries
+the unRAR licence, which forbids using it to recreate the RAR compressor and
+is not an open-source licence; Debian removes it (its `7zip` package is the
+"dfsg" build). The maintainer asked for open-source tools that can be
+included, and set Debian trixie as the minimum platform.
+
+So the candidates were measured before anything was chosen
+(`tools/rar_measure.py`, the `RAR extractors` workflow, docs/TESTING.md):
+every distinct .rar link of lcc-docs, extracted by each tool and compared
+file by file (SHA-256) with the official 7-Zip 26.00. Of 130 downloads, 105
+are RAR (98 RAR4, 7 RAR5, 7 solid); the other 25 are not archives at all.
+
+| Platform | libarchive (bsdtar) | unar | Debian's 7zip (dfsg) | Any |
+|---|---|---|---|---|
+| Debian trixie | 95 | 94 (RAR5: 0 of 7) | 1 | 100 |
+| Windows (`tar.exe`) | 95 | - | - | 95 |
+| macOS (system bsdtar, Homebrew unar) | 95 | 103 | - | 103 |
+
+Every tool that did not extract an archive identically also exited non-zero
+on it (the measurement records both), so the exit code tells success.
+
+The measurement also found a defect in what shipped. 7-Zip was tried
+first, and on Debian and Ubuntu `7z` is the dfsg build: it writes every file
+of a RAR with the wrong contents and exits 2. unar then extracted into the
+same folder - without `-f`, renaming its files beside the wrong ones - and
+the result was reported as extracted. Run on real archives in this
+repository's sandbox (Ubuntu's 7zip, bsdtar 3.7.2, unar 1.10.1), the old
+order gave a tree different from 7-Zip's for every archive tried, with no
+error.
+
+**Decision.**
+
+- **Nothing is bundled.** libarchive is part of Windows 10 and 11
+  (`System32\tar.exe`) and of macOS, and one `apt install libarchive-tools
+  unar` on Debian and Ubuntu; it opens 95 of the 105 on every system.
+- **The order for .rar: bsdtar, unar, 7z, 7za, unrar.** unar (LGPL-2.1+)
+  opens most of what libarchive cannot - solid RAR4 - and, from 1.10.8
+  (Homebrew's), RAR5. Then a 7-Zip or WinRAR the player installed: used
+  when there, never shipped, so their licences are the player's. Their
+  standard Windows install folders are searched, as before.
+  For .7z: 7z, 7za, bsdtar, unar (7-Zip's own format, and Debian's 7zip
+  reads it). For a self-extracting .exe (`--allow-exe`): 7z, 7za, unar.
+- **On Windows, bsdtar is `%SystemRoot%\System32\tar.exe`**, not `tar` from
+  PATH, which may be Git's GNU tar (it reads no RAR).
+- **unar runs with `-D` and `-f`**: the archive's own layout, as the
+  measurement compared it, with no folder of unar's own around it.
+- **Each tool extracts into a folder of its own** beside the destination,
+  deleted when the tool fails; only a tool that exits 0 has its files moved
+  into place, then audited as before (ADR-0003). The 7z listing, when
+  7-Zip can read the archive, still holds it to the zip/tar rules first.
+- **When no tool is installed, the message says what to install per
+  system** - and that Debian's 7zip cannot read RAR. It no longer suggests
+  `p7zip-full`.
+
+**Consequences.**
+
+- On Debian and Ubuntu a RAR is extracted right or not at all: the silent
+  wrong extraction is gone. `tests/test_archive_tools.py` pins the order,
+  the fresh folder per tool (a tool that writes then fails leaves nothing),
+  Windows' tar.exe, unar's flags and the message; each failed before.
+- Two solid RAR4 archives (027 and 030 in the measurement) no open-source
+  tool opens; on trixie a solid RAR5 (023) too - bsdtar refuses its
+  dictionary size and trixie's unar reads no RAR5, Homebrew's does. Those
+  need the official 7-Zip or WinRAR, and the error names every tool tried.
+- Windows without 7-Zip opens 95 of the 105: unar has no maintained Windows
+  build. With 7-Zip installed - common there - the rest open.
+- The bundles stay as they are; this is no new dependency. The measurement
+  workflow can be re-run when libarchive or unar change.

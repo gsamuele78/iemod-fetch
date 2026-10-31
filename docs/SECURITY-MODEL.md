@@ -101,10 +101,13 @@ names you approved and the paths the library writes are two separate facts.
 Extracting one entry at a time and re-resolving keeps them the same fact, and
 costs nothing measurable.
 
-External tools (7-Zip, WinRAR) are used for `.rar` and `.7z`. They are invoked
-with an argument **list**, never a shell string, and their output is extracted
-into a scratch directory that is then walked by the same audit as everything
-else. Since 2.1.0 the archive is first **listed** with `7z l -slt` and held to
+External tools are used for `.rar` and `.7z` (ADR-0047): libarchive's bsdtar
+(Windows' own `System32\tar.exe`), unar, and a 7-Zip or WinRAR the player has
+installed - none is shipped. They are invoked with an argument **list**, never
+a shell string. Each one extracts into a scratch folder of its own, deleted
+when it fails, so a tool that wrote and then failed leaves nothing for the
+next; only a tool that exits 0 has its files moved into place, and the result
+is walked by the same audit as everything else. Since 2.1.0 the archive is first **listed** with `7z l -slt` and held to
 the zip/tar rules — member names, entry count, total size — before the
 unpacker writes anything. Without 7-Zip there is no listing, and the
 post-extraction audit is what remains.

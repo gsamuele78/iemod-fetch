@@ -330,6 +330,17 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **RAR archives on Linux were extracted wrong and reported as extracted**
+  (GUI-AUDIT M6 item 40, ADR-0047). 7-Zip was tried first; on Debian and
+  Ubuntu `7z` is the dfsg build without the RAR code, which writes every file
+  with the wrong contents and exits 2, and unar then extracted over those
+  files, renaming its own. Measured on real catalogue archives: the old order
+  gave a tree different from 7-Zip's for every one tried, with no error. Now
+  each unpacker extracts into a folder of its own, deleted when it fails, and
+  `.rar` goes first to libarchive (bsdtar; Windows' own `tar.exe`), then unar
+  (with `-D`, the archive's own layout), then a 7-Zip or WinRAR the player has
+  installed. Nothing is bundled. On lcc-docs' 105 RAR archives libarchive
+  opens 95 on every system, and with unar 100 (trixie) to 103 (macOS).
 - **CI tests the runtime libraries as pinned.** The test jobs installed the
   extras alone, and their loose range (`filelock>=4.2.1,<5`) pulled filelock
   4.2.5 the day it came out while `requirements/runtime.txt` pins 4.2.4, so the

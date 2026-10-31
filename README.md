@@ -140,6 +140,15 @@ python3 build.py            # -> ./iemod-fetch.pyz
 pip install git+https://github.com/gsamuele78/iemod-fetch   # then: iemod-fetch --help
 ```
 
+**RAR and 7z archives** (about half of the catalogue's direct downloads are
+.rar, .7z or .exe) are opened with tools of the system, never shipped
+(ADR-0047): libarchive's bsdtar first - built into Windows 10 and 11 as
+`tar.exe` and into macOS; on Debian and Ubuntu `apt install libarchive-tools
+unar` - then unar, then a 7-Zip or WinRAR you have installed. Debian's own
+`7zip` package cannot read RAR. Measured on the catalogue's 105 RAR archives,
+libarchive opens 95, with unar 100 to 103; two archives need the official
+7-Zip or WinRAR.
+
 ### The wizard (GUI)
 
 A desktop wizard on the same tool (milestone M3, released in 3.0.0; ADR-0031): a
@@ -561,7 +570,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,773 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,779 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -811,7 +820,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,773, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,779, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
