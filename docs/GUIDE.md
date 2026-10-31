@@ -415,12 +415,12 @@ The default ceiling is 2 GiB because real mods reach it — BGGO is 1.4 GB.
 | `already exists; re-run with --force` | You have a mod directory the tool did not create. `--force` moves it to `Mods/.backup/<folder>.<timestamp>` — it is never deleted. |
 | `archive contains .tp2 files [...] but none of them is 'X.tp2'` | The download is not the mod you asked for. Working as intended — do not override it; find the right source. |
 | `is a Windows executable ... never run` | A self-extracting installer. `--allow-exe` unpacks it with 7z/unar; it is never executed. |
-| `no unpacker is installed` | `apt install p7zip-full` (or `unar`). |
+| `no unpacker is installed` | `apt install libarchive-tools unar` (Debian/Ubuntu), `brew install unar` (macOS). |
 | `only off-site links found` | The landing page's download link leaves the site. Review it, then pin it in the manifest, or `--accept-offsite`. |
 | A mod resolves to the wrong repo | Pin it: add `"github"` and `"asset"` to its manifest entry. |
 | Run is slow | `-j 8`. Owner listings cache for 24h in `Mods/.owner-index.json`. |
 | `Content-Length … exceeds … byte ceiling` | Raise `max_bytes` in the config file. The default is 2 GiB. |
-| `is a rar archive and no unpacker was found` | `winget install 7zip.7zip` (Windows) or `apt install p7zip-full`. The standard Windows install directories are searched, so 7-Zip need not be on `PATH`. |
+| `is a rar archive and no unpacker was found` | Debian/Ubuntu: `apt install libarchive-tools unar` (Debian's own `7zip` package cannot read RAR); macOS: `brew install unar`; Windows 10 and 11 have `tar.exe` built in. An installed 7-Zip (`winget install 7zip.7zip`) or WinRAR is tried last; their standard install folders are searched, so they need not be on `PATH`. |
 | `no download link … scored high enough` | The page only offered navigation links to other mods. Open it, find the real download, and pin it as the entry's `url`. |
 | `archive contains .tp2 files […] but none of them is …` | The archive is a different mod — or the mod renamed itself. If the archive is right, add `"expect_tp2": "<the name shown>"` to its manifest entry. With `-c` a catalogue usually supplies this automatically. |
 | `the mod now ships as 'X' (your log says 'Y')` | Not an error. The mod renamed its folder; it was installed under the new name because that is what WeiDU needs. |

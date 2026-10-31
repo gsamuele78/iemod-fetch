@@ -5,13 +5,16 @@ Threat model: a mod archive is untrusted input from a forum download or a
 release asset nobody checksums. It may contain `../` members, absolute paths,
 symlinks pointing at the game install, or be a decompression bomb.
 """
+import contextlib
 import enum
 import gzip
 import os
 import posixpath
 import shutil
 import subprocess
+import sys
 import tarfile
+import tempfile
 import zipfile
 import zlib
 from dataclasses import dataclass
@@ -199,8 +202,17 @@ _WINDOWS_TOOL_PATHS = {
 }
 
 
+def _windows_tar() -> str | None:
+    """Windows 10 and 11 ship libarchive's bsdtar as System32\\tar.exe. Not
+    `tar` from PATH: that may be Git's GNU tar, which reads no RAR."""
+    path = os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32", "tar.exe")
+    return path if os.path.isfile(path) else None
+
+
 def find_tool(name: str):
     """Locate an unpacker on PATH, or in its usual Windows install directory."""
+    if name == "bsdtar" and sys.platform == "win32":
+        return _windows_tar()
     found = shutil.which(name)
     if found:
         return found
@@ -211,22 +223,31 @@ def find_tool(name: str):
     return None
 
 
-def _external_tools(kind: Kind, path: str, dest: str):
-    if kind is Kind.RAR:
-        table = [("7z", ["7z", "x", "-y", "-bd", f"-o{dest}", "--", path]),
-                 ("7za", ["7za", "x", "-y", "-bd", f"-o{dest}", "--", path]),
-                 ("unar", ["unar", "-q", "-o", dest, path]),
-                 ("unrar", ["unrar", "x", "-y", "-idq", path, dest + os.sep])]
-    else:
-        table = [("7z", ["7z", "x", "-y", "-bd", f"-o{dest}", "--", path]),
-                 ("7za", ["7za", "x", "-y", "-bd", f"-o{dest}", "--", path]),
-                 ("unar", ["unar", "-q", "-o", dest, path])]
-    resolved = []
-    for tool, cmd in table:
-        binary = find_tool(tool)
-        if binary:
-            resolved.append((tool, [binary] + cmd[1:]))
-    return resolved
+# Each unpacker's command, extracting `path` into the folder `out`.
+_COMMANDS = {
+    "bsdtar": lambda path, out: ["-x", "-f", path, "-C", out],
+    "unar": lambda path, out: ["-q", "-f", "-D", "-o", out, path],
+    "7z": lambda path, out: ["x", "-y", "-bd", f"-o{out}", "--", path],
+    "7za": lambda path, out: ["x", "-y", "-bd", f"-o{out}", "--", path],
+    "unrar": lambda path, out: ["x", "-y", "-idq", path, out + os.sep],
+}
+
+# The order each kind is tried in (ADR-0047, measured on lcc-docs' 105 RAR
+# archives, docs/TESTING.md): libarchive opened 95 on Debian trixie, Windows
+# and macOS alike, unar most of the rest, and the player's own 7-Zip or
+# WinRAR - never shipped, used when installed - is the last resort. Debian's
+# 7zip is the dfsg build without the RAR code: it fails, after writing.
+_ORDER = {
+    Kind.RAR: ("bsdtar", "unar", "7z", "7za", "unrar"),
+    Kind.SEVENZIP: ("7z", "7za", "bsdtar", "unar"),
+    Kind.MSDOS: ("7z", "7za", "unar"),
+}
+
+
+def _external_tools(kind: Kind):
+    """(tool, its program) for each unpacker of `kind` installed, in order."""
+    found = ((tool, find_tool(tool)) for tool in _ORDER[kind])
+    return [(tool, binary) for tool, binary in found if binary]
 
 
 def _seven_zip_listing(path: str) -> list[tuple] | None:
@@ -275,31 +296,69 @@ def _preflight_external(path: str) -> None:
                 f"uncompressed size exceeds {MAX_TOTAL_BYTES} bytes (archive bomb?)")
 
 
+def _writable_again(function, path, _exc) -> None:
+    """rmtree's onexc: a read-only folder an archive restored is made
+    writable and the removal tried again (review of #93)."""
+    os.chmod(os.path.dirname(path) or path, 0o700)
+    if os.path.isdir(path):
+        os.chmod(path, 0o700)
+    function(path)
+
+
+def _remove(path: str) -> None:
+    """A file or folder an unpacker wrote, gone - read-only parts included."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, onexc=_writable_again)
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
 def _extract_external(path: str, dest: str, kind: Kind) -> None:
     """
     Hand the container to an unpacker. A .exe is never executed - it is only
     read as a data file by 7z/unar, which understand SFX headers.
     """
     _preflight_external(path)
-    candidates = _external_tools(kind, path, dest)
+    candidates = _external_tools(kind)
     if not candidates:
         raise ExtractionError(
             f"{os.path.basename(path)} is a {kind.value} archive and no unpacker was "
-            f"found. Install 7-Zip (Windows: winget install 7zip.7zip; Linux: "
-            f"apt install p7zip-full), or unar/unrar. Standard Windows install "
-            f"directories are searched, so PATH is not required.")
+            f"found. Debian/Ubuntu: apt install libarchive-tools unar; macOS: brew "
+            f"install unar (bsdtar is built in); Windows 10 and 11 have tar.exe built "
+            f"in. An installed 7-Zip (winget install 7zip.7zip) or WinRAR is used too "
+            f"(standard install folders are searched) - Debian's own 7zip package cannot read RAR.")
     failures = []
-    for tool, cmd in candidates:
+    for tool, binary in candidates:
+        # each attempt in a folder of its own: a tool that fails may have
+        # written already (Debian's dfsg 7z writes every file wrong, then
+        # exits 2), and the next one must not extract over its leftovers
+        work = tempfile.mkdtemp(prefix=".unpack-", dir=os.path.dirname(os.path.abspath(dest)))
         try:
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  timeout=_TOOL_TIMEOUT, check=False, env=child_env())
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            failures.append(f"{tool}: {exc}")
-            continue
-        if proc.returncode == 0:
-            return
-        failures.append(f"{tool}: exit {proc.returncode}: "
-                        f"{proc.stdout.decode('utf-8', 'replace').strip()[:200]}")
+            try:
+                proc = subprocess.run([binary, *_COMMANDS[tool](path, work)],
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                      timeout=_TOOL_TIMEOUT, check=False, env=child_env())
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                failures.append(f"{tool}: {exc}")
+                continue
+            if proc.returncode == 0:
+                moved: list[str] = []
+                try:
+                    for entry in os.listdir(work):
+                        os.replace(os.path.join(work, entry), os.path.join(dest, entry))
+                        moved.append(entry)
+                    return
+                except OSError as exc:          # e.g. an antivirus holding a file
+                    for entry in moved:         # take back what went in
+                        _remove(os.path.join(dest, entry))
+                    failures.append(f"{tool}: extracted, but could not be moved into "
+                                    f"place: {exc}")
+                    continue
+            failures.append(f"{tool}: exit {proc.returncode}: "
+                            f"{proc.stdout.decode('utf-8', 'replace').strip()[:200]}")
+        finally:
+            with contextlib.suppress(OSError):     # a leftover, not a failure
+                _remove(work)
     raise ExtractionError(f"all unpackers failed for {os.path.basename(path)}: "
                           + "; ".join(failures))
 
