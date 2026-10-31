@@ -65,8 +65,8 @@ def test_a_weidu_older_than_tested_or_than_a_mod_needs(tmp_path):
     found = readiness.findings({"BG2EE": folder}, staged, "/w", free=big,
                                version=lambda _tool, _path: "24600")
     assert found == ["WeiDU 24600 is older than 25100, the one this program is tested with",
-                     f"WeiDU 24600 is older than 25101, which {os.path.join('m', 'm.tp2')} "
-                     "requires (WEIDU_VER)"]
+                     (f"WeiDU 24600 is older than 25101, which {os.path.join('m', 'm.tp2')} "
+                     "requires (WEIDU_VER)")]
     assert readiness.findings({"BG2EE": folder}, staged, "/w", free=big,
                               version=lambda _tool, _path: "25200") == []
     # a WeiDU that does not answer, or none given: nothing said about it
