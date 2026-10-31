@@ -110,6 +110,21 @@ def _scan(root: str):
     return files, sorted(folders), sorted(links), sorted(mounts)
 
 
+def size(game_dir: str) -> int:
+    """The bytes a backup of `game_dir` copies: what create() would copy
+    (item 49). Nothing is written. It walks the whole game folder - 0.9 s
+    for 40,000 files on Linux with the folder cached, more on a cold disk
+    or on Windows - so a window calls it off its own thread (ADR-0048)."""
+    present, _folders, _links, _mounts = _scan(os.path.abspath(game_dir))
+    total = 0
+    for rel, full in present.items():
+        if _is_copied(rel):
+            # a file gone since the scan (the game, a scanner) counts nothing
+            with contextlib.suppress(OSError):
+                total += os.path.getsize(full)
+    return total
+
+
 def _mount_points() -> dict[str, int]:
     """Linux's mount table, {mount point: device}: a bind mount of the same
     disk has the same st_dev as its parent and is not os.path.ismount, but it

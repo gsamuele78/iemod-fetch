@@ -58,8 +58,8 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import (bio, choices, install_run, launch, limits, pi, premeta, prompts, readln,
-               sortorder, toolchain)
+from . import (bio, choices, install_run, launch, limits, pi, premeta, prompts, readiness,
+               readln, sortorder, toolchain)
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
@@ -1282,6 +1282,23 @@ def install_launch_advice(plan_dir: str, platform: str | None = None) -> list[di
         except OSError:
             continue
     return launch.launch_advice(logs, platform or sys.platform)
+
+
+def install_readiness(games: dict[str, str], mods_dir: str, weidu: str | None,
+                      backups_dir: str | None = None) -> list[str]:
+    """
+    What may stop the install of `games` or their backup (GUI-AUDIT M8 item
+    49, ADR-0055), each in words, never a refusal: room for a backup in
+    `backups_dir` (exact), room for the install on each game's drive (an
+    upper estimate, said as one), and WeiDU's version against the one this
+    program is tested with and against what a staged mod requires. A drive
+    whose free space cannot be read (a network path, a drive that is not
+    there) is not measured: nothing is said of it, never an error. What
+    lands on one drive is added up. It reads every game folder and every
+    staged mod - seconds to minutes on a large install - so call it off a
+    window's thread.
+    """
+    return readiness.findings(games, mods_dir, weidu, backups_dir)
 
 
 def install_progress(plan_dir: str, games: dict[str, str]) -> dict:

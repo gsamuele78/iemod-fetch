@@ -3955,3 +3955,75 @@ Chriz Easy BG's `docs/curation/components/EEEX.md` L28-29 says the same.
   report.
 - The table follows EEex's numbering; if upstream renumbers its main
   component, the entry must follow.
+
+---
+
+## ADR-0055 — Room and the right WeiDU are checked before installing, as warnings
+
+**Status:** accepted (2026-10-31, GUI-AUDIT M8 item 49)
+
+### Context
+
+An install can stop half-way for reasons that could have been seen
+beforehand:
+- the disk fills up;
+- the backup does not fit;
+- the WeiDU in use is older than a mod requires.
+
+Infinity Mod Runner and BWS-NG check room before they start. Nothing here
+did: `install_run.preflight` refuses a wrong game folder or a missing
+program, but says nothing of space or WeiDU's version.
+
+### Decision
+
+`readiness.findings` (shell layer, under the runner) and
+`api.install_readiness(games, mods_dir, weidu, backups_dir=None)` return
+warnings in words. They never refuse: the player decides.
+
+1. **The backup's room is exact.** `backup.size(game_dir)` is what
+   `create()` copies: the files at the root, `override/` and the talk
+   tables. A test holds the two equal. If the free space where backups go
+   (`shutil.disk_usage`, on the nearest folder that exists) is less, the
+   warning names both sizes.
+2. **The install's room is an upper estimate, said as one.** On each game's
+   drive the estimate is the staged mods' bytes (what WeiDU may copy into
+   the game) plus what a backup copies (what WeiDU may back up before it
+   overwrites, into each mod's backup folder in the game).
+2b. **What lands on one drive is added up** (review of #114). In EET,
+   BG:EE, EET and the backups folder are often on one drive. The needs
+   (each game's install estimate, the backup) are grouped by device
+   (`os.stat(...).st_dev` of the nearest existing folder) and their sum is
+   compared with that drive's free space. The staged mods are counted once
+   per drive, because each mod goes into one game. The warning lists what
+   lands there. The backup part is exact. The game part counts only what a
+   backup copies: the root files, `override/` and the talk tables, never
+   `data/` or `movies/`. It therefore overestimates by at most the size of
+   `override/` and the talk tables, not by the size of the game.
+3. **WeiDU's version.** `--version` (toolchain.version_of) is compared with
+   the version this program is tested with (`toolchain.VERIFIED`, 25100),
+   and with the highest `WEIDU_VER >= N` (or `> N`, as N + 1) found in a
+   staged tp2, tpa or tph. The warning names the file. A WeiDU that does
+   not answer gets no warning, since `toolchain.find` reports it already.
+4. **`install_run.preflight` is not changed**, so it stays clear of the
+   other session's watchdog work. The install page shows these warnings
+   next to `install_known_issues`.
+
+### Consequences
+
+- A full disk or an old WeiDU is said before the install, not discovered
+  half-way through.
+- It walks each game folder and the mods folder: measured at 0.9 s for
+  40,000 files in `override/` (Linux, folder cached); a cold disk or
+  Windows is slower. A window calls it off its own thread (ADR-0048).
+- A drive whose free space cannot be read is not measured. That covers a
+  network path, a drive letter that is not there (the walk up to the
+  nearest existing folder ends at its root), and an `OSError` from
+  `disk_usage`. Nothing is said about such a drive, and it is never an
+  error.
+- The install's room is only an estimate. WeiDU can need more (a mod that
+  unpacks archives into the game) or much less (most copy a few files).
+  The warning says it is an estimate.
+- "The newest WeiDU" is the one this program is tested with, not the
+  latest release: no network call is made here.
+- How many mods test `WEIDU_VER` was not measured (no unpacked corpus in
+  this session). The check reads WeiDU's own variable, as mods use it.
