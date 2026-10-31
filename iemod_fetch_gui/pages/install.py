@@ -66,6 +66,7 @@ class Services:
     restore_plan: Callable[[str, str], dict] = api.plan_restore
     progress: Callable[[str, dict], dict] = api.install_progress
     known_issues: Callable[[dict, str], list] = api.install_known_issues
+    launch: Callable[[str], list] = api.install_launch_advice
     start: Callable[..., Any] = api.start_install
     # the phase-5 questionnaire (ADR-0049)
     questions: Callable[[str, str], dict] = api.install_questions
@@ -128,6 +129,7 @@ class InstallPage(QWidget):
         self._install: Any = None
         self._asking: _Question | None = None
         self._plan_written: dict | None = None
+        self._installing: dict | None = None
         self._kept: dict = {}             # the questionnaire's answers, for start()
         self._checking: QThread | None = None
         self._check_round = 0
@@ -475,6 +477,7 @@ class InstallPage(QWidget):
             self._append(note)
 
     def _confirm_and_run(self, plan: dict) -> None:
+        self._installing = plan               # what the run installs (item 71)
         game, chosen, _labels = self.wanted or ("", [], {})
         progress = self.services.progress(plan["plan_dir"], self.games)
         state = progress.get("state")
@@ -644,8 +647,11 @@ class InstallPage(QWidget):
         self.cancelled_in = self._running_batch if getattr(outcome, "cancelled", False) else None
         self._running_batch = None
         backups = ", ".join(self.backed_up.values())
+        shown = self._show_results(getattr(outcome, "results", []) or [])
         if outcome.ok:
-            self._say("Installed. Each game's WeiDU.log lists what went in.")
+            start = self._launch_advice()
+            self._say("Installed. Each game's WeiDU.log lists what went in"
+                      + (f"; {shown}" if shown else "") + "." + (f" {start}" if start else ""))
             return
         # where it stopped decides what is said: a component stopped inside
         # cannot be resumed (resume.half_way), only restored
@@ -663,6 +669,48 @@ class InstallPage(QWidget):
         else:
             self._say(f"mod_installer stopped with exit status {outcome.returncode}: "
                       f"the output above says where; once it is fixed: {then}")
+
+    def _show_results(self, results: list) -> str:
+        """What each component came to (item 69, ADR-0053), in the output:
+        the ones that need a look listed, all of them counted. Returns the
+        count in words for the summary ("" when there is nothing)."""
+        if not results:
+            return ""
+        counts: dict[str, int] = {}
+        for result in results:
+            counts[result.status] = counts.get(result.status, 0) + 1
+        looks = [r for r in results if r.status != "installed" or r.note]
+        if looks:
+            self._append("== What each component came to (WeiDU.log and WeiDU's own word):")
+            for r in looks[:MAX_SHOWN]:
+                name = f" {r.name}" if r.name else ""
+                note = f" - {r.note}" if r.note else ""
+                self._append(f"  {r.key[0]} #{r.key[1]}{name}: {r.status}{note}")
+            if len(looks) > MAX_SHOWN:
+                self._append(f"  ... and {len(looks) - MAX_SHOWN} more "
+                             f"(install-plan/results.json lists them all)")
+        order = ("installed", "installed with warnings", "not installed (errors)", "not reached")
+        return ", ".join(f"{counts[status]} {status}" for status in order if counts.get(status))
+
+    def _launch_advice(self) -> str:
+        """How to start the game now (item 71, ADR-0054): for the game that
+        is played - in EET, the EET game's log, not BG:EE's, which is not
+        played. A check that cannot run says nothing."""
+        plan = self._installing or {}
+        try:
+            advice = self.services.launch(plan.get("plan_dir", "")) if plan else []
+        except Exception:
+            return ""
+        if "EET" in self.games:
+            advice = [a for a in advice if a.get("log") == "WeiDU.log"]
+        said = []
+        for entry in advice:
+            text = entry.get("why", "")
+            if entry.get("platform_note"):
+                text += " " + entry["platform_note"]
+            if text and text not in said:
+                said.append(text)
+        return " ".join(said)
 
     # ------------------------------------------------------------ plumbing
     def running(self) -> bool:

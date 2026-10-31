@@ -607,3 +607,49 @@ def test_a_question_under_a_condition_that_is_not_asked_shifts_nothing(qtbot, wo
     page.ask_player = lambda question: "9"
     run_to_end(qtbot, page)
     assert (world["tmp"] / "answers.txt").read_text().split() == ["3"]
+
+
+def test_after_the_install_each_component_and_how_to_start_the_game_are_said(qtbot, world):
+    """Items 69 and 71: what each component came to, in the output and the
+    summary, and EEex's advice - for the game that is played."""
+    backed_up(world)
+    world["services"].launch = lambda plan_dir: [
+        {"log": "WeiDU.log", "tp2": "eeex.tp2", "component": 1, "program": "InfinityLoader.exe",
+         "why": "EEex is installed: start the game with InfinityLoader.exe.",
+         "platform_note": ""}]
+    page = page_of(qtbot, world)
+    run_to_end(qtbot, page)
+    assert page.outcome.ok
+    summary = page.summary.text()
+    assert "1 installed" in summary and "InfinityLoader.exe" in summary
+
+
+def test_eeex_in_bgee_s_log_of_an_eet_install_is_not_said(qtbot, world):
+    """EET: BG:EE's folder is not the game played - its log's advice is not
+    said; the EET game's is."""
+    page = InstallPage(str(world["tmp"]), world["services"])
+    qtbot.addWidget(page)
+    page.games = {"BGEE": "/b", "EET": "/e"}
+    page._installing = {"plan_dir": "/p"}
+    page.services.launch = lambda plan_dir: [
+        {"log": "WeiDU-BGEE.log", "why": "start BG:EE with it", "platform_note": ""}]
+    assert page._launch_advice() == ""
+    page.services.launch = lambda plan_dir: [
+        {"log": "WeiDU-BGEE.log", "why": "start BG:EE with it", "platform_note": ""},
+        {"log": "WeiDU.log", "why": "start EET with it", "platform_note": "Through Proton."}]
+    assert page._launch_advice() == "start EET with it Through Proton."
+
+
+def test_a_component_that_needs_a_look_is_listed(qtbot, world):
+    from types import SimpleNamespace
+    page = InstallPage(str(world["tmp"]), world["services"])
+    qtbot.addWidget(page)
+    results = [SimpleNamespace(key=("a.tp2", 0), name="A", status="installed", note=""),
+               SimpleNamespace(key=("a.tp2", 1), name="B", status="installed with warnings",
+                               note=""),
+               SimpleNamespace(key=("b.tp2", 0), name="", status="not reached", note="")]
+    said = page._show_results(results)
+    assert said == "1 installed, 1 installed with warnings, 1 not reached"
+    out = page.output.toPlainText()
+    assert "a.tp2 #1 B: installed with warnings" in out and "b.tp2 #0: not reached" in out
+    assert "a.tp2 #0" not in out
