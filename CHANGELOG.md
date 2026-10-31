@@ -8,6 +8,14 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Documentation
+- **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass
+  today's ceilings: read from their zips' central directories by HTTP Range
+  requests, BGEE Graphics Enhanced 0.2.0 unpacks to 1.744 GiB and BGGO 3.6 to
+  1.457 GiB, both under the 2 GiB unpacked ceiling, and no member trips the
+  ratio guard. `--max-bytes` defaults to 2 GiB, not the 300 MB one measuring run
+  used.
+
 ### Fixed
 - The wizard's window no longer freezes on Windows when a download, a
   catalogue update or a conflict check starts (ADR-0048). Every HTTP client
