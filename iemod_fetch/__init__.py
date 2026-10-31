@@ -1,7 +1,7 @@
 """Safe, reproducible asset fetcher for Infinity Engine mods (WeiDU / Project Infinity)."""
 import sys
 
-__version__ = "3.0.0"
+__version__ = "4.0.0"
 
 # The one Python this tool is built and tested on (ADR-0043); .python-version,
 # requires-python, ruff, mypy and the classifiers name the same, and a test

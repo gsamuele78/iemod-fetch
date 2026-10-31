@@ -8,7 +8,30 @@ Python API, which is internal.
 
 ## [Unreleased]
 
-### Changed (breaking: 4.0.0)
+## [4.0.0] - 2026-10-31
+
+### Upgrading from 3.x
+- **Python 3.14** is needed to run the `.pyz` or a pip install; an older one
+  stops with one sentence saying so. Where the system's Python is older
+  (Debian trixie's 3.13, Ubuntu 24.04's 3.12, macOS's own 3.9), take a release
+  bundle instead: `iemod-fetch-cli-<os>-<arch>.zip` for the command line,
+  `iemod-fetch-gui-...` for the wizard. Both carry their own Python.
+- **Linux bundles need Debian trixie or Ubuntu 24.04**: they are built on
+  Ubuntu 24.04 and started on Debian trixie before release, and no longer
+  checked on Debian 12 or Ubuntu 22.04.
+- **RAR archives** are opened with the system's tools (ADR-0047): on Debian
+  and Ubuntu `apt install libarchive-tools unar`; macOS and Windows 10/11
+  have libarchive built in, and `brew install unar` helps on macOS. An
+  installed 7-Zip or WinRAR is still used, last. Debian's own `7zip` package
+  cannot read RAR - it was extracting them wrong before this release.
+- A `decisions.json` written by 4.0.0 can name `keep-both` or hold
+  `ignored_order`; an older iemod-fetch refuses it.
+- The command line, its flags, exit codes and JSON reports only gain: new
+  flags (`--backup`, `--restore-backup`, `--take-newer`...), new fields (the
+  conflict report's `action` can be `keep-both`; `--list-mods` reports more);
+  nothing is removed or renamed. The Python API stays internal.
+
+### Changed (breaking)
 - **Debian trixie is the minimum platform for the Linux bundles** (ADR-0043
   amendment of 2026-10-31). Both are built on `ubuntu-24.04`, may need glibc
   up to 2.41 (trixie's; was 2.35) and are started inside `debian:trixie`
@@ -209,18 +232,17 @@ Python API, which is internal.
   (krion64's per-component categories split 242 components) or has no data
   (BWS-NG classifies no component on its own).
 - **The command line as a program that needs no Python** (GUI-AUDIT M6 item
-  36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian 12 and 13 and
+  36, ADR-0043). 4.0.0 needs Python 3.14; Ubuntu 24.04, Debian trixie and
   macOS's own `python3` are older. Each release now carries
   `iemod-fetch-cli-<os>-<arch>.zip` for Linux, Windows and macOS: a
   PyInstaller folder (one folder, not one file, which unpacks itself on
   every start and is what Windows antivirus software flags most), with the
   runtime's libraries and their licences, no Qt. Each is unzipped and run
   with `--version` and `--help` before it is published, attested, and listed
-  in `SHA256SUMS` (macOS: its own `.sha256`). Linux is built on Ubuntu 22.04,
-  not the latest runner: setup-python's 3.14 for 24.04 needs glibc 2.38, and
-  the bundle would not have started on Debian 12 (review of #70). The build
-  stops if any bundled file needs a glibc newer than 2.35, and the zip is run
-  once more inside `debian:12`. On Linux and macOS, programs it starts (git,
+  in `SHA256SUMS` (macOS: its own `.sha256`). The build stops if any bundled
+  file needs a glibc newer than the minimum platform has (review of #70); on
+  Linux it is built and checked as *Changed (breaking)* above says - on
+  Ubuntu 24.04, then started inside `debian:trixie`. On Linux and macOS, programs it starts (git,
   gh, 7-Zip, unrar) get the system's library path back, not the bundle's
   (`childenv.py`), so they load their own OpenSSL; on Windows they still see
   the bundle's DLL folder after their own (GUI-AUDIT row 61). Python's LICENSE.txt ships with it. Measured
