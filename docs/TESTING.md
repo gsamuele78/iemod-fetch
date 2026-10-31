@@ -397,6 +397,32 @@ property over random orders, rules and moves). On 2026-10-23, p50/p95:
 stored on each row as a string and only the rows whose mark changes were
 painted again). No test asserts a time: a shared runner would make it flaky.
 
+### The questions a mod asks, read before installing (GUI-AUDIT item 48)
+
+`tools/readln_census.py CORPUS` runs `iemod_fetch/readln.py` over checkouts of
+real mods (their .tp2, .tpa, .tph, .tpp, .tpc and .tra files) and compares the
+READLNs it attributes to a component with every READLN in the mod's files.
+Measured on 2026-10-31 on 105 of the reference build's 108 GitHub mods (3
+did not clone; sparse checkouts of the WeiDU files only): 8 mods hold a
+READLN, 51 in all; 45 reached from a component (88%). The question is known
+for 42 of those (93%): 25 a .tra string in the player's language, 17 a fixed
+English text in the code; 3 are printed from a variable set elsewhere. Of the
+6 not reached, 5 are SCS's, in its SFO library, behind `%sfo_loc%` paths
+built while installing - said `unread`, not guessed - and 1 (TDDz) follows a
+`FAIL` and is never asked. "Reached" counts a READLN some component reaches,
+not which one. Getting there took four fixes the census showed:
+`%COMPONENT_NUMBER%` in include paths (Tweaks Anthology's
+`comp_%COMPONENT_NUMBER%_prompts.tpa`), the preamble's `OUTER_SPRINT`
+constants (EEUITweaks' `%PKGNAME%`), BACKUP under `weidu_external`, and a
+tp2 kept below its mod folder (EET's modConverter); and the review of #101
+eight more: `LAF ... END`, `ACTION_MATCH`/`ACTION_TRY ... END` (an END with no
+BEGIN - 4,714 of 7,601 function bodies were cut at their first LAF), FAIL,
+`ACTION_BASH_FOR`, lines after a block comment, a question printed from a
+variable, a path that is one variable, functions in `.tpc` files. What it cannot say:
+whether WeiDU really asks a reached READLN on a given install (a condition may
+skip it) - that takes a real install, which no runner has the games for.
+`tests/test_readln.py` holds each shape as a case.
+
 ### RAR archives, extracted against 7-Zip (GUI-AUDIT item 40)
 
 `tools/rar_measure.py corpus | reference | compare` downloads the distinct
@@ -496,7 +522,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,798 collected (15 run the real WeiDU, 159 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,823 collected (15 run the real WeiDU, 159 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
