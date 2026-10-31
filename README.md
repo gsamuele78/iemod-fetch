@@ -576,7 +576,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,822 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,847 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -585,6 +585,8 @@ Debian trixie (the minimum platform), Windows and macOS, is
 `tools/rar_measure.py` in the `RAR extractors` workflow (docs/TESTING.md).
 What holds the wizard's window during a download, on Linux and Windows, is
 traced by the `GUI latency` workflow (`tools/gui_latency_summary.py`).
+Which questions the mods of a build ask while installing is measured by
+`tools/readln_census.py` on their WeiDU files (ADR-0049).
 
 ## Community data, kept current
 
@@ -828,7 +830,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,822, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,847, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

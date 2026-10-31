@@ -3304,3 +3304,95 @@ stays.
   verifying, the PEP 476 hook honoured, built by `prepare_https`, a failed
   early build left to the first run) and the wizard's test that the
   constructor builds it. The `GUI latency` workflow re-measures it.
+
+## ADR-0049 — Every question a mod asks is known before the install starts; never answered by a timer
+
+**Status**: accepted (the owner's decisions, 2026-10-31)
+**Date**: 2026-10-31
+
+### Context
+
+A large EET install meets WeiDU questions (`ACTION_READLN`): a menu, a
+yes/no, a number, a path. ADR-0045 answers them from the planned log's
+recorded answers (`@wlb-inputs`), else asks the player, and never guesses.
+That is safe but not deterministic: a question no answer covers stops the
+install until someone answers it, possibly hours in. The owner asked for
+deterministic installs, using what the other projects learned, without
+reinventing the wheel. What they do, read on their code (GUI-AUDIT M8):
+
+- Infinity Orchestrator/BIO: answers per component, in order, on the log line
+  (`@wlb-inputs`, adopted by ADR-0045). The order shifts when a mod's
+  questions change.
+- Chriz Easy BG: an answer is sent only when its question appears
+  (`PromptMatcher`; item 63, PR #98).
+- Infinity Mod Runner: default answers as configuration, and "1" sent after
+  30 s of silence. Rejected: a timer answers questions nobody read
+  (ADR-0005), and a wrong menu choice installs quietly.
+- BWS-NG describes questions as data for 4 components; the Forge has
+  free-text notes of manual steps.
+
+Measured (`tools/readln_census.py`, 2026-10-31) on the WeiDU files of 105 of
+the reference build's 108 GitHub mods (3 did not clone): 8 mods hold a
+READLN, 51 READLNs in all. Read lexically, 45 (88%) are reached from a
+component - in its body, a function or macro it launches, a file it
+includes, its ALWAYS block, with `%COMPONENT_NUMBER%`, the preamble's
+constants and inlined files followed. The question is known for 42 of those
+(93%): 25 are a .tra string, shown in the player's language, and 17 a fixed
+text in the code (English whatever the language); 3 are printed from a
+variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
+5 are SCS's, behind paths its SFO library builds while installing
+(`%sfo_loc%`), and 1 follows a `FAIL` (TDDz) and is never asked.
+
+### Decision
+
+1. **Before installing, the questions are known** (item 48,
+   `iemod_fetch/readln.py`, pure): for each chosen component, every READLN
+   it may reach, with its question's text in the project's language,
+   whether it sits under a condition (may not be asked) or in a loop (asked
+   until valid), and what could not be followed (`unread`). A question is
+   keyed by its .tra reference (`@n`) - not by its text, which changes with
+   the language and arrives inside mod_installer's ten-line window
+   (ADR-0045, item 63) - else by its text.
+2. **The player answers them in one place, before Install** (next step:
+   the questionnaire in phase 5): the answers are kept with their key,
+   the mod's version and the component, and a preflight says whether the
+   install can run unattended, listing what is still uncovered.
+3. **Never a timed answer.** A question with no answer stops and asks, as
+   ADR-0045 says; a timer never answers (owner, 2026-10-31).
+4. **A watchdog that only warns** (owner, 2026-10-31): it tells "waiting for
+   an answer" (mod_installer's `User Input required`), "slow but alive"
+   (output still coming) and "silent for longer than the threshold" apart,
+   and on the last one warns, with the last window of output. It never
+   stops the install: a component working silently would be killed half
+   done, an error this tool would cause. The threshold is measured first on
+   real components' longest silences.
+5. **What was asked and answered is written back** - the log's
+   `@wlb-inputs` and the project's answers - so the same project installs
+   again without a question.
+
+### Consequences
+
+- An unknown question (printed from a variable) is keyed by where it is asked
+  and by which component - file, line, variable, component - never by an
+  empty key. One component calling one asking function twice (LCA's
+  `xa_determine_quantity` asks what its caller passes) still shares it, so an
+  unknown question is never answered from a stored answer: it is asked.
+- WeiDU's keywords are read case-sensitively (`SET end = 5` is a variable);
+  a READLN after FAIL or ABORT in its block is never asked, except in a TRY's
+  handlers, which run because the body failed.
+- The component cuts are tp2.py's: a line `BEGIN` followed by a line opening
+  with a string (`ACTION_DEFINE_ARRAY x` / `BEGIN` / `~a~`) would be taken
+  for a component; no tp2 of the corpus has one. A question printed inside a
+  function and read in its caller is found without its text.
+- A lexical reading misses what runs at install time: a path built from a
+  variable set while installing (SCS's SFO library), a question inside a
+  program the mod starts, a condition on an earlier component. A first
+  install of a mod never seen may still stop once; the second does not
+  (point 5). The census says how much is missed, per mod.
+- Whether WeiDU really asks a reached READLN takes a real install, which no
+  runner has the game data for: `conditional` says it may not be. The real
+  prompts credited in item 64 (Bardic Wonders 1008, Item Randomiser 510 and
+  1100, Warlock 0) are the external check still to make - their repositories
+  were not found under the names tried.
+- Item 63 (PR #98) can recognise the question being asked from the texts
+  read here instead of from the window's last line.
