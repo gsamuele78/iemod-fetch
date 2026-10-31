@@ -3654,6 +3654,21 @@ size and sha256 match pinned values. It neither scans nor watches a folder.
   the tp2 check is what holds the file, as it holds every download. The
   sha256 it had is recorded, so a pinned manifest made after it holds the
   next install to it.
+- **The recorded sha256 is trust on first use**, and is never a pin. A
+  pin lives in the manifest, and a supplied file never changes it: a file
+  that differs is refused with "this file is not the one pinned for this
+  mod" and both hashes. The state's sha256 is a record. It becomes a pin
+  only when the player writes a pinned manifest (`--emit-pinned-manifest`),
+  which takes it for an entry with none and keeps an existing one: a
+  supplied file that reached the state matched that pin. Until then, a
+  later supply of another file for the same mod is checked by its tp2
+  again, not against the first file.
+- **An installer `.exe`** (some SHS and Nexus mods) is refused by
+  `safe_extract`, unless the project allows self-extracting archives
+  (`allow_exe`). It is never run. The GUI opens a page only for an
+  `http`/`https` URL: never `file:`, `javascript:` or another scheme.
+- **The hashing and the unpacking run in the page's worker thread**, as a
+  download does, never on the window's thread (ADR-0048).
 - **The command line has no flag for it.** It is the wizard's.
 - **Not run against the gated sites**: no runner reaches them. The tests use
   a stub transport and real archives, checking that nothing is fetched and

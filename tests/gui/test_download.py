@@ -336,9 +336,11 @@ class Gated(Fake):
     def __init__(self):
         super().__init__(mods=("ub", "tweaks"))
         self.supplied = []
+        self.threads = []
 
     def __call__(self, folder, on_event, cancel, only, supplied=None):
         self.calls.append(list(only))
+        self.threads.append(threading.current_thread())
         records = []
         for mod in [m for m in self.mods if not only or m in only]:
             if mod == "ub" and not supplied:
@@ -377,6 +379,8 @@ def test_a_gated_mod_is_opened_in_the_browser_and_supplied_by_hand(qtbot, tmp_pa
     widget.supply_button.click()
     qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
     assert asked == ["ub"] and gated.supplied == [("ub", "/dl/ub.zip")]
+    # hashing and unpacking a file of hundreds of MB never on the window's thread
+    assert threading.main_thread() not in gated.threads
     assert gated.calls[-1] == ["ub"]                    # only that mod, nothing else
     assert widget.rows["ub"].text(1) == "Done" and widget.is_complete()
 
@@ -399,3 +403,26 @@ def test_a_row_with_no_page_has_nothing_to_open(qtbot, tmp_path):
     qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
     widget.table.setCurrentItem(widget.rows["ub"])
     assert widget.supply_button.isEnabled() and not widget.page_button.isEnabled()
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "javascript:alert(1)",
+                                 "ftp://example.org/ub.zip", "C:\\Mods\\ub.zip"])
+def test_only_a_web_page_is_ever_opened(qtbot, tmp_path, url):
+    """Review of #108: a record's url is opened only when it is http(s)."""
+    class Odd(Gated):
+        def __call__(self, *args, **kwargs):
+            result = super().__call__(*args, **kwargs)
+            for r in result["records"]:
+                if r["folder"] == "ub":
+                    r["url"] = url
+            return result
+    opened = []
+    widget = DownloadPage(str(tmp_path), Odd(), choose_file=lambda *_a: "",
+                          open_url=lambda u: opened.append(u) or True)
+    qtbot.addWidget(widget)
+    widget.start()
+    qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
+    widget.table.setCurrentItem(widget.rows["ub"])
+    assert not widget.page_button.isEnabled()
+    widget.open_page()                                  # even called directly
+    assert opened == []

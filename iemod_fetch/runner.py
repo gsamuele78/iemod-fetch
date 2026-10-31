@@ -151,7 +151,9 @@ class Runner:
             raise NotAnArchive(path, head[:160])
         actual = sha256_file(path)
         if expected_sha256 and actual.lower() != expected_sha256.lower():
-            raise ChecksumMismatch(path, expected_sha256, actual)
+            # never taken in its place: the pin stays what it was
+            raise ChecksumMismatch(f"this file is not the one pinned for this mod ({path})",
+                                   expected_sha256, actual)
         return DownloadResult(path, actual, size, kind, path)
 
     def _attempt(self, source, folder, candidate, expect_tp2,  # noqa: ARG002
