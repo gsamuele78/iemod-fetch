@@ -451,7 +451,7 @@ class InstallRun:
                     for key, text in self.expected.get(component, ())]
         window = "\n".join(recent)
         found = match_question(window, expected) if expected and window else None
-        asked = dict(((c, k), t) for c, k, t in expected)
+        asked = {(c, k): t for c, k, t in expected}
         if found is not None and not mod_installer_asks(asked.get(found, "")):
             what = ("WeiDU seems to be waiting for an answer to a question mod_installer "
                     "does not put to anyone (it asks only questions with words such as "

@@ -785,6 +785,9 @@ time.sleep(1.5)                            # works silently after the answer
 """
 
 
+KITS_QUESTION = "Please enter the number of extra kits to install:"
+
+
 def test_a_silence_after_an_answered_question_is_not_that_question_waiting(tmp_path):
     """Review of #115: the answered question's window is not the last output;
     a silence after it says nothing of a question nobody is asked."""
@@ -793,8 +796,7 @@ def test_a_silence_after_an_answered_question_is_not_that_question_waiting(tmp_p
     events = []
     run_ = InstallRun([sys.executable, "-c", ANSWERED_THEN_SILENT], [], cwd=str(tmp_path),
                       ask=lambda q, b: "3", on_event=events.append, quiet_s=0.2, silent_s=0.6,
-                      expected={("a.tp2", 0): [("@1", "Please enter the number of extra kits "
-                                                       "to install:")]})
+                      expected={("a.tp2", 0): [("@1", KITS_QUESTION)]})
     run_.run()
     said = [e.text for e in events if e.kind == "watchdog"]
     assert len(said) == 1 and "does not put to anyone" not in said[0]
