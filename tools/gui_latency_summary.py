@@ -4,9 +4,13 @@ What held the wizard's event loop: the traces of the M3 end-to-end test
 
 For every run: its longest gap. For every gap over --over ms, in any run:
 the garbage collections that overlapped it (with their generation and
-length) and the events the page received just before and after. A gap a
-collection covers was the collector holding the GIL; a gap with none, and no
-event inside, was the thread not scheduled or held by other code.
+length), the last two events the download sent before it and those it sent
+during it (stamped in the download's thread, when sent), and how many events
+the window took in during it (stamped when handled). A gap a collection
+covers was the collector holding the GIL. A gap during which the download
+kept sending, with no collection, was the window's thread waiting while the
+worker ran; one with nothing sent either was every thread held (or the
+runner not scheduling the process).
 
     python tools/gui_latency_summary.py trace-*.json --over 50
 """
@@ -32,6 +36,7 @@ def explain(path: str, over_s: float) -> tuple[float, list[str]]:
         held = [(b, e, g) for b, e, g in trace["collections"] if b < end and e > start]
         before = [ev for ev in trace["events"] if ev[0] <= start][-2:]
         inside = [ev for ev in trace["events"] if start < ev[0] <= end]
+        taken = sum(1 for t in trace.get("handled", []) if start < t <= end)
         lines.append(f"  gap {gap * 1000:.0f} ms")
         if held:
             for b, e, g in held:
@@ -39,9 +44,10 @@ def explain(path: str, over_s: float) -> tuple[float, list[str]]:
                              f"{max(0.0, min(e, end) - max(b, start)) / gap:.0%} of the gap")
         else:
             lines.append("    no garbage collection overlapped it")
-        for when, what in (("before", before), ("inside", inside)):
+        for when, what in (("sent before", before), ("sent during", inside)):
             for t, kind, folder in what:
                 lines.append(f"    {when}: {kind} {folder} at {(t - start) * 1000:+.0f} ms")
+        lines.append(f"    handled by the window during it: {taken} event(s)")
     return max(gap for _end, gap in gaps), lines
 
 

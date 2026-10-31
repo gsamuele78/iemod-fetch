@@ -26,6 +26,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     env:
       QT_QPA_PLATFORM: offscreen
+      IEMOD_REQUIRE_GUI: "1"
       RUNS: "30"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,9 +44,11 @@ jobs:
       - name: The M3 test, ${{ env.RUNS }} times, traced
         shell: bash
         run: |
+          # relative: the test resolves it against where pytest ran (Git
+          # Bash's $PWD, /d/a/..., is no path Windows' Python can open)
           mkdir -p traces
           for i in $(seq -w 1 "$RUNS"); do
-            IEMOD_LATENCY_TRACE="$PWD/traces/trace-$i.json" \
+            IEMOD_LATENCY_TRACE="traces/trace-$i.json" \
               python -m pytest -q -p no:cacheprovider tests/gui/test_m3_end_to_end.py \
               > "traces/pytest-$i.txt" 2>&1 || echo "run $i: the test failed"
           done

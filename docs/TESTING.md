@@ -426,17 +426,19 @@ test asserts them.
 
 The release gate of 4.0.0 failed on one assertion: the M3 test measured a
 240 ms gap on windows-latest, where the CI run of the same commit had passed
-(Linux, locally: 11-20 ms). A gap that size can be the garbage collector
-holding the GIL, the worker thread holding it in pure-Python code, or the
-runner not scheduling the window's thread at all. With
-`IEMOD_LATENCY_TRACE=<file>` the test writes when every gap ended, every
-collection with its generation and length (`gc.callbacks`), and every event
-the page received; `tools/gui_latency_summary.py` lines them up and, for each
-gap over 50 ms, says which collection overlapped it and what the download
-was doing. The `GUI latency` workflow runs the test 30 times on
-ubuntu-latest and windows-latest and publishes that summary; the fix - in
-the code, or in what the test may honestly expect of a shared runner - waits
-for its numbers.
+(Linux: 11-16 ms when M3 was validated, 11-20 ms in local runs on
+2026-10-31). A gap that size can be the garbage collector holding the GIL,
+the worker thread holding it in pure-Python code, or the runner not
+scheduling the window's thread at all. With `IEMOD_LATENCY_TRACE=<file>`
+(relative to where pytest runs) the test writes when every gap ended, every
+collection with its generation and length (`gc.callbacks`), every event of
+the download stamped in its own thread when sent, and when the window took
+each in. `tools/gui_latency_summary.py` lines them up: for each gap over
+50 ms, which collection overlapped it, what the download sent just before and
+during it, and how many events the window handled during it. The `GUI
+latency` workflow runs the test 30 times on ubuntu-latest and windows-latest
+and publishes that summary; the fix - in the code, or in what the test may
+honestly expect of a shared runner - waits for its numbers.
 
 ## What is deliberately not done
 

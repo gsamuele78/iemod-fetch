@@ -219,9 +219,10 @@ class Latency:
     """The event loop's longest wait between two 10 ms ticks.
 
     With IEMOD_LATENCY_TRACE set to a file, the run also writes when each gap
-    ended, every garbage collection with its length, and each event the page
-    received - what tools/gui_latency_summary.py lines up to say what held a
-    long gap (measured on the Windows runner, where one gap reached 240 ms)."""
+    ended, every garbage collection with its length, each event of the
+    download stamped when its thread sent it, and when the window took each
+    in - what tools/gui_latency_summary.py lines up to say what held a long
+    gap (measured on the Windows runner, where one gap reached 240 ms)."""
 
     def __init__(self):
         self.gaps, self._last = [], None
@@ -347,7 +348,8 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
     if trace:       # the test has changed directory by now: relative to where pytest ran
         trace = os.path.join(str(request.config.invocation_params.dir), trace)
     collections: list[tuple[float, float, int]] = []
-    received: list[tuple[float, str, str]] = []
+    sent: list[tuple[float, str, str]] = []         # when the download sent it
+    handled: list[float] = []                       # when the window took it in
     if trace:
         started = {}
 
@@ -358,8 +360,14 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
                 collections.append((started.pop("t"), time.perf_counter(), info["generation"]))
         gc.callbacks.append(collected)
         request.addfinalizer(lambda: gc.callbacks.remove(collected))
-        page._bridge.event.connect(lambda event: received.append(
-            (time.perf_counter(), str(event.get("event")), str(event.get("folder", "")))))
+        forward = page._forward             # start() takes it from the page
+
+        def stamped(event):
+            sent.append((time.perf_counter(), str(event.get("event")),
+                         str(event.get("folder", ""))))
+            forward(event)
+        page._forward = stamped
+        page._bridge.event.connect(lambda _event: handled.append(time.perf_counter()))
     latency = Latency()
     latency.start()
     with qtbot.waitSignal(page.finished, timeout=30000):
@@ -398,16 +406,16 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
         assert (mods_dir / path).is_file(), path
     assert main.next.isEnabled() and page.is_complete()
 
-    gaps = first_run + latency.gaps
-    assert first_run and latency.gaps        # the loop was measured in both runs
+    gaps = latency.gaps                      # both runs: start() does not clear it
+    second_run = gaps[len(first_run):]
+    assert first_run and second_run          # the loop was measured in both runs
     worst = max(gaps)
     if trace:
         with open(trace, "w", encoding="utf-8") as fh:
-            # latency.gaps holds both runs: start() does not clear it
-            json.dump({"gaps": [[end, gap] for end, gap in zip(latency.ends, latency.gaps,
+            json.dump({"gaps": [[end, gap] for end, gap in zip(latency.ends, gaps,
                                                                strict=True)],
-                       "collections": collections, "events": received}, fh)
-    print(f"\nM3: {len(first_run)} + {len(latency.gaps)} event-loop ticks during the "
+                       "collections": collections, "events": sent, "handled": handled}, fh)
+    print(f"\nM3: {len(first_run)} + {len(second_run)} event-loop ticks during the "
           f"downloads, the longest gap {worst * 1000:.1f} ms; done before the cancel: "
           f"{sorted(done)}; requests: {server.hits}")
     assert worst < MAX_GAP_S, f"the window was blocked for {worst * 1000:.0f} ms"
