@@ -464,6 +464,111 @@ def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
     return record if record is not None and os.path.isfile(record) else None
 
 
+# EET's core finds the Documents folder with a batch file (EET/lib/macros.tph,
+# GET_USER_DIRECTORY, upstream since 38db44c): `for /f "tokens=3,*"` over
+# `reg query ... /v Personal`, then `set DOC_DIR=` the first of the two
+# variables - the third token only, so a value with a space is cut at it.
+# Matched, not copied (EET is GPL-3.0): any variable letter, "tokens=3*"
+# without the comma, and a `do (set ...)` are the same cut.
+_EET_DOCUMENTS_CUT = re.compile(
+    r'^\s*@?for\s+/f\s+"tokens=3,?\*"\s+%%(\w)\s+in\b[^\n]*/v\s+Personal\b[^\n]*\bdo\s*'
+    r'(?P<open>\()?\s*set\s+"?DOC_DIR=%%\1"?\s*(?P<close>\))?\s*$', re.IGNORECASE | re.MULTILINE)
+_COMMENT = re.compile(r"^\s*(?:@?rem\b|::|//)", re.IGNORECASE)
+
+
+def _fixed_in_block(text: str, cut: re.Match) -> bool:
+    """A cut that opens a block - `do (set DOC_DIR=%%a` - and sets the whole
+    path within it before the block closes (`set "DOC_DIR=%%a %%b"`): the one
+    way a later line fixes it (review of #100). Comments do not count."""
+    if not cut.group("open") or cut.group("close"):
+        return False
+    var = cut.group(1)
+    whole = re.compile(r'^\s*set\s+"?DOC_DIR=%%' + var + r"\s+%%\w", re.IGNORECASE)
+    for line in text[cut.end():].splitlines():
+        if not line.strip() or _COMMENT.match(line):
+            continue
+        if line.strip().startswith(")"):
+            return False
+        if whole.match(line):
+            return True
+    return False
+
+
+_SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+
+
+def _documents_value() -> str | None:
+    """The Documents folder as the registry holds it, before %VARIABLES% are
+    expanded - what EET's batch file reads; None off Windows or unreadable."""
+    if sys.platform == "win32":
+        import winreg  # noqa: PLC0415 (Windows only)
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _SHELL_FOLDERS) as key:
+                value, _kind = winreg.QueryValueEx(key, "Personal")
+            return str(value)
+        except OSError:
+            return None
+    return None
+
+
+def _eet_core_in(folder: str) -> bool:
+    """EET's core is already in this game's WeiDU.log: past the cut."""
+    for name in ("WeiDU.log", "weidu.log", "WEIDU.LOG"):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                return re.search(r"^\s*~[^~]*\beet\.tp2~\s+#\d+\s+#0\b", fh.read(),
+                                 re.IGNORECASE | re.MULTILINE) is not None
+    return False
+
+
+def _shown(path: str) -> str:
+    """`%USERPROFILE%\\x` as the player knows it, for the message only."""
+    return re.sub(r"%(\w+)%", lambda m: os.environ.get(m[1], m[0]), path)
+
+
+def known_issues(games: dict[str, str], mods_dir: str,
+                 documents: Callable[[], str | None] | None = None) -> list[str]:
+    """
+    Known upstream faults this install will meet, in words; [] when none.
+    Not refusals: the player decides, knowing (GUI-AUDIT M8 item 65).
+
+    EET's core and a Documents folder whose registry value has a space
+    (OneDrive's "OneDrive - Company\\Documents", "D:\\My Documents"): its
+    batch file keeps the path up to the first space, and the core goes on
+    with it - it creates a settings folder there and writes Baldur.lua
+    (language, campaign, EET's state) into it (EET.tp2 L1091-1157, read at
+    c26a11a; WeiDU's MKDIR makes the missing folders). The game finds its
+    own Documents folder (engine.lua's engine_name) and never reads that
+    one: the settings are lost to it, the saves are not affected (second
+    review of #100). Read in the source, not run on Windows. A user name
+    with a space is not this: the value is `%USERPROFILE%\\Documents`,
+    expanded after the cut. Not said once EET's core is in the EET game (a
+    resume past it).
+    """
+    issues = []
+    if "EET" in games and not _eet_core_in(games["EET"]):
+        value = ((documents or _documents_value)() or "").strip()
+        macros = _in_folder(mods_dir, "EET/lib/macros.tph")
+        if value and " " in value and macros and os.path.isfile(macros):
+            with open(macros, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            cut = _EET_DOCUMENTS_CUT.search(text)
+            if cut and not _fixed_in_block(text, cut):
+                first = _shown(value.split(" ", 1)[0])
+                wrong = first + "\\Baldur's Gate - Enhanced Edition Trilogy"
+                issues.append(
+                    f"EET's core will write the game's settings (Baldur.lua: language, "
+                    f"campaign...) to '{wrong}' instead of your Documents folder, and the "
+                    f"game will not see them - it may start in its default language and "
+                    f"settings - or it may fail there. Your Documents folder is registered "
+                    f"as '{value}', and EET's installer (EET/lib/macros.tph, "
+                    f"GET_USER_DIRECTORY) keeps it only up to the first space. A known EET "
+                    f"bug on Windows; your saves are not affected. Until EET fixes it, a "
+                    f"Documents folder whose path has no space avoids it.")
+    return issues
+
+
 def resume_state(plan_dir: str, games: dict[str, str]) -> resume.Resume:
     """How far the planned install went in the games: each game's WeiDU.log
     against its planned log (resume.py), and whether the component it
