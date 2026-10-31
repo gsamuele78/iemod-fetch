@@ -327,3 +327,75 @@ def test_space_ticks_the_selected_rows_offer(qtbot, tmp_path):
     qtbot.keyClick(widget.table, Qt.Key.Key_Space)
     assert widget.rows["ub"].data(4, Qt.ItemDataRole.CheckStateRole) is None
     assert widget.newer_button.accessibleName()
+
+
+# ------------------------------------------- a download supplied by hand (item 68)
+class Gated(Fake):
+    """`ub` has no download (its page is gated) until the player supplies a file."""
+
+    def __init__(self):
+        super().__init__(mods=("ub", "tweaks"))
+        self.supplied = []
+
+    def __call__(self, folder, on_event, cancel, only, supplied=None):
+        self.calls.append(list(only))
+        records = []
+        for mod in [m for m in self.mods if not only or m in only]:
+            if mod == "ub" and not supplied:
+                records.append({**record(mod, "manual", "no download found"),
+                                "url": "https://www.gibberlings3.net/mods/ub/"})
+            elif supplied and mod in supplied:
+                self.supplied.append((mod, supplied[mod]))
+                records.append({**record(mod, "ok", "installed from the file you chose",
+                                         3000), "url": "https://www.gibberlings3.net/mods/ub/"})
+            else:
+                records.append(record(mod, "ok", f"installed {mod}.tp2", 3000))
+        counts = {}
+        for r in records:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        return {"records": records, "cancelled": False, "counts": counts, "exit_code": 0}
+
+
+def test_a_gated_mod_is_opened_in_the_browser_and_supplied_by_hand(qtbot, tmp_path):
+    gated, opened, asked = Gated(), [], []
+    widget = DownloadPage(str(tmp_path), gated,
+                          choose_file=lambda _parent, mod: asked.append(mod) or "/dl/ub.zip",
+                          open_url=lambda url: opened.append(url) or True)
+    qtbot.addWidget(widget)
+    widget.start()
+    qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
+    assert not widget.is_complete()
+    assert "supplied by hand" in widget.summary.text()
+    # nothing selected, or a mod already there: neither button applies
+    assert not widget.page_button.isEnabled() and not widget.supply_button.isEnabled()
+    widget.table.setCurrentItem(widget.rows["tweaks"])
+    assert not widget.supply_button.isEnabled()
+    widget.table.setCurrentItem(widget.rows["ub"])
+    assert widget.page_button.isEnabled() and widget.supply_button.isEnabled()
+    widget.page_button.click()
+    assert opened == ["https://www.gibberlings3.net/mods/ub/"]
+    widget.supply_button.click()
+    qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
+    assert asked == ["ub"] and gated.supplied == [("ub", "/dl/ub.zip")]
+    assert gated.calls[-1] == ["ub"]                    # only that mod, nothing else
+    assert widget.rows["ub"].text(1) == "Done" and widget.is_complete()
+
+
+def test_choosing_no_file_starts_nothing(qtbot, tmp_path):
+    gated = Gated()
+    widget = DownloadPage(str(tmp_path), gated, choose_file=lambda *_a: "",
+                          open_url=lambda _url: True)
+    qtbot.addWidget(widget)
+    widget.start()
+    qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
+    widget.table.setCurrentItem(widget.rows["ub"])
+    widget.supply_button.click()
+    assert not widget.running() and len(gated.calls) == 1 and gated.supplied == []
+
+
+def test_a_row_with_no_page_has_nothing_to_open(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, Fake(failing=("ub",)))
+    widget.start()
+    qtbot.waitUntil(lambda: not widget.running(), timeout=5000)
+    widget.table.setCurrentItem(widget.rows["ub"])
+    assert widget.supply_button.isEnabled() and not widget.page_button.isEnabled()

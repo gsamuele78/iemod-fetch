@@ -3593,3 +3593,68 @@ no point between two batches at which it could hold mod_installer back.
   possible while mod_installer drives WeiDU, and would need this program to
   start WeiDU batch by batch itself. That is outside this item; until then,
   what item 67 still lacks is that check.
+
+---
+
+## ADR-0052 — A mod this tool cannot download is supplied by hand, held to a download's checks
+
+**Status:** accepted (2026-10-31, GUI-AUDIT M8 item 68)
+
+### Context
+
+Some mods are published only on pages this tool cannot download from:
+- Gibberlings3, Spellhold Studios and Nexus answer a datacenter with a
+  Cloudflare challenge (item 57);
+- weaselmods and others put the file behind a JavaScript button or a login.
+
+The download phase marks these mods "No download found" or "Failed". The
+player then had to unpack the file into the mods folder by hand, which
+skipped every check made on a download.
+
+Chriz Easy BG (`engine/src/acquire/manual.rs`, MIT; the idea only) opens
+the page, lets the player pick the saved file, and takes it only if its
+size and sha256 match pinned values. It neither scans nor watches a folder.
+
+### Decision
+
+1. **In the wizard**, a row not yet there gets two buttons:
+   - *Open the mod's page* opens the URL the run's record names (http/https
+     only) in the browser;
+   - *Choose the saved file...* opens a file dialog.
+
+   Nothing else is read: no Downloads folder is scanned or watched.
+2. **`api.supply_download(project, mod, path)`** runs
+   `download_selection(only=[mod], supplied={mod: path})`. This is the same
+   run as a download (`api.run(..., supplied=)` and `Options.supplied`), so
+   the mod gets the same plan entry, the same tp2 expectation (manifest
+   override, then the catalogue's), the same advisories, the same state
+   file and the same report. A mod no source names (an unresolved item) is
+   moved into the run's items for it.
+3. **The runner's `_supply` checks the file as a download is checked**
+   (`_local_file`):
+   - a regular file;
+   - under the byte ceiling (`--max-bytes`);
+   - an archive by its first bytes, so a saved Cloudflare page is refused
+     as `not_an_archive`;
+   - the manifest's pinned `sha256` when there is one (`checksum_mismatch`).
+
+   `install_from_archive` then requires this mod's tp2 where WeiDU looks.
+   The file is read where it is, never moved or changed. A copy already
+   there is replaced and kept in `.backup/`, because the player asked for
+   this mod.
+4. **The state records** `origin: supplied`, the sha256 and the file's name
+   (`supplied_file`). The record keeps the page as its `url`. A later run
+   counts the mod as installed and verified.
+
+### Consequences
+
+- **The size-and-sha256 match as proposed needs a pin.** Pins exist for
+  GitHub release assets (`--emit-pinned-manifest`) and for a manifest's own
+  `sha256`. A Gibberlings3, SHS or Nexus mod usually has neither, so for it
+  the tp2 check is what holds the file, as it holds every download. The
+  sha256 it had is recorded, so a pinned manifest made after it holds the
+  next install to it.
+- **The command line has no flag for it.** It is the wizard's.
+- **Not run against the gated sites**: no runner reaches them. The tests use
+  a stub transport and real archives, checking that nothing is fetched and
+  that the chosen file is left as it was.

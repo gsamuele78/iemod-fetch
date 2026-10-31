@@ -5,19 +5,21 @@ import tempfile
 import threading
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dataclasses import replace as _replace
 
 from .contract import SCHEMA_VERSION
-from .errors import (Cancelled, InstallConflict, ModFetchError, NotAnArchive, NotThisMod,
-                     Unresolved, VerificationFailed)
+from .archives import Kind, detect_kind
+from .errors import (Cancelled, ChecksumMismatch, InstallConflict, ModFetchError,
+                     NotAnArchive, NotThisMod, TooLarge, Unresolved, VerificationFailed)
 from .install import State, install_from_archive, verify_mod_dir
 from .manifest import ModSource
 from .naming import archive_filename, normalize_key
+from .net import DownloadResult, sha256_file
 from .plan import Plan, WorkItem
 from .report import Record, RunReport, Status, line_for
-from .resolvers import (GitHubResolver, LandingPageResolver, Resolution,
+from .resolvers import (Candidate, GitHubResolver, LandingPageResolver, Resolution,
                         repo_from_url)
 from .urls import is_forum_post
 from .versions import newer_release
@@ -68,6 +70,9 @@ class Options:
     # folders (lowercased) whose newer GitHub release replaces the copy on
     # disk; "all" takes every one a run offered (ADR-0039 amendment)
     take_newer: frozenset = frozenset()
+    # folders (lowercased) the player supplied a saved file for, from a page
+    # this tool cannot download from (GUI-AUDIT item 68, ADR-0052)
+    supplied: dict = field(default_factory=dict)
 
 
 class Runner:
@@ -129,9 +134,38 @@ class Runner:
             return []
         return entry.advisories() + entry.game_advisories(game)
 
+    def _local_file(self, path: str, expected_sha256: str | None) -> DownloadResult:
+        """A file the player saved, held to what a download is held to: a
+        regular file, under the byte ceiling, an archive by its first bytes,
+        and the pinned sha256 when the manifest has one (ADR-0052)."""
+        if not os.path.isfile(path):
+            raise VerificationFailed(f"{path} is not a file")
+        size = os.path.getsize(path)
+        ceiling = getattr(self.client, "max_bytes", None)
+        if ceiling and size > ceiling:
+            raise TooLarge(f"{path}: {size:,} bytes, over the {ceiling:,} byte ceiling")
+        with open(path, "rb") as fh:
+            head = fh.read(512)
+        kind = detect_kind(head)
+        if kind is Kind.UNKNOWN:
+            raise NotAnArchive(path, head[:160])
+        actual = sha256_file(path)
+        if expected_sha256 and actual.lower() != expected_sha256.lower():
+            raise ChecksumMismatch(path, expected_sha256, actual)
+        return DownloadResult(path, actual, size, kind, path)
+
     def _attempt(self, source, folder, candidate, expect_tp2,  # noqa: ARG002
-                 force=False):
-        """Download one candidate and install it. Exceptions propagate."""
+                 force=False, local=None):
+        """Download one candidate - or take the file the player supplied,
+        `local` - and install it. Exceptions propagate."""
+        if local is not None:
+            result = self._local_file(local, candidate.sha256)
+            self._emit("mod_extracting", folder=folder)
+            # read where it is: the player's file is never moved or changed
+            outcome = install_from_archive(local, self.options.target_dir, folder,
+                                           force=force, allow_exe=self.options.allow_exe,
+                                           expect_tp2=expect_tp2)
+            return result, outcome
         staging = os.path.join(self.options.target_dir, ".staging")
         os.makedirs(staging, exist_ok=True)
         workdir = tempfile.mkdtemp(prefix=f"iemod-{folder}-", dir=staging)
@@ -174,6 +208,9 @@ class Runner:
         taking = self._taking_newer(folder, expect_tp2)
         if taking:
             return self._take_newer(item, taking, expect_tp2, advisories)
+        supplied = self.options.supplied.get(folder.lower())
+        if supplied:
+            return self._supply(item, supplied, expect_tp2, advisories)
 
         if not self.options.refresh:
             existing = verify_mod_dir(dest, folder, expect_tp2)
@@ -324,6 +361,56 @@ class Runner:
                       origin=candidate.origin, bytes=result.size,
                       discovered_github=discovered, advisories=advisories,
                       warnings=list(resolution.warnings), newer=newer)
+
+    # ------------------------------------------------- a file supplied by hand
+    def _supply(self, item, path, expect_tp2, advisories) -> Record:
+        """
+        Install the file the player saved from a page this tool cannot
+        download from - behind Cloudflare, a JavaScript button, a login
+        (GUI-AUDIT item 68, ADR-0052). It is held to the manifest's pinned
+        sha256 when there is one; with none, to what every download is held
+        to: it unpacks to this mod, its .tp2 where WeiDU looks. The file is
+        read where it is; no folder is scanned or watched.
+        """
+        folder, source = item.folder, item.source
+        key = source.key if source else None
+        page = source.url if source else None
+        pin = source.sha256 if source else None
+        candidate = Candidate(url=page or "", filename=os.path.basename(path),
+                              origin="supplied", sha256=pin)
+        try:
+            # the player chose this mod's file: a copy on disk is replaced,
+            # kept in .backup/ as --force keeps it
+            result, outcome = self._attempt(source, folder, candidate, expect_tp2,
+                                            force=True, local=path)
+        except ModFetchError as exc:
+            return Record(folder, Status.FAILED, f"{os.path.basename(path)}: {exc}",
+                          source_key=key, url=page, advisories=advisories,
+                          error_code=exc.code)
+        except OSError as exc:
+            return Record(folder, Status.FAILED, f"filesystem error: {exc}",
+                          source_key=key, url=page, advisories=advisories,
+                          error_code="filesystem")
+        advisories = self._reconcile_with_tp2(advisories, outcome, item.game)
+        with self._lock:
+            self.state.record(outcome.folder, sha256=result.sha256, url=page,
+                              tp2_file=outcome.tp2_file, mod_version=outcome.version,
+                              declares_games=", ".join(
+                                  outcome.tp2_info.normalised_games) or None
+                              if outcome.tp2_info else None,
+                              source_key=key, origin="supplied",
+                              supplied_file=os.path.basename(path))
+        checked = ("its sha256 matches the pinned one" if pin else
+                   "no sha256 is pinned for it: checked by its .tp2, its sha256 recorded")
+        detail = (f"installed {outcome.tp2_file} ({result.size:,} bytes"
+                  f"{', ' + outcome.version if outcome.version else ''}) from the file "
+                  f"you chose, {os.path.basename(path)}; {checked}")
+        if outcome.backup:
+            detail += f"; previous copy kept at {os.path.basename(outcome.backup)}"
+        return Record(outcome.folder, Status.OK, detail, source_key=key, url=page,
+                      sha256=result.sha256, version=outcome.version,
+                      tp2_file=outcome.tp2_file, origin="supplied", bytes=result.size,
+                      advisories=advisories)
 
     # ------------------------------------------------- a newer GitHub release
     def _newer(self, folder, url, version, origin=None):
