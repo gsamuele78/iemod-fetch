@@ -38,6 +38,10 @@ jobs:
           python-version-file: .python-version
           cache: pip
           cache-dependency-path: pyproject.toml
+      # the runtime's libraries as shipped, by hash, before the extras: an
+      # extra's loose range would otherwise pull a newer one than the pin
+      # (test_build_zipapp builds from the pinned versions)
+      - run: pip install --require-hashes -r requirements/runtime.txt
       - run: pip install -e ".[test]"
       - name: Test suite
         run: python -m pytest -q
@@ -59,6 +63,10 @@ jobs:
           python-version-file: .python-version
           cache: pip
           cache-dependency-path: pyproject.toml
+      # the runtime's libraries as shipped, by hash, before the extras: an
+      # extra's loose range would otherwise pull a newer one than the pin
+      # (test_build_zipapp builds from the pinned versions)
+      - run: pip install --require-hashes -r requirements/runtime.txt
       - run: pip install -e ".[guitest]"
       - name: The wizard's tests, and the api it calls
         run: python -m pytest -q -rs tests/gui tests/test_project.py
