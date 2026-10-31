@@ -12,7 +12,14 @@ stops the downloads at their next chunk; what finished stays. Running again
 resumes - a mod already there and verified is skipped - and "Retry the failed"
 runs only those. A mod from somewhere else than GitHub whose GitHub release is
 newer gets a box in "Newer release" (GUI-AUDIT item 59): nothing is replaced
-until the player ticks it and asks, as --take-newer does on the command line. The run's events come from its worker threads; they reach the
+until the player ticks it and asks, as --take-newer does on the command line.
+
+A mod this tool cannot download - its page behind Cloudflare, a JavaScript
+button, a login (GUI-AUDIT item 68, ADR-0052) - can be supplied by hand:
+"Open the mod's page" opens the selected row's page in the browser, and
+"Choose the saved file..." takes the file the player saved there, held to the
+checks a download is held to (api.supply_download). Only the file chosen is
+read; no folder is scanned or watched. The run's events come from its worker threads; they reach the
 page through a queued signal, and a mod's byte count at most ten times a
 second, so the window stays responsive however fast the network is.
 """
@@ -20,9 +27,9 @@ import threading
 import time
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, QThread, Qt, Signal
-from PySide6.QtGui import QKeyEvent
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTreeWidget,
+from PySide6.QtCore import QEvent, QObject, QThread, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QKeyEvent
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
@@ -33,6 +40,7 @@ from .mods import _in_thread
 Downloader = Callable[..., dict]
 PROGRESS_EVERY_S = 0.1
 DETAIL, NEWER = 3, 4                            # the table's columns
+PAGE = Qt.ItemDataRole.UserRole + 1             # a row's page, on column 0
 DONE = ("ok", "skipped")
 STATES = {"ok": "Done", "skipped": "Already there", "failed": "Failed",
           "manual": "No download found", "conflict": "Not installed (conflict)",
@@ -41,10 +49,25 @@ STATES = {"ok": "Done", "skipped": "Already there", "failed": "Failed",
 
 def download_project(folder: str, on_event: Callable[[dict], None],
                      cancel: threading.Event, only: list[str],
-                     take_newer: list[str] | None = None) -> dict:
-    """The real downloader: the run the command line makes in the project."""
+                     take_newer: list[str] | None = None,
+                     supplied: dict[str, str] | None = None) -> dict:
+    """The real downloader: the run the command line makes in the project;
+    `supplied` ({mod: path}) installs the files the player saved (item 68)."""
     return api.download_selection(folder, on_event=on_event, cancel=cancel, only=only,
-                                  take_newer=take_newer or ())
+                                  take_newer=take_newer or (), supplied=supplied)
+
+
+def _choose_file(parent: QWidget, mod: str) -> str:
+    """The file the player saved for `mod`, or '' when they cancel."""
+    path, _filter = QFileDialog.getOpenFileName(
+        parent, f"The file you saved for {mod}", "",
+        "Mod archives (*.zip *.7z *.rar *.tar *.tar.gz *.tgz *.tar.bz2 *.tbz2 *.iemod "
+        "*.exe);;All files (*)")
+    return str(path or "")
+
+
+def _open_url(url: str) -> bool:
+    return bool(QDesktopServices.openUrl(QUrl(url)))
 
 
 def _size(count: int) -> str:
@@ -65,10 +88,13 @@ class DownloadPage(QWidget):
     completeChanged = Signal(bool)
     finished = Signal()                         # a run has ended
 
-    def __init__(self, project_dir: str, download: Downloader = download_project) -> None:
+    def __init__(self, project_dir: str, download: Downloader = download_project,
+                 choose_file: Callable[[QWidget, str], str] = _choose_file,
+                 open_url: Callable[[str], bool] = _open_url) -> None:
         super().__init__()
         self.project_dir = project_dir
         self.download = download
+        self.choose_file, self.open_url = choose_file, open_url
         self.result: dict = {}
         self.rows: dict[str, QTreeWidgetItem] = {}
         self._thread: QThread | None = None
@@ -91,6 +117,20 @@ class DownloadPage(QWidget):
         self.cancel_button.clicked.connect(self.stop)
         self.retry_button.clicked.connect(self.retry)
         self.newer_button.clicked.connect(self.take_newer)
+        # item 68: a mod this tool cannot download, supplied by hand
+        self.page_button = QPushButton("Open the mod's page")
+        self.supply_button = QPushButton("Choose the saved file...")
+        self.page_button.clicked.connect(self.open_page)
+        self.supply_button.clicked.connect(self.supply)
+        self.page_button.setToolTip(
+            "Open the selected mod's page in your browser, to download it there "
+            "when this tool cannot (a page behind Cloudflare or a button).")
+        self.supply_button.setToolTip(
+            "Install the selected mod from the file you saved: it is checked as a "
+            "download is - an archive holding this mod, and the pinned checksum "
+            "when there is one. Only the file you choose is read.")
+        self.page_button.setEnabled(False)
+        self.supply_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
         self.retry_button.setEnabled(False)
         self.newer_button.setEnabled(False)
@@ -103,6 +143,7 @@ class DownloadPage(QWidget):
         self.table.setColumnWidth(2, 140)
         self.table.setColumnWidth(DETAIL, 320)
         self.table.itemChanged.connect(lambda *_: self._buttons())
+        self.table.currentItemChanged.connect(lambda *_: self._buttons())
         # the box sits in the last column, which the keyboard does not reach:
         # Space on a row with an offer ticks it
         self.table.installEventFilter(self)
@@ -118,6 +159,8 @@ class DownloadPage(QWidget):
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.retry_button)
         buttons.addWidget(self.newer_button)
+        buttons.addWidget(self.page_button)
+        buttons.addWidget(self.supply_button)
         buttons.addStretch(1)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>4. Download and extraction</h2>"))
@@ -153,11 +196,13 @@ class DownloadPage(QWidget):
         return self._thread is not None
 
     def start(self, only: list[str] | None = None,
-              take_newer: list[str] | None = None) -> None:
+              take_newer: list[str] | None = None,
+              supplied: dict[str, str] | None = None) -> None:
         """
         Download the selection (or only the mods `only` names) in a worker
         thread; `take_newer` names mods whose offered GitHub release replaces
-        the copy there.
+        the copy there; `supplied` ({mod: path}) installs the files the player
+        saved instead of downloading them.
         """
         if self.running():
             return
@@ -173,7 +218,9 @@ class DownloadPage(QWidget):
         download, folder, cancel = self.download, self.project_dir, self._cancel
         forward = self._forward
 
-        asked = {"take_newer": list(take_newer)} if take_newer else {}
+        asked: dict = {"take_newer": list(take_newer)} if take_newer else {}
+        if supplied:
+            asked["supplied"] = dict(supplied)
         # what each row was, to come back to if its take does not happen
         self._taking = {folder: (item.data(0, Qt.ItemDataRole.UserRole), item.text(DETAIL),
                                  item.data(NEWER, Qt.ItemDataRole.UserRole))
@@ -208,6 +255,29 @@ class DownloadPage(QWidget):
         ticked = self.ticked()
         if ticked:
             self.start(ticked, take_newer=ticked)
+
+    def _selected(self) -> str | None:
+        """The selected row's mod, when it is not there yet (item 68)."""
+        item = self.table.currentItem()
+        if item is None or item.data(0, Qt.ItemDataRole.UserRole) in DONE:
+            return None
+        return next((folder for folder, row in self.rows.items() if row is item), None)
+
+    def open_page(self) -> None:
+        """Open the selected mod's page in the browser (item 68)."""
+        mod = self._selected()
+        url = self.rows[mod].data(0, PAGE) if mod else None
+        if url and str(url).startswith(("https://", "http://")):
+            self.open_url(str(url))
+
+    def supply(self) -> None:
+        """Install the selected mod from the file the player saved (item 68)."""
+        mod = self._selected()
+        if mod is None or self.running():
+            return
+        path = self.choose_file(self, mod)
+        if path:
+            self.start([mod], supplied={mod: path})
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt)
         if (watched is self.table and isinstance(event, QKeyEvent)
@@ -314,6 +384,7 @@ class DownloadPage(QWidget):
                 self._offer(item, offer)
                 continue
             self._finish_row(item, record["status"], record["detail"])
+            item.setData(0, PAGE, record.get("url"))
             self._offer(item, record.get("newer"))
             if record.get("bytes"):
                 item.setText(2, _size(int(record["bytes"])))
@@ -328,6 +399,9 @@ class DownloadPage(QWidget):
         if offers:
             text += (f". {offers} mod(s) came from elsewhere and GitHub has a newer "
                      f"release: tick it under \"Newer release\" to install it")
+        if any(record["status"] in ("manual", "failed") for record in result["records"]):
+            text += (". A mod this tool cannot download can be supplied by hand: select "
+                     "it, open its page, save the file there and choose it")
         self.summary.setText(text + ".")
 
     def _failed(self, message: str) -> None:
@@ -346,6 +420,11 @@ class DownloadPage(QWidget):
         self.retry_button.setEnabled(not busy and any(
             item.data(0, Qt.ItemDataRole.UserRole) not in DONE for item in self.rows.values()))
         self.newer_button.setEnabled(not busy and bool(self.ticked()))
+        mod = self._selected()
+        self.supply_button.setEnabled(not busy and mod is not None)
+        page = self.rows[mod].data(0, PAGE) if mod else None
+        self.page_button.setEnabled(bool(page) and str(page).startswith(
+            ("https://", "http://")))
 
     def is_complete(self) -> bool:
         """Every mod of the selection is there: downloaded now or before."""
