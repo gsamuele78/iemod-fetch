@@ -145,3 +145,15 @@ class Answers:
     def next(self) -> str | None:
         """The next recorded answer of the batch, None when there is none."""
         return self._queue.popleft() if self._queue else None
+
+
+def question_line(text: str) -> str:
+    """The last line of what mod_installer sends, kept as what was asked
+    (GUI-AUDIT M8 item 63). It sends WeiDU's last `lookback` lines before
+    the question too, 10 by default (src/parser.rs; measured with the real
+    16.0.0): WeiDU's version, "Installing [Mod] [v30]", copy lines, an
+    earlier question, and the lines printed after it. Which of them is the
+    question, and which component asked it, is not known from that text:
+    item 48's expected texts will say."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
