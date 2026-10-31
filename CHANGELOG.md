@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **What each component of an install came to** (GUI-AUDIT item 69,
+  ADR-0053): the result is not only mod_installer's exit code. Each planned
+  component is installed, installed with warnings, not installed because of
+  errors, or not reached, according to WeiDU's own verdicts in the game's
+  WSETUP.DEBUG (only what this run appended) checked against its WeiDU.log
+  before and after. Where the two disagree, the log wins. It is written to
+  `install-plan/results.json` and returned as `Outcome.results`. Not shown
+  in the wizard yet.
 - **A mod this tool cannot download, supplied by hand** (GUI-AUDIT item 68,
   ADR-0052): in the wizard's download phase, a mod whose page is behind
   Cloudflare, a JavaScript button or a login can be opened in the browser and

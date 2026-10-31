@@ -629,3 +629,52 @@ def test_a_game_started_during_the_install_is_said_once_not_stopped(setup, monke
     assert warnings == [(f"warning: EET: {exe} (pid 1) is running from the game folder while it is "
                          "installed into - WeiDU fails if it cannot write dialog.tlk; close it")]
     assert len([e for e in events if e.kind == "batch"]) == 3      # every batch looked
+
+
+# --------------------------------------- what each component came to (item 69)
+def test_each_component_gets_a_result_and_results_json_is_written(setup, monkeypatch):
+    """The fake writes no debug file: WeiDU.log alone says what went in."""
+    import json
+    from pathlib import Path
+    install, _events = run(setup, monkeypatch, {"setup-ub.tp2#0": ["Restore? [y]es"]},
+                           ask=lambda *_a: "y")
+    outcome = install.run()
+    assert outcome.ok
+    got = [(x.key, x.status) for x in outcome.results]
+    assert got == [(("vienxay.tp2", 0), "installed"), (("eet.tp2", 0), "installed"),
+                   (("setup-ub.tp2", 0), "installed")]
+    written = json.loads(Path(setup["plan"], "results.json").read_text())
+    assert [c["status"] for c in written["components"]] == ["installed"] * 3
+    assert all("no word" in c["note"] for c in written["components"])
+
+
+def test_a_failed_component_and_what_follows_it(setup, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "eet.tp2#0")
+    install, _events = run(setup, monkeypatch, {})
+    outcome = install.run()
+    got = {x.key: x.status for x in outcome.results}
+    assert got[("vienxay.tp2", 0)] == "installed"
+    assert got[("eet.tp2", 0)] == "not reached"       # no debug file: the log is all
+    assert got[("setup-ub.tp2", 0)] == "not reached"
+
+
+def test_a_run_that_cannot_start_leaves_no_earlier_results(setup, monkeypatch):
+    import json
+    from pathlib import Path
+    Path(setup["plan"], "results.json").write_text('{"v": 1, "components": [1]}')
+    install, _events = run(setup, monkeypatch, {})
+    install.argv = [str(Path(setup["plan"], "no-such-program")), *install.argv[1:]]
+    with pytest.raises(OSError):
+        install.run()
+    assert json.loads(Path(setup["plan"], "results.json").read_text()) == \
+        {"v": 1, "components": []}
+
+
+def test_the_phases_are_the_games_command_gives_mod_installer(setup):
+    from iemod_fetch import install_run
+    games, plan = setup["games"], setup["plan"]
+    assert install_run.phases(plan, games) == [
+        (os.path.join(plan, "WeiDU-BGEE.log"), games["BGEE"]),
+        (os.path.join(plan, "WeiDU.log"), games["EET"])]
+    assert install_run.phases(plan, {"BG2EE": games["EET"]}) == [
+        (os.path.join(plan, "WeiDU.log"), games["EET"])]
