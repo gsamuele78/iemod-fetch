@@ -257,9 +257,13 @@ def prepare_https() -> None:
     Build the process's TLS context now (ADR-0048): on Windows that reads the
     whole certificate store while holding the GIL, which a window must not
     wait on. The wizard calls this before its window is shown; a run that
-    finds it built does not build it again.
+    finds it built does not build it again. A failure here (a broken trust
+    store, an SSLKEYLOGFILE that cannot be opened) does not stop the wizard
+    opening: nothing is kept, and the first HTTPS client builds it again and
+    reports the error as that run's.
     """
-    https_context()
+    with contextlib.suppress(Exception):
+        https_context()
 
 
 def update_data(settings: Settings | None = None, force: bool = False,

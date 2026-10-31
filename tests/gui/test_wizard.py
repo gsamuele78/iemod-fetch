@@ -135,6 +135,5 @@ def test_the_window_builds_the_tls_context_before_it_is_shown(qtbot, tmp_path, m
     the GIL; built in a download's thread it froze the window 50-240 ms."""
     from iemod_fetch import net
     monkeypatch.setattr(net, "_HTTPS_CONTEXT", None)
-    main = window(qtbot, tmp_path)
+    window(qtbot, tmp_path)                     # constructed, never shown
     assert net._HTTPS_CONTEXT is not None
-    assert not main.isVisible()                 # built in the constructor

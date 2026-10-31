@@ -3204,11 +3204,15 @@ window's included. Every `HttpClient` paid it: every download, catalogue
 update and conflict check started from the wizard.
 
 **Decision.** `net.https_context()` builds the default verifying context
-once per process, under a lock, with http.client's own settings (ALPN
-http/1.1), and every `HttpClient` passes it to its opener's
+once per process, under a lock, as http.client builds its own (through
+`ssl._create_default_https_context`, so the PEP 476 hook a site may set is
+honoured; ALPN http/1.1; post-handshake auth on), and every `HttpClient` passes it to its opener's
 `HTTPSHandler`. An `SSLContext` may serve connections from several threads.
 `api.prepare_https()` builds it ahead of time; `MainWindow` calls it in its
-constructor, before anything is drawn. The 100 ms limit of the M3 test
+constructor, before anything is drawn. If building fails there (an
+`SSLKEYLOGFILE` that cannot be opened, a broken trust store), the wizard
+still opens and nothing is kept: the first HTTPS client builds it again and
+reports the error as that run's failure, as before. The 100 ms limit of the M3 test
 stays.
 
 **Consequences.**
@@ -3216,9 +3220,11 @@ stays.
   wizard pays it at start-up, before its window appears; the command line
   pays it once at its first HTTPS client.
 - What is accepted does not change: the same default context, certificate
-  and hostname verification required, the system's trust store (ADR-0003).
+  and hostname verification required, the system's trust store (the HTTP
+  layer's policy in docs/SECURITY-MODEL.md).
   A trust store changed while the process runs is seen at the next start,
   not the next download.
 - Tests: `tests/test_https_context.py` (one build, shared, still
-  verifying, built by `prepare_https`) and the wizard's test that the
+  verifying, the PEP 476 hook honoured, built by `prepare_https`, a failed
+  early build left to the first run) and the wizard's test that the
   constructor builds it. The `GUI latency` workflow re-measures it.

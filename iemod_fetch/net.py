@@ -192,14 +192,17 @@ def https_context() -> ssl.SSLContext:
     its window that long. Built once and shared (an SSLContext may serve
     connections from several threads), the cost is paid once per process,
     and the wizard pays it before its window is drawn (`prepare_https`).
-    Same settings as http.client's own: the default verifying context, ALPN
-    http/1.1.
+    Built as http.client builds its own: through
+    ssl._create_default_https_context (so the PEP 476 hook a site may set is
+    still honoured), ALPN http/1.1, post-handshake auth on.
     """
     global _HTTPS_CONTEXT  # noqa: PLW0603 (one per process, set once under the lock)
     with _HTTPS_LOCK:
         if _HTTPS_CONTEXT is None:
-            context = ssl.create_default_context()
+            context = ssl._create_default_https_context()  # noqa: SLF001 (PEP 476 hook)
             context.set_alpn_protocols(["http/1.1"])
+            if context.post_handshake_auth is not None:
+                context.post_handshake_auth = True
             _HTTPS_CONTEXT = context
         return _HTTPS_CONTEXT
 
