@@ -228,10 +228,15 @@ def alive(pid):
         listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
                                 capture_output=True, text=True, check=False).stdout
         return str(pid) in listed
+    # gone between the open and the read (ESRCH), or its pid taken by another
+    # program on a busy runner: not the child (both seen on CI, PR #115)
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
-            return fh.read().split(")")[-1].split()[0] != "Z"
-    except FileNotFoundError:
+            if fh.read().split(")")[-1].split()[0] == "Z":
+                return False
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            return b"SIG_IGN" in fh.read()           # the IGNORING child's own code
+    except OSError:
         return False
 
 
