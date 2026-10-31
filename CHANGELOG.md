@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The game closed before an install starts** (GUI-AUDIT item 67,
+  ADR-0051): before an install or a resume, a program running from a game
+  folder (the game, a launcher, another WeiDU; under Wine or Proton found by
+  its command line) stops it, named with its pid; so does, on Windows, a
+  `dialog*.tlk` another program still holds after a short retry. Each says
+  to close it and try again. mod_installer starts each batch's WeiDU
+  itself, so at each batch a program found is only said, once, as a
+  warning; the install goes on.
 - **What an install answered is recorded** (GUI-AUDIT M8 item 63,
   ADR-0045): `install-plan/answers.json` lists each question's last line, the
   answer and where it came from (the log, the player, EET's folder), written

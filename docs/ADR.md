@@ -3505,3 +3505,91 @@ Those were worse than a refusal: when Windows refuses the rename,
 - A mod is installed whole or not at all: the old copy stays or comes back.
 - Measured on the test suite only: the hold is simulated (a fake operation
   raising the Windows errors); no antivirus was run.
+
+---
+
+## ADR-0051 — The game is closed before an install starts; a game started meanwhile is said, not stopped
+
+**Status:** accepted (2026-10-31, GUI-AUDIT M8 item 67)
+
+### Context
+
+When a game, a launcher or another WeiDU is running from the game folder
+while a mod is installed into it, the install can fail. The game opens
+`dialog.tlk`, and WeiDU writes that file at the end of a component. On
+Windows a program holding `dialog.tlk` open makes that write fail. Another
+WeiDU can also write the same files at the same time.
+
+Chriz Easy BG makes two checks (`engine/src/preflight.rs` L399, L735, MIT;
+the idea only, nothing is copied):
+
+- no running executable under the target folder;
+- the talk tables open exclusively.
+
+It makes them before the install and again before each batch. It can do so
+because it starts WeiDU itself, one batch at a time.
+
+This program does not start WeiDU: mod_installer does. Read in its 16.0.0
+source, mod_installer logs `Installing mod ...` and starts that batch's WeiDU
+right after it (`installers.rs` L144, `runner.rs` L198). This program learns
+of a batch only from that log line, when WeiDU is already starting. There is
+no point between two batches at which it could hold mod_installer back.
+
+### Decision
+
+1. **Before the install and before a resume**, `gamelock.problems` refuses
+   to start in two cases:
+   - a running program's executable is under one of the games' folders. The
+     listing comes from `/proc/*/exe` on Linux, `ps -o comm=` on macOS, and
+     `K32EnumProcesses` + `QueryFullProcessImageNameW` on Windows.
+   - on Windows, a `dialog*.tlk` (at the root, or in `lang/*/`) cannot be
+     opened for reading and writing with no sharing.
+
+   The two refusals are told apart. "The game is running" names the
+   program and its pid; "is open in another program" names the talk table.
+   Each says to close it and try again, and the ConfigError carries it,
+   like the other preflight refusals. There is no "install anyway": what
+   stops the install is closed by the player (review of #105).
+   - **Wine and Proton (Linux)**: for a Windows program, `/proc/<pid>/exe`
+     is Wine's loader (`wine64-preloader`), not the game. When the loader
+     is a wine binary or the command line names an `.exe`, the command
+     line's first two words are read as well. A `Z:\...` path is `/...`;
+     another drive is resolved through the process's `WINEPREFIX` (else
+     `~/.wine`) `dosdevices` link. The working folder is not used: Wine's
+     own helpers (services.exe, explorer.exe) may inherit the game's
+     folder and outlive the game.
+   - **A talk table held for a moment** (an antivirus, the indexer) is
+     tried again, 5 times about 30 ms apart, before it is refused.
+2. **At each batch during the run**, only the programs are listed again. A
+   program found there is said once, as a warning in the install's output,
+   and the install goes on. The warning names the program and says why
+   WeiDU may fail. It cannot stop the batch, which has already started.
+   Stopping would cut a component in half, which is worse than the failure
+   it would prevent. The talk tables are not checked during the run: WeiDU
+   itself holds them then.
+3. This install's own mod_installer and WeiDU are ignored when they sit in
+   the game folder. So is this program itself, by its pid and
+   `sys.executable`: the Windows zip or the GUI unpacked beside Baldur.exe
+   would otherwise refuse every install, naming a program the player cannot
+   close because it is the one asking (review of #105).
+
+### Consequences
+
+- What is not seen:
+  - a process this user may not inspect: another account's, which `/proc`
+    refuses with EACCES and which is skipped without an error, or an
+    elevated one on Windows;
+  - a Wine game started through a launcher whose command line names
+    neither the game's `.exe` nor a path under its folder;
+  - on macOS, a game whose executable is outside the folder given, when the
+    folder is an .app's `Contents/Resources` and its executable is in
+    `Contents/MacOS`.
+- A listing that fails refuses nothing. It is treated as nothing found,
+  because refusing on a listing error would block an install with no way
+  round it.
+- Elsewhere than Windows nothing locks a file against WeiDU, so the
+  talk-table check is Windows only.
+- Item 67 as proposed asked for a check *before* each batch. That is not
+  possible while mod_installer drives WeiDU, and would need this program to
+  start WeiDU batch by batch itself. That is outside this item; until then,
+  what item 67 still lacks is that check.
