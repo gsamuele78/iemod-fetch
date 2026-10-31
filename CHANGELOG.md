@@ -8,6 +8,14 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Fixed
+- **A file Windows holds for a moment no longer stops a download, an
+  extraction or a backup** (GUI-AUDIT M8 item 66, ADR-0050). A rename refused
+  because another program - an antivirus scanning a file just written - holds
+  the file is tried again for up to about 5 seconds. Moving an extracted mod
+  into the mods folder is now a rename, never a copy and a delete that a held
+  file could split in two.
+
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass
   today's ceilings: read from their zips' central directories by HTTP Range

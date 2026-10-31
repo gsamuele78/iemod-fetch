@@ -16,6 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+from . import atomic
 from .atomic import write_text
 from .archives import safe_extract
 from .errors import InstallConflict, NotThisMod, VerificationFailed
@@ -121,7 +122,7 @@ def fold_root_tp2(root: str, tp2_file: str, name: str) -> str:
     mod_dir = os.path.join(root, children[0])
     inner = os.path.join(mod_dir, tp2_file)
     if not os.path.exists(inner):
-        shutil.move(os.path.join(root, tp2_file), inner)
+        atomic.move(os.path.join(root, tp2_file), inner)
     return mod_dir
 
 
@@ -160,12 +161,12 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
             backup_root = os.path.join(target_root, BACKUP_DIR)
             os.makedirs(backup_root, exist_ok=True)
             backup = os.path.join(backup_root, f"{folder}.{time.strftime('%Y%m%dT%H%M%S')}")
-            shutil.move(dest, backup)
+            atomic.move(dest, backup)
 
         os.makedirs(dest, exist_ok=False)
         count = 0
         for entry in os.listdir(root):
-            shutil.move(os.path.join(root, entry), os.path.join(dest, entry))
+            atomic.move(os.path.join(root, entry), os.path.join(dest, entry))
             count += 1
 
         verified = verify_mod_dir(dest, folder, expect_tp2)

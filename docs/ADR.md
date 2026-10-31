@@ -3243,3 +3243,47 @@ stays.
   verifying, the PEP 476 hook honoured, built by `prepare_https`, a failed
   early build left to the first run) and the wizard's test that the
   constructor builds it. The `GUI latency` workflow re-measures it.
+
+---
+
+## ADR-0050 — A rename waits out a file Windows holds for a moment
+
+**Status:** accepted (2026-10-31). GUI-AUDIT M8 item 66.
+
+**Context.** On Windows a file another program holds open - an antivirus
+scanning what was just written or extracted, the search indexer - cannot be
+renamed or replaced until it lets go: `os.replace` fails with
+ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33) or ERROR_ACCESS_DENIED
+(5), and the download, the extraction or the backup stops with it. Chriz Easy
+BG met it and retries such renames (`engine/src/fs_retry.rs`, MIT, read at
+508256a: 12 attempts, 10 ms doubling to 1 s, about 5.3 s). Here 11 places
+renamed: 8 `os.replace`/`os.rename` (`atomic.py`, `archives.py`, `backup.py`
+x2, `datasync.py` x2, `net.py`, `toolchain.py`) and 3 `shutil.move` in
+`install.py`, from the staging folder into the mods folder. Those three were
+worse than a refusal: when Windows refuses the rename, `shutil.move` copies
+and then deletes, and a file still held at the delete splits the mod between
+two folders.
+
+**Decision.**
+- `atomic.retried(operation)`: on Windows, a `PermissionError` whose
+  `winerror` is 5, 32 or 33 is tried again, 12 times, waiting 10 ms doubling
+  to 1 s (about 5.3 s in all); any other error, and every error on other
+  systems, is raised at once. CEBG's measure, its idea; no code taken.
+- `atomic.replace`, `atomic.rename` and `atomic.move` use it, and every
+  rename in the tool goes through them. `atomic.move` renames; it falls back
+  to `shutil.move` only across file systems (EXDEV), never because a file is
+  held. The three `install.py` moves are within the mods folder (the staging
+  folder is under it), so they are renames.
+- A test walks the package and fails on any `os.replace`, `os.rename` or
+  `shutil.move` outside `atomic.py`.
+
+**Consequences.**
+- A file held for under about 5 s no longer stops a download, an extraction,
+  a backup or a data refresh on Windows; one held longer still does, as
+  before, with Windows' own error.
+- An ERROR_ACCESS_DENIED that is permanent (a read-only folder) now takes
+  about 5 s before it is said. Accepted: it is rare, and it cannot be told
+  from a held file by its code.
+- Measured on the test suite only: the hold itself is simulated (a fake
+  operation raising the Windows errors); no antivirus was run.
+

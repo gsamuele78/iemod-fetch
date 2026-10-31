@@ -8,8 +8,63 @@ crash left it behind. Here each write gets its own temp beside the target
 target keeps the permissions it had.
 """
 import contextlib
+import errno
 import os
 import secrets
+import shutil
+import time
+from collections.abc import Callable
+from typing import Any
+
+# Windows: a file another program holds open for a moment - an antivirus
+# scanning what was just written, the search indexer - cannot be renamed until
+# it lets go (GUI-AUDIT M8 item 66). ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION,
+# ERROR_LOCK_VIOLATION. Retried 12 times, waiting 10 ms doubling to 1 s, about
+# 5.3 s in all - Chriz Easy BG's measure (engine/src/fs_retry.rs, MIT, read at
+# 508256a; the idea, not its code).
+_HELD = frozenset({5, 32, 33})
+ATTEMPTS, FIRST_WAIT_S, LONGEST_WAIT_S = 12, 0.01, 1.0
+
+
+def retried(operation: Callable[..., Any], *args: Any, windows: bool | None = None,
+            sleep: Callable[[float], Any] = time.sleep) -> Any:
+    """`operation(*args)`, tried again while Windows says another program holds
+    the file; any other error, and every error elsewhere, at once."""
+    windows = os.name == "nt" if windows is None else windows
+    wait = FIRST_WAIT_S
+    for attempt in range(ATTEMPTS):
+        try:
+            return operation(*args)
+        except PermissionError as exc:
+            if (not windows or getattr(exc, "winerror", None) not in _HELD
+                    or attempt == ATTEMPTS - 1):
+                raise
+        sleep(wait)
+        wait = min(wait * 2, LONGEST_WAIT_S)
+    raise AssertionError("unreachable")           # the last attempt returns or raises
+
+
+def replace(source: str, target: str) -> None:
+    """os.replace, waiting out a file held for a moment on Windows."""
+    retried(os.replace, source, target)
+
+
+def rename(source: str, target: str) -> None:
+    """os.rename, waiting out a file held for a moment on Windows."""
+    retried(os.rename, source, target)
+
+
+def move(source: str, target: str) -> None:
+    """A rename on one file system, waiting out a held file; shutil.move only
+    across file systems. Not shutil.move alone: when Windows refuses the
+    rename of a held file it copies and then deletes, and a held file left
+    behind splits the move in two."""
+    try:
+        replace(source, target)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        shutil.move(source, target)
 
 
 def write_text(path: str, text: str, *, durable: bool = False) -> None:
@@ -41,7 +96,7 @@ def write_text(path: str, text: str, *, durable: bool = False) -> None:
                 os.fsync(fh.fileno())
         if mode is not None:
             os.chmod(temp, mode)
-        os.replace(temp, path)
+        replace(temp, path)
     except BaseException:
         with contextlib.suppress(OSError):
             os.chmod(temp, 0o600)       # Windows refuses to delete a read-only file
