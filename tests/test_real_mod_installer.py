@@ -263,3 +263,90 @@ def test_a_component_that_fails_is_undone_by_weidu_and_resumes(tmp_path):
     assert not (game / "override" / "new.txt").exists()
     progress = api.install_progress(str(plan), {"BG2EE": str(game)})
     assert progress["state"] == "partial" and progress["phases"][0]["next"] == "bad/bad.tp2 #1"
+
+
+TWO_QUESTIONS = """BACKUP ~twoq/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks a yes or no, then a number~
+PRINT ~Restore the tavern? [y]es or [n]o~
+ACTION_READLN first
+PRINT ~Please select 1 or 2 and press Enter.~
+ACTION_READLN second
+APPEND_OUTER ~twoq-answers.txt~ ~%first% %second%~
+"""
+
+
+def test_recorded_answers_fit_the_real_window(tmp_path):
+    """Item 63, review of #98: mod_installer sends each question with WeiDU's
+    lines before it - here the yes/no before "select 1 or 2". The recorded
+    answers both go in, nobody is asked, and what was answered is recorded."""
+    import json
+
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "twoq-answers.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "twoq").mkdir(parents=True)
+    (mods / "twoq" / "twoq.tp2").write_text(TWO_QUESTIONS)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~TWOQ/TWOQ.TP2~ #0 #0 // Asks a yes or no, then a number // @wlb-inputs: y,2\n")
+    lines, asked = [], []
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: asked.append(q) or None,
+                                on_event=lambda e: lines.append(e.text)).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and asked == [], transcript
+    assert [a.source for a in outcome.answered] == ["recorded", "recorded"], transcript
+    assert (game / "twoq-answers.txt").read_text().split() == ["y", "2"]
+    assert any("Installing [" in a.question for a in outcome.answered), transcript
+    kept = json.loads((plan / "answers.json").read_text())["answered"]
+    assert [(k["question"], k["answer"]) for k in kept] == [
+        ("Restore the tavern? [y]es or [n]o", "y"),
+        ("Please select 1 or 2 and press Enter.", "2")]
+
+
+MENU_AFTER = """BACKUP ~menu/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks with its menu after the question~
+PRINT ~Which portraits?~
+PRINT ~1] Original~
+PRINT ~2] Select 5 or 10 random ones~
+ACTION_READLN choice
+APPEND_OUTER ~menu-answer.txt~ ~%choice%~
+"""
+
+
+def test_a_menu_after_the_question_does_not_limit_its_answer(tmp_path):
+    """Second review of #98: mod_installer fires on "2] Select 5 or 10 random
+    ones" (its choice words); the recorded "1" still goes in."""
+    import json
+
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "menu-answer.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "menu").mkdir(parents=True)
+    (mods / "menu" / "menu.tp2").write_text(MENU_AFTER)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~MENU/MENU.TP2~ #0 #0 // Asks with its menu after the question // @wlb-inputs: 1\n")
+    lines, asked = [], []
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: asked.append(q) or None,
+                                on_event=lambda e: lines.append(e.text)).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and asked == [], transcript
+    assert (game / "menu-answer.txt").read_text().split() == ["1"]
+    kept = json.loads((plan / "answers.json").read_text())["answered"]
+    assert [(k["answer"], k["source"]) for k in kept] == [("1", "recorded")], kept

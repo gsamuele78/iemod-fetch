@@ -15,6 +15,11 @@ FAKE_GRANDCHILD: a file the pid of a sleeping child is written to - WeiDU's
 FAKE_EXIT_EARLY: with FAKE_GRANDCHILD, exit 0 right after starting it,
   leaving it to hold the output.
 FAKE_ECHO_ENV: the name of a variable whose value is logged at the start.
+FAKE_VERSION: the mods' version WeiDU prints ("Installing [x] [v30]").
+
+A question is sent as the real one sends it (src/parser.rs; review of #98):
+the last LOOKBACK lines of WeiDU's output before it - its version, the
+"Installing" line, earlier questions of the batch - then the question.
 """
 import json
 import os
@@ -22,6 +27,7 @@ import subprocess
 import sys
 import time
 
+LOOKBACK = 10                     # mod_installer's default --lookback
 
 IGNORING = """
 import signal, time
@@ -73,12 +79,18 @@ def install(game, log_file, questions, transcript, fail, slow):
             if os.environ.get("FAKE_EXIT_EARLY"):
                 return 0
         time.sleep(slow)
+        version = os.environ.get("FAKE_VERSION", "v1")
+        weidu = ["[weidu] WeiDU version 25100", "    "]        # one WeiDU per batch
         for tp2, _folder, _lang, number, line in batch:
             key = f"{tp2.lower()}#{number}"
+            weidu += [f"    Installing [{tp2} component {number}] [{version}]",
+                      "    Copying 1 file ...", "    "]
             for question in questions.get(key, []):
                 log("INFO", "runner", "User Input required")
                 log("INFO", "runner", "Question is")
-                log("INFO", "runner", question)
+                window = weidu[-LOOKBACK:] + [f"    {question}"]
+                log("INFO", "runner", "\n".join(window))
+                weidu += [f"    {question}", "    "]
                 answer = sys.stdin.readline()
                 if not answer:
                     log("ERROR", "main", "standard input closed")

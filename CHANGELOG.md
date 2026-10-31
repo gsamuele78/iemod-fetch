@@ -9,6 +9,12 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **What an install answered is recorded** (GUI-AUDIT M8 item 63,
+  ADR-0045): `install-plan/answers.json` lists each question's last line, the
+  answer and where it came from (the log, the player, EET's folder), written
+  on every install run. Recorded answers still go in order: no rule on a
+  question's text can tell which answers a mod takes (Tweaks Anthology #3210
+  takes 0 outside its "between 6 and 15"), so none holds one back.
 - **A known EET fault is said before installing** (GUI-AUDIT M8 item 65,
   ADR-0045). On Windows, when the Documents folder is registered with a space
   (a OneDrive folder such as "OneDrive - Company\Documents", or "D:\My

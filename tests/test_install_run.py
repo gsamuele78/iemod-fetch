@@ -17,7 +17,7 @@ import pytest
 from iemod_fetch import api
 from iemod_fetch.errors import ConfigError
 from iemod_fetch.install_run import command, preflight
-from iemod_fetch.prompts import OutputReader, recorded_answers, wlb_inputs
+from iemod_fetch.prompts import OutputReader, question_line, recorded_answers, wlb_inputs
 
 HERE = os.path.dirname(__file__)
 FAKE = os.path.join(HERE, "data", "fake_mod_installer.py")
@@ -143,7 +143,10 @@ def test_eet_is_installed_answering_each_question_from_where_it_should(setup, mo
     assert answers(setup) == ["1", "", setup["games"]["BGEE"], "y"]
     assert [a.source for a in outcome.answered] == ["recorded", "recorded", "EET", "player"]
     # the player was asked only what nothing recorded, with its component
-    assert asked == [("Restore the tavern? [y]es or [n]o", (("setup-ub.tp2", 0),))]
+    # the question comes with WeiDU's lines before it, as mod_installer sends it
+    assert [(question_line(q), b) for q, b in asked] == \
+        [("Restore the tavern? [y]es or [n]o", (("setup-ub.tp2", 0),))]
+    assert "Installing [SETUP-UB.TP2 component 0]" in asked[0][0]
     # each game's WeiDU.log now names what went in, the recorded answers not copied
     eet_log = read(setup["games"]["EET"], "WeiDU.log")
     assert "EET core" in eet_log and "SETUP-UB.TP2" in eet_log
@@ -316,7 +319,7 @@ def test_answers_that_run_out_are_asked_never_left_blank(setup, monkeypatch):
         ask=lambda question, batch: asked.append(question) or "2")
     outcome = install.run()
     assert outcome.ok
-    assert asked == ["And another"]
+    assert [question_line(q) for q in asked] == ["And another"]
     assert answers(setup)[:2] == ["1", "2"]
     assert [a.source for a in outcome.answered][:2] == ["recorded", "player"]
 
@@ -499,3 +502,92 @@ def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
     (game / "MyMod" / "saved" / "1" / "UNINSTALL.1").write_text("override/x\n")
     progress = api.install_progress(setup["plan"], setup["games"])
     assert progress["state"] == "mismatch" and "stopped half-way" in progress["problem"]
+
+
+# ------------------------------------- what was answered (item 63)
+# The fake sends a question as mod_installer does: WeiDU's last 10 lines -
+# its version, "Installing [x] [vN]", earlier questions - then the question.
+def with_answers(setup, answers_text):
+    from pathlib import Path
+    log = Path(setup["plan"], "WeiDU.log")
+    log.write_text(log.read_text().replace(
+        "Restorations: v30", f"Restorations: v30 // @wlb-inputs: {answers_text}"))
+
+
+def test_recorded_answers_go_in_order_whatever_the_question_says(setup, monkeypatch):
+    """Fourth review of #98: Tweaks Anthology #3210 asks "between 6 and 15,
+    or 0 for no minimum" and takes 0 - its tp2 decides, not its text. The
+    recorded answers go in as recorded; nobody is asked."""
+    with_answers(setup, "0,y")
+    asked = []
+    install, _events = run(setup, monkeypatch, {
+        "eet.tp2#0": [EET_QUESTION],
+        "setup-ub.tp2#0": [
+            "Select a minimum STRENGTH value, between 6 and 15, or 0 for no minimum:",
+            "Restore the tavern? [y]es or [n]o"]},
+        ask=lambda question, batch: asked.append(question) or "x")
+    outcome = install.run()
+    assert outcome.ok and asked == []
+    assert answers(setup)[-2:] == ["0", "y"]
+
+
+def test_what_was_answered_is_recorded_and_never_read_back(setup, monkeypatch):
+    """answers.json says what each question got and from where - for the
+    player and a bug report; a later install decides as if it were not
+    there."""
+    import json
+    from pathlib import Path
+    with_answers(setup, "y")
+    questions = {"eet.tp2#0": [EET_QUESTION],
+                 "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]}
+    install, _events = run(setup, monkeypatch, questions)
+    assert install.run().ok
+    kept = json.loads(Path(setup["plan"], "answers.json").read_text())
+    assert kept["v"] == 1
+    assert kept["answered"][-1] == {"question": "Restore the tavern? [y]es or [n]o",
+                                    "answer": "y", "source": "recorded"}
+    assert kept["answered"][0]["source"] == "EET"
+    Path(setup["plan"], "answers.json").write_text(json.dumps(
+        {"v": 1, "answered": [{"question": "Restore the tavern? [y]es or [n]o",
+                               "answer": "n", "source": "player"}]}))
+    for game in setup["games"].values():
+        for name in os.listdir(game):
+            if name != "chitin.key":
+                os.remove(os.path.join(game, name))
+    install, _events = run(setup, monkeypatch, questions)
+    assert install.run().ok and answers(setup)[-1] == "y"       # the log's, as before
+
+
+def test_a_run_that_answers_nothing_leaves_no_earlier_record(setup, monkeypatch):
+    import json
+    from pathlib import Path
+    Path(setup["plan"], "answers.json").write_text('{"v": 1, "answered": [{"answer": "old"}]}')
+    install, _events = run(setup, monkeypatch, {})          # no question asked
+    assert install.run().ok
+    assert json.loads(Path(setup["plan"], "answers.json").read_text()) == \
+        {"v": 1, "answered": []}
+
+
+def test_a_run_that_cannot_start_leaves_no_earlier_record(setup, monkeypatch):
+    """Review of #98: mod_installer that will not start (gone, not a
+    program) still replaces the record of the run before."""
+    import json
+    from pathlib import Path
+    Path(setup["plan"], "answers.json").write_text('{"v": 1, "answered": [{"answer": "old"}]}')
+    install, _events = run(setup, monkeypatch, {})
+    install.argv = [str(Path(setup["plan"], "no-such-program")), *install.argv[1:]]
+    with pytest.raises(OSError):
+        install.run()
+    assert json.loads(Path(setup["plan"], "answers.json").read_text()) == \
+        {"v": 1, "answered": []}
+
+
+def test_batch_mode_from_the_environment_does_not_reach_mod_installer(monkeypatch):
+    """One batch is one mod's consecutive components only while
+    mod_installer's BATCH_MODE (clap reads it from the environment) is off;
+    it is never passed on."""
+    from iemod_fetch import install_run
+    monkeypatch.setenv("BATCH_MODE", "true")
+    monkeypatch.setenv("BATCH_SIZE", "50")
+    env = install_run.mod_installer_env()
+    assert not {"BATCH_MODE", "BATCH_SIZE"} & {key.upper() for key in env}

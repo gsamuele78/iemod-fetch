@@ -2948,6 +2948,59 @@ version up to the tag).
   dark0dave/mod_installer. Whether to report it is the maintainer's call;
   nothing has been opened.
 
+### GUI-AUDIT M8 item 63: no answer is held back on its question's text; what was answered is recorded
+
+- **Context.** The log's `// @wlb-inputs:` answers are sent in order, one per
+  question, whatever the question. A mod whose prompts changed between the
+  version a log was recorded on and the one installed shifts them silently.
+  Chriz Easy BG (MIT, read at 508256a) sends each answer only after its
+  expected question text appears (`engine/src/weidu/runner.rs`,
+  `PromptMatcher`); its recipe authors that text. Our logs come from players
+  and BIO, and hold answers only.
+- **What mod_installer sends (measured; reviews of #98).** When a line looks
+  like a question (its choice words and phrases,
+  `src/config/parser_config.rs`), mod_installer copies in WeiDU's last
+  `lookback` lines, 10 by default (`src/parser.rs`), then collects until the
+  output goes quiet. With the real 16.0.0 and WeiDU 251: WeiDU's version
+  line, "Installing [First] [v30]", "Copying 1 file ...", the question; an
+  earlier question stays in the window when it is near, and a menu printed
+  after the question follows it - the parser may fire on an option line.
+  With 16.0.0's batches, several components share one window's history.
+- **What was tried, and dropped - four rounds, each independently reviewed.**
+  (1) Identity: the question an answer was given for, kept per component and
+  place, a changed one refused, the player's answers kept and given again.
+  With several components in a batch the answers were kept under the wrong
+  one; a conditional question skipped made the next one's right answer
+  refused; short prompts dragged game paths into the identity; kept answers
+  never expired. (2) A rule on the text alone - an answer not among the
+  choices a plain question names is held back. Real mods refute it: Tweaks
+  Anthology #3210 asks "Select a minimum STRENGTH value, between 6 and 15, or
+  0 for no minimum:" and takes 0 (its tp2's `(s < 6) AND (s != 0)` decides,
+  not its text); "Choose 1-3, or 0 to cancel", "Choose 1 or 2, or 3 for
+  both", "Overwrite? (Y/N/A)", "[Y]es or [N]o or [C]ancel", "press Return
+  for the default" were all refused wrongly. A rule that refuses what it
+  does not recognise fails closed, the opposite of what is safe here.
+  Which answers a question takes is in the mod's tp2, not in the window's
+  text.
+- **Decision.** No answer is held back on its question's text. Recorded
+  answers go in order, exactly as before; a question with no recorded
+  answer is asked of the player, who sees mod_installer's whole window.
+  `install-plan/answers.json` records what each install answered - each
+  question's last line, the answer, recorded/player/EET, under `"v": 1` -
+  written on every run (empty too, so an earlier run's record is not left),
+  for the player and for a bug report. Nothing reads it back to decide.
+  On a resume the record holds the resumed part only: the run before it
+  wrote its own, which the resume replaces. Which question it is, and which component's - and with them answers by
+  question rather than by place - come with item 48's expected texts (each
+  component's READLNs resolved from its .tra, `readln.py`, ADR-0049), not
+  from the window.
+- **Consequences.** A log whose answers shifted against a mod's changed
+  prompts still installs with them shifted, as before; the record says what
+  went where. The stand-in mod_installer now sends WeiDU's last 10 lines with
+  each question, as the real one does, and tests with the real mod_installer
+  and WeiDU show a yes/no then "select 1 or 2" installed from a recorded
+  "y,2", and a menu printed after "Which portraits?" taking its recorded "1".
+
 ### GUI-AUDIT M8 item 65: a known upstream fault is said before installing
 
 Kept in ADR-0045 on purpose: it is part of what the wizard says before it
