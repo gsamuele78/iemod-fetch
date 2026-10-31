@@ -315,7 +315,9 @@ def scan(tp2_path: str, files: Mapping[str, str], language_index: int = 0,
                  if "%" not in m.group(2)}
     reader = _Reader(files, strings, folder, lang, weidu_os, constants, prefix)
     src = reader.source(tp2_key)
-    assert src is not None
+    if src is None:             # not reached: the tp2 is among the files read
+        found.unread.append(f"{tp2_path} (not read)")
+        return found
     toks = src.tokens
     # component chunks, by offset, as tp2.py and tra.py cut them
     starts = [m.start() for m in _COMPONENT_START.finditer(src.text)]
