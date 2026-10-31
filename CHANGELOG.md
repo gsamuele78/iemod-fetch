@@ -8,14 +8,44 @@ Python API, which is internal.
 
 ## [Unreleased]
 
-### Fixed
-- **A file Windows holds for a moment no longer stops a download, an
-  extraction or a backup** (GUI-AUDIT M8 item 66, ADR-0050). A rename refused
-  because another program - an antivirus scanning a file just written - holds
-  the file is tried again for up to about 5 seconds (0.15 s for a project file
-  saved from the window). An extracted mod moves into the mods folder in one
-  rename, not file by file, and if that fails the copy it replaced is put
-  back.
+### Added
+- `api.install_questions(plan_dir, mods_dir)` (GUI-AUDIT item 48, ADR-0049):
+  for every component of the planned WeiDU logs, the questions its mod's
+  files reach - read in the language the log installs it in - and the answers
+  the log records; each component is "none", "answered", "maybe" (answers
+  for what it surely asks, not for a question under a condition), "partial",
+  "unanswered" or "unknown" (a question whose text is set elsewhere, a path its
+  reading could not follow, the mod not in the mods folder), and the plan is
+  forecast unattended only when every component is none or answered. A
+  forecast, not a promise. The wizard's planned logs carry no answers yet, so
+  there a component that asks is "unanswered" or "maybe" until the phase-5
+  questionnaire writes them. Not in the wizard yet.
+
+### Release workflow
+- "Latest" is put back on the newest release of CHANGELOG.md
+  (`tools/release_notes.py latest`) every six hours (release-latest.yml) and
+  at every push to `main` that changes CHANGELOG.md or the version: a
+  back-fill's tag starts the tagged commit's own, older release workflow,
+  which marked 4.0.0 Latest over 4.0.1 on 2026-10-31. It fails, changing
+  nothing, when GitHub does not answer. docs/RELEASING.md says how to cancel
+  that second run.
+
+### Added
+- **The questions a mod will ask, read before installing** (GUI-AUDIT item
+  48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
+  `ACTION_READLN` it may reach - in its body, the functions and macros it
+  launches, the files it includes, its ALWAYS block - with the question's text
+  in the project's language, keyed by its .tra reference, and says which may
+  not be asked (under a condition), which repeat until valid, and what could
+  not be followed. Measured on 105 mods of the reference build
+  (`tools/readln_census.py`): 45 of 51 READLNs reached (88%), the question
+  known for 42 of those (25 a .tra string in the player's language, 17 a fixed
+  English text); of the 6 not reached, 5 are SCS's, behind paths built while
+  installing, and 1 follows a FAIL. Not wired into the wizard yet: the questionnaire before
+  Install is next.
+- ADR-0049: every question is known before the install starts, the player
+  answers them in one place, a timer never answers, and a watchdog only warns
+  when an install goes silent (the owner's decisions).
 
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass
@@ -24,6 +54,15 @@ Python API, which is internal.
   1.457 GiB, both under the 2 GiB unpacked ceiling, and no member trips the
   ratio guard. `--max-bytes` defaults to 2 GiB, not the 300 MB one measuring run
   used.
+
+### Fixed
+- **A file Windows holds for a moment no longer stops a download, an
+  extraction or a backup** (GUI-AUDIT M8 item 66, ADR-0050). A rename refused
+  because another program - an antivirus scanning a file just written - holds
+  the file is tried again for up to about 5 seconds (0.15 s for a project file
+  saved from the window). An extracted mod moves into the mods folder in one
+  rename, not file by file, and if that fails the copy it replaced is put
+  back.
 
 ## [4.0.1] - 2026-10-31
 

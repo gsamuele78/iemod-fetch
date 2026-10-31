@@ -162,6 +162,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: python tools/release_notes.py sync
+      # A back-fill's tag starts the tagged commit's own, older release
+      # workflow, which may mark that back-fill Latest (4.0.0 over 4.0.1 on
+      # 2026-10-31): put "Latest" back on the newest release.
+      - name: Latest is the newest release
+        if: ${{ !cancelled() }}        # a failed notes edit does not stop this
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python tools/release_notes.py latest
 
   verify:
     name: Re-run the full gate
