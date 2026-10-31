@@ -22,6 +22,14 @@ Python API, which is internal.
   `install_questions` says per question whether it is answerable
   `beforehand`; `load_install_answers`, `save_install_answers`,
   `write_install_answers`, `answer_key`.
+- **A mod this tool cannot download, supplied by hand** (GUI-AUDIT item 68,
+  ADR-0052): in the wizard's download phase, a mod whose page is behind
+  Cloudflare, a JavaScript button or a login can be opened in the browser and
+  installed from the file the player saved there (`api.supply_download`). The
+  file is held to what a download is held to - an archive under the byte
+  ceiling, holding this mod with its tp2 - and to the manifest's pinned
+  sha256 when there is one; its sha256 is recorded. Only the file chosen is
+  read: no folder is scanned or watched.
 - **The game closed before an install starts** (GUI-AUDIT item 67,
   ADR-0051): before an install or a resume, a program running from a game
   folder (the game, a launcher, another WeiDU; under Wine or Proton found by

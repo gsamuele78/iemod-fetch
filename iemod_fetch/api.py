@@ -27,7 +27,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from .atomic import write_text
 from .auth import resolve_credential
@@ -227,13 +227,15 @@ class _Silent:
 
 
 def run(settings: Settings, stream=None, config=None, on_event=None,
-        cancel=None) -> Outcome:
+        cancel=None, supplied: Mapping[str, str] | None = None) -> Outcome:
     """
     Do what `settings` asks: list mods, convert a selection, check, plan, fetch.
 
     `stream` receives the human-readable report (the command line passes
     stdout); `on_event` receives progress events; `cancel` (a threading.Event)
-    stops the run. `settings` is not modified.
+    stops the run. `settings` is not modified. `supplied` ({mod folder:
+    path}) installs the file the player saved for a mod instead of
+    downloading it (GUI-AUDIT item 68, ADR-0052).
     """
     settings = replace(settings, weidu_log=list(settings.weidu_log or []))
     stream = stream if stream is not None else _Silent()
@@ -251,7 +253,7 @@ def run(settings: Settings, stream=None, config=None, on_event=None,
     with tempfile.TemporaryDirectory(prefix="iemod-selection-") as workdir:
         imported = _use_selection(settings, workdir)
         _emit_bio_code(settings, imported, stream)
-        return _run(settings, stream, config, on_event, cancel)
+        return _run(settings, stream, config, on_event, cancel, supplied)
 
 
 def prepare_https() -> None:
@@ -1815,7 +1817,8 @@ def project_settings(folder: str) -> Settings:
 
 
 def download_selection(folder: str, on_event=None, cancel=None,
-                       only: Sequence[str] = (), take_newer: Sequence[str] = ()) -> dict:
+                       only: Sequence[str] = (), take_newer: Sequence[str] = (),
+                       supplied: Mapping[str, str] | None = None) -> dict:
     """
     Phase 4 of the wizard (ADR-0039): download, verify and extract every mod of
     `folder`/selection.json into the project's target - the run
@@ -1824,7 +1827,9 @@ def download_selection(folder: str, on_event=None, cancel=None,
     skipped, so running again resumes; `only` (mod folders) retries those.
     `take_newer` (mod folders, or ["all"] for every one offered) installs the
     newer GitHub release a run offered for each, over the copy there
-    (`--take-newer`, GUI-AUDIT item 59).
+    (`--take-newer`, GUI-AUDIT item 59). `supplied` ({mod folder: path}):
+    the file the player saved for a mod this tool cannot download, installed
+    instead of a download (item 68, ADR-0052; see supply_download).
     `on_event` receives the run's progress events (from worker threads);
     setting `cancel` stops the downloads at their next chunk.
 
@@ -1848,7 +1853,7 @@ def download_selection(folder: str, on_event=None, cancel=None,
         # in its ini for every run, and this run fetches, it does not plan
         plan_order=None, language_preference=None, bgee_dir=None, bg2ee_dir=None,
         decisions=None, resolve_conflicts=False, emit_installer=False, simulate=False)
-    outcome = run(settings, on_event=on_event, cancel=cancel)
+    outcome = run(settings, on_event=on_event, cancel=cancel, supplied=supplied)
     report = outcome.report
     if report is None:                  # not reached: a download run always reports
         raise ConfigError("the download run produced no report")
@@ -1864,6 +1869,34 @@ def download_selection(folder: str, on_event=None, cancel=None,
     counts["manual"] = counts.get("manual", 0) + len(report.unresolved)
     return {"records": records, "cancelled": report.cancelled,
             "counts": counts, "exit_code": outcome.exit_code}
+
+
+def supply_download(folder: str, mod_folder: str, path: str, on_event=None) -> dict:
+    """
+    Install the file the player saved for one mod of `folder`'s selection, from
+    a page this tool cannot download from - Gibberlings3, SHS, Nexus behind
+    Cloudflare, a JavaScript button (GUI-AUDIT item 68, ADR-0052). The player
+    opens the page (the record's `url`), saves the file and names it here;
+    nothing else is read: no folder is scanned or watched. It is held to the
+    manifest's pinned sha256 when there is one, and always to what a download
+    is held to - an archive, under the byte ceiling, unpacking to this mod
+    with its .tp2. A copy already there is replaced and kept in .backup/.
+
+    Returns that mod's record, as download_selection gives it.
+    """
+    if not os.path.isfile(path):
+        raise ConfigError(f"{path} is not a file")
+    result = download_selection(folder, on_event=on_event, only=[mod_folder],
+                                supplied={mod_folder: os.path.abspath(path)})
+    wanted = mod_folder.lower()
+    records: list[dict] = result["records"]
+    for record in records:
+        if record["folder"].lower() == wanted:
+            return record
+    # the archive's own name for the mod (a renamed mod) is the only record
+    if len(records) == 1:
+        return records[0]
+    raise ConfigError(f"{mod_folder} is not in this project's selection")
 
 
 def _covered(key: str, numbers: Sequence[int], whole_mod: bool,
@@ -2820,7 +2853,8 @@ def _analyse(settings, installed, stream):
     return analysis.findings, order_plan, _conflict_report(settings, analysis, order_plan)
 
 
-def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
+def _run(settings, stream, config=None, on_event=None, cancel=None,
+         supplied=None) -> Outcome:
     if settings.list_mods:
         _list_mods(settings, stream)
         return Outcome(exit_code=0)
@@ -2862,6 +2896,11 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
         wanted = {name.lower() for name in settings.only}
         plan.items = [i for i in plan.items if i.folder.lower() in wanted]
         plan.unresolved = [i for i in plan.unresolved if i.folder.lower() in wanted]
+    supplied = {folder.lower(): path for folder, path in (supplied or {}).items()}
+    if supplied:
+        # a mod no source names is installed from the file the player chose
+        plan.items += [i for i in plan.unresolved if i.folder.lower() in supplied]
+        plan.unresolved = [i for i in plan.unresolved if i.folder.lower() not in supplied]
 
     if settings.check_only:
         findings, order_plan, conflict_report = _analyse(settings, installed, stream)
@@ -2921,7 +2960,8 @@ def _run(settings, stream, config=None, on_event=None, cancel=None) -> Outcome:
                       force=settings.force, allow_exe=settings.allow_exe,
                       accept_offsite=settings.accept_offsite, refresh=settings.refresh,
                       discovery_attempts=settings.discovery_attempts,
-                      take_newer=frozenset(n.lower() for n in settings.take_newer))
+                      take_newer=frozenset(n.lower() for n in settings.take_newer),
+                      supplied=supplied)
 
     catalogue = CatalogueSet.load(settings.catalogue)
     if catalogue and not settings.quiet:
