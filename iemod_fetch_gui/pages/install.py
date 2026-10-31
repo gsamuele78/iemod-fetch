@@ -766,7 +766,7 @@ class _Questionnaire(QDialog):
 
     def _accept(self) -> None:
         bad = [edit.accessibleName() for _name, _key, edit in self.fields
-               if any(ch in edit.text() for ch in ",\r\n")]
+               if not api.writable_answer(edit.text())]
         if bad:
             self.problem.setText("An answer cannot hold a comma or a line break: "
                                  + "; ".join(bad))

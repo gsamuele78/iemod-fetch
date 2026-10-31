@@ -234,3 +234,12 @@ def test_an_answer_the_log_cannot_carry_is_not_loaded(tmp_path):
     (tmp_path / api.INSTALL_ANSWERS_FILE).write_text(
         '{"v": 1, "answers": {"a#0": {"@1": "1,2", "@2": "x\\ny", "@3": "ok"}}}')
     assert api.load_install_answers(str(tmp_path)) == {"a#0": {"@3": "ok"}}
+
+
+@pytest.mark.parametrize("answer", ["a,b", "a\nb", "a\rb", "a\x0bb", "a\x85b", "a b"])
+def test_any_line_break_python_reads_is_refused(answer):
+    """Second review of #107: str.splitlines() breaks at more than \\n."""
+    assert not prompts.writable(answer) and not api.writable_answer(answer)
+    with pytest.raises(ValueError):
+        prompts.set_inputs("~A/SETUP-A.TP2~ #0 #0 // a\n", {("setup-a.tp2", 0): [answer]})
+    assert prompts.writable("a b") and prompts.writable("")

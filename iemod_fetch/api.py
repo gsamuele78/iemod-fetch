@@ -90,7 +90,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare
            "ignore_order", "unignore_order", "selection_digest", "start_install", "install_progress", "install_known_issues",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
            "selection_plan", "write_install_plan", "load_install_answers", "save_install_answers",
-           "write_install_answers", "answer_key", "INSTALL_ANSWERS_FILE", "install_games", "INSTALL_PLAN_DIR",
+           "write_install_answers", "answer_key", "writable_answer", "INSTALL_ANSWERS_FILE", "install_games", "INSTALL_PLAN_DIR",
            "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
@@ -1068,9 +1068,9 @@ def _one_batch_at_a_time(components: list[dict]) -> None:
 INSTALL_ANSWERS_FILE = "install-answers.json"
 
 
-def _writable(answer: str) -> bool:
-    """An answer the log can carry: no comma (its separator), no line end."""
-    return not any(ch in answer for ch in ",\r\n")
+def writable_answer(answer: str) -> bool:
+    """An answer a log line can carry (prompts.writable)."""
+    return prompts.writable(answer)
 
 
 def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
@@ -1092,7 +1092,7 @@ def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
     answers = data.get("answers") if isinstance(data, dict) else None
     if not isinstance(answers, dict):
         return {}
-    return {str(component): {str(k): str(v) for k, v in given.items() if _writable(str(v))}
+    return {str(component): {str(k): str(v) for k, v in given.items() if writable_answer(str(v))}
             for component, given in answers.items() if isinstance(given, dict)}
 
 

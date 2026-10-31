@@ -3466,6 +3466,10 @@ from the component's first question:
   batch can be answered in full (every question beforehand, none asked
   until valid): else a question of an earlier one, left to the player,
   would take this one's answer (independent review of #107, reproduced).
+  A batch is taken to be consecutive components of one tp2 file; whether
+  mod_installer groups by tp2 or by mod folder was not confirmed - two
+  installable tp2s in one folder, back to back, would be one real batch but
+  two here (no such mod is known).
 
 Before *Install*, the questions marked `beforehand` that have no kept answer
 are put to the player in one window, under their component, with the kept
@@ -3474,7 +3478,8 @@ answers filled in. The answers are kept in `PROJECT/install-answers.json` as
 `// @wlb-inputs:`, up to each component's first question with no answer
 (`api.write_install_answers`). The confirmation then names the components
 that may still stop to ask. Cancel in the window installs nothing. An answer
-cannot hold a comma, the format's separator, nor a line break; the window
+cannot hold a comma, the format's separator, nor anything Python's
+`str.splitlines()` breaks a line at (`prompts.writable`); the window
 refuses both, and a kept answer holding one (a file edited by hand) is not
 loaded, so it is asked again instead of failing every install. The mods'
 files are read for the questions on the worker thread that writes the plan,

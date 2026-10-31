@@ -159,6 +159,14 @@ def question_line(text: str) -> str:
     return lines[-1] if lines else ""
 
 
+def writable(answer: str) -> bool:
+    """An answer a log line can carry: no comma (the format's separator), and
+    nothing str.splitlines() breaks a line at - not only \\r and \\n but \\x0b,
+    \\x0c, \\x1c-\\x1e, \\x85, U+2028/2029 - or the line would be cut where the
+    log is read back (review of #107)."""
+    return "," not in answer and len(f"x{answer}x".splitlines()) == 1
+
+
 def set_inputs(log_text: str, inputs: dict[Key, list[str]]) -> str:
     """
     `log_text` with each listed component's recorded answers set to `inputs`
@@ -175,8 +183,8 @@ def set_inputs(log_text: str, inputs: dict[Key, list[str]]) -> str:
             out.append(line)
             continue
         answers = inputs[key]
-        if any("," in answer or "\n" in answer for answer in answers):
-            raise ValueError(f"{key[0]} #{key[1]}: an answer cannot hold a comma or a newline")
+        if not all(writable(answer) for answer in answers):
+            raise ValueError(f"{key[0]} #{key[1]}: an answer cannot hold a comma or a line break")
         body = line.rstrip("\r\n")
         end = line[len(body):]
         at = body.find(TAG)
