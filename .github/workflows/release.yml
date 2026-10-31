@@ -204,7 +204,9 @@ jobs:
 
   # The wizard as a program that needs no Python (GUI-AUDIT item 20, ADR-0040):
   # PyInstaller, one folder (Qt stays separate, replaceable files - LGPL-3.0),
-  # started once offscreen before it is zipped.
+  # started once offscreen before it is zipped. Linux on ubuntu-24.04, not
+  # -latest, and its zip held to Debian trixie's glibc and started there too,
+  # as the command line's is (ADR-0043 amendment of 2026-10-31).
   gui:
     name: Wizard bundle (${{ matrix.os }})
     needs: [decide, verify]
@@ -212,7 +214,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -248,6 +250,26 @@ jobs:
           else
             python packaging/gui_bundle.py --dist gui-dist
           fi
+      - name: The Linux zip on Debian trixie, the oldest system it is for
+        if: runner.os == 'Linux'
+        run: |
+          mkdir trixie-check && unzip -q gui-dist/iemod-fetch-gui-linux-*.zip -d trixie-check
+          # a commit made before this check has no ceiling of trixie's to hold it to
+          if [ -f packaging/cli_bundle.py ]; then
+            python -c "import sys; sys.path.insert(0, 'packaging'); import cli_bundle; cli_bundle.check_glibc('trixie-check')"
+          fi
+          image=""
+          for candidate in debian:trixie public.ecr.aws/docker/library/debian:trixie; do
+            if docker pull -q "$candidate"; then image="$candidate"; break; fi
+          done
+          test -n "$image" || { echo "::error::no registry gave debian:trixie"; exit 1; }
+          # Qt's own system libraries, as a player installs them (README)
+          docker run --rm -v "$PWD/trixie-check:/b:ro" "$image" sh -euc '
+            apt-get update -q >/dev/null
+            apt-get install -y -q --no-install-recommends \
+              libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 >/dev/null
+            mkdir -p /tmp/project
+            QT_QPA_PLATFORM=offscreen /b/iemod-fetch-gui/iemod-fetch-gui --check --project /tmp/project'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gui-${{ matrix.os }}
@@ -263,10 +285,11 @@ jobs:
           if-no-files-found: ignore
 
   # The command line the same way (GUI-AUDIT item 36), for systems whose Python
-  # is older than the one this release needs. Linux on ubuntu-22.04, not
-  # -latest: a Python built for 24.04 needs glibc 2.38 and the bundle would not
-  # start on Debian 12 (2.36) - cli_bundle.py refuses a bundle needing more
-  # than 2.35, and the zip is run once more inside debian:12 (review of #70).
+  # is older than the one this release needs. Linux on ubuntu-24.04, not
+  # -latest, which moves on its own: a Python built on a newer system needs its
+  # newer glibc. Debian trixie is the minimum platform (ADR-0043 amendment of
+  # 2026-10-31): cli_bundle.py refuses a bundle needing more than its 2.41,
+  # and the zip is run once more inside debian:trixie (review of #70).
   # A commit made before cli_bundle.py existed builds none. Debian's image
   # comes from Docker Hub, else from the ECR mirror of Docker's library: both
   # limit anonymous pulls (ECR alone failed with "Data limit exceeded").
@@ -277,7 +300,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -298,15 +321,15 @@ jobs:
       - name: Build, check its glibc, run once unzipped, zip
         if: steps.has.outputs.it == 'yes'
         run: python packaging/cli_bundle.py --dist cli-dist
-      - name: Run the Linux zip on Debian 12, the oldest system it is for
+      - name: Run the Linux zip on Debian trixie, the oldest system it is for
         if: steps.has.outputs.it == 'yes' && runner.os == 'Linux'
         run: |
           mkdir debian-check && unzip -q cli-dist/iemod-fetch-cli-linux-*.zip -d debian-check
           image=""
-          for candidate in debian:12 public.ecr.aws/docker/library/debian:12; do
+          for candidate in debian:trixie public.ecr.aws/docker/library/debian:trixie; do
             if docker pull -q "$candidate"; then image="$candidate"; break; fi
           done
-          test -n "$image" || { echo "::error::no registry gave debian:12"; exit 1; }
+          test -n "$image" || { echo "::error::no registry gave debian:trixie"; exit 1; }
           docker run --rm -v "$PWD/debian-check:/b:ro" "$image" /b/iemod-fetch/iemod-fetch --version
           docker run --rm -v "$PWD/debian-check:/b:ro" "$image" /b/iemod-fetch/iemod-fetch --help > /dev/null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -405,8 +428,9 @@ jobs:
             fi
             if ls dist/iemod-fetch-cli-*.zip > /dev/null 2>&1; then
               echo 'The command line without Python: `iemod-fetch-cli-<os>-<arch>.zip` (Linux x86_64 with'
-              echo 'glibc 2.35 or newer, Windows x86_64, macOS on Apple silicon), for a system whose Python is'
-              echo 'older than this release needs: Ubuntu 22.04 and 24.04, Debian 12 and 13, macOS.'
+              echo 'Debian trixie, the minimum - started there before release - and Ubuntu 24.04, where it is built;'
+              echo 'Windows x86_64, macOS on Apple silicon), for a system whose Python is older than this release'
+              echo 'needs: Debian trixie, Ubuntu 24.04, macOS.'
             fi
           } >> NOTES.md
 

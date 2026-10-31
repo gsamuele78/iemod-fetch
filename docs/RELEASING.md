@@ -48,8 +48,10 @@ review fixes are in and nothing merged later is. Then, in order:
    zipped as `iemod-fetch-gui-<os>-<arch>.zip` and added to `SHA256SUMS`; the
    command line the same way, run once unzipped with `--version` and `--help`,
    as `iemod-fetch-cli-<os>-<arch>.zip` (`packaging/cli_bundle.py`; job `cli`).
-   Its Linux zip is built on `ubuntu-22.04`, refused if any file in it needs a
-   glibc newer than 2.35, and started once more inside `debian:12`. The
+   Its Linux zip is built on `ubuntu-24.04`, refused if any file in it needs a
+   glibc newer than 2.41 (Debian trixie, the minimum platform), and started
+   once more inside `debian:trixie`; the wizard's Linux zip is held to the same
+   glibc and started there with `--check`, after Qt's system libraries. The
    macOS bundles are `release-macos.yml`'s, each built and attached only when
    the release lacks it, which the release starts for its tag
    (job `macos-bundle`): usually minutes later, else at its six-hourly check, it

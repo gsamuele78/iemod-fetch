@@ -2682,6 +2682,27 @@ that hold does not stop.
 project requires. A later 4.x is a Dependabot pull request like any other
 runtime library.
 
+### Amendment (2026-10-31): Debian trixie is the minimum platform
+
+The maintainer set Debian trixie (13) as the minimum platform: "not older
+versions". The Python stays 3.14 - trixie's own is 3.13, so there the bundles
+(which carry their Python) are the way in, and the `.pyz` or pip need a 3.14
+the player installs (uv, python.org). What changes is what the Linux bundles
+are held to and tested on:
+
+- **glibc ceiling 2.41, trixie's** (`cli_bundle.MAX_GLIBC`, was 2.35 for
+  Ubuntu 22.04 and Debian 12). A bundle needing more stops the build.
+- **Both Linux bundles are built on `ubuntu-24.04`**, pinned: the command
+  line's leaves `ubuntu-22.04`, a runner GitHub is retiring (GUI-AUDIT row
+  61); the wizard's leaves `ubuntu-latest`, which would move to a newer
+  glibc on its own.
+- **Both are started inside `debian:trixie`** before release: the command
+  line with `--version` and `--help`, as before on `debian:12`; the wizard -
+  never started on an older system until now - with `--check` offscreen,
+  after installing the Qt system libraries a player installs.
+- Debian 12, Ubuntu 22.04 and older are no longer what a release is checked
+  against. A bundle may still start there; nothing says so.
+
 ---
 
 ## ADR-0044 — lcc-docs' dates as a second update signal, never as a version

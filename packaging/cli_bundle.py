@@ -8,7 +8,7 @@ ADR-0043): PyInstaller, one folder, zipped as
     pip install . pyinstaller
     python packaging/cli_bundle.py [--dist dist]
 
-4.0.0 needs Python 3.14. Ubuntu 24.04 has 3.12, Debian 12 and 13 older ones,
+4.0.0 needs Python 3.14. Ubuntu 24.04 has 3.12, Debian trixie 3.13,
 macOS's /usr/bin/python3 3.9: there the .pyz does not start, and this bundle
 does. One folder rather than one file: a one-file program unpacks itself into
 a temporary folder on every start, which is slower and what antivirus software
@@ -42,11 +42,12 @@ ZIP = "iemod-fetch-cli"
 ENTRY = "import sys\nfrom iemod_fetch.cli import main\n\nsys.exit(main())\n"
 # The wizard and Qt are another program; tkinter is never used.
 EXCLUDE = ("tkinter", "PySide6", "shiboken6", "iemod_fetch_gui")
-# The oldest glibc a Linux bundle may need: Ubuntu 22.04's. Debian 12 has 2.36,
-# Ubuntu 24.04 2.39. A Python built on a newer system needs a newer glibc
-# (setup-python's 3.14 for ubuntu-24.04 needs 2.38, review of #70), and the
-# bundle would not start there - so the build stops instead.
-MAX_GLIBC = (2, 35)
+# The newest glibc a Linux bundle may need: Debian trixie's, the minimum
+# platform (ADR-0043 amendment of 2026-10-31). A Python built on a newer
+# system needs a newer glibc (setup-python's 3.14 for ubuntu-24.04 needs
+# 2.38, review of #70), and the bundle would not start on the floor - so the
+# build stops instead. Ubuntu 24.04 has 2.39.
+MAX_GLIBC = (2, 41)
 _GLIBC = re.compile(rb"GLIBC_2\.(\d+)(?:\.(\d+))?\x00")
 # A need that is not a version number: packed relative relocations (glibc 2.36).
 _GLIBC_ABI = {b"GLIBC_ABI_DT_RELR\x00": (2, 36)}
@@ -136,8 +137,8 @@ def check_glibc(folder: str, limit: tuple[int, int] = MAX_GLIBC) -> None:
     needed = glibc_needed(folder)
     if needed is not None and needed > limit:
         raise SystemExit(f"the bundle needs glibc {needed[0]}.{needed[1]}, newer than "
-                         f"{limit[0]}.{limit[1]} (Ubuntu 22.04): build it with an older "
-                         f"Python build, it would not start on Debian 12")
+                         f"{limit[0]}.{limit[1]} (Debian trixie, the minimum platform): "
+                         f"build it on an older system, it would not start there")
 
 
 def check(folder: str, work: str) -> None:

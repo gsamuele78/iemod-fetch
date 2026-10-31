@@ -97,15 +97,20 @@ def test_the_newest_glibc_any_bundled_file_needs_is_found(tmp_path):
     assert cli.glibc_needed(str(tmp_path)) == (2, 38)
 
 
-def test_a_linux_bundle_that_would_not_start_on_debian_12_stops_the_build(tmp_path):
-    """setup-python's 3.14 for ubuntu-24.04 needs glibc 2.38 (review of #70):
-    Debian 12 has 2.36, Ubuntu 22.04 2.35."""
-    elf(tmp_path / cli.NAME, [2, 38])
-    with pytest.raises(SystemExit, match="glibc 2.38"):
+def test_a_linux_bundle_that_would_not_start_on_debian_trixie_stops_the_build(tmp_path):
+    """Debian trixie, the floor, has glibc 2.41 (ADR-0043 amendment of
+    2026-10-31): a bundle needing more would not start there. Built on
+    ubuntu-24.04, setup-python's 3.14 needs 2.38, which passes."""
+    elf(tmp_path / cli.NAME, [2, 42])
+    with pytest.raises(SystemExit, match="glibc 2.42"):
         cli.check_glibc(str(tmp_path))
-    elf(tmp_path / cli.NAME, [2, 17, 34])
+    elf(tmp_path / cli.NAME, [2, 17, 38, 41])
     cli.check_glibc(str(tmp_path))
-    # packed relative relocations need 2.36 with no GLIBC_2.36 in sight
+    # packed relative relocations need 2.36 with no GLIBC_2.36 in sight -
+    # which trixie has; below it the bundle stops
     (tmp_path / cli.NAME).write_bytes(b"\x7fELF" + b"\0" * 60 + b"GLIBC_2.17\0GLIBC_ABI_DT_RELR\0")
+    assert cli.glibc_needed(str(tmp_path)) == (2, 36)
+    cli.check_glibc(str(tmp_path))
     with pytest.raises(SystemExit, match="glibc 2.36"):
-        cli.check_glibc(str(tmp_path))
+        cli.check_glibc(str(tmp_path), limit=(2, 35))
+    assert cli.MAX_GLIBC == (2, 41)
