@@ -750,8 +750,8 @@ def log(text):
     print(f"[2026-10-24T00:00:00Z INFO  mod_installer::installers] {text}", flush=True)
 log('Installing mod Component { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }')
 print("How many extra kits should be installed?", flush=True)
-for i in range(15):                       # 12.1.1's row of dots while WeiDU is silent
-    log("." * (i + 1)); time.sleep(0.1)
+for i in range(40):                       # 12.1.1's row of dots while WeiDU is silent,
+    log("." * (i + 1)); time.sleep(0.04)   # faster than the queue's 0.1 s wait
 """
 
 
@@ -770,7 +770,7 @@ def test_mod_installer_12s_dots_are_not_output(tmp_path):
     said = [e.text for e in events if e.kind == "watchdog"]
     assert len(said) == 1 and "does not put to anyone" in said[0], [e.text for e in events]
     assert "...." not in said[0].split("The last lines:")[1]
-    assert outcome.silences and outcome.silences[0][1] >= 1.2
+    assert outcome.silences and outcome.silences[0][1] >= 1.4
 
 
 ANSWERED_THEN_SILENT = r"""

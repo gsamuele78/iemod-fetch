@@ -379,7 +379,20 @@ class InstallRun:
 
         def close_batch() -> None:
             if batch:
-                outcome.silences.append((batch, longest))
+                outcome.silences.append(
+                    (batch, max(longest, time.monotonic() - last_output)))
+
+        def watch() -> None:
+            """The silence so far, measured and said once past the threshold:
+            on every pass, so dots arriving faster than the queue's wait do not
+            keep it from being looked at (second review of #115)."""
+            nonlocal longest, warned
+            silent = time.monotonic() - last_output
+            longest = max(longest, silent)
+            if not warned and not reader.asking and silent >= self.silent_s:
+                warned = True
+                self.on_event(Event("watchdog", self._silence_text(silent, recent, batch),
+                                    batch))
         while True:
             if self._cancel.is_set():
                 self._stop(process)
@@ -412,12 +425,7 @@ class InstallRun:
                     # more (a silence after it is not that question waiting)
                     last_output, warned, recent = time.monotonic(), False, []
                     continue
-                silent = time.monotonic() - last_output
-                longest = max(longest, silent)
-                if not warned and not reader.asking and silent >= self.silent_s:
-                    warned = True
-                    self.on_event(Event("watchdog", self._silence_text(silent, recent, batch),
-                                        batch))
+                watch()
                 continue
             if line is None:
                 longest = max(longest, time.monotonic() - last_output)
@@ -441,6 +449,8 @@ class InstallRun:
                 self.on_event(event)
                 if event.kind == "batch":
                     self._game_started(event.batch)
+            if not events:
+                watch()                            # a dot: still silent
 
     def _silence_text(self, silent: float, recent: list[str], batch: tuple) -> str:
         """What the watchdog says (ADR-0049 point 4): how long, what it may
