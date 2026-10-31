@@ -39,7 +39,7 @@ from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
 from .prompts import (EET_FOLDER_QUESTION, Answers, Event, Key, OutputReader,
-                      match_question, question_line, recorded_answers)
+                      match_question, mod_installer_asks, question_line, recorded_answers)
 
 # What the planned logs are called (ordering.PRE_EET_LOG, EET_LOG)
 PRE_EET_LOG, EET_LOG = "WeiDU-BGEE.log", "WeiDU.log"
@@ -408,7 +408,9 @@ class InstallRun:
                         outcome.cancelled = True
                         close_batch()
                         return
-                    last_output, warned = time.monotonic(), False    # answered: alive
+                    # answered: alive; its window is not the last output any
+                    # more (a silence after it is not that question waiting)
+                    last_output, warned, recent = time.monotonic(), False, []
                     continue
                 silent = time.monotonic() - last_output
                 longest = max(longest, silent)
@@ -421,11 +423,16 @@ class InstallRun:
                 longest = max(longest, time.monotonic() - last_output)
                 close_batch()
                 return
-            longest = max(longest, time.monotonic() - last_output)
-            last_output, warned = time.monotonic(), False
-            if line.strip():
-                recent = (recent + [line.rstrip()])[-5:]
-            for event in reader.feed(line):
+            events = reader.feed(line)
+            if events:
+                # a line that says something; mod_installer 12.1.1's rows of
+                # dots (no events) are not output - they come exactly while
+                # WeiDU is silent (review of #115)
+                longest = max(longest, time.monotonic() - last_output)
+                last_output, warned = time.monotonic(), False
+                if line.strip():
+                    recent = (recent + [line.rstrip()])[-5:]
+            for event in events:
                 if event.kind == "batch":
                     close_batch()
                     batch, longest = event.batch, 0.0
@@ -439,12 +446,13 @@ class InstallRun:
         """What the watchdog says (ADR-0049 point 4): how long, what it may
         be, the last lines - and the question mod_installer did not put to
         anyone when the last line is one the batch's mods ask."""
-        minutes = f"{silent / 60:.0f} minute(s)" if silent >= 60 else f"{silent:.0f} s"
+        minutes = f"{silent / 60:.0f} minute(s)" if silent >= 60 else f"{silent:.1f} s"
         expected = [(component, key, text) for component in batch
                     for key, text in self.expected.get(component, ())]
         window = "\n".join(recent)
         found = match_question(window, expected) if expected and window else None
-        if found is not None:
+        asked = dict(((c, k), t) for c, k, t in expected)
+        if found is not None and not mod_installer_asks(asked.get(found, "")):
             what = ("WeiDU seems to be waiting for an answer to a question mod_installer "
                     "does not put to anyone (it asks only questions with words such as "
                     "\"enter\" or \"choose\"): it will wait until mod_installer's timeout. "

@@ -312,7 +312,7 @@ steps that are each yours.
    end, the components that need a look (warnings, errors, not reached) are
    listed and all are counted, and if EEex is in the game played, how to start
    it (InfinityLoader.exe) is said. Ten minutes without output and no
-   question is said once, with the last lines, and nothing is stopped
+   question is said, once per silence, with the last lines, and nothing is stopped
    (ADR-0049); each run records each batch's longest silence in
    `install-plan/results.json`. Nothing is
    undone by itself: to start again, restore the backup
@@ -615,7 +615,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,988 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,990 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -869,7 +869,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,988, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,990, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

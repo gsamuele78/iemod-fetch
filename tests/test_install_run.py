@@ -742,3 +742,60 @@ def test_a_silence_after_a_question_mod_installer_does_not_ask_says_so(tmp_path)
                               (("a.tp2", 0),))
     assert text.startswith("No output for 12 minute(s)")
     assert "does not put to anyone" in text and "mod_installer's timeout" in text
+
+
+TICKS_12 = r"""
+import sys, time
+def log(text):
+    print(f"[2026-10-24T00:00:00Z INFO  mod_installer::installers] {text}", flush=True)
+log('Installing mod Component { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }')
+print("How many extra kits should be installed?", flush=True)
+for i in range(15):                       # 12.1.1's row of dots while WeiDU is silent
+    log("." * (i + 1)); time.sleep(0.1)
+"""
+
+
+def test_mod_installer_12s_dots_are_not_output(tmp_path):
+    """Review of #115: 12.1.1 prints dots exactly while WeiDU is silent - they
+    neither keep the watchdog quiet nor push the question out of the last
+    lines, nor spoil the measured silence."""
+    import sys
+    from iemod_fetch.install_run import InstallRun
+    events = []
+    run_ = InstallRun([sys.executable, "-c", TICKS_12], [], cwd=str(tmp_path),
+                      ask=lambda q, b: None, on_event=events.append, quiet_s=0.2,
+                      silent_s=0.6,
+                      expected={("a.tp2", 0): [("@1", "How many extra kits should be installed?")]})
+    outcome = run_.run()
+    said = [e.text for e in events if e.kind == "watchdog"]
+    assert len(said) == 1 and "does not put to anyone" in said[0], [e.text for e in events]
+    assert "...." not in said[0].split("The last lines:")[1]
+    assert outcome.silences and outcome.silences[0][1] >= 1.2
+
+
+ANSWERED_THEN_SILENT = r"""
+import sys, time
+def log(text):
+    print(f"[2026-10-24T00:00:00Z INFO  mod_installer::runner] {text}", flush=True)
+log('Installing mod WeiduBatchedComponents([WeiduComponent { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }])')
+log("User Input required"); log("Question is")
+log("Please enter the number of extra kits to install:")
+sys.stdin.readline()
+time.sleep(1.5)                            # works silently after the answer
+"""
+
+
+def test_a_silence_after_an_answered_question_is_not_that_question_waiting(tmp_path):
+    """Review of #115: the answered question's window is not the last output;
+    a silence after it says nothing of a question nobody is asked."""
+    import sys
+    from iemod_fetch.install_run import InstallRun
+    events = []
+    run_ = InstallRun([sys.executable, "-c", ANSWERED_THEN_SILENT], [], cwd=str(tmp_path),
+                      ask=lambda q, b: "3", on_event=events.append, quiet_s=0.2, silent_s=0.6,
+                      expected={("a.tp2", 0): [("@1", "Please enter the number of extra kits "
+                                                       "to install:")]})
+    run_.run()
+    said = [e.text for e in events if e.kind == "watchdog"]
+    assert len(said) == 1 and "does not put to anyone" not in said[0]
+    assert "Nothing is stopped" in said[0]

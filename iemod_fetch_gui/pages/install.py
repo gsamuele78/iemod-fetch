@@ -535,8 +535,13 @@ class InstallPage(QWidget):
         tools = {tool: self.found[tool].path for tool, _name in TOOLS}
         cancel, bridge = self._cancel, self._bridge
 
+        stalled = [False]                       # the status says "no output" (watchdog)
+
         def on_event(event: Any) -> None:
             text = event.text
+            if stalled[0] and event.kind != "watchdog":
+                stalled[0] = False                 # output again: the status says so
+                bridge.status.emit("Installing...")
             if event.kind == "batch":
                 names = ", ".join(f"{tp2} #{number}" for tp2, number in event.batch)
                 self._running_batch, text = names, "== " + names
@@ -544,6 +549,7 @@ class InstallPage(QWidget):
                 text = f"-> {text}"
             elif event.kind == "watchdog":         # ADR-0049 point 4: said, not acted on
                 text = f"!! {text}"
+                stalled[0] = True
                 bridge.status.emit("Installing... (no output for a while - see below)")
             bridge.line.emit(text)
 
