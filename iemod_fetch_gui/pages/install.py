@@ -29,9 +29,10 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QFontDatabase
-from PySide6.QtWidgets import (QFileDialog, QGridLayout, QGroupBox, QHBoxLayout,
-                               QInputDialog, QLabel, QMessageBox, QPlainTextEdit,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+                               QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
+                               QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
+                               QScrollArea, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
 
@@ -66,6 +67,11 @@ class Services:
     progress: Callable[[str, dict], dict] = api.install_progress
     known_issues: Callable[[dict, str], list] = api.install_known_issues
     start: Callable[..., Any] = api.start_install
+    # the phase-5 questionnaire (ADR-0049)
+    questions: Callable[[str, str], dict] = api.install_questions
+    load_answers: Callable[[str], dict] = api.load_install_answers
+    save_answers: Callable[[str, dict], Any] = api.save_install_answers
+    write_answers: Callable[..., dict] = api.write_install_answers
     timing: dict = field(default_factory=dict)    # start_install's quiet_s, grace_s...
 
 
@@ -458,7 +464,8 @@ class InstallPage(QWidget):
         self.output.clear()
         self.outcome = None
         self._say("Writing the install order...")
-        self._run(lambda: services.plan(game, chosen, labels, folder), self._planned)
+        self._run(lambda: _plan_and_questions(services, game, chosen, labels, folder),
+                  self._planned)
 
     def _planned(self, plan: dict) -> None:
         """The plan is written: ask, then install (after _finished has run)."""
@@ -478,6 +485,9 @@ class InstallPage(QWidget):
             self._say("Nothing to install: every planned component is already in the games.")
             return
         resuming = state == "partial"
+        coverage = self._questionnaire(plan)
+        if coverage is None:
+            return
         folders = "\n".join(f"  {name}: {folder}" for name, folder in self.games.items())
         backups = "\n".join(f"  {path}" for path in self.backed_up.values())
         broken = list(plan.get("violations", [])) + [
@@ -505,12 +515,13 @@ class InstallPage(QWidget):
         if issues:
             title = ("Resume" if resuming else "Install") + (" anyway," if broken else "") \
                 + " despite a known issue"
+        asking = _questions_text(coverage)
         stopped = ("" if not (resuming and self.cancelled_in) else
                    f"The last run was cancelled while it installed {self.cancelled_in}: "
                    f"if that left files in the game, restoring the backup is the safe "
                    f"way.\n\n")
         if not self.confirm(title, (
-                f"{what}\n{folders}\n\n{stopped}{known}{warning}"
+                f"{what}\n{folders}\n\n{stopped}{known}{warning}{asking}"
                 f"mod_installer and WeiDU change these folders. Nothing is undone by "
                 f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
             self._say("Not installed: the plan is written in "
@@ -544,6 +555,49 @@ class InstallPage(QWidget):
 
         self._say("Resuming..." if resuming else "Installing...")
         self._run(run, self._installed)
+
+    def _questionnaire(self, plan: dict) -> dict | None:
+        """
+        The questions the install will meet, answered before it starts
+        (ADR-0049): those that can be answered beforehand and have no answer
+        kept yet are put to the player in one dialog; the answers are kept
+        in the project and written into the planned logs. Returns what the
+        install will still ask ({} when that could not be read); None when
+        the player cancelled - nothing is installed.
+        """
+        services, folder = self.services, self.project_dir
+        mods = services.mods_dir(folder)
+        coverage = plan.get("questions") or {}
+        if not coverage:                  # could not be read: nothing to say
+            return {}
+        kept = services.load_answers(folder)
+        open_ = [c for c in coverage["components"]
+                 if any(q["beforehand"] and q["key"] not in kept.get(api.answer_key(c), {})
+                        for q in c["questions"])]
+        if open_:
+            given = self.answer_questions(
+                [c for c in coverage["components"]
+                 if any(q["beforehand"] for q in c["questions"])], kept)
+            if given is None:
+                self._say("Not installed: the questions were not answered. The plan is "
+                          f"written in {plan['plan_dir']}, nothing else was done.")
+                return None
+            kept = given
+            try:
+                services.save_answers(folder, kept)
+            except OSError as exc:
+                self._append(f"The answers could not be kept in the project: {exc}")
+        try:
+            return services.write_answers(plan["plan_dir"], mods, kept, coverage=coverage)
+        except (OSError, ValueError) as exc:
+            self._say(f"Not installed: the answers could not be written - {exc}")
+            return None
+
+    def answer_questions(self, components: list, kept: dict) -> dict | None:
+        """The player's answers to the questions that can be answered before
+        the install, from those kept; None cancels (a test answers instead)."""
+        dialog = _Questionnaire(self, components, kept)
+        return dialog.answers() if dialog.exec() == QDialog.DialogCode.Accepted else None
 
     def _from_install(self, question: str, _batch: tuple) -> str | None:
         """Called on the install's thread: ask on the page's, wait for the answer."""
@@ -654,6 +708,97 @@ class InstallPage(QWidget):
     def is_complete(self) -> bool:
         """The install ran to its end without an error."""
         return bool(self.outcome is not None and getattr(self.outcome, "ok", False))
+
+
+def _plan_and_questions(services: Services, game: str, chosen: list, labels: dict,
+                        folder: str) -> dict:
+    """On a worker thread: write the plan, then read the questions its mods
+    will ask - every mod's files, too slow for the window's thread (review
+    of #107). A reading that fails says nothing: {}."""
+    plan = services.plan(game, chosen, labels, folder)
+    try:
+        plan["questions"] = services.questions(plan["plan_dir"], services.mods_dir(folder))
+    except Exception:
+        plan["questions"] = {}
+    return plan
+
+
+class _Questionnaire(QDialog):
+    """Every question that can be answered before the install, one field
+    each, under its component; what is kept is filled in (ADR-0049)."""
+
+    def __init__(self, parent: QWidget, components: list, kept: dict) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Questions the mods will ask")
+        self.kept = {name: dict(given) for name, given in kept.items()}
+        self.fields: list[tuple[str, str, QLineEdit]] = []
+        form = QFormLayout()
+        for component in components:
+            name = api.answer_key(component)
+            form.addRow(_plain(f"{component['tp2']} #{component['number']}"))
+            for question in component["questions"]:
+                if not question["beforehand"]:
+                    continue
+                edit = QLineEdit(self.kept.get(name, {}).get(question["key"], ""))
+                edit.setAccessibleName(question["text"])
+                hint = " (asked until the answer is valid)" if question["repeats"] else ""
+                form.addRow(_plain(question["text"] + hint), edit)
+                self.fields.append((name, question["key"], edit))
+        inner = QWidget()
+        inner.setLayout(form)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(inner)
+        self.problem = _plain("")
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addWidget(_plain(
+            "These questions come during the install. Answered here, the install "
+            "gives the answers itself; an empty field is an Enter. Questions that "
+            "depend on a condition or on what happens while installing are asked "
+            "then, as before."))
+        layout.addWidget(scroll)
+        layout.addWidget(self.problem)
+        layout.addWidget(buttons)
+
+    def _accept(self) -> None:
+        bad = [edit.accessibleName() for _name, _key, edit in self.fields
+               if not api.writable_answer(edit.text())]
+        if bad:
+            self.problem.setText("An answer cannot hold a comma or a line break: "
+                                 + "; ".join(bad))
+            return
+        self.accept()
+
+    def answers(self) -> dict:
+        for name, key, edit in self.fields:
+            self.kept.setdefault(name, {})[key] = edit.text().strip()
+        return self.kept
+
+
+def _questions_text(coverage: dict) -> str:
+    """What the confirmation says of the questions still to come."""
+    components = coverage.get("components", [])
+    if not components:
+        return ""
+    still = [c for c in components if c["status"] not in ("none", "answered")]
+    if not still:
+        return ("Every question found is answered: the install should not stop to ask "
+                "(read from the mods' files - what they decide while installing is not "
+                "known before).\n\n")
+    words = {"unknown": "could not be read in full - it may ask",
+             "maybe": "may ask a question that depends on a condition",
+             "partial": "will ask questions not answered beforehand",
+             "unanswered": "will ask"}
+    shown = [f"  - {c['tp2']} #{c['number']}: {words.get(c['status'], c['status'])}"
+             for c in still[:MAX_SHOWN]]
+    if len(still) > MAX_SHOWN:
+        shown.append(f"  ... and {len(still) - MAX_SHOWN} more")
+    return (f"{len(still)} component(s) may stop the install to ask - answer them in "
+            f"this window when they do:\n" + "\n".join(shown) + "\n\n")
 
 
 def _progress_text(progress: dict) -> str:

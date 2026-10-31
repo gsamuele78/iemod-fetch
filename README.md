@@ -290,7 +290,15 @@ steps that are each yours.
    folder registered with a space, on Windows - EET's settings would go to a folder the
    game never reads; ADR-0045): the order of phase 3 is written to
    `PROJECT/install-plan/` (as `--plan-order` writes it) and mod_installer runs
-   over it. Its output shows as it comes; a question no recorded answer covers
+   over it. Before that, the questions the mods will ask are put to you in one
+   window (ADR-0049): those whose place in the order is sure - not under a
+   condition, not printed from a variable, none after a question asked until
+   valid, and none after a component of the same mod that may still ask. Measured on 105 mods, that is still few questions (most sit
+   under a condition): the others are asked during the install, as before,
+   until a question can be recognised when it comes. Your answers are kept in `PROJECT/install-answers.json`, so the
+   next install does not ask again, and written into the planned logs as
+   `// @wlb-inputs:`; the confirmation lists the components that may still stop
+   to ask. Its output shows as it comes; a question no recorded answer covers
    is asked in a dialog; *Cancel* stops it and everything it started. Nothing is
    undone by itself: to start again, restore the backup
    (`iemod-fetch --restore-backup`). The command line still runs nothing: its
@@ -592,7 +600,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,918 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,939 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -846,7 +854,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,918, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,939, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
