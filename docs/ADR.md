@@ -3818,3 +3818,55 @@ Measured with the real mod_installer 16.0.0 and WeiDU v251:
   the same on every system.
 - Not shown in the wizard yet: the install page belongs to the other
   session's work.
+
+---
+
+## ADR-0054 — A mod that changes how the game starts is told, with the program to start
+
+**Status:** accepted (2026-10-31, GUI-AUDIT M8 item 71)
+
+### Context
+
+Once EEex is installed, the game must be started through its loader. The
+game's own program crashes. A player who starts the game as before blames
+the install. The wizard does not say so today.
+
+Read in Bubb13/EEex at a6d21ab (v1.3.1, MIT):
+- the main component, `BEGIN @1 LABEL ~B3-EEex-Main~` (number 1), copies
+  the loader into the game folder (`COPY ~EEex/loader~ ~.~`);
+- the quick-menu core, #0, copies no loader;
+- the README: "The game must be started using InfinityLoader.exe / EEex.exe
+  after installation; any attempt to start the game using the vanilla
+  executable will result in a crash";
+- InfinityLoader replaces EEex.exe from v0.9.0;
+- the support table: Windows native, Linux "via Proton / Wine", macOS
+  "via CrossOver".
+
+Chriz Easy BG's `docs/curation/components/EEEX.md` L28-29 says the same.
+
+### Decision
+
+1. **`launch.py` (pure, core layer) keeps a table of loaders**, keyed by
+   tp2 file name and the components that install one. Today it has one
+   entry: `eeex.tp2` component 1 → InfinityLoader.exe.
+2. **`launch_advice({log: text}, platform)` reads the planned logs.** For
+   each log that installs such a component it gives, once:
+   - the program to start;
+   - why;
+   - off Windows, what EEex needs there: the Windows game through Proton
+     or Wine on Linux, or through CrossOver on macOS, because the native
+     Linux and macOS games cannot start it.
+3. **`api.install_launch_advice(plan_dir, platform=None)`** reads
+   `plan_dir`'s planned logs and returns those entries. It writes nothing.
+   The install page shows them; that part is the other session's work.
+
+### Consequences
+
+- A player who installs EEex is told, before and after the install, which
+  program starts the game, and on Linux or macOS what that requires.
+- Only EEex is listed, because only it was read. Mods that need EEex and do
+  nothing without it (BGEE Graphics Enhanced, BG2 HD; G3 thread 40143) are
+  not flagged: their tp2 names were not checked. They are left for item 53's
+  report.
+- The table follows EEex's numbering; if upstream renumbers its main
+  component, the entry must follow.

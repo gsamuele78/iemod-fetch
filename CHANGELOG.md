@@ -9,6 +9,13 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **How to start the game after installing EEex** (GUI-AUDIT item 71,
+  ADR-0054): `api.install_launch_advice(plan_dir)` says, for each planned log
+  that installs EEex's main component, to start the game with
+  InfinityLoader.exe (EEex.exe before v0.9) and never with its own program,
+  which crashes. Off Windows it adds that EEex needs the Windows game,
+  through Proton or Wine on Linux or CrossOver on macOS. Not shown in the
+  wizard yet.
 - **Ordering facts as planner regression tests** (GUI-AUDIT item 70):
   facts from Chriz Easy BG's curation notes that the community data holds,
   run in the community-data workflow on the data it has just fetched:

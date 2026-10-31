@@ -7,7 +7,7 @@
 #            catalogues, moddb, rules, ordering, conflicts, resolution,
 #            installer, languages, plan, report,
 #            config, pinning, selection, available, contract, tra, freshness, kinds,
-#            decisions, bio, pi, limits, choices, prompts, resume, results, readln
+#            decisions, bio, pi, limits, choices, prompts, resume, results, launch, readln
 #            -> pure. Parse, compare, decide. No sockets, no subprocesses.
 #   shell    net, etagcache, childenv, auth, archives, install, orgindex, resolvers, datasync, runner,
 #            install_run, gamelock, toolchain, api, cli
@@ -73,6 +73,7 @@ source_modules =
     iemod_fetch.prompts
     iemod_fetch.resume
     iemod_fetch.results
+    iemod_fetch.launch
 forbidden_modules =
     iemod_fetch.net
     iemod_fetch.etagcache
@@ -167,7 +168,7 @@ layers =
     iemod_fetch.limits
     iemod_fetch.ordering
     iemod_fetch.rules
-    iemod_fetch.resume | iemod_fetch.results
+    iemod_fetch.resume | iemod_fetch.results | iemod_fetch.launch
     iemod_fetch.available | iemod_fetch.bio | iemod_fetch.pi | iemod_fetch.choices | iemod_fetch.premeta | iemod_fetch.prompts
     iemod_fetch.manifest | iemod_fetch.catalogues | iemod_fetch.moddb | iemod_fetch.selection | iemod_fetch.freshness | iemod_fetch.kinds | iemod_fetch.decisions
     iemod_fetch.weidu | iemod_fetch.tp2 | iemod_fetch.modmeta | iemod_fetch.versions
@@ -232,6 +233,7 @@ forbidden_modules =
     iemod_fetch.readln
     iemod_fetch.resume
     iemod_fetch.results
+    iemod_fetch.launch
     iemod_fetch.report
     iemod_fetch.resolution
     iemod_fetch.resolvers
