@@ -157,3 +157,32 @@ def question_line(text: str) -> str:
     item 48's expected texts will say."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     return lines[-1] if lines else ""
+
+
+def set_inputs(log_text: str, inputs: dict[Key, list[str]]) -> str:
+    """
+    `log_text` with each listed component's recorded answers set to `inputs`
+    (phase-5 questionnaire, ADR-0049): the `// @wlb-inputs:` tag of its line
+    replaced, or added at its end; an empty list removes it. Lines of other
+    components, and every other line, are kept as they are. An answer
+    cannot hold a comma (the format's separator): ValueError.
+    """
+    out = []
+    for line in log_text.splitlines(keepends=True):
+        match = _LOG_LINE.match(line)
+        key = (tp2_name(match["path"]), int(match["number"])) if match else None
+        if key is None or key not in inputs:
+            out.append(line)
+            continue
+        answers = inputs[key]
+        if any("," in answer or "\n" in answer for answer in answers):
+            raise ValueError(f"{key[0]} #{key[1]}: an answer cannot hold a comma or a newline")
+        body = line.rstrip("\r\n")
+        end = line[len(body):]
+        at = body.find(TAG)
+        if at >= 0:
+            body = body[:at].rstrip()
+        if answers:
+            body += f" {TAG} " + ",".join(answers)
+        out.append(body + end)
+    return "".join(out)

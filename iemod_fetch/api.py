@@ -89,7 +89,8 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare
            "load_decisions", "save_decisions", "DECISIONS_FILE",
            "ignore_order", "unignore_order", "selection_digest", "start_install", "install_progress", "install_known_issues",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
-           "selection_plan", "write_install_plan", "install_games", "INSTALL_PLAN_DIR",
+           "selection_plan", "write_install_plan", "load_install_answers", "save_install_answers",
+           "write_install_answers", "answer_key", "INSTALL_ANSWERS_FILE", "install_games", "INSTALL_PLAN_DIR",
            "save_install_order", "reset_install_order",
            "order_breaks", "order_breaks_after_move", "order_followers", "order_fixes",
            "preview_install_order",
@@ -970,11 +971,13 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
                 status = "partial"
             else:
                 status = "unanswered"
+            ahead = 0 if status == "unknown" else _beforehand(asked)
             components.append({
                 "log": name, "tp2": tp2, "number": number, "language": lang,
                 "questions": [{"key": q.key, "text": q.text, "known": q.keyed,
                                "conditional": q.conditional, "repeats": q.repeats,
-                               "via": q.via, "file": q.file, "line": q.line} for q in asked],
+                               "via": q.via, "file": q.file, "line": q.line,
+                               "beforehand": i < ahead} for i, q in enumerate(asked)],
                 "recorded": recorded, "status": status, "unread": unread})
     counts: dict[str, int] = {}
     for c in components:
@@ -983,6 +986,96 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
     return {"components": components, "counts": counts,
             "unattended": bool(components) and all(c["status"] in ("none", "answered")
                                                    for c in components)}
+
+
+def _beforehand(asked: Sequence[readln.Prompt]) -> int:
+    """
+    How many of a component's questions, from the first, can be answered
+    before the install (phase-5 questionnaire, ADR-0049). The log's answers
+    are given in order, one per question, so an answer is only safe where
+    the questions before it are surely asked once: the run stops before a
+    question under a condition (if it were not asked, its answer would go
+    to the next one) and before an unknown one (asked, never answered from
+    a stored answer), and ends after a question asked until valid (an
+    answer it refused would go to the next one; with nothing left, WeiDU's
+    next try is asked of the player).
+    """
+    count = 0
+    for q in asked:
+        if q.conditional or not q.keyed:
+            break
+        count += 1
+        if q.repeats:
+            break
+    return count
+
+
+INSTALL_ANSWERS_FILE = "install-answers.json"
+
+
+def load_install_answers(folder: str) -> dict[str, dict[str, str]]:
+    """
+    The answers the player gave in the phase-5 questionnaire (ADR-0049),
+    kept in `folder`/install-answers.json: {"tp2#number": {question key:
+    answer}}. A question is keyed by its .tra reference, else its text
+    (readln.Prompt.key), so a reordered or re-planned install finds them
+    again. {} when there are none or the file cannot be read.
+    """
+    try:
+        with open(os.path.join(folder, INSTALL_ANSWERS_FILE), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    answers = data.get("answers") if isinstance(data, dict) else None
+    if not isinstance(answers, dict):
+        return {}
+    return {str(component): {str(k): str(v) for k, v in given.items()}
+            for component, given in answers.items() if isinstance(given, dict)}
+
+
+def save_install_answers(folder: str, answers: dict[str, dict[str, str]]) -> str:
+    """Keep the questionnaire's answers in `folder` (load_install_answers)."""
+    path = os.path.join(folder, INSTALL_ANSWERS_FILE)
+    write_text(path, json.dumps({"v": 1, "answers": answers}, indent=1, sort_keys=True,
+                                ensure_ascii=False) + "\n")
+    return path
+
+
+def answer_key(component: dict) -> str:
+    """How a component of install_questions is named in the stored answers."""
+    return f"{prompts.tp2_name(component['tp2'])}#{component['number']}"
+
+
+def write_install_answers(plan_dir: str, mods_dir: str,
+                          answers: dict[str, dict[str, str]]) -> dict:
+    """
+    Put the player's answers into the planned logs (ADR-0049 point 5), as
+    `// @wlb-inputs:` on each component's line, for the questions that can
+    be answered beforehand (install_questions' "beforehand"), in order, up
+    to the first one with no answer. A component with nothing to give keeps
+    its line as the plan wrote it. Then install_questions again: what the
+    install will still ask.
+    """
+    coverage = install_questions(plan_dir, mods_dir)
+    inputs: dict[str, dict[prompts.Key, list[str]]] = {}
+    for component in coverage["components"]:
+        given = answers.get(answer_key(component), {})
+        row: list[str] = []
+        for question in component["questions"]:
+            if not question["beforehand"] or question["key"] not in given:
+                break
+            row.append(given[question["key"]])
+        if row:
+            key = (prompts.tp2_name(component["tp2"]), component["number"])
+            inputs.setdefault(component["log"], {})[key] = row
+    for name, rows in inputs.items():
+        path = os.path.join(plan_dir, name)
+        # read as text, written as text: the line ends are this system's,
+        # as the plan wrote them (write_text)
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
+            text = fh.read()
+        write_text(path, prompts.set_inputs(text, rows))
+    return install_questions(plan_dir, mods_dir)
 
 
 def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,

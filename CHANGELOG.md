@@ -9,6 +9,18 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The questions are answered before the install** (GUI-AUDIT item 48,
+  ADR-0049 points 2 and 5): before *Install*, the wizard puts the questions
+  the mods will ask to the player in one window - those whose place is sure:
+  not under a condition, not printed from a variable, none after a question
+  asked until valid (an answer given in order would otherwise land on the
+  wrong question). The answers are kept in `PROJECT/install-answers.json`
+  by question key, so the next install does not ask again, and written into
+  the planned logs as `// @wlb-inputs:`; the confirmation lists the components
+  that may still stop to ask. Cancel installs nothing. New in the api:
+  `install_questions` says per question whether it is answerable
+  `beforehand`; `load_install_answers`, `save_install_answers`,
+  `write_install_answers`, `answer_key`.
 - **The game closed before an install starts** (GUI-AUDIT item 67,
   ADR-0051): before an install or a resume, a program running from a game
   folder (the game, a launcher, another WeiDU; under Wine or Proton found by
