@@ -307,5 +307,46 @@ def test_recorded_answers_fit_the_real_window(tmp_path):
     assert (game / "twoq-answers.txt").read_text().split() == ["y", "2"]
     assert any("Installing [" in a.question for a in outcome.answered), transcript
     kept = json.loads((plan / "answers.json").read_text())["asked"]["twoq.tp2#0"]
-    assert kept == {"0": {"q": "Restore the tavern? [y]es or [n]o"},
-                    "1": {"q": "Please select 1 or 2 and press Enter."}}
+    assert kept == {"0": {"q": "Restore the tavern? [y]es or [n]o", "r": "y"},
+                    "1": {"q": "Please select 1 or 2 and press Enter.", "r": "2"}}
+
+
+MENU_AFTER = """BACKUP ~menu/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks with its menu after the question~
+PRINT ~Which portraits?~
+PRINT ~1] Original~
+PRINT ~2] Select 5 or 10 random ones~
+ACTION_READLN choice
+APPEND_OUTER ~menu-answer.txt~ ~%choice%~
+"""
+
+
+def test_a_menu_after_the_question_does_not_limit_its_answer(tmp_path):
+    """Second review of #98: mod_installer fires on "2] Select 5 or 10 random
+    ones" (its choice words); the recorded "1" still goes in."""
+    import json
+
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "menu-answer.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "menu").mkdir(parents=True)
+    (mods / "menu" / "menu.tp2").write_text(MENU_AFTER)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~MENU/MENU.TP2~ #0 #0 // Asks with its menu after the question // @wlb-inputs: 1\n")
+    lines, asked = [], []
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: asked.append(q) or None,
+                                on_event=lambda e: lines.append(e.text)).run()
+    transcript = "\n".join(lines)
+    assert outcome.ok and asked == [], transcript
+    assert (game / "menu-answer.txt").read_text().split() == ["1"]
+    kept = json.loads((plan / "answers.json").read_text())["asked"]["menu.tp2#0"]["0"]
+    assert kept["q"].startswith("Which portraits?") and kept["r"] == "1", kept

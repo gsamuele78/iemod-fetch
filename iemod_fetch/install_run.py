@@ -69,21 +69,38 @@ ASKED_FILE = "answers.json"
 
 
 def load_asked(path: str | None) -> dict:
-    """{(tp2, component): {n: {"q": question, "a"?: answer}}}: the question each
-    recorded answer went to, and the player's answer where one stood in for
-    it (item 63); {} when there is none yet or it is unreadable."""
+    """{(tp2, component): {n: {"q", "r"?, "a"?}}}: the question each answer
+    went to, the log's answer there and the player's where one stood in for
+    it (item 63); {} when there is none yet. An entry that does not read is
+    left out, the others kept (second review of #98)."""
     try:
         with open(path or "", encoding="utf-8") as fh:
             data = json.load(fh)
-        out: dict = {}
-        for name, by in data.get("asked", {}).items():
-            tp2, number = name.rsplit("#", 1)
-            out[(str(tp2), int(number))] = {
-                int(n): {k: str(v) for k, v in kept.items() if k in ("q", "a")}
-                for n, kept in by.items() if isinstance(kept, dict)}
-        return out
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (OSError, ValueError):
         return {}
+    out: dict = {}
+    asked = data.get("asked") if isinstance(data, dict) else None
+    for name, by in (asked.items() if isinstance(asked, dict) else ()):
+        try:
+            tp2, number = str(name).rsplit("#", 1)
+            key = (tp2, int(number))
+        except ValueError:
+            continue
+        if not isinstance(by, dict):
+            continue
+        for n, kept in by.items():
+            if not (isinstance(kept, dict) and isinstance(kept.get("q"), str)):
+                continue
+            try:
+                place = int(n)
+            except ValueError:
+                continue
+            entry = {"q": kept["q"]}
+            for field_ in ("a", "r"):
+                if isinstance(kept.get(field_), str):
+                    entry[field_] = kept[field_]
+            out.setdefault(key, {})[place] = entry
+    return out
 
 
 def save_asked(path: str | None, asked: dict) -> None:
@@ -315,10 +332,9 @@ class InstallRun:
             if recorded is not None and self.answers.last is not None:
                 answer, source = recorded, self.answers.source
                 key, n = self.answers.last
-                kept = {"q": question_line(text)}
-                if source == "remembered":
-                    kept["a"] = answer
-                self.asked.setdefault(key, {})[n] = kept
+                if source == "recorded":   # a stale player's answer here goes
+                    self.asked.setdefault(key, {})[n] = {"q": question_line(text),
+                                                         "r": recorded}
             else:
                 shown = text
                 if self.answers.refused:
@@ -331,12 +347,15 @@ class InstallRun:
                 if given is None:
                     return False
                 answer, source = given, "player"
-                place = self.answers.answered_by_player()
+                place = self.answers.player_place()
                 if place is not None:
-                    # the player's answer stands for the refused one: kept with
-                    # its question, given next time it comes here (review of #98)
-                    self.asked.setdefault(place[0], {})[place[1]] = {
-                        "q": question_line(text), "a": answer}
+                    # kept with its question and the log's answer there, and
+                    # given next time it comes (second review of #98)
+                    key, n, stood_for = place
+                    kept = {"q": question_line(text), "a": answer}
+                    if stood_for is not None:      # past the log's answers: none
+                        kept["r"] = stood_for
+                    self.asked.setdefault(key, {})[n] = kept
         try:
             if process.stdin is None:
                 raise OSError("no standard input")

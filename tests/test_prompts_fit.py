@@ -5,7 +5,8 @@ that shifted against a mod's changed prompts are asked of the player instead.
 """
 import pytest
 
-from iemod_fetch.prompts import Answers, fits, offered, question_line, same_question
+from iemod_fetch.prompts import (Answers, fits, offered, question_block, question_line,
+                                 same_question)
 
 UB = ("setup-ub.tp2", 0)
 BW = ("bardicwonders.tp2", 1008)
@@ -95,16 +96,65 @@ def test_two_askings_are_one_question_whatever_came_before():
 
 
 def test_a_players_answer_kept_is_given_for_the_same_question():
-    answers = Answers({UB: ["2"]}, {UB: {0: {"q": "Remove? [y]es or [n]o", "a": "n"}}})
+    answers = Answers({UB: ["2"]}, {UB: {0: {"q": "Remove? [y]es or [n]o", "a": "n", "r": "2"}}})
     answers.start((UB,))
     assert answers.next(WINDOW.format("Remove? [y]es or [n]o")) == "n"
     assert answers.source == "remembered" and answers.last == (UB, 0)
 
 
 def test_a_refused_answer_hands_its_place_and_the_rest_to_the_player():
-    answers = Answers({UB: ["2", "y"]})
-    answers.start((UB,))
+    answers = Answers({UB: ["2", "y"], BW: ["1"]})
+    answers.start((UB, BW))
     assert answers.next("Keep it? [y]es or [n]o") is None
-    assert answers.answered_by_player() == (UB, 0)
-    assert answers.answered_by_player() == (UB, 1)
-    assert answers.answered_by_player() is None
+    assert answers.player_place() == (UB, 0, "2")
+    assert answers.player_place() == (UB, 1, "y")
+    assert answers.player_place() == (BW, 0, "1")
+    assert answers.player_place() is None          # two components: which asked is unknown
+
+
+def test_past_the_recorded_answers_a_lone_component_keeps_the_next_place():
+    answers = Answers({UB: ["y"]})
+    answers.start((UB,))
+    assert answers.next("Restore? [y]es or [n]o") == "y"
+    assert answers.next("And the portraits?") is None and answers.refused is None
+    assert answers.player_place() == (UB, 1, None)
+
+
+# ---------------------------------------------- second review of #98
+def test_a_menu_printed_after_the_question_is_part_of_it_not_its_limit():
+    window = WINDOW.format("Which portraits?\n    1] Original\n    2] Select 5 or 10 random ones")
+    assert question_block(window) == ["Which portraits?", "1] Original",
+                                      "2] Select 5 or 10 random ones"]
+    assert offered(window) is None and fits(window, "1")
+
+
+def test_a_bare_yes_or_no_line_takes_the_question_above_it():
+    delete = WINDOW.format("Do you want to DELETE your saves?\n    [Y]es or [N]o")
+    keep = WINDOW.format("Do you want to keep your saves?\n    [Y]es or [N]o")
+    assert question_line(delete) == "Do you want to DELETE your saves? / [Y]es or [N]o"
+    assert offered(delete) == {"y", "n", "yes", "no"}
+    assert not same_question(delete, keep)
+    answers = Answers({UB: ["y"]}, {UB: {0: {"q": question_line(keep), "a": "y", "r": "y"}}})
+    answers.start((UB,))
+    assert answers.next(delete) is None and "asked something else here" in answers.refused
+
+
+@pytest.mark.parametrize("question", [
+    "Use the default portraits? [y]es or [n]o", "Skip the intro? [y]es or [n]o",
+    "Leave the blank tiles? [y]es or [n]o"])
+def test_a_default_or_skip_that_is_not_an_answer_does_not_open_a_yes_or_no(question):
+    assert offered(question) == {"y", "n", "yes", "no"}
+
+
+@pytest.mark.parametrize("question", [
+    "Choose one (1-3), or 0 to skip", "Choose 1 or 2 [default: 2]",
+    "Select 1 or 2 (or press Enter)", "Enter 1 or 2, enter for the default"])
+def test_a_default_or_skip_bound_to_an_answer_opens_it(question):
+    assert offered(question) is None
+
+
+def test_a_remembered_answer_gives_way_when_the_log_changes_its_own():
+    kept = {UB: {0: {"q": "Remove? [y]es or [n]o", "a": "n", "r": "2"}}}
+    answers = Answers({UB: ["y"]}, kept)                  # the log now records "y"
+    answers.start((UB,))
+    assert answers.next("Remove? [y]es or [n]o") == "y" and answers.source == "recorded"
