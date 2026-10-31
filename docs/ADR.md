@@ -3772,11 +3772,18 @@ Measured with the real mod_installer 16.0.0 and WeiDU v251:
 
 ### Decision
 
-1. **`results.py` (pure, core layer) parses the debug text.** For each
-   block, the command line's tp2 and component numbers are matched in order
-   to its `Installing [Name]` lines and their verdicts. A verdict that does
-   not name the component it should close is not guessed at. A run cut
-   short leaves its last component with no verdict.
+1. **`results.py` (pure, core layer) parses the debug text.** In each
+   block, the command line's component numbers are taken in order by its
+   `Installing [Name]` and `SKIPPING: [Name]` lines. Measured with the real
+   WeiDU: a component whose REQUIRE_PREDICATE fails gets `SKIPPING: [Name]`
+   and no verdict, so it does not shift the others (review of #109). Each
+   verdict goes to the component it names.
+   - The `Installed ~Name~` lines WeiDU saves give the exact number of each
+     component it installed.
+   - Where the order contradicts them (a component passed over without a
+     word), only those exact numbers are kept, and a failure is left to the
+     log.
+   - A run cut short leaves its last component with no verdict.
 2. **WeiDU.log is the authority on what is in the game.** A planned
    component added to the log during the run is installed; the debug file
    only adds "with warnings". Where the two disagree, the log wins and a

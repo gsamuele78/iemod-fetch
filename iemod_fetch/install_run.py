@@ -91,6 +91,9 @@ def phases(plan_dir: str, games: dict[str, str]) -> list[tuple[str, str]]:
     if "EET" in games and "BGEE" in games:
         return [(os.path.join(plan_dir, PRE_EET_LOG), games["BGEE"]),
                 (os.path.join(plan_dir, EET_LOG), games["EET"])]
+    if len(games) != 1:
+        raise ConfigError(f"one game, or BG:EE and EET, are installed into; not "
+                          f"{', '.join(games) or 'none'}")
     (game, folder), = games.items()
     log = PRE_EET_LOG if game == "BGEE" and not os.path.isfile(
         os.path.join(plan_dir, EET_LOG)) else EET_LOG

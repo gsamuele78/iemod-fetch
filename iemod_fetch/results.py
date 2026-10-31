@@ -35,8 +35,12 @@ _BLOCK = re.compile(r"^WeiDU v \d+ Log\s*$")
 _COMMAND = re.compile(r"\s(?P<tp2>\S+\.tp2)\s.*?--force-install-list\s+(?P<numbers>[\d\s]+)",
                       re.IGNORECASE)
 _INSTALLING = re.compile(r"^Installing \[(?P<name>.*?)\]")
+_SKIPPING = re.compile(r"^SKIPPING: \[(?P<name>.*?)\]")       # REQUIRE_PREDICATE false
 _VERDICT = re.compile(r"^(?P<verdict>SUCCESSFULLY INSTALLED|INSTALLED WITH WARNINGS|"
                       r"NOT INSTALLED DUE TO ERRORS)\s+(?P<name>.*?)\s*$")
+# "Saving This Log:" - a component this run installed carries its name
+_SAVED = re.compile(r"^(?P<tp2>\S+\.tp2)\s+\d+\s+(?P<number>\d+)\s+Installed\s+~(?P<name>.*)~\s*$",
+                    re.IGNORECASE)
 _LOG_LINE = re.compile(r"^\s*~(?P<path>[^~]+)~\s+#\d+\s+#(?P<number>\d+)")
 
 
@@ -53,30 +57,52 @@ class Result:
 
 
 def debug_verdicts(text: str) -> dict[Key, tuple[str, str]]:
-    """{(tp2, number): (status, name)} from a WSETUP.DEBUG text: each WeiDU
-    run's components, from its command line, matched in order to its
-    `Installing [Name]` lines and their verdicts. A run cut short (cancelled,
-    killed) leaves its last component without a verdict: it is not here."""
+    """{(tp2, number): (status, name)} from a WSETUP.DEBUG text.
+
+    In each WeiDU run, its command line's components are taken in order by
+    its `Installing [Name]` and `SKIPPING: [Name]` lines (measured: a
+    component whose REQUIRE_PREDICATE fails gets `SKIPPING`, no verdict),
+    and each verdict goes to the component it names. The `Installed ~Name~`
+    lines WeiDU saves give the number of each one it installed exactly; where
+    the order and those disagree - a component passed over without a word -
+    only those exact numbers are kept, and a failure is left to the log
+    (review of #109). A run cut short leaves its last component with no
+    verdict."""
     out: dict[Key, tuple[str, str]] = {}
     block: list[str] = []
 
     def close() -> None:
-        tp2, numbers, names, verdicts = None, [], [], []
+        tp2, numbers = None, []
+        taken: list[tuple[int, str, bool]] = []       # (number, name, installing)
+        verdicts: list[tuple[str, str]] = []
+        exact: dict[str, int] = {}
         for line in block:
             if tp2 is None and (command := _COMMAND.search(line)):
                 tp2 = tp2_name(command["tp2"])
                 numbers = [int(n) for n in command["numbers"].split()]
-            elif installing := _INSTALLING.match(line):
-                names.append(installing["name"])
+            elif (step := _INSTALLING.match(line)) or (step := _SKIPPING.match(line)):
+                if len(taken) < len(numbers):
+                    taken.append((numbers[len(taken)], step["name"],
+                                  line.startswith("Installing")))
+                else:
+                    numbers = []                         # more steps than components
             elif ruling := _VERDICT.match(line):
                 verdicts.append((ruling["verdict"], ruling["name"]))
+            elif (saved := _SAVED.match(line)) and tp2 and tp2_name(saved["tp2"]) == tp2:
+                exact[saved["name"]] = int(saved["number"])
         if tp2 is None:
             return
-        # WeiDU installs the list in its order; a verdict names the
-        # component it closes, so a name out of step is not guessed at
-        for number, name, (verdict, said) in zip(numbers, names, verdicts, strict=False):
-            if said == name:
-                out[(tp2, number)] = (_VERDICTS[verdict], name)
+        ordered = bool(numbers) and all(exact.get(name, number) == number
+                                        for number, name, _ in taken)
+        pending = [(number, name) for number, name, installing in taken if installing]
+        for verdict, said in verdicts:
+            status = _VERDICTS[verdict]
+            match = next((p for p in pending if p[1] == said), None) if ordered else None
+            if match is not None:
+                pending.remove(match)
+                out[(tp2, match[0])] = (status, said)
+            elif said in exact and status != ERRORS:
+                out[(tp2, exact[said])] = (status, said)
 
     for line in text.splitlines():
         if _BLOCK.match(line):

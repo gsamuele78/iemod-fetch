@@ -678,3 +678,5 @@ def test_the_phases_are_the_games_command_gives_mod_installer(setup):
         (os.path.join(plan, "WeiDU.log"), games["EET"])]
     assert install_run.phases(plan, {"BG2EE": games["EET"]}) == [
         (os.path.join(plan, "WeiDU.log"), games["EET"])]
+    with pytest.raises(ConfigError, match="not BG2EE, IWDEE"):        # review of #109
+        install_run.phases(plan, {"BG2EE": games["EET"], "IWDEE": games["BGEE"]})

@@ -82,3 +82,28 @@ def test_not_reached_and_already_there():
         (r.OK, "already installed before this run"), (r.NOT_REACHED, "")]
     assert found[1].as_dict() == {"tp2": "late.tp2", "component": 5, "name": "",
                                   "status": r.NOT_REACHED, "note": ""}
+
+
+def test_a_component_skipped_by_its_predicate_does_not_shift_the_others():
+    """Review of #109, measured with the real WeiDU: a component whose
+    REQUIRE_PREDICATE fails gets `SKIPPING: [Name]` and no verdict."""
+    text = block("skip/skip.tp2", "0 1 2",
+                 "Installing [First] [1]\nSKIPPING: [Middle]\nInstalling [Last] [1]\n"
+                 "Saving This Log:\nSKIP/SKIP.TP2  0  0 Installed ~First~\n"
+                 "SKIP/SKIP.TP2  0  2 Installed ~Last~\n\nSUCCESSFULLY INSTALLED      First\n"
+                 "SUCCESSFULLY INSTALLED      Last\n")
+    assert r.debug_verdicts(text) == {("skip.tp2", 0): (r.OK, "First"),
+                                      ("skip.tp2", 2): (r.OK, "Last")}
+    found = r.results([("skip.tp2", 0), ("skip.tp2", 1), ("skip.tp2", 2)], "",
+                      "~SKIP/SKIP.TP2~ #0 #0 // First\n~SKIP/SKIP.TP2~ #0 #2 // Last\n", text)
+    assert [(x.status, x.note) for x in found] == [(r.OK, ""), (r.NOT_REACHED, ""), (r.OK, "")]
+
+
+def test_a_component_passed_over_without_a_word_keeps_only_exact_numbers():
+    """The order cannot be trusted when WeiDU's saved lines contradict it:
+    an install keeps its exact number, a failure is left to the log."""
+    text = block("m/m.tp2", "0 1 2",
+                 "Installing [B]\nInstalling [C]\nSaving This Log:\n"
+                 "M/M.TP2  0  1 Installed ~B~\n\nSUCCESSFULLY INSTALLED      B\n"
+                 "NOT INSTALLED DUE TO ERRORS C\n")
+    assert r.debug_verdicts(text) == {("m.tp2", 1): (r.OK, "B")}
