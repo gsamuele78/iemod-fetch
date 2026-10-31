@@ -17,6 +17,21 @@ Python API, which is internal.
   confirmation says that EET's core will likely put the game's settings and
   saves in the wrong folder - naming it - or fail. It is a warning, not a
   refusal, and not said on a resume past EET's core.
+- **The questions a mod will ask, read before installing** (GUI-AUDIT item
+  48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
+  `ACTION_READLN` it may reach - in its body, the functions and macros it
+  launches, the files it includes, its ALWAYS block - with the question's text
+  in the project's language, keyed by its .tra reference, and says which may
+  not be asked (under a condition), which repeat until valid, and what could
+  not be followed. Measured on 105 mods of the reference build
+  (`tools/readln_census.py`): 45 of 51 READLNs reached (88%), the question
+  known for 42 of those (25 a .tra string in the player's language, 17 a fixed
+  English text); of the 6 not reached, 5 are SCS's, behind paths built while
+  installing, and 1 follows a FAIL. Not wired into the wizard yet: the questionnaire before
+  Install is next.
+- ADR-0049: every question is known before the install starts, the player
+  answers them in one place, a timer never answers, and a watchdog only warns
+  when an install goes silent (the owner's decisions).
 
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass

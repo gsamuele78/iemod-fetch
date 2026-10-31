@@ -7,7 +7,7 @@
 #            catalogues, moddb, rules, ordering, conflicts, resolution,
 #            installer, languages, plan, report,
 #            config, pinning, selection, available, contract, tra, freshness, kinds,
-#            decisions, bio, pi, limits, choices, prompts, resume
+#            decisions, bio, pi, limits, choices, prompts, resume, readln
 #            -> pure. Parse, compare, decide. No sockets, no subprocesses.
 #   shell    net, etagcache, childenv, auth, archives, install, orgindex, resolvers, datasync, runner,
 #            install_run, toolchain, api, cli
@@ -60,6 +60,7 @@ source_modules =
     iemod_fetch.available
     iemod_fetch.contract
     iemod_fetch.tra
+    iemod_fetch.readln
     iemod_fetch.freshness
     iemod_fetch.kinds
     iemod_fetch.decisions
@@ -156,7 +157,7 @@ layers =
     iemod_fetch.net
     iemod_fetch.archives | iemod_fetch.auth | iemod_fetch.etagcache
     iemod_fetch.childenv
-    iemod_fetch.plan | iemod_fetch.report
+    iemod_fetch.plan | iemod_fetch.report | iemod_fetch.readln
     iemod_fetch.installer | iemod_fetch.tra
     iemod_fetch.resolution | iemod_fetch.languages
     iemod_fetch.simulate | iemod_fetch.constraints | iemod_fetch.gamedir | iemod_fetch.backup
@@ -225,6 +226,7 @@ forbidden_modules =
     iemod_fetch.premeta
     iemod_fetch.plan
     iemod_fetch.prompts
+    iemod_fetch.readln
     iemod_fetch.resume
     iemod_fetch.report
     iemod_fetch.resolution

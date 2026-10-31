@@ -586,6 +586,8 @@ Debian trixie (the minimum platform), Windows and macOS, is
 `tools/rar_measure.py` in the `RAR extractors` workflow (docs/TESTING.md).
 What holds the wizard's window during a download, on Linux and Windows, is
 traced by the `GUI latency` workflow (`tools/gui_latency_summary.py`).
+Which questions the mods of a build ask while installing is measured by
+`tools/readln_census.py` on their WeiDU files (ADR-0049).
 
 ## Community data, kept current
 
