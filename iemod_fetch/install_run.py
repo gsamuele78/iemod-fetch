@@ -377,10 +377,12 @@ class InstallRun:
         batch: tuple = ()
         longest = 0.0
 
-        def close_batch() -> None:
+        def close_batch(up_to_now: bool = True) -> None:
+            """Record the batch's longest silence; `up_to_now`: count the one
+            still going (not when the player was the one being waited on)."""
             if batch:
-                outcome.silences.append(
-                    (batch, max(longest, time.monotonic() - last_output)))
+                now = time.monotonic() - last_output if up_to_now else 0.0
+                outcome.silences.append((batch, max(longest, now)))
 
         def watch() -> None:
             """The silence so far, measured and said once past the threshold:
@@ -419,7 +421,7 @@ class InstallRun:
                     if not self._answer(process, question, outcome):
                         self._stop(process)
                         outcome.cancelled = True
-                        close_batch()
+                        close_batch(up_to_now=False)    # the player's time is not silence
                         return
                     # answered: alive; its window is not the last output any
                     # more (a silence after it is not that question waiting)

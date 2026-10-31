@@ -801,3 +801,26 @@ def test_a_silence_after_an_answered_question_is_not_that_question_waiting(tmp_p
     said = [e.text for e in events if e.kind == "watchdog"]
     assert len(said) == 1 and "does not put to anyone" not in said[0]
     assert "Nothing is stopped" in said[0]
+
+
+ASKED_THEN_CANCELLED = r"""
+import sys
+def log(text):
+    print(f"[2026-10-24T00:00:00Z INFO  mod_installer::runner] {text}", flush=True)
+log('Installing mod WeiduBatchedComponents([WeiduComponent { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }])')
+log("User Input required"); log("Question is"); log("Please choose one:")
+sys.stdin.readline()
+"""
+
+
+def test_the_players_time_at_a_cancelled_question_is_not_silence(tmp_path):
+    """Third review of #115: the time a question waits on the player is not
+    counted, also when the player cancels it."""
+    import sys
+    import time
+    from iemod_fetch.install_run import InstallRun
+    run_ = InstallRun([sys.executable, "-c", ASKED_THEN_CANCELLED], [], cwd=str(tmp_path),
+                      ask=lambda q, b: time.sleep(1.5) or None, quiet_s=0.2, grace_s=1.0)
+    outcome = run_.run()
+    assert outcome.cancelled
+    assert outcome.silences and outcome.silences[0][1] < 1.0
