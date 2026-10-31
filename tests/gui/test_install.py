@@ -463,3 +463,84 @@ def test_a_known_issue_and_broken_rules_say_both_in_the_title(qtbot, world):
     page = page_of(qtbot, world, answers=(False,))
     run_to_end(qtbot, page)
     assert page.confirmed[-1][0] == "Install anyway, despite a known issue"
+
+
+# ------------------------------------------------- the questionnaire (ADR-0049)
+UB_TP2 = ("BACKUP ~ub/backup~\nLANGUAGE ~English~ ~english~\n"
+          "BEGIN ~Portraits~ DESIGNATED 0\n  PRINT ~Which portraits?~\n"
+          "  ACTION_READLN portraits\n")
+
+
+def asking_mod(world, monkeypatch):
+    (world["tmp"] / "mods" / "ub" / "setup-ub.tp2").write_text(UB_TP2)
+    monkeypatch.setenv("FAKE_QUESTIONS", json.dumps({"setup-ub.tp2#0": ["Which portraits?"]}))
+    monkeypatch.setenv("FAKE_TRANSCRIPT", str(world["tmp"] / "answers.txt"))
+
+
+def test_questions_are_answered_before_the_install_and_never_asked_during_it(
+        qtbot, world, monkeypatch):
+    backed_up(world)
+    asking_mod(world, monkeypatch)
+    page = page_of(qtbot, world)
+    shown, asked_live = [], []
+
+    def answer(components, kept):
+        shown.append([(c["tp2"], [q["text"] for q in c["questions"]]) for c in components])
+        return {"setup-ub.tp2#0": {"Which portraits?": "2"}}
+    page.answer_questions = answer
+    page.ask_player = lambda question: asked_live.append(question) or "9"
+    run_to_end(qtbot, page)
+    assert shown == [[("UB/SETUP-UB.TP2", ["Which portraits?"])]]
+    assert asked_live == [] and page.outcome.ok            # given from the log
+    assert (world["tmp"] / "answers.txt").read_text().split() == ["2"]
+    assert "Every question found is answered" in page.confirmed[-1][1]
+    # kept in the project: the next install does not ask again
+    assert api.load_install_answers(str(world["tmp"])) == {
+        "setup-ub.tp2#0": {"Which portraits?": "2"}}
+    (world["game"] / "WeiDU.log").unlink()
+    shown.clear()
+    settled(qtbot, page)
+    run_to_end(qtbot, page)
+    assert shown == [] and asked_live == []
+
+
+def test_cancelling_the_questionnaire_installs_nothing(qtbot, world, monkeypatch):
+    backed_up(world)
+    asking_mod(world, monkeypatch)
+    page = page_of(qtbot, world)
+    page.answer_questions = lambda components, kept: None
+    run_to_end(qtbot, page)
+    assert page.outcome is None and page.confirmed == []
+    assert "the questions were not answered" in page.summary.text()
+    assert not (world["game"] / "WeiDU.log").exists()
+
+
+def test_a_component_that_cannot_be_read_is_said_in_the_confirmation(qtbot, world):
+    backed_up(world)                    # ub has no tp2 here: its questions are unknown
+    page = page_of(qtbot, world, answers=(False,))
+    run_to_end(qtbot, page)
+    text = page.confirmed[-1][1]
+    assert "1 component(s) may stop the install to ask" in text
+    assert "UB/SETUP-UB.TP2 #0: could not be read in full" in text
+
+
+def test_the_questionnaire_dialog_fills_what_is_kept_and_refuses_a_comma(qtbot):
+    from iemod_fetch_gui.pages.install import _Questionnaire
+    components = [{"tp2": "UB/SETUP-UB.TP2", "number": 0, "questions": [
+        {"key": "@1", "text": "Which portraits?", "beforehand": True, "repeats": False},
+        {"key": "@2", "text": "Only during", "beforehand": False, "repeats": False}]}]
+    QWidget = pytest.importorskip("PySide6.QtWidgets").QWidget
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    dialog = _Questionnaire(parent, components, {"setup-ub.tp2#0": {"@1": "3"}})
+    assert [(key, field.text()) for _name, key, field in dialog.fields] == [("@1", "3")]
+    dialog.fields[0][2].setText("1,2")
+    dialog._accept()
+    assert "cannot hold a comma or a line break: Which portraits?" in dialog.problem.text()
+    dialog.problem.setText("")
+    dialog.fields[0][2].setText("a\nb")              # pasted: a QLineEdit keeps it
+    dialog._accept()
+    assert "line break" in dialog.problem.text()
+    assert dialog.result() != dialog.DialogCode.Accepted
+    dialog.fields[0][2].setText(" 4 ")
+    assert dialog.answers() == {"setup-ub.tp2#0": {"@1": "4"}}

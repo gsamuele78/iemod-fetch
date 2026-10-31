@@ -3443,6 +3443,74 @@ variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
 - Item 63 (PR #98) can recognise the question being asked from the texts
   read here instead of from the window's last line.
 
+### Amendment (2026-10-31): the questionnaire, points 2 and 5
+
+Built in phase 5. The planned log's answers are handed out in order, one per
+question, batch by batch (ADR-0045), so an answer written ahead lands on the
+right question only while every question before it is surely asked once.
+`api.install_questions` marks a question `beforehand` while that holds,
+from the component's first question:
+
+- the run stops **before** a question under a condition: if it were not
+  asked, its answer would go to the next question;
+- it stops **before** a question whose key came already in the component:
+  two questions that read alike would share one answer;
+- it ends **after** a question asked until valid: an answer it refused would
+  go to the next question, while with nothing left WeiDU's next try is
+  asked of the player;
+- a component whose reading could not follow a path, or with a question
+  whose text is unknown (status `unknown`), has none at all;
+- **in a batch** - mod_installer 16.0.0 runs consecutive components of one
+  mod together and `prompts.Answers` hands their answers out from one
+  queue - a component has none unless every component before it in the
+  batch can be answered in full (every question beforehand, none asked
+  until valid): else a question of an earlier one, left to the player,
+  would take this one's answer (independent review of #107, reproduced).
+  A batch is taken to be consecutive components of one tp2 file; whether
+  mod_installer groups by tp2 or by mod folder was not confirmed - two
+  installable tp2s in one folder, back to back, would be one real batch but
+  two here (no such mod is known).
+
+Before *Install*, the questions marked `beforehand` that have no kept answer
+are put to the player in one window, under their component, with the kept
+answers filled in. The answers are kept in `PROJECT/install-answers.json` as
+{"tp2#number": {question key: answer}} and written into the planned logs as
+`// @wlb-inputs:`, up to each component's first question with no answer
+(`api.write_install_answers`). The confirmation then names the components
+that may still stop to ask. Cancel in the window installs nothing. An answer
+cannot hold a comma, the format's separator, nor anything Python's
+`str.splitlines()` breaks a line at (`prompts.writable`); the window
+refuses both, and a kept answer holding one (a file edited by hand) is not
+loaded, so it is asked again instead of failing every install. The mods'
+files are read for the questions on the worker thread that writes the plan,
+not on the window's.
+
+Not done here, and still to come:
+- the mod's version beside the answers (point 2): a mod whose questions
+  change between versions keeps the old answers under the same key;
+- the questions after a condition, which are still asked during the install
+  until item 63 can recognise a question by its expected text;
+- the watchdog (point 4).
+
+**Measured** (the 105-mod corpus of point 1, the same scan, 2026-10-31): 159
+components reach a question, 1,187 questions counted per component (one
+question reached by several components counts for each). Only **3** are
+answerable beforehand under this rule, counted per component (the batch rule
+can only lower it: the corpus has no install order) (DLC Merger, EET's mod converter, EEUI
+Tweaks: 1 each), and 1 component has all its questions answerable. Without
+SCS, whose 1,144 are its SFO library's, reached by every component and
+unread or conditional: 3 of 43. What stops the first question of each
+asking component (SCS left out, 16 components): a path that could not be
+followed, 8 (EET's core: `%MOD_FOLDER%/lib/bgee_dir.tph`; TDDz); a
+condition, 4 (Tweaks Anthology 3176, BP-BGT Worldmap's travel times - both
+skip the question when a preset answers it); asked until valid, 3 (answered,
+but nothing after it); unknown text, 1 (LCA). So the order of the log alone
+answers little: most questions sit under a condition that is usually true on
+a fresh install. Answering those safely needs the question recognised when
+it comes - by its expected text, which point 1 knows - and answered by its
+key, not by its place: the next step (item 48), after which the window can
+offer the questions under a condition too.
+
 ---
 
 ## ADR-0050 — A rename waits out a file Windows holds for a moment

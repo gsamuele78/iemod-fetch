@@ -17,6 +17,19 @@ Python API, which is internal.
   before and after. Where the two disagree, the log wins. It is written to
   `install-plan/results.json` and returned as `Outcome.results`. Not shown
   in the wizard yet.
+- **The questions are answered before the install** (GUI-AUDIT item 48,
+  ADR-0049 points 2 and 5): before *Install*, the wizard puts the questions
+  the mods will ask to the player in one window - those whose place is sure:
+  not under a condition, not printed from a variable, none after a question
+  asked until valid, and in a batch of one mod's components none after a
+  component that may still ask (an answer given in order would otherwise
+  land on the wrong question). The answers are kept in `PROJECT/install-answers.json`
+  by question key, so the next install does not ask again, and written into
+  the planned logs as `// @wlb-inputs:`; the confirmation lists the components
+  that may still stop to ask. Cancel installs nothing. New in the api:
+  `install_questions` says per question whether it is answerable
+  `beforehand`; `load_install_answers`, `save_install_answers`,
+  `write_install_answers`, `answer_key`.
 - **A mod this tool cannot download, supplied by hand** (GUI-AUDIT item 68,
   ADR-0052): in the wizard's download phase, a mod whose page is behind
   Cloudflare, a JavaScript button or a login can be opened in the browser and
