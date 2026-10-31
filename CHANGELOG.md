@@ -8,6 +8,14 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Documentation
+- **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass
+  today's ceilings: read from their zips' central directories by HTTP Range
+  requests, BGEE Graphics Enhanced 0.2.0 unpacks to 1.744 GiB and BGGO 3.6 to
+  1.457 GiB, both under the 2 GiB unpacked ceiling, and no member trips the
+  ratio guard. `--max-bytes` defaults to 2 GiB, not the 300 MB one measuring run
+  used.
+
 ## [4.0.1] - 2026-10-31
 
 ### Fixed
