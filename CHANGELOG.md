@@ -17,6 +17,12 @@ Python API, which is internal.
   to close it and try again. mod_installer starts each batch's WeiDU
   itself, so at each batch a program found is only said, once, as a
   warning; the install goes on.
+- **What an install answered is recorded** (GUI-AUDIT M8 item 63,
+  ADR-0045): `install-plan/answers.json` lists each question's last line, the
+  answer and where it came from (the log, the player, EET's folder), written
+  on every install run. Recorded answers still go in order: no rule on a
+  question's text can tell which answers a mod takes (Tweaks Anthology #3210
+  takes 0 outside its "between 6 and 15"), so none holds one back.
 - **A known EET fault is said before installing** (GUI-AUDIT M8 item 65,
   ADR-0045). On Windows, when the Documents folder is registered with a space
   (a OneDrive folder such as "OneDrive - Company\Documents", or "D:\My
@@ -80,6 +86,10 @@ Python API, which is internal.
   saved from the window). An extracted mod moves into the mods folder in one
   rename, not file by file, and if that fails the copy it replaced is put
   back.
+- EET's Documents-path warning (item 65): a block nested in the cut's own
+  (`if (` over lines, `) else (`) no longer ends it early, so an EET copy
+  that sets the whole path after such a block is not warned about; a set
+  inside the nested block, which depends on its condition, still is.
 
 ## [4.0.1] - 2026-10-31
 
