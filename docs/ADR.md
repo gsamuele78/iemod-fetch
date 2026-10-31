@@ -3354,7 +3354,8 @@ BG met it and retries such renames (`engine/src/fs_retry.rs`, MIT, read at
 508256a: 12 attempts, 10 ms doubling to 1 s, about 5.3 s). Here 11 places
 renamed: 8 `os.replace`/`os.rename` (`atomic.py`, `archives.py`, `backup.py`
 x2, `datasync.py` x2, `net.py`, `toolchain.py`) and 3 `shutil.move` in
-`install.py`, from the staging folder into the mods folder, entry by entry.
+`install.py`: a tp2 folded into its folder, the old copy moved to
+`.backup/`, and the mod's entries moved into the mods folder one by one.
 Those were worse than a refusal: when Windows refuses the rename,
 `shutil.move` copies and then deletes, and a held file split the mod.
 
@@ -3379,7 +3380,12 @@ Those were worse than a refusal: when Windows refuses the rename,
 - A mod's folder moves from the staging folder in **one** rename (the
   staging folder is under the mods folder: one file system), never entry by
   entry. If that rename fails, the copy it replaced (moved to `.backup/`) is
-  put back.
+  put back; if that fails too, one error says the install failed and where
+  the old copy is kept. `install.py` now has 4 `atomic.move`s: the tp2
+  fold, the old copy aside, the mod in, the old copy back.
+- The folder keeps the mode the unpacker gave it; one its owner cannot
+  write (some unpackers restore 0555) is made writable by its owner, so
+  WeiDU can create `<mod>/backup/` in it (second review of #102).
 - A test walks the tool and the wizard and fails on any `os.replace`,
   `os.rename`, `os.renames` or `shutil.move` - called, or imported by name -
   outside `atomic.py`.

@@ -12,6 +12,7 @@ Invariants (ADR-0007):
 import json
 import os
 import shutil
+import stat
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -170,10 +171,23 @@ def install_from_archive(archive_path: str, target_root: str, folder: str,
         count = len(os.listdir(root))
         try:
             atomic.move(root, dest)
-        except OSError:
-            if backup is not None and not os.path.exists(dest):
+        except OSError as exc:
+            if backup is None or os.path.exists(dest):
+                raise
+            try:
                 atomic.move(backup, dest)
+            except OSError as again:
+                # one message: what failed, and where the old copy is safe
+                raise OSError(exc.errno, f"{folder}: not installed ({exc}); the copy it was "
+                                         f"to replace is kept in {backup} - putting it back "
+                                         f"failed too ({again})") from exc
             raise
+        # The folder came as the archive made it: one read-only there (some
+        # unpackers restore 0555) would stop WeiDU writing its backup folder
+        # inside it (review of #102). Its owner may write it.
+        mode = stat.S_IMODE(os.stat(dest).st_mode)
+        if mode & stat.S_IRWXU != stat.S_IRWXU:
+            os.chmod(dest, mode | stat.S_IRWXU)
 
         verified = verify_mod_dir(dest, folder, expect_tp2)
         if not verified:

@@ -203,3 +203,49 @@ def test_a_move_that_fails_puts_the_old_copy_back(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):
         install_from_archive(str(arc), str(mods), "Ub", force=True)
     assert (mods / "Ub" / "setup-ub.tp2").read_text() == "old"     # put back
+
+
+def test_a_read_only_mod_folder_from_the_archive_is_made_writable(tmp_path, monkeypatch):
+    """Second review of #102: the folder moves as the unpacker made it; a
+    0555 one would stop WeiDU creating <mod>/backup/ in it."""
+    import stat
+    import zipfile
+
+    from iemod_fetch import install
+    arc = tmp_path / "m.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        zf.writestr("Ub/setup-ub.tp2", "BACKUP ~x~")
+    real_extract = install.safe_extract
+
+    def read_only_root(archive, dest, **kw):
+        real_extract(archive, dest, **kw)
+        os.chmod(os.path.join(dest, "Ub"), 0o555)
+    monkeypatch.setattr(install, "safe_extract", read_only_root)
+    outcome = install.install_from_archive(str(arc), str(tmp_path / "Mods"), "Ub")
+    mode = stat.S_IMODE(os.stat(outcome.dest).st_mode)
+    assert mode & stat.S_IRWXU == stat.S_IRWXU
+
+
+def test_when_putting_the_old_copy_back_fails_too_one_message_says_where_it_is(
+        tmp_path, monkeypatch):
+    import zipfile
+
+    from iemod_fetch.install import install_from_archive
+    mods = tmp_path / "Mods"
+    (mods / "Ub").mkdir(parents=True)
+    (mods / "Ub" / "setup-ub.tp2").write_text("old")
+    arc = tmp_path / "m.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        zf.writestr("Ub/setup-ub.tp2", "new")
+    real = atomic.move
+
+    def held_back(source, target):
+        if ".staging" in source or ".backup" in source:
+            raise PermissionError(errno.EACCES, "held")
+        real(source, target)
+    monkeypatch.setattr(atomic, "move", held_back)
+    with pytest.raises(OSError, match=r"Ub: not installed .*kept in .*\.backup.*putting it back "
+                                      r"failed too"):
+        install_from_archive(str(arc), str(mods), "Ub", force=True)
+    kept = list((mods / ".backup").iterdir())
+    assert len(kept) == 1 and (kept[0] / "setup-ub.tp2").read_text() == "old"
