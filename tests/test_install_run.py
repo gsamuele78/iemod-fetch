@@ -231,7 +231,8 @@ def alive(pid):
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
             return fh.read().split(")")[-1].split()[0] != "Z"
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
+        # gone before the open, or between the open and the read (ESRCH)
         return False
 
 
