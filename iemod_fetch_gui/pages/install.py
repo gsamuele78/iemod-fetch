@@ -112,6 +112,10 @@ class InstallPage(QWidget):
         self.backed_up: dict[str, str] = {}     # game folder -> its newest backup
         self.progress: dict = {"state": "fresh"}    # how far an earlier install went
         self.outcome: Any = None
+        # the components a Cancel stopped inside: said again when resuming, a
+        # net under the uninstall-record check (review of #89)
+        self.cancelled_in: str | None = None
+        self._running_batch: str | None = None
         self._thread: QThread | None = None
         self._cancel = threading.Event()
         self._install: Any = None
@@ -489,8 +493,12 @@ class InstallPage(QWidget):
                 if resuming else f"Install {len(chosen)} component(s) into:")
         title = ("Resume anyway" if resuming else "Install anyway") if broken else \
             ("Resume" if resuming else "Install")
+        stopped = ("" if not (resuming and self.cancelled_in) else
+                   f"The last run was cancelled while it installed {self.cancelled_in}: "
+                   f"if that left files in the game, restoring the backup is the safe "
+                   f"way.\n\n")
         if not self.confirm(title, (
-                f"{what}\n{folders}\n\n{warning}"
+                f"{what}\n{folders}\n\n{stopped}{warning}"
                 f"mod_installer and WeiDU change these folders. Nothing is undone by "
                 f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
             self._say("Not installed: the plan is written in "
@@ -503,7 +511,8 @@ class InstallPage(QWidget):
         def on_event(event: Any) -> None:
             text = event.text
             if event.kind == "batch":
-                text = "== " + ", ".join(f"{tp2} #{number}" for tp2, number in event.batch)
+                names = ", ".join(f"{tp2} #{number}" for tp2, number in event.batch)
+                self._running_batch, text = names, "== " + names
             elif event.kind == "answer":
                 text = f"-> {text}"
             bridge.line.emit(text)
@@ -561,6 +570,8 @@ class InstallPage(QWidget):
             self._say("Cancelled before mod_installer started: nothing was changed.")
             return
         self.outcome = outcome
+        self.cancelled_in = self._running_batch if getattr(outcome, "cancelled", False) else None
+        self._running_batch = None
         backups = ", ".join(self.backed_up.values())
         if outcome.ok:
             self._say("Installed. Each game's WeiDU.log lists what went in.")

@@ -407,3 +407,19 @@ def test_a_component_stopped_half_way_is_said_and_not_installed_into(qtbot, worl
     assert page.progress["state"] == "mismatch" and not page.install_button.isEnabled()
     assert "ub/setup-ub.tp2 #10 stopped half-way" in page.resume_state.text()
     assert "Restore the backup to start again" in page.resume_state.text()
+
+
+def test_resuming_after_a_cancel_inside_a_component_says_so(qtbot, world):
+    """A net under the uninstall-record check (review of #89): the page knows
+    which components the cancelled run was in, and says so before resuming."""
+    backed_up(world)
+    world["state"]["plan_lines"] = ["~UB/SETUP-UB.TP2~ #0 #0 // x",
+                                    "~UB/SETUP-UB.TP2~ #0 #10 // y"]
+    (world["game"] / "WeiDU.log").write_text("~UB/SETUP-UB.TP2~ #0 #0 // x\n")
+    page = page_of(qtbot, world, answers=(False,))
+    page.cancelled_in = "setup-ub.tp2 #10"
+    run_to_end(qtbot, page)
+    title, text = page.confirmed[-1]
+    assert title == "Resume"
+    assert "cancelled while it installed setup-ub.tp2 #10" in text
+    assert "restoring the backup is the safe way" in text

@@ -2876,7 +2876,11 @@ version up to the tag).
   original would no longer be restored. So `install_run` looks for the next
   component's uninstall record (the tp2's `BACKUP` folder, case aside) and,
   when it is there, refuses to resume: the page says the component stopped
-  half-way and that restoring the backup is the way. `weidu --uninstall`
+  half-way and that restoring the backup is the way. The tp2's `BACKUP`
+  folder is read with `%MOD_FOLDER%` as the mod's folder, else
+  `<mod>/backup`. As a net under that check, a resume after a Cancel names
+  the components the cancelled run was in, and says that restoring the
+  backup is the safe way if they left files. `weidu --uninstall`
   cannot help, since it works from WeiDU.log lines and the component has
   none. A failure WeiDU reports itself is not this case: WeiDU undoes the
   component it was installing, and leaves no record behind.
@@ -2895,8 +2899,10 @@ version up to the tag).
   plan's install, and is refused before anything runs. If BG:EE's part is
   unfinished, the eet run takes BG:EE's rest and the whole EET log. If it is
   finished (its log is the whole pre-EET plan), the EET game is installed
-  alone with its rest, as a normal install, and the BG:EE folder question
-  no longer arises.
+  alone with its rest, as a normal install. EET's core may still be in
+  that rest (a failure WeiDU undid), so its BG:EE folder question is still
+  answered from the BG:EE game as given, not asked of the player (review of
+  #89).
 - **The backup made before the stopped install keeps counting** while
   resuming. The game changed since, but those changes are the components
   the log lists, and restoring that backup goes back to before them.

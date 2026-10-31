@@ -438,7 +438,7 @@ def _in_folder(base: str, relative: str) -> str | None:
     return path
 
 
-_BACKUP = re.compile(r"^\s*BACKUP\s+[~\"%](?P<dir>[^~\"%]+)[~\"%]", re.MULTILINE)
+_BACKUP = re.compile(r"^\s*BACKUP\s+(?P<q>[~\"])(?P<dir>[^~\"]+)(?P=q)", re.MULTILINE)
 
 
 def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
@@ -455,8 +455,11 @@ def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
         with open(tp2_path, encoding="utf-8", errors="replace") as fh:
             match = _BACKUP.search(fh.read())
         backup = match["dir"].strip() if match else None
+    folder_of_mod = os.path.dirname(tp2.replace("\\", "/"))
     if backup is None:
-        backup = os.path.dirname(tp2.replace("\\", "/")) + "/backup"
+        backup = folder_of_mod + "/backup"
+    # `BACKUP ~%MOD_FOLDER%/backup~`, a frequent form (review of #89)
+    backup = re.sub(r"%MOD_FOLDER%", lambda _m: folder_of_mod, backup, flags=re.IGNORECASE)
     record = _in_folder(folder, f"{backup}/{number}/UNINSTALL.{number}")
     return record if record is not None and os.path.isfile(record) else None
 
@@ -514,6 +517,9 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     (resume.py) - only the rest is installed; a game whose log is not the
     plan's beginning is refused.
     """
+    # EET's core asks for BG:EE's folder: known from the games as given, also
+    # when a resume runs the EET game alone (review of #89)
+    bgee_dir = games.get("BGEE") if "EET" in games else None
     if resume_install:
         state = resume_state(plan_dir, games)
         if state.state == "mismatch":
@@ -530,4 +536,4 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     argv = command(plan_dir, games, mods_dir, mod_installer, weidu, language)
     logs = [os.path.join(plan_dir, name) for name in (PRE_EET_LOG, EET_LOG)]
     return InstallRun(argv, logs, cwd=mods_dir, ask=ask, on_event=on_event,
-                      bgee_dir=games.get("BGEE") if "EET" in games else None, **timing)
+                      bgee_dir=bgee_dir, **timing)

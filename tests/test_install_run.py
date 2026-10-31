@@ -464,3 +464,38 @@ def test_a_component_stopped_half_way_is_not_resumed(setup, monkeypatch):
     assert "UNINSTALL.1" in progress["problem"]
     with pytest.raises(ConfigError, match="stopped half-way.*restore the backup"):
         run(setup, monkeypatch, {}, resume=True)
+
+
+def test_resuming_the_eet_game_alone_still_answers_eets_bgee_question(setup, monkeypatch):
+    """BG:EE's part is in, EET's core failed (WeiDU undid it): the resume runs
+    the EET game alone, and EET's question still gets BG:EE's folder, not the
+    player (review of #89)."""
+    monkeypatch.setenv("FAKE_FAIL", "eet.tp2#0")
+    install, _events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]})
+    assert not install.run().ok
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert [p["next"] for p in progress["phases"]] == [None, "eet/eet.tp2 #0"]
+
+    monkeypatch.delenv("FAKE_FAIL")
+    asked = []
+    install, events = run(setup, monkeypatch, {"eet.tp2#0": [EET_QUESTION]},
+                          ask=lambda question, batch: asked.append(question), resume=True)
+    assert install.argv[1] == "normal" and install.bgee_dir == setup["games"]["BGEE"]
+    outcome = install.run()
+    assert outcome.ok, [e.text for e in events]
+    assert asked == [] and [a.source for a in outcome.answered] == ["EET"]
+
+
+def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
+    from pathlib import Path
+    Path(setup["plan"], "WeiDU-BGEE.log").write_text(
+        "// Log of Currently Installed WeiDU Mods\n"
+        "~MYMOD/SETUP-MYMOD.TP2~ #0 #0 // a\n~MYMOD/SETUP-MYMOD.TP2~ #0 #1 // b\n")
+    game = Path(setup["games"]["BGEE"])
+    (game / "WeiDU.log").write_text("~MYMOD/SETUP-MYMOD.TP2~ #0 #0 // a\n")
+    (game / "MyMod").mkdir()
+    (game / "MyMod" / "setup-mymod.tp2").write_text("BACKUP ~%MOD_FOLDER%/saved~\n")
+    (game / "MyMod" / "saved" / "1").mkdir(parents=True)
+    (game / "MyMod" / "saved" / "1" / "UNINSTALL.1").write_text("override/x\n")
+    progress = api.install_progress(setup["plan"], setup["games"])
+    assert progress["state"] == "mismatch" and "stopped half-way" in progress["problem"]
