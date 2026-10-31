@@ -228,11 +228,15 @@ def alive(pid):
         listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
                                 capture_output=True, text=True, check=False).stdout
         return str(pid) in listed
+    # gone between the open and the read (ESRCH), or its pid taken by another
+    # program on a busy runner: not the child (both seen on CI, PR #115)
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
-            return fh.read().split(")")[-1].split()[0] != "Z"
-    except (FileNotFoundError, ProcessLookupError):
-        # gone before the open, or between the open and the read (ESRCH)
+            if fh.read().split(")")[-1].split()[0] == "Z":
+                return False
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            return b"SIG_IGN" in fh.read()           # the IGNORING child's own code
+    except OSError:
         return False
 
 
@@ -714,3 +718,114 @@ def test_recorded_answers_of_another_tool_are_handed_out_in_order(tmp_path):
     # @2 skipped this run: @3 comes second and gets a3, not "nothing"
     assert run._by_question("Please enter the first value:", (("a.tp2", 0),)) == ("a1", "recorded")
     assert run._by_question("Please enter the third value:", (("a.tp2", 0),)) == ("a3", "recorded")
+
+
+def test_a_long_silence_is_said_never_acted_on_and_measured(setup, monkeypatch):
+    """ADR-0049 point 4: no output for longer than the threshold is said once,
+    with the last lines; the install goes on to its end; each batch's longest
+    silence is recorded."""
+    import json
+    monkeypatch.setenv("FAKE_SLOW", "1.5")
+    install, events = run(setup, monkeypatch, {}, silent_s=0.7)
+    outcome = install.run()
+    assert outcome.ok                                           # never stopped
+    said = [e.text for e in events if e.kind == "watchdog"]
+    assert said and all(text.startswith("No output for") for text in said)
+    assert "Nothing is stopped" in said[0] and "The last lines:" in said[0]
+    assert len(said) == len(outcome.silences)                   # once per silence
+    assert all(seconds >= 1.4 for _batch, seconds in outcome.silences)
+    with open(os.path.join(setup["plan"], "results.json"), encoding="utf-8") as fh:
+        kept = json.load(fh)
+    assert len(kept["silences"]) == 3 and kept["silences"][0]["seconds"] >= 1.4
+
+
+def test_a_silence_after_a_question_mod_installer_does_not_ask_says_so(tmp_path):
+    from iemod_fetch.install_run import InstallRun
+    run_ = InstallRun(["x"], [], cwd=str(tmp_path), ask=lambda q, b: None,
+                      expected={("a.tp2", 0): [("@1", "How many extra kits should be installed?")]})
+    text = run_._silence_text(700, ["Installing [A]", "How many extra kits should be installed?"],
+                              (("a.tp2", 0),))
+    assert text.startswith("No output for 12 minute(s)")
+    assert "does not put to anyone" in text and "mod_installer's timeout" in text
+
+
+TICKS_12 = r"""
+import sys, time
+def log(text):
+    print(f"[2026-10-24T00:00:00Z INFO  mod_installer::installers] {text}", flush=True)
+log('Installing mod Component { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }')
+print("How many extra kits should be installed?", flush=True)
+for i in range(40):                       # 12.1.1's row of dots while WeiDU is silent,
+    log("." * (i + 1)); time.sleep(0.04)   # faster than the queue's 0.1 s wait
+"""
+
+
+def test_mod_installer_12s_dots_are_not_output(tmp_path):
+    """Review of #115: 12.1.1 prints dots exactly while WeiDU is silent - they
+    neither keep the watchdog quiet nor push the question out of the last
+    lines, nor spoil the measured silence."""
+    import sys
+    from iemod_fetch.install_run import InstallRun
+    events = []
+    run_ = InstallRun([sys.executable, "-c", TICKS_12], [], cwd=str(tmp_path),
+                      ask=lambda q, b: None, on_event=events.append, quiet_s=0.2,
+                      silent_s=0.6,
+                      expected={("a.tp2", 0): [("@1", "How many extra kits should be installed?")]})
+    outcome = run_.run()
+    said = [e.text for e in events if e.kind == "watchdog"]
+    assert len(said) == 1 and "does not put to anyone" in said[0], [e.text for e in events]
+    assert "...." not in said[0].split("The last lines:")[1]
+    assert outcome.silences and outcome.silences[0][1] >= 1.4
+
+
+ANSWERED_THEN_SILENT = r"""
+import sys, time
+def log(text):
+    print(f"[2026-10-24T00:00:00Z INFO  mod_installer::runner] {text}", flush=True)
+log('Installing mod WeiduBatchedComponents([WeiduComponent { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }])')
+log("User Input required"); log("Question is")
+log("Please enter the number of extra kits to install:")
+sys.stdin.readline()
+time.sleep(1.5)                            # works silently after the answer
+"""
+
+
+KITS_QUESTION = "Please enter the number of extra kits to install:"
+
+
+def test_a_silence_after_an_answered_question_is_not_that_question_waiting(tmp_path):
+    """Review of #115: the answered question's window is not the last output;
+    a silence after it says nothing of a question nobody is asked."""
+    import sys
+    from iemod_fetch.install_run import InstallRun
+    events = []
+    run_ = InstallRun([sys.executable, "-c", ANSWERED_THEN_SILENT], [], cwd=str(tmp_path),
+                      ask=lambda q, b: "3", on_event=events.append, quiet_s=0.2, silent_s=0.6,
+                      expected={("a.tp2", 0): [("@1", KITS_QUESTION)]})
+    run_.run()
+    said = [e.text for e in events if e.kind == "watchdog"]
+    assert len(said) == 1 and "does not put to anyone" not in said[0]
+    assert "Nothing is stopped" in said[0]
+
+
+ASKED_THEN_CANCELLED = r"""
+import sys
+def log(text):
+    print(f"[2026-10-24T00:00:00Z INFO  mod_installer::runner] {text}", flush=True)
+log('Installing mod WeiduBatchedComponents([WeiduComponent { tp_file: "A.TP2", name: "A", lang: "0", component: "0" }])')
+log("User Input required"); log("Question is"); log("Please choose one:")
+sys.stdin.readline()
+"""
+
+
+def test_the_players_time_at_a_cancelled_question_is_not_silence(tmp_path):
+    """Third review of #115: the time a question waits on the player is not
+    counted, also when the player cancels it."""
+    import sys
+    import time
+    from iemod_fetch.install_run import InstallRun
+    run_ = InstallRun([sys.executable, "-c", ASKED_THEN_CANCELLED], [], cwd=str(tmp_path),
+                      ask=lambda q, b: time.sleep(1.5) or None, quiet_s=0.2, grace_s=1.0)
+    outcome = run_.run()
+    assert outcome.cancelled
+    assert outcome.silences and outcome.silences[0][1] < 1.0

@@ -30,7 +30,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from . import gamelock, resume
@@ -39,13 +39,17 @@ from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
 from .prompts import (EET_FOLDER_QUESTION, Answers, Event, Key, OutputReader,
-                      match_question, question_line, recorded_answers)
+                      match_question, mod_installer_asks, question_line, recorded_answers)
 
 # What the planned logs are called (ordering.PRE_EET_LOG, EET_LOG)
 PRE_EET_LOG, EET_LOG = "WeiDU-BGEE.log", "WeiDU.log"
 QUIET_S = 0.5            # no output for this long after a question: it is complete
 GRACE_S = 10.0           # terminate, then kill after this long
 DRAIN_S = 2.0            # its output still open this long after it ended: stop the rest
+# No output for this long and no question: said, never acted on (ADR-0049
+# point 4). Provisional: no real install's silences were measured yet - each
+# run records its longest per batch (results.json "silences") to set it.
+SILENT_S = 600.0
 
 
 @dataclass
@@ -63,6 +67,9 @@ class Outcome:
     # what each planned component came to, by WeiDU.log and WeiDU's debug
     # file (item 69, ADR-0053); `ok` stays mod_installer's exit code
     results: list[verdicts.Result] = field(default_factory=list)
+    # the longest stretch without output in each batch, in seconds (the
+    # watchdog's measurement, ADR-0049 point 4)
+    silences: list[tuple[tuple, float]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -76,11 +83,16 @@ RESULTS_FILE = "results.json"
 DEBUG_FILE = "WSETUP.DEBUG"     # WeiDU's --autolog, appended to (--logapp)
 
 
-def save_results(path: str | None, found: list) -> None:
+def save_results(path: str | None, found: list,
+                 silences: Sequence[tuple[tuple, float]] = ()) -> None:
     """What each component came to (item 69), for the player and a bug
-    report; written on every run, like answers.json."""
+    report; written on every run, like answers.json. `silences`: each
+    batch's longest stretch without output (the watchdog's measurement)."""
     if path:
-        data = {"v": 1, "components": [r.as_dict() for r in found]}
+        data: dict = {"v": 1, "components": [r.as_dict() for r in found]}
+        if silences:
+            data["silences"] = [{"batch": [f"{tp2} #{number}" for tp2, number in batch],
+                                 "seconds": round(seconds, 1)} for batch, seconds in silences]
         with contextlib.suppress(OSError):
             write_text(path, json.dumps(data, indent=1, ensure_ascii=False) + "\n")
 
@@ -267,6 +279,7 @@ class InstallRun:
                  on_event: Callable[[Event], None] = lambda _event: None,
                  bgee_dir: str | None = None, quiet_s: float = QUIET_S,
                  grace_s: float = GRACE_S, drain_s: float = DRAIN_S,
+                 silent_s: float = SILENT_S,
                  games: dict[str, str] | None = None, tools: tuple[str, ...] = (),
                  running: Callable[[], list[gamelock.Running] | None] = gamelock.running_executables,
                  asked_file: str | None = None,
@@ -300,6 +313,7 @@ class InstallRun:
         # wrote in that order (an Orchestrator log records them as asked)
         self.answers = Answers(recorded, row_keys or {})
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
+        self.silent_s = silent_s
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
         self._job = _Job()
@@ -341,7 +355,7 @@ class InstallRun:
             outcome.returncode = process.wait()
             self._job.close()
             outcome.results = [r for phase in self._phases for r in phase.results()]
-            save_results(self.results_file, outcome.results)
+            save_results(self.results_file, outcome.results, outcome.silences)
         return outcome
 
     def _pump(self, process: subprocess.Popen, outcome: Outcome) -> None:
@@ -358,10 +372,34 @@ class InstallRun:
         threading.Thread(target=read, daemon=True).start()
         reader = OutputReader()
         exited_at: float | None = None
+        last_output, warned = time.monotonic(), False
+        recent: list[str] = []                       # the last lines, for a warning
+        batch: tuple = ()
+        longest = 0.0
+
+        def close_batch(up_to_now: bool = True) -> None:
+            """Record the batch's longest silence; `up_to_now`: count the one
+            still going (not when the player was the one being waited on)."""
+            if batch:
+                now = time.monotonic() - last_output if up_to_now else 0.0
+                outcome.silences.append((batch, max(longest, now)))
+
+        def watch() -> None:
+            """The silence so far, measured and said once past the threshold:
+            on every pass, so dots arriving faster than the queue's wait do not
+            keep it from being looked at (second review of #115)."""
+            nonlocal longest, warned
+            silent = time.monotonic() - last_output
+            longest = max(longest, silent)
+            if not warned and not reader.asking and silent >= self.silent_s:
+                warned = True
+                self.on_event(Event("watchdog", self._silence_text(silent, recent, batch),
+                                    batch))
         while True:
             if self._cancel.is_set():
                 self._stop(process)
                 outcome.cancelled = True
+                close_batch()
                 return
             if exited_at is None and process.poll() is not None:
                 exited_at = time.monotonic()
@@ -372,26 +410,71 @@ class InstallRun:
                 self._stop(process)
                 self.on_event(Event("line", "mod_installer ended, but what it started "
                                             "was still running: stopped"))
+                close_batch()
                 return
             try:
                 line = lines.get(timeout=self.quiet_s if reader.asking
                                  else min(self.quiet_s, 0.1))
             except queue.Empty:
                 question = reader.question() if reader.asking else None
-                if question is not None and not self._answer(process, question, outcome):
-                    self._stop(process)
-                    outcome.cancelled = True
-                    return
+                if question is not None:
+                    if not self._answer(process, question, outcome):
+                        self._stop(process)
+                        outcome.cancelled = True
+                        close_batch(up_to_now=False)    # the player's time is not silence
+                        return
+                    # answered: alive; its window is not the last output any
+                    # more (a silence after it is not that question waiting)
+                    last_output, warned, recent = time.monotonic(), False, []
+                    continue
+                watch()
                 continue
             if line is None:
+                longest = max(longest, time.monotonic() - last_output)
+                close_batch()
                 return
-            for event in reader.feed(line):
+            events = reader.feed(line)
+            if events:
+                # a line that says something; mod_installer 12.1.1's rows of
+                # dots (no events) are not output - they come exactly while
+                # WeiDU is silent (review of #115)
+                longest = max(longest, time.monotonic() - last_output)
+                last_output, warned = time.monotonic(), False
+                if line.strip():
+                    recent = (recent + [line.rstrip()])[-5:]
+            for event in events:
                 if event.kind == "batch":
+                    close_batch()
+                    batch, longest = event.batch, 0.0
                     self.answers.start(event.batch)
                     self._given = set()
                 self.on_event(event)
                 if event.kind == "batch":
                     self._game_started(event.batch)
+            if not events:
+                watch()                            # a dot: still silent
+
+    def _silence_text(self, silent: float, recent: list[str], batch: tuple) -> str:
+        """What the watchdog says (ADR-0049 point 4): how long, what it may
+        be, the last lines - and the question mod_installer did not put to
+        anyone when the last line is one the batch's mods ask."""
+        minutes = f"{silent / 60:.0f} minute(s)" if silent >= 60 else f"{silent:.1f} s"
+        expected = [(component, key, text) for component in batch
+                    for key, text in self.expected.get(component, ())]
+        window = "\n".join(recent)
+        found = match_question(window, expected) if expected and window else None
+        asked = {(c, k): t for c, k, t in expected}
+        if found is not None and not mod_installer_asks(asked.get(found, "")):
+            what = ("WeiDU seems to be waiting for an answer to a question mod_installer "
+                    "does not put to anyone (it asks only questions with words such as "
+                    "\"enter\" or \"choose\"): it will wait until mod_installer's timeout. "
+                    "Cancel and install that mod by hand, or wait.")
+        else:
+            what = ("WeiDU may be working without a word (some components take long), or "
+                    "waiting for an answer mod_installer did not recognise. Nothing is "
+                    "stopped.")
+        last = "\n".join(f"    {line}" for line in recent) or "    (no output yet)"
+        return f"No output for {minutes}. {what} The last lines:\n{last}"
 
     def _game_started(self, batch: tuple) -> None:
         """Say once each program found running from a game folder at a
