@@ -58,7 +58,7 @@ from .orgindex import OwnerIndex, load_trusted_owners
 from .pinning import build_pinned_manifest, write_pinned_manifest
 from .plan import build_plan, load_aliases
 from .report import RunReport, render_summary
-from . import bio, choices, install_run, limits, pi, premeta, sortorder, toolchain
+from . import bio, choices, install_run, limits, pi, premeta, prompts, readln, sortorder, toolchain
 from .decisions import Decisions, IgnoredOrder, decisions_to_json, parse_decisions
 from .resolution import (ResolutionResult, apply_decisions, before_eet_core, keep_both_rules,
                          resolve_conflicts, resolve_refusals)
@@ -79,6 +79,7 @@ from .weidu import ParsedLog, parse_weidu_files, parse_weidu_log, split_log_spec
 from . import __version__
 
 __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare_https",
+           "install_questions",
            "backup_game", "verify_backup", "plan_restore", "restore_backup", "list_backups",
            "backups_dir",
            "selection_of_logs", "update_data", "data_status", "describe_mods",
@@ -872,6 +873,103 @@ def save_decisions(folder: str, choose: dict | None = None,
          for unit, i in ignored_order.items()}))
     parse_decisions(text, source="the wizard's decisions")    # refuse before writing
     return _write_whole(folder, DECISIONS_FILE, text)
+
+
+_WEIDU_FILES = (".tp2", ".tpa", ".tph", ".tpp", ".tpc", ".tra")
+
+
+def _mod_files(mods_dir: str, folder: str) -> dict[str, str]:
+    """Every WeiDU file of a mod folder, by its path from the game folder."""
+    files: dict[str, str] = {}
+    # the log may spell the folder in capitals; on Linux the name must match
+    try:
+        actual = next((n for n in os.listdir(mods_dir) if n.lower() == folder.lower()), folder)
+    except OSError:
+        return files
+    root = os.path.join(mods_dir, actual)
+    for base, _dirs, names in os.walk(root):
+        for name in names:
+            if name.lower().endswith(_WEIDU_FILES):
+                path = os.path.join(base, name)
+                try:
+                    with open(path, "rb") as fh:
+                        data = fh.read()
+                except OSError:
+                    continue
+                try:
+                    text = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = data.decode("cp1252", errors="replace")
+                files[os.path.relpath(path, mods_dir).replace(os.sep, "/")] = text
+    return files
+
+
+def install_questions(plan_dir: str, mods_dir: str) -> dict:
+    """
+    The questions the planned install will meet, before it starts (GUI-AUDIT
+    item 48, ADR-0049): for every component of `plan_dir`'s WeiDU logs, the
+    READLNs its mod's files reach (iemod_fetch/readln.py, in the language the
+    log installs it in), and the answers the log records for it
+    (`// @wlb-inputs:`).
+
+    Returns {"components": [{"log", "tp2", "number", "language", "questions":
+    [{"key", "text", "known", "conditional", "repeats", "via", "file",
+    "line"}], "recorded": [answers], "status", "unread": [...]}],
+    "unattended": bool, "counts": {status: n}}. A status is "none" (asks
+    nothing), "answered" (as many recorded answers as questions it surely
+    asks), "partial", "unanswered", or "unknown" (a question whose text is set
+    elsewhere, or a path the reading could not follow). "unattended" is a
+    forecast, not a promise: a lexical reading misses what runs at install
+    time, and a question under a condition may or may not come.
+    """
+    scans: dict[tuple[str, int], readln.ModPrompts] = {}
+    files_of: dict[str, dict[str, str]] = {}
+    components = []
+    for name in sorted(os.listdir(plan_dir)) if os.path.isdir(plan_dir) else []:
+        if not name.lower().endswith(".log"):
+            continue
+        with open(os.path.join(plan_dir, name), encoding="utf-8", errors="replace") as fh:
+            lines = fh.read().splitlines()
+        for line in lines:
+            match = prompts._LOG_LINE.match(line)
+            if not match:
+                continue
+            tp2 = match["path"].replace("\\", "/")
+            folder, number, lang = tp2.split("/", 1)[0], int(match["number"]), int(match["lang"])
+            if folder.lower() not in files_of:
+                files_of[folder.lower()] = _mod_files(mods_dir, folder)
+            files = files_of[folder.lower()]
+            key = next((k for k in files if k.lower() == tp2.lower()), tp2)
+            if (key, lang) not in scans:
+                scans[(key, lang)] = readln.scan(key, files, language_index=lang)
+            found = scans[(key, lang)]
+            asked = found.of(number)
+            recorded = prompts.wlb_inputs(line) or []
+            sure = [q for q in asked if not q.conditional]
+            if key not in files:
+                status = "unknown"                    # the mod is not there to read
+            elif not asked:
+                status = "none"
+            elif any(not q.keyed for q in asked) or found.unread:
+                status = "unknown"
+            elif len(recorded) >= len(sure) and (sure or recorded):
+                status = "answered"
+            elif recorded:
+                status = "partial"
+            else:
+                status = "unanswered"
+            components.append({
+                "log": name, "tp2": tp2, "number": number, "language": lang,
+                "questions": [{"key": q.key, "text": q.text, "known": q.keyed,
+                               "conditional": q.conditional, "repeats": q.repeats,
+                               "via": q.via, "file": q.file, "line": q.line} for q in asked],
+                "recorded": recorded, "status": status, "unread": list(found.unread)})
+    counts: dict[str, int] = {}
+    for c in components:
+        status = str(c["status"])
+        counts[status] = counts.get(status, 0) + 1
+    return {"components": components, "counts": counts,
+            "unattended": all(c["status"] in ("none", "answered") for c in components)}
 
 
 def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,

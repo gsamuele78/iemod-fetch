@@ -8,6 +8,16 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- `api.install_questions(plan_dir, mods_dir)` (GUI-AUDIT item 48, ADR-0049):
+  for every component of the planned WeiDU logs, the questions its mod's
+  files reach - read in the language the log installs it in - and the answers
+  the log records; each component is "none", "answered", "partial",
+  "unanswered" or "unknown" (a question whose text is set elsewhere, a path not
+  followed, the mod not in the mods folder), and the plan is forecast
+  unattended or not. A forecast, not a promise: a question under a condition
+  may or may not come. Not in the wizard yet.
+
 ### Release workflow
 - "Latest" is put back on the newest release of CHANGELOG.md
   (`tools/release_notes.py latest`) every six hours (release-latest.yml) and
