@@ -1257,11 +1257,15 @@ hand-written, reviewed changelog with one generated from commit messages.
 **Amendment (2026-10-31): `RELEASE_TOKEN` is checked, not trusted.** 4.0.0's
 run passed its gate, built and attested, then its publish step met "Bad
 credentials": the secret had expired, and `secrets.RELEASE_TOKEN ||
-github.token` takes any non-empty secret. The first job now asks GitHub for
-the repository with the secret; only an HTTP 200 makes it the publishing
-token. A rejected one gives a warning and is not used: the run's own token
-publishes when it may, and a release that needs the secret stops in that
-first job, in seconds. How to renew it: docs/RELEASING.md, "RELEASE_TOKEN".
+github.token` takes any non-empty secret. Now only a release that needs the
+secret (workflow files differ from `main`'s) uses it, and the first job asks
+GitHub for the repository with it; only an HTTP 200 makes it the publishing
+token. A rejected one stops that release in the first job, in seconds; every
+other release uses the run's own token, whatever the secret. The check proves
+the token is live, not that it may write here (the repository is public).
+"Latest" is judged against `main`'s changelog, also on a tag pushed by hand,
+so a back-fill never displaces a newer release. How to renew the token, and
+why an old failed run must not be re-run: docs/RELEASING.md, "RELEASE_TOKEN".
 
 ---
 

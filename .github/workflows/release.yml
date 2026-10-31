@@ -86,19 +86,27 @@ jobs:
           else
             python tools/release_plan.py $VERSION >> "$GITHUB_OUTPUT"
           fi
-          newest=$(python -c "import tools.release_plan as r; print(r.newest_release(open('CHANGELOG.md', encoding='utf-8').read()))")
+          # "latest" is judged against main's changelog: on a tag pushed by hand
+          # the checkout is the tagged commit, whose changelog may not know a
+          # newer release (4.0.0 tagged after 4.0.1 must not become Latest).
+          git show origin/main:CHANGELOG.md > /tmp/main-changelog.md 2>/dev/null || cp CHANGELOG.md /tmp/main-changelog.md
+          newest=$(python -c "import tools.release_plan as r; print(r.newest_release(open('/tmp/main-changelog.md', encoding='utf-8').read()))")
           tag=$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT" | tail -1)
           if [ "$tag" = "v$newest" ]; then echo "latest=true"; else echo "latest=false"; fi >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
       # GITHUB_TOKEN cannot create a tag on a commit whose workflow files differ
       # from main's (it can never hold the `workflows` permission): GitHub
       # answers 403 at the very last step. Say so now, with the two ways out.
-      # RELEASE_TOKEN is checked against GitHub here, not trusted for being set:
-      # 4.0.0's run built and attested for 15 minutes, then the publish step met
-      # "Bad credentials" from an expired token. A token GitHub rejects is not
-      # used: the run's own token publishes when it may (same workflow files),
-      # and otherwise the run stops now and says what to renew
-      # (docs/RELEASING.md, "RELEASE_TOKEN").
+      # RELEASE_TOKEN is used, and so checked, only when the release needs it
+      # (its commit's workflow files differ from main's); every other release
+      # is tagged with the run's own token, so a wrong or expired secret cannot
+      # break it. When needed, it is checked against GitHub here, not trusted
+      # for being set: 4.0.0's run built and attested for 15 minutes, then the
+      # publish step met "Bad credentials" from an expired token. The check
+      # proves the token is live (a 401 is caught); the repository is public,
+      # so it cannot prove the token may write to it - a token for the wrong
+      # repository still fails at the publish step (docs/RELEASING.md,
+      # "RELEASE_TOKEN").
       # An automatic back-fill waits quietly; one asked for by hand fails, so
       # the person who asked sees why.
       - name: The tag can be created with the token this run has
@@ -114,15 +122,15 @@ jobs:
         run: |
           go=true
           usable=false
-          if [ -n "$RELEASE_TOKEN" ]; then
-            code=$(curl -sS -o /dev/null -w '%{http_code}' \
+          if [ "$RELEASE" = "true" ] && [ "$DIFFER" = "true" ] && [ -n "$RELEASE_TOKEN" ]; then
+            code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
               -H "Authorization: Bearer $RELEASE_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$REPO") || code=000
             if [ "$code" = "200" ]; then
               usable=true
             else
-              echo "::warning title=RELEASE_TOKEN rejected::GitHub answered HTTP $code to the RELEASE_TOKEN secret (expired, revoked, or not given this repository). It is not used. Renew it: docs/RELEASING.md, \"RELEASE_TOKEN\"."
+              echo "::warning title=RELEASE_TOKEN rejected::GitHub answered HTTP $code to the RELEASE_TOKEN secret (401: expired or revoked; 000: GitHub not reached). It is not used. Renew it: docs/RELEASING.md, \"RELEASE_TOKEN\"."
             fi
           fi
           if [ "$RELEASE" = "true" ] && [ "$DIFFER" = "true" ] && [ "$usable" != "true" ]; then
@@ -472,8 +480,8 @@ jobs:
           make_latest: ${{ needs.decide.outputs.latest }}
           # Optional: only a back-fill onto a commit with other workflow files
           # needs a token with the `workflows` permission (ADR-0027). Used only
-          # when the decide job found that GitHub accepts it.
-          token: ${{ needs.decide.outputs.release_token == 'true' && secrets.RELEASE_TOKEN || github.token }}
+          # then, and only when the decide job found that GitHub accepts it.
+          token: ${{ needs.decide.outputs.workflows_differ == 'true' && needs.decide.outputs.release_token == 'true' && secrets.RELEASE_TOKEN || github.token }}
           fail_on_unmatched_files: true
 
   # The macOS bundle is built apart (release-macos.yml, ADR-0040); starting it
