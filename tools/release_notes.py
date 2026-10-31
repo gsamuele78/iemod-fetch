@@ -4,6 +4,7 @@ Release notes from CHANGELOG.md, and kept in step with it (ADR-0027).
 
     python3 tools/release_notes.py notes VERSION   # print the section
     python3 tools/release_notes.py sync            # fix published bodies
+    python3 tools/release_notes.py latest          # "Latest" on the newest release
 
 `sync` runs in the release workflow on every push to main that touches the
 changelog: each `## [X.Y.Z]` section with a published release vX.Y.Z is
@@ -11,6 +12,13 @@ compared with that release's body, and a body that no longer matches is
 rebuilt from the section. The "Verify this download" block the release was
 built with is kept, since its digest belongs to the artifacts. Editing a
 release creates no ref, so GITHUB_TOKEN may do it.
+
+`latest` makes the newest version of CHANGELOG.md that has a published
+release GitHub's "Latest". A back-fill's tag, created with RELEASE_TOKEN,
+starts the tagged commit's own release workflow; an older one judges "Latest"
+from its own changelog, and on 2026-10-31 v4.0.0's tag run made 4.0.0 Latest
+over 4.0.1. That run cannot be changed afterwards; this puts it right at the
+next push to main and at release-macos.yml's six-hourly run.
 """
 import re
 import subprocess
@@ -58,6 +66,30 @@ def sync(changelog: str) -> int:
     return 0
 
 
+def newest_released(changelog: str, released) -> str | None:
+    """The first version, newest first, that `released(tag)` says is out."""
+    return next((f"v{v}" for v in versions(changelog) if released(f"v{v}")), None)
+
+
+def latest(changelog: str) -> int:
+    def released(tag: str) -> bool:
+        shown = _gh("release", "view", tag, "--json", "isDraft,isPrerelease",
+                    "--jq", "(.isDraft or .isPrerelease) | not")
+        return shown.returncode == 0 and shown.stdout.strip() == "true"
+    tag = newest_released(changelog, released)
+    if tag is None:
+        return 0
+    now = _gh("api", "repos/{owner}/{repo}/releases/latest", "--jq", ".tag_name")
+    if now.returncode == 0 and now.stdout.strip() == tag:
+        return 0
+    edited = _gh("release", "edit", tag, "--latest")
+    if edited.returncode != 0:
+        print(edited.stderr, file=sys.stderr)
+        return edited.returncode
+    print(f"{tag}: marked Latest (was {now.stdout.strip() or 'none'})")
+    return 0
+
+
 def main(argv) -> int:
     with open("CHANGELOG.md", encoding="utf-8") as fh:
         changelog = fh.read()
@@ -67,6 +99,8 @@ def main(argv) -> int:
         return 0
     if len(argv) == 2 and argv[1] == "sync":
         return sync(changelog)
+    if len(argv) == 2 and argv[1] == "latest":
+        return latest(changelog)
     raise SystemExit(__doc__)
 
 
