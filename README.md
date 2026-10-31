@@ -793,6 +793,7 @@ install simulation and ADR-0026 for game folders and the real-WeiDU test.
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
+pip install --require-hashes -r requirements/runtime.txt   # the pinned runtime, first
 pip install -e ".[dev]"
 pre-commit install
 

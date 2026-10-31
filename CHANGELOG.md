@@ -315,6 +315,11 @@ Python API, which is internal.
   and install place, measured against each other and against a WeiDU.log.
 
 ### Fixed
+- **CI tests the runtime libraries as pinned.** The test jobs installed the
+  extras alone, and their loose range (`filelock>=4.2.1,<5`) pulled filelock
+  4.2.5 the day it came out while `requirements/runtime.txt` pins 4.2.4, so the
+  zipapp tests - which build from the pinned versions - failed on every pull
+  request. The jobs now install `requirements/runtime.txt` by hash first.
 - **A GitHub App installation token in the new stateless format is no longer
   dropped** when it comes from git's credential helper. GitHub's `ghs_` tokens
   became JWTs in 2026 (about 520 characters, with dots); the shape check that

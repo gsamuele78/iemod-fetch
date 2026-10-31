@@ -442,6 +442,11 @@ the zip and tar readers.
 
 ## Running it
 
+Install the runtime's pinned libraries first (`pip install --require-hashes -r
+requirements/runtime.txt`), then the extras: the extras' loose ranges would
+else pull a newer release than the pin, and the zipapp tests build from the
+pinned versions. CI installs them in that order.
+
 ```bash
 make check            # ruff, mypy, import-linter, pytest — what CI gates on
 make cover            # with the branch-coverage floor

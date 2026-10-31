@@ -78,6 +78,10 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # the runtime's libraries as shipped, by hash, before the extras: an
+      # extra's loose range would otherwise pull a newer one than the pin
+      # (test_build_zipapp builds from the pinned versions)
+      - run: pip install --require-hashes -r requirements/runtime.txt
       - run: pip install -e ".[test]"
 
       # The suite is offline by design. If a test ever reaches the network this
@@ -127,6 +131,10 @@ jobs:
       - name: Qt's system libraries (EGL, xkbcommon, fontconfig)
         if: runner.os == 'Linux'
         run: sudo apt-get update -q && sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      # the runtime's libraries as shipped, by hash, before the extras: an
+      # extra's loose range would otherwise pull a newer one than the pin
+      # (test_build_zipapp builds from the pinned versions)
+      - run: pip install --require-hashes -r requirements/runtime.txt
       - run: pip install -e ".[guitest]"
       - name: The wizard's tests, and the api it calls
         run: python -m pytest -q -rs tests/gui tests/test_project.py
