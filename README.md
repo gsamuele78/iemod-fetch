@@ -280,7 +280,11 @@ steps that are each yours.
    is asked in a dialog; *Cancel* stops it and everything it started. Nothing is
    undone by itself: to start again, restore the backup
    (`iemod-fetch --restore-backup`). The command line still runs nothing: its
-   scripts are for you to run (ADR-0022).
+   scripts are for you to run (ADR-0022). The game must be closed (ADR-0051):
+   a program running from a game folder, or on Windows a `dialog.tlk` held
+   open, stops *Install* before it starts. One started during the install is
+   said once in the output, but mod_installer starts each batch itself, so it
+   is not stopped.
 4. *Resume* after a failure or a Cancel: each game's own WeiDU.log says what went
    in. When it is the plan's beginning, the page says "N of M components are in"
    and *Install* runs only the rest - nothing in is installed again (mod_installer's
@@ -574,7 +578,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,827 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,839 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -828,7 +832,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,827, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,839, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

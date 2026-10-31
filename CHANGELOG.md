@@ -9,6 +9,12 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The game closed before an install starts** (GUI-AUDIT item 67,
+  ADR-0051): before an install or a resume, a program running from a game
+  folder (the game, a launcher, another WeiDU) and, on Windows, a
+  `dialog*.tlk` another program holds open stop it, named, with "close it
+  first". mod_installer starts each batch's WeiDU itself, so at each batch
+  a program found is only said, once, as a warning; the install goes on.
 - `api.install_questions(plan_dir, mods_dir)` (GUI-AUDIT item 48, ADR-0049):
   for every component of the planned WeiDU logs, the questions its mod's
   files reach - read in the language the log installs it in - and the answers

@@ -3338,3 +3338,70 @@ variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
   were not found under the names tried.
 - Item 63 (PR #98) can recognise the question being asked from the texts
   read here instead of from the window's last line.
+
+## ADR-0051 — The game is closed before an install starts; a game started meanwhile is said, not stopped
+
+**Status:** accepted (2026-10-31, GUI-AUDIT M8 item 67)
+
+### Context
+
+When a game, a launcher or another WeiDU is running from the game folder
+while a mod is installed into it, the install can fail. The game opens
+`dialog.tlk`, and WeiDU writes that file at the end of a component. On
+Windows a program holding `dialog.tlk` open makes that write fail. Another
+WeiDU can also write the same files at the same time.
+
+Chriz Easy BG makes two checks (`engine/src/preflight.rs` L399, L735, MIT;
+the idea only, nothing is copied):
+
+- no running executable under the target folder;
+- the talk tables open exclusively.
+
+It makes them before the install and again before each batch. It can do so
+because it starts WeiDU itself, one batch at a time.
+
+This program does not start WeiDU: mod_installer does. Read in its 16.0.0
+source, mod_installer logs `Installing mod ...` and starts that batch's WeiDU
+right after it (`installers.rs` L144, `runner.rs` L198). This program learns
+of a batch only from that log line, when WeiDU is already starting. There is
+no point between two batches at which it could hold mod_installer back.
+
+### Decision
+
+1. **Before the install and before a resume**, `gamelock.problems` refuses
+   to start in two cases:
+   - a running program's executable is under one of the games' folders. The
+     listing comes from `/proc/*/exe` on Linux, `ps -o comm=` on macOS, and
+     `K32EnumProcesses` + `QueryFullProcessImageNameW` on Windows.
+   - on Windows, a `dialog*.tlk` (at the root, or in `lang/*/`) cannot be
+     opened for reading and writing with no sharing.
+
+   Each problem names the program or the file and says "close it first".
+   The ConfigError carries it, like the other preflight refusals.
+2. **At each batch during the run**, only the programs are listed again. A
+   program found there is said once, as a warning in the install's output,
+   and the install goes on. The warning names the program and says why
+   WeiDU may fail. It cannot stop the batch, which has already started.
+   Stopping would cut a component in half, which is worse than the failure
+   it would prevent. The talk tables are not checked during the run: WeiDU
+   itself holds them then.
+3. This install's own mod_installer and WeiDU are ignored when they sit in
+   the game folder.
+
+### Consequences
+
+- What is not seen:
+  - a process this user may not inspect (another account's, or an elevated
+    one on Windows);
+  - on macOS, a game whose executable is outside the folder given, when the
+    folder is an .app's `Contents/Resources` and its executable is in
+    `Contents/MacOS`.
+- A listing that fails refuses nothing. It is treated as nothing found,
+  because refusing on a listing error would block an install with no way
+  round it.
+- Elsewhere than Windows nothing locks a file against WeiDU, so the
+  talk-table check is Windows only.
+- Item 67 as proposed asked for a check *before* each batch. That is not
+  possible while mod_installer drives WeiDU, and would need this program to
+  start WeiDU batch by batch itself. That is outside this item; until then,
+  what item 67 still lacks is that check.

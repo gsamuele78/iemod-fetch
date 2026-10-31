@@ -32,7 +32,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from . import resume
+from . import gamelock, resume
 from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
@@ -110,8 +110,10 @@ def _program(path: str) -> bool:
 
 
 def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: str,
-              allow_existing: bool = False) -> list[str]:
-    """What stops the install before it starts, in words; [] when nothing."""
+              allow_existing: bool = False,
+              in_use: Callable[[dict[str, str]], list[str]] = gamelock.problems) -> list[str]:
+    """What stops the install before it starts, in words; [] when nothing.
+    `in_use`: what says a game is running (gamelock, item 67)."""
     problems = []
     for name, folder in games.items():
         if not os.path.isdir(folder):
@@ -136,6 +138,8 @@ def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: s
     for name, path in (("mod_installer", mod_installer), ("WeiDU", weidu)):
         if not _program(path):
             problems.append(f"{name} is not a program here: {path}")
+    problems += in_use({name: folder for name, folder in games.items()
+                        if os.path.isdir(folder)})
     return problems
 
 
@@ -176,7 +180,10 @@ class InstallRun:
                  ask: Callable[[str, tuple], str | None],
                  on_event: Callable[[Event], None] = lambda _event: None,
                  bgee_dir: str | None = None, quiet_s: float = QUIET_S,
-                 grace_s: float = GRACE_S, drain_s: float = DRAIN_S) -> None:
+                 grace_s: float = GRACE_S, drain_s: float = DRAIN_S,
+                 games: dict[str, str] | None = None, tools: tuple[str, ...] = (),
+                 running: Callable[[], list[str] | None] = gamelock.running_executables
+                 ) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -186,6 +193,9 @@ class InstallRun:
                 continue
         self.argv, self.cwd, self.ask, self.on_event = argv, cwd, ask, on_event
         self.bgee_dir = bgee_dir
+        # item 67: a game started during the run is said at the next batch
+        self.games, self.tools, self.running = games or {}, tools, running
+        self._said: set[str] = set()
         self.answers = Answers(recorded)
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self._cancel = threading.Event()
@@ -268,6 +278,22 @@ class InstallRun:
                 if event.kind == "batch":
                     self.answers.start(event.batch)
                 self.on_event(event)
+                if event.kind == "batch":
+                    self._game_started(event.batch)
+
+    def _game_started(self, batch: tuple) -> None:
+        """Say once each program found running from a game folder at a
+        batch: mod_installer has started this batch's WeiDU already, so it
+        cannot be held back - only explained if WeiDU then fails (ADR-0051)."""
+        if not self.games:
+            return
+        for line in gamelock.running_in(self.games, self.running(), ignore=self.tools):
+            if line not in self._said:
+                self._said.add(line)
+                self.on_event(Event("line", f"warning: {line} is running from the game "
+                                            "folder while it is installed into - WeiDU "
+                                            "fails if it cannot write dialog.tlk; close "
+                                            "it", batch))
 
     def _answer(self, process: subprocess.Popen, question: Event, outcome: Outcome) -> bool:
         """Answer `question`; False when the player cancelled instead."""
@@ -536,4 +562,5 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     argv = command(plan_dir, games, mods_dir, mod_installer, weidu, language)
     logs = [os.path.join(plan_dir, name) for name in (PRE_EET_LOG, EET_LOG)]
     return InstallRun(argv, logs, cwd=mods_dir, ask=ask, on_event=on_event,
-                      bgee_dir=bgee_dir, **timing)
+                      bgee_dir=bgee_dir, games=games, tools=(mod_installer, weidu),
+                      **timing)

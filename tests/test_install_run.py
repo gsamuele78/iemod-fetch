@@ -499,3 +499,41 @@ def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
     (game / "MyMod" / "saved" / "1" / "UNINSTALL.1").write_text("override/x\n")
     progress = api.install_progress(setup["plan"], setup["games"])
     assert progress["state"] == "mismatch" and "stopped half-way" in progress["problem"]
+
+
+# ------------------------------------------- the game not running (item 67)
+def test_a_game_in_use_stops_the_install_before_it_starts(setup):
+    games, program = setup["games"], setup["program"]
+    seen = []
+
+    def in_use(folders):
+        seen.append(folders)
+        return ["EET: Baldur.exe is running from the game folder - close it first"]
+    problems = preflight(games, setup["mods"], program, program, in_use=in_use)
+    assert problems == ["EET: Baldur.exe is running from the game folder - close it first"]
+    assert seen == [games]
+    os.rename(games["BGEE"], games["BGEE"] + "-gone")              # only folders that exist
+    preflight(games, setup["mods"], program, program, in_use=in_use)
+    assert seen[-1] == {"EET": games["EET"]}
+
+
+def test_a_game_started_during_the_install_is_said_once_not_stopped(setup, monkeypatch):
+    import json
+
+    from iemod_fetch import install_run
+    monkeypatch.setenv("FAKE_QUESTIONS", json.dumps({}))
+    monkeypatch.setenv("FAKE_TRANSCRIPT", str(setup["transcript"]))
+    exe = os.path.join(setup["games"]["EET"], "Baldur.exe")
+    tool = os.path.join(setup["games"]["EET"], "weidu.exe")        # this install's own WeiDU
+    events = []
+    install = install_run.start(setup["plan"], setup["games"], setup["mods"],
+                                setup["program"], setup["program"], ask=lambda *_a: None,
+                                on_event=events.append, quiet_s=0.3,
+                                running=lambda: [exe, tool, setup["program"]])
+    install.tools = (*install.tools, tool)
+    outcome = install.run()
+    assert outcome.ok
+    warnings = [e.text for e in events if e.kind == "line" and e.text.startswith("warning:")]
+    assert warnings == [(f"warning: EET: {exe} is running from the game folder while it is "
+                         "installed into - WeiDU fails if it cannot write dialog.tlk; close it")]
+    assert len([e for e in events if e.kind == "batch"]) == 3      # every batch looked
