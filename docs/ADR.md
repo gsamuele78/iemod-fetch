@@ -2950,18 +2950,26 @@ version up to the tag).
 
 ### GUI-AUDIT M8 item 65: a known upstream fault is said before installing
 
+Kept in ADR-0045 on purpose: it is part of what the wizard says before it
+runs mod_installer.
+
 - **Context.** EET's core finds the Documents folder with a batch file
   (`EET/lib/macros.tph`, `GET_USER_DIRECTORY`, upstream since 38db44c): `for
   /f "tokens=3,*"` over `reg query ... User Shell Folders /v Personal`, then
   `set DOC_DIR=` the first variable - the third token only. A registered
   value with a space is cut at it. What follows, read in EET's source at
-  c26a11a (2026-10-29) and not run on Windows (review of #100): the core
-  builds the game's settings folder from the cut path (`<cut>\Baldur's Gate
-  - Enhanced Edition Trilogy`), WeiDU's MKDIR makes the missing folders,
-  and `Baldur.lua` is copied or written there (EET.tp2 L1091-1157). So the
-  core most likely finishes, and the game's settings and saves go to the
-  wrong place - inside a OneDrive folder's parent, for one - if it does not
-  fail first. Chriz Easy BG met it ("the community EET failure",
+  c26a11a (2026-10-29) and not run on Windows (reviews of #100): the core
+  builds a settings folder from the cut path (`<cut>\Baldur's Gate -
+  Enhanced Edition Trilogy`), WeiDU's MKDIR makes the missing folders, and
+  `Baldur.lua` - language, active campaign, EET's installation state - is
+  copied or written there, with an empty `save` folder (EET.tp2
+  L1091-1157). The game finds its own Documents folder through
+  `engine.lua`'s `engine_name` and never reads that one. So the core most
+  likely finishes; the saves stay where they belong; EET's settings, and
+  the `Baldur.lua` carried over from BG2:EE with its language, never reach
+  the real folder - a player not playing in English may start in the
+  default language and settings - and a stray folder is left at the cut
+  path. Chriz Easy BG met it ("the community EET failure",
   `docs/handover.md` L138-142) and patches EET's copy (MIT, 508256a). The
   value is read before `%VARIABLES%` are expanded, so the usual
   `%USERPROFILE%\Documents` has no space even when the user name has one;
@@ -2971,19 +2979,21 @@ version up to the tag).
   says it before installing, on Windows, when the plan has EET, EET's core
   is not yet in the EET game (a resume past it is not warned), the raw
   `Personal` value (`winreg`, unexpanded) has a space, and the EET copy in
-  the mods folder still has that shape of line - any variable letter,
-  "tokens=3*", "do (set ...)" (matched, not copied - EET is GPL-3.0). The
-  message names the registered value and the folder EET will use instead.
-  The wizard puts it in the confirmation, "Install despite a known issue";
-  it is not a refusal: the player decides, knowing. EET's file is not
-  patched: changing a mod's content needs item 52's ADR.
-- **Consequences.** A player whose settings and saves would have gone to an
-  unexpected folder - or whose core would have failed - with no word of why
-  is told before, with the registered value and where EET will write. An
-  EET release that keeps the whole path no longer matches, and the warning
-  goes by itself. The claim about the outcome is read in the source; no
-  Windows run confirms it. Reporting the bug to EET is the maintainer's
-  call; nothing has been opened.
+  the mods folder still has that shape of line at a line's start - any
+  variable letter, "tokens=3*", "do (set ...)" - with no line after it
+  keeping the whole path (matched, not copied - EET is GPL-3.0). The
+  message names the registered value and the folder EET will write its
+  settings to (a `%VARIABLE%` in it shown expanded). The wizard puts it in
+  the confirmation, "Install despite a known issue"; it is not a refusal:
+  the player decides, knowing. EET's file is not patched: changing a mod's
+  content needs item 52's ADR.
+- **Consequences.** A player whose EET settings and language would have
+  gone to a folder the game never reads - or whose core would have failed -
+  with no word of why is told before, with the registered value and where
+  EET will write. An EET release that keeps the whole path no longer
+  matches, and the warning goes by itself. The claim about the outcome is
+  read in the source; no Windows run confirms it. Reporting the bug to EET
+  is the maintainer's call; nothing has been opened.
 
 ---
 

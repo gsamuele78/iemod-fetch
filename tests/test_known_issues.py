@@ -18,7 +18,7 @@ QUERY = ("'reg query \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explo
 CUT = f'for /F  "tokens=3,*" %%i in ({QUERY}) do set DOC_DIR=%%i\n'
 CUT_VARIANTS = [
     f'FOR /f "tokens=3*" %%k IN ({QUERY}) DO (set "DOC_DIR=%%k")\n',
-    f'for /f "tokens=3,*" %%a in ({QUERY}) do set DOC_DIR=%%a\n',
+    f'  for  /F "tokens=3,*" %%a in ({QUERY})  do  set DOC_DIR=%%a\n',
 ]
 WHOLE = f'for /f "tokens=3,*" %%i in ({QUERY}) do set "DOC_DIR=%%i %%j"\n'
 SPACE = r"C:\Users\ann\OneDrive - Acme\Documents"
@@ -37,10 +37,28 @@ def test_a_documents_folder_with_a_space_meets_eets_cut(tmp_path):
     issues = install_run.known_issues(GAMES, eet_mods(tmp_path), documents=lambda: SPACE)
     assert len(issues) == 1
     issue = issues[0]
-    # where EET puts the settings: the path up to the space, single backslashes
+    # where EET writes its settings: the path up to the space, single backslashes
     assert "'C:\\Users\\ann\\OneDrive\\Baldur's Gate - Enhanced Edition Trilogy'" in issue
     assert f"registered as '{SPACE}'" in issue
-    assert "settings and saves in the wrong place" in issue and "may fail" in issue
+    assert "game's settings (Baldur.lua" in issue and "will not see them" in issue
+    assert "saves are not affected" in issue and "may fail" in issue
+
+
+def test_a_variable_in_the_value_is_shown_expanded(tmp_path, monkeypatch):
+    """Second review of #100: %USERPROFILE%\\OneDrive - Acme reads as the player's path."""
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\ann")
+    issue = install_run.known_issues(GAMES, eet_mods(tmp_path),
+                                     documents=lambda: r"%USERPROFILE%\OneDrive - Acme\Docs")[0]
+    assert "'C:\\Users\\ann\\OneDrive\\Baldur's Gate - Enhanced Edition Trilogy'" in issue
+    assert "registered as '%USERPROFILE%\\OneDrive - Acme\\Docs'" in issue
+
+
+@pytest.mark.parametrize("batch", [
+    f'REM for /f "tokens=3,*" %%i in ({QUERY}) do set DOC_DIR=%%i\n',          # commented out
+    CUT + 'set "DOC_DIR=%%i %%j"\n',                                           # fixed after it
+])
+def test_a_cut_commented_out_or_fixed_after_meets_nothing(tmp_path, batch):
+    assert install_run.known_issues(GAMES, eet_mods(tmp_path, batch), documents=lambda: SPACE) == []
 
 
 @pytest.mark.parametrize("batch", CUT_VARIANTS)

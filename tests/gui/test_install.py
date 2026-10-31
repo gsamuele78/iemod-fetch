@@ -452,3 +452,12 @@ def test_a_known_issue_while_resuming_says_resume(qtbot, world, monkeypatch):
     page = page_of(qtbot, world, answers=(False,))
     run_to_end(qtbot, page)
     assert page.confirmed[-1][0] == "Resume despite a known issue"
+
+
+def test_a_known_issue_and_broken_rules_say_both_in_the_title(qtbot, world):
+    backed_up(world)
+    world["state"]["violations"] = ["UB before EET"]
+    world["services"].known_issues = lambda games, mods: ["a known fault"]
+    page = page_of(qtbot, world, answers=(False,))
+    run_to_end(qtbot, page)
+    assert page.confirmed[-1][0] == "Install anyway, despite a known issue"

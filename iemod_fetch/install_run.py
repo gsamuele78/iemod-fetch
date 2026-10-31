@@ -471,8 +471,11 @@ def _left_half_way(folder: str, tp2: str, number: int) -> str | None:
 # Matched, not copied (EET is GPL-3.0): any variable letter, "tokens=3*"
 # without the comma, and a `do (set ...)` are the same cut.
 _EET_DOCUMENTS_CUT = re.compile(
-    r'tokens=3,?\*"\s+%%(\w)\s+in\b[^\n]*/v\s+Personal\b[^\n]*\bdo\s+\(?\s*set\s+'
-    r'"?DOC_DIR=%%\1"?\s*\)?\s*$', re.IGNORECASE | re.MULTILINE)
+    r'^\s*for\s+/f\s+"tokens=3,?\*"\s+%%(\w)\s+in\b[^\n]*/v\s+Personal\b[^\n]*\bdo\s+\(?\s*'
+    r'set\s+"?DOC_DIR=%%\1"?\s*\)?\s*$', re.IGNORECASE | re.MULTILINE)
+# ... and a line after it that keeps the whole path (an EET that fixed it by
+# adding one): `set "DOC_DIR=%%a %%b"`
+_EET_DOCUMENTS_WHOLE = re.compile(r'^\s*[^\n]*\bset\s+"?DOC_DIR=%%\w\s+%%\w', re.IGNORECASE | re.MULTILINE)
 _SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 
 
@@ -501,6 +504,11 @@ def _eet_core_in(folder: str) -> bool:
     return False
 
 
+def _shown(path: str) -> str:
+    """`%USERPROFILE%\\x` as the player knows it, for the message only."""
+    return re.sub(r"%(\w+)%", lambda m: os.environ.get(m[1], m[0]), path)
+
+
 def known_issues(games: dict[str, str], mods_dir: str,
                  documents: Callable[[], str | None] | None = None) -> list[str]:
     """
@@ -510,13 +518,15 @@ def known_issues(games: dict[str, str], mods_dir: str,
     EET's core and a Documents folder whose registry value has a space
     (OneDrive's "OneDrive - Company\\Documents", "D:\\My Documents"): its
     batch file keeps the path up to the first space, and the core goes on
-    with it - it creates the game's settings folder there and copies
-    Baldur.lua into it (EET.tp2, read at c26a11a; WeiDU's MKDIR makes the
-    missing folders), so the game's settings and saves end up in the wrong
-    place, if it does not fail first. Read in the source, not run on Windows.
-    A user name with a space is not this: the value is
-    `%USERPROFILE%\\Documents`, expanded after the cut. Not said once EET's
-    core is in the EET game (a resume past it).
+    with it - it creates a settings folder there and writes Baldur.lua
+    (language, campaign, EET's state) into it (EET.tp2 L1091-1157, read at
+    c26a11a; WeiDU's MKDIR makes the missing folders). The game finds its
+    own Documents folder (engine.lua's engine_name) and never reads that
+    one: the settings are lost to it, the saves are not affected (second
+    review of #100). Read in the source, not run on Windows. A user name
+    with a space is not this: the value is `%USERPROFILE%\\Documents`,
+    expanded after the cut. Not said once EET's core is in the EET game (a
+    resume past it).
     """
     issues = []
     if "EET" in games and not _eet_core_in(games["EET"]):
@@ -524,17 +534,20 @@ def known_issues(games: dict[str, str], mods_dir: str,
         macros = _in_folder(mods_dir, "EET/lib/macros.tph")
         if value and " " in value and macros and os.path.isfile(macros):
             with open(macros, encoding="utf-8", errors="replace") as fh:
-                cut = _EET_DOCUMENTS_CUT.search(fh.read())
-            if cut:
-                first = value.split(" ", 1)[0]
+                text = fh.read()
+            cut = _EET_DOCUMENTS_CUT.search(text)
+            if cut and not _EET_DOCUMENTS_WHOLE.search(text, cut.end()):
+                first = _shown(value.split(" ", 1)[0])
                 wrong = first + "\\Baldur's Gate - Enhanced Edition Trilogy"
                 issues.append(
-                    f"EET's core will likely put the game's settings and saves in the wrong "
-                    f"place: your Documents folder is registered as '{value}', and EET's "
-                    f"installer (EET/lib/macros.tph, GET_USER_DIRECTORY) keeps it only up "
-                    f"to the first space, so it uses '{wrong}' - or it may fail there. A "
-                    f"known EET bug on Windows. Until EET fixes it, a Documents folder whose "
-                    f"path has no space avoids it.")
+                    f"EET's core will write the game's settings (Baldur.lua: language, "
+                    f"campaign...) to '{wrong}' instead of your Documents folder, and the "
+                    f"game will not see them - it may start in its default language and "
+                    f"settings - or it may fail there. Your Documents folder is registered "
+                    f"as '{value}', and EET's installer (EET/lib/macros.tph, "
+                    f"GET_USER_DIRECTORY) keeps it only up to the first space. A known EET "
+                    f"bug on Windows; your saves are not affected. Until EET fixes it, a "
+                    f"Documents folder whose path has no space avoids it.")
     return issues
 
 

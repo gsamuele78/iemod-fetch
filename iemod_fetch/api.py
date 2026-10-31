@@ -906,8 +906,8 @@ def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:
     Known upstream faults the install of `games` with the mods in `mods_dir`
     will meet, each in words (GUI-AUDIT M8 item 65): said before installing,
     never a refusal. Today: EET's core and a Documents folder registered
-    with a space, on Windows (the game's settings and saves would go to the
-    wrong folder).
+    with a space, on Windows (EET's settings would go to a folder the game
+    never reads).
     """
     return install_run.known_issues(games, mods_dir)
 
