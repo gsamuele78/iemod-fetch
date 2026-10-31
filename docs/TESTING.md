@@ -435,10 +435,21 @@ collection with its generation and length (`gc.callbacks`), every event of
 the download stamped in its own thread when sent, and when the window took
 each in. `tools/gui_latency_summary.py` lines them up: for each gap over
 50 ms, which collection overlapped it, what the download sent just before and
-during it, and how many events the window handled during it. The `GUI
+during it, and how many events the window handled during it. When the loop
+is held past 40 ms, `faulthandler.dump_traceback_later` - a C watchdog that
+needs no GIL, re-armed at every tick - writes every thread's stack at that
+moment beside the trace, and the summary shows it. The `GUI
 latency` workflow runs the test 30 times on ubuntu-latest and windows-latest
-and publishes that summary; the fix - in the code, or in what the test may
-honestly expect of a shared runner - waits for its numbers.
+and publishes that summary.
+
+First measurement (#96, 30 runs each, 2026-10-31): ubuntu-latest median
+11.1 ms, worst 13.8 ms; windows-latest median 15.5 ms, worst 63.9 ms, none
+over 100 ms. The three Windows gaps over 50 ms (58-64 ms) had no collection
+in them and came before the download had sent any event: between the click
+on Download and the run's first event. The 240 ms of the release gate is not
+reproduced in 30 runs; the stack dumps above are added to say what runs in
+that first stretch. The fix - in the code, or in what the test may honestly
+expect of a shared runner - waits for them.
 
 ## What is deliberately not done
 

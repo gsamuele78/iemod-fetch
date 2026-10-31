@@ -18,6 +18,7 @@ The catalogue, the conflict check and the planner are injected, as in the
 other GUI tests: the real ones fetch community data. Nothing but 127.0.0.1 is
 reached; a guard makes any other connection fail the test.
 """
+import faulthandler
 import gc
 import http.server
 import json
@@ -224,9 +225,15 @@ class Latency:
     in - what tools/gui_latency_summary.py lines up to say what held a long
     gap (measured on the Windows runner, where one gap reached 240 ms)."""
 
-    def __init__(self):
+    STALL_S = 0.04          # a traced run dumps every thread's stack past this
+
+    def __init__(self, stacks=None):
         self.gaps, self._last = [], None
         self.ends: list[float] = []
+        # faulthandler's watchdog is a C thread that needs no GIL: re-armed at
+        # every tick, it fires only while the loop is held, and writes what
+        # each thread was running at that moment
+        self.stacks = stacks
         self.timer = QTimer()
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.setInterval(10)
@@ -238,6 +245,8 @@ class Latency:
             self.gaps.append(now - self._last)
             self.ends.append(now)
         self._last = now
+        if self.stacks is not None:
+            faulthandler.dump_traceback_later(self.STALL_S, file=self.stacks)
 
     def start(self):
         self._last = None
@@ -245,6 +254,8 @@ class Latency:
 
     def stop(self):
         self.timer.stop()
+        if self.stacks is not None:
+            faulthandler.cancel_dump_traceback_later()
 
 
 # ------------------------------------------------------------ the run
@@ -368,7 +379,10 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
             forward(event)
         page._forward = stamped
         page._bridge.event.connect(lambda _event: handled.append(time.perf_counter()))
-    latency = Latency()
+        stacks = open(trace + ".stacks.txt", "w", encoding="utf-8")  # noqa: SIM115
+        request.addfinalizer(stacks.close)
+        request.addfinalizer(faulthandler.cancel_dump_traceback_later)
+    latency = Latency(stacks if trace else None)
     latency.start()
     with qtbot.waitSignal(page.finished, timeout=30000):
         qtbot.mouseClick(page.start_button, Qt.MouseButton.LeftButton)
