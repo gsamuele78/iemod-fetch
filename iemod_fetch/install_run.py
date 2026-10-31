@@ -503,21 +503,44 @@ _EET_DOCUMENTS_CUT = re.compile(
 _COMMENT = re.compile(r"^\s*(?:@?rem\b|::|//)", re.IGNORECASE)
 
 
+def _depth_change(line: str) -> int:
+    """How many blocks a batch line opens less how many it closes: its `(`
+    and `)` outside double quotes and not escaped with `^`."""
+    change, quoted, escaped = 0, False, False
+    for char in line:
+        if escaped:
+            escaped = False
+        elif char == "^" and not quoted:
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+        elif not quoted and char == "(":
+            change += 1
+        elif not quoted and char == ")":
+            change -= 1
+    return change
+
+
 def _fixed_in_block(text: str, cut: re.Match) -> bool:
     """A cut that opens a block - `do (set DOC_DIR=%%a` - and sets the whole
     path within it before the block closes (`set "DOC_DIR=%%a %%b"`): the one
-    way a later line fixes it (review of #100). Comments do not count."""
+    way a later line fixes it (review of #100). Comments do not count. A
+    block nested inside it (`if ... (` over lines, `) else (`) does not
+    close it; a set inside such a block depends on its condition and does
+    not count either (review of #100's merge)."""
     if not cut.group("open") or cut.group("close"):
         return False
     var = cut.group(1)
     whole = re.compile(r'^\s*set\s+"?DOC_DIR=%%' + var + r"\s+%%\w", re.IGNORECASE)
+    depth = 1
     for line in text[cut.end():].splitlines():
         if not line.strip() or _COMMENT.match(line):
             continue
-        if line.strip().startswith(")"):
-            return False
-        if whole.match(line):
+        if depth == 1 and whole.match(line):
             return True
+        depth += _depth_change(line)
+        if depth <= 0:
+            return False
     return False
 
 
