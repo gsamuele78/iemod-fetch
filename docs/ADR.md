@@ -3224,6 +3224,8 @@ stays.
   layer's policy in docs/SECURITY-MODEL.md).
   A trust store changed while the process runs is seen at the next start,
   not the next download.
+- Measured after the change: windows-latest median 10.9 ms, worst 11.8 ms
+  over 30 runs of the M3 test (before: 15.5 and 63.9 ms).
 - Tests: `tests/test_https_context.py` (one build, shared, still
   verifying, the PEP 476 hook honoured, built by `prepare_https`, a failed
   early build left to the first run) and the wizard's test that the

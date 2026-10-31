@@ -452,6 +452,8 @@ the download's thread was in `ssl._load_windows_store_certs`, building a
 TLS context for a new `HttpClient` - Windows' certificate store read and
 parsed with the GIL held. The fix is ADR-0048: one context per process,
 built by the wizard before its window is drawn; the limit stays 100 ms.
+With it, windows-latest measured median 10.9 ms, worst 11.8 ms over 30 runs
+(before: 15.5 and 63.9 ms) - what ubuntu-latest measures.
 
 ## What is deliberately not done
 

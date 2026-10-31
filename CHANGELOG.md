@@ -15,7 +15,7 @@ Python API, which is internal.
   store while holding the GIL: 50-64 ms on a GitHub runner, 240 ms once,
   enough to fail the 4.0.0 release gate. One context is now built per
   process, by the wizard before its window is drawn; verification is
-  unchanged.
+  unchanged. Measured after: worst gap 11.8 ms on windows-latest (was 63.9).
 
 ### Added
 - `GUI latency` workflow and `tools/gui_latency_summary.py`: the M3 test, run
