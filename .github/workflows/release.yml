@@ -166,6 +166,7 @@ jobs:
       # workflow, which may mark that back-fill Latest (4.0.0 over 4.0.1 on
       # 2026-10-31): put "Latest" back on the newest release.
       - name: Latest is the newest release
+        if: ${{ !cancelled() }}        # a failed notes edit does not stop this
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

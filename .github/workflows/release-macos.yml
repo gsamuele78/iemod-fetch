@@ -39,25 +39,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Every six hours, "Latest" back on the newest release of CHANGELOG.md: a
-  # back-fill's tag run with an older workflow may have taken it (release.yml
-  # does the same on every push to main; tools/release_notes.py latest).
-  latest:
-    name: Latest is the newest release
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write          # editing a release's Latest flag, nothing else
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false }
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version-file: .python-version }
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: python tools/release_notes.py latest
-
   target:
     name: Which release needs a macOS bundle
     runs-on: ubuntu-latest

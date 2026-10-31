@@ -17,8 +17,9 @@ release creates no ref, so GITHUB_TOKEN may do it.
 release GitHub's "Latest". A back-fill's tag, created with RELEASE_TOKEN,
 starts the tagged commit's own release workflow; an older one judges "Latest"
 from its own changelog, and on 2026-10-31 v4.0.0's tag run made 4.0.0 Latest
-over 4.0.1. That run cannot be changed afterwards; this puts it right at the
-next push to main and at release-macos.yml's six-hourly run.
+over 4.0.1. That run cannot be changed afterwards; this puts it right at
+release-latest.yml's six-hourly run, and at the next push to main that changes
+CHANGELOG.md or the version (release.yml's notes job).
 """
 import re
 import subprocess
@@ -71,22 +72,34 @@ def newest_released(changelog: str, released) -> str | None:
     return next((f"v{v}" for v in versions(changelog) if released(f"v{v}")), None)
 
 
+def published_tags() -> set[str] | None:
+    """Every published release's tag (not a draft, not a prerelease), read in
+    one call so the answer cannot change half way; None when GitHub did not
+    answer - never "not released", which would demote the true Latest."""
+    listed = _gh("api", "--paginate", "repos/{owner}/{repo}/releases",
+                 "--jq", ".[] | select((.draft or .prerelease) | not) | .tag_name")
+    if listed.returncode != 0:
+        print(listed.stderr, file=sys.stderr)
+        return None
+    return {line.strip() for line in listed.stdout.splitlines() if line.strip()}
+
+
 def latest(changelog: str) -> int:
-    def released(tag: str) -> bool:
-        shown = _gh("release", "view", tag, "--json", "isDraft,isPrerelease",
-                    "--jq", "(.isDraft or .isPrerelease) | not")
-        return shown.returncode == 0 and shown.stdout.strip() == "true"
-    tag = newest_released(changelog, released)
+    tags = published_tags()
+    if tags is None:
+        return 1                                   # say so; never guess
+    tag = newest_released(changelog, tags.__contains__)
     if tag is None:
         return 0
     now = _gh("api", "repos/{owner}/{repo}/releases/latest", "--jq", ".tag_name")
-    if now.returncode == 0 and now.stdout.strip() == tag:
+    current = now.stdout.strip() if now.returncode == 0 else ""
+    if current == tag:
         return 0
     edited = _gh("release", "edit", tag, "--latest")
     if edited.returncode != 0:
         print(edited.stderr, file=sys.stderr)
         return edited.returncode
-    print(f"{tag}: marked Latest (was {now.stdout.strip() or 'none'})")
+    print(f"{tag}: marked Latest (was {current or 'none'})")
     return 0
 
 

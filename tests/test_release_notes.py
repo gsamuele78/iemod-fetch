@@ -58,23 +58,53 @@ def test_an_unreleased_newest_section_is_skipped():
     assert newest_released(CHANGELOG, set().__contains__) is None
 
 
-def test_latest_marks_the_newest_release_only_when_it_is_not_already(monkeypatch):
+def fake_gh(monkeypatch, releases: str, current: str, latest_code=0, list_code=0,
+            edit_code=0):
+    """gh's answers: the published releases' tags, releases/latest, an edit."""
     import subprocess
     from tools import release_notes
     calls = []
 
     def gh(*args):
         calls.append(args)
-        if args[:2] == ("release", "view"):
-            return subprocess.CompletedProcess(args, 0, "true\n", "")
+        if args[:2] == ("api", "--paginate"):
+            return subprocess.CompletedProcess(args, list_code, releases, "boom")
         if args[0] == "api":
-            return subprocess.CompletedProcess(args, 0, current["tag"] + "\n", "")
-        return subprocess.CompletedProcess(args, 0, "", "")
+            body = current + "\n" if latest_code == 0 else '{"message":"Not Found"}'
+            return subprocess.CompletedProcess(args, latest_code, body, "")
+        return subprocess.CompletedProcess(args, edit_code, "", "denied")
     monkeypatch.setattr(release_notes, "_gh", gh)
-    current = {"tag": "v2.1.0"}                 # a back-fill took Latest
+    return calls
+
+
+def test_latest_marks_the_newest_release_only_when_it_is_not_already(monkeypatch):
+    from tools import release_notes
+    calls = fake_gh(monkeypatch, "v2.2.0\nv2.1.0\n", "v2.1.0")   # a back-fill took Latest
     assert release_notes.latest(CHANGELOG) == 0
     assert ("release", "edit", "v2.2.0", "--latest") in calls
-    calls.clear()
-    current["tag"] = "v2.2.0"                   # already right: nothing edited
+    calls = fake_gh(monkeypatch, "v2.2.0\nv2.1.0\n", "v2.2.0")   # already right
     assert release_notes.latest(CHANGELOG) == 0
     assert not any(c[:2] == ("release", "edit") for c in calls)
+
+
+def test_github_not_answering_fails_and_demotes_nothing(monkeypatch):
+    """A 5xx or a rate limit on the list is an error, never "not released":
+    reading it so would mark an older release Latest (review of #103)."""
+    from tools import release_notes
+    calls = fake_gh(monkeypatch, "", "v2.2.0", list_code=1)
+    assert release_notes.latest(CHANGELOG) == 1
+    assert not any(c[:2] == ("release", "edit") for c in calls)
+
+
+def test_no_latest_at_all_is_set_and_reported_as_none(monkeypatch, capsys):
+    from tools import release_notes
+    calls = fake_gh(monkeypatch, "v2.2.0\n", "", latest_code=1)     # releases/latest: 404
+    assert release_notes.latest(CHANGELOG) == 0
+    assert ("release", "edit", "v2.2.0", "--latest") in calls
+    assert "(was none)" in capsys.readouterr().out
+
+
+def test_a_refused_edit_fails_the_step(monkeypatch):
+    from tools import release_notes
+    fake_gh(monkeypatch, "v2.2.0\n", "v2.1.0", edit_code=1)
+    assert release_notes.latest(CHANGELOG) == 1

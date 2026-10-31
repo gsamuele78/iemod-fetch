@@ -167,9 +167,10 @@ does not). That run rebuilds and republishes the same release, and an older
 workflow marks it Latest - 4.0.0's tag run did so over 4.0.1 on 2026-10-31.
 It can be cancelled (*Actions → Release*, the run on the tag) once the
 back-fill is published. If it is not, "Latest" is put back on the newest
-release by `tools/release_notes.py latest`: at the next push to `main`
-(release.yml's notes job) and at release-macos.yml's six-hourly run, at the
-latest. By hand: the newer release's page, *Edit → Set as the latest release*.
+release by `tools/release_notes.py latest`: by release-latest.yml every six
+hours, and by release.yml's notes job at the next push to `main` that changes
+CHANGELOG.md or the version. It reads every release in one call and fails,
+changing nothing, when GitHub does not answer. By hand: the newer release's page, *Edit → Set as the latest release*.
 
 **Dry run**: *Run workflow* with `dry_run` checked builds and attests but
 publishes nothing.
