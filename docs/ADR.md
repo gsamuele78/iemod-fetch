@@ -2989,7 +2989,8 @@ version up to the tag).
   question's last line, the answer, recorded/player/EET, under `"v": 1` -
   written on every run (empty too, so an earlier run's record is not left),
   for the player and for a bug report. Nothing reads it back to decide.
-  Which question it is, and which component's - and with them answers by
+  On a resume the record holds the resumed part only: the run before it
+  wrote its own, which the resume replaces. Which question it is, and which component's - and with them answers by
   question rather than by place - come with item 48's expected texts (each
   component's READLNs resolved from its .tra, `readln.py`, ADR-0049), not
   from the window.
@@ -3438,3 +3439,66 @@ variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
   were not found under the names tried.
 - Item 63 (PR #98) can recognise the question being asked from the texts
   read here instead of from the window's last line.
+
+---
+
+## ADR-0050 — A rename waits out a file Windows holds for a moment
+
+**Status:** accepted (2026-10-31). GUI-AUDIT M8 item 66.
+
+**Context.** On Windows a file another program holds open - an antivirus
+scanning what was just written or extracted, the search indexer - cannot be
+renamed or replaced until it lets go: `os.replace` fails with
+ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33) or ERROR_ACCESS_DENIED
+(5), and the download, the extraction or the backup stops with it. Chriz Easy
+BG met it and retries such renames (`engine/src/fs_retry.rs`, MIT, read at
+508256a: 12 attempts, 10 ms doubling to 1 s, about 5.3 s). Here 11 places
+renamed: 8 `os.replace`/`os.rename` (`atomic.py`, `archives.py`, `backup.py`
+x2, `datasync.py` x2, `net.py`, `toolchain.py`) and 3 `shutil.move` in
+`install.py`: a tp2 folded into its folder, the old copy moved to
+`.backup/`, and the mod's entries moved into the mods folder one by one.
+Those were worse than a refusal: when Windows refuses the rename,
+`shutil.move` copies and then deletes, and a held file split the mod.
+
+**Decision.**
+- `atomic.retried(operation, budget_s=...)`: on Windows, a `PermissionError`
+  whose `winerror` is 5, 32 or 33 is tried again, waiting 10 ms doubling to
+  1 s, up to 12 attempts and at most `budget_s` in all; any other error, and
+  every error on other systems, is raised at once. CEBG's measure, its idea;
+  no code taken.
+- Two budgets (review of #102). `PATIENT_S`, 5.3 s, for what runs off the
+  GUI's thread: downloads, extraction, backups, data refreshes. `BRIEF_S`,
+  0.15 s, for `atomic.write_text`: it also runs on the GUI's thread (the
+  order page's drag, Save, the decisions), where a held file must not freeze
+  the window for seconds; small files are let go quickly.
+- An ERROR_ACCESS_DENIED no wait ends is raised at once: the target is a
+  folder that is already there (a leftover `.old`, a backup name taken
+  within one second) or a read-only file (review of #102).
+- `atomic.replace`, `atomic.rename` and `atomic.move` use it, and every
+  rename in the tool and the wizard goes through them. `atomic.move` renames;
+  it falls back to `shutil.move` only across file systems (EXDEV), never
+  because a file is held.
+- A mod's folder moves from the staging folder in **one** rename (the
+  staging folder is under the mods folder: one file system), never entry by
+  entry. If that rename fails, the copy it replaced (moved to `.backup/`) is
+  put back; if that fails too, one error says the install failed and where
+  the old copy is kept. `install.py` now has 4 `atomic.move`s: the tp2
+  fold, the old copy aside, the mod in, the old copy back.
+- The folder keeps the mode the unpacker gave it; one its owner cannot
+  write (some unpackers restore 0555) is made writable by its owner while
+  it is still in staging, before the move: on POSIX a folder its owner
+  cannot write cannot be renamed into another folder (the rename rewrites
+  its `..`), and WeiDU must create `<mod>/backup/` in it (second and third
+  reviews of #102; the test runs as a non-root user to show it).
+- A test walks the tool and the wizard and fails on any `os.replace`,
+  `os.rename`, `os.renames` or `shutil.move` - called, or imported by name -
+  outside `atomic.py`.
+
+**Consequences.**
+- A file held for under about 5 s no longer stops a download, an
+  extraction, a backup or a data refresh on Windows; one held longer still
+  does, with Windows' own error. A project file written from the window
+  waits at most 0.15 s, then fails as before.
+- A mod is installed whole or not at all: the old copy stays or comes back.
+- Measured on the test suite only: the hold is simulated (a fake operation
+  raising the Windows errors); no antivirus was run.

@@ -70,6 +70,15 @@ Python API, which is internal.
   ratio guard. `--max-bytes` defaults to 2 GiB, not the 300 MB one measuring run
   used.
 
+### Fixed
+- **A file Windows holds for a moment no longer stops a download, an
+  extraction or a backup** (GUI-AUDIT M8 item 66, ADR-0050). A rename refused
+  because another program - an antivirus scanning a file just written - holds
+  the file is tried again for up to about 5 seconds (0.15 s for a project file
+  saved from the window). An extracted mod moves into the mods folder in one
+  rename, not file by file, and if that fails the copy it replaced is put
+  back.
+
 ## [4.0.1] - 2026-10-31
 
 ### Fixed

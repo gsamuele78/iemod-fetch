@@ -72,7 +72,8 @@ def save_answered(path: str | None, answered: list) -> None:
     """What this install answered, for the player and a bug report (item 63):
     each question's last line, the answer, where it came from. Written on
     every run, empty too, so a run that answered nothing does not leave an
-    earlier run's record. A record only: nothing reads it back to decide."""
+    earlier run's record; on a resume it holds the resumed part only. A
+    record only: nothing reads it back to decide."""
     if path:
         data = {"v": 1, "answered": [
             {"question": question_line(a.question), "answer": a.answer, "source": a.source}

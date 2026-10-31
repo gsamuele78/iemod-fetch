@@ -19,6 +19,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass
 
+from . import atomic
 from .childenv import child_env
 from .errors import ExtractionError, UnsafeArchive
 
@@ -345,7 +346,7 @@ def _extract_external(path: str, dest: str, kind: Kind) -> None:
                 moved: list[str] = []
                 try:
                     for entry in os.listdir(work):
-                        os.replace(os.path.join(work, entry), os.path.join(dest, entry))
+                        atomic.replace(os.path.join(work, entry), os.path.join(dest, entry))
                         moved.append(entry)
                     return
                 except OSError as exc:          # e.g. an antivirus holding a file
