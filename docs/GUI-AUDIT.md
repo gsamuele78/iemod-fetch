@@ -69,6 +69,7 @@ is at least 85%, and there are no TODO/FIXME markers.
 | **krion64 Forge** | MIT (data provenance uncertain) | React page | category × `ord` | hard/soft with evidence | weekly GitHub release scan | none |
 | **mod_installer** 16.0.0 | GPL-3.0 | Rust CLI | follows the log | none | none | none |
 | **Infinity Mod Runner** | MIT | Tauri + React | from Forge | from Forge | — | — |
+| **Chriz Easy BG** (CEBG) 0.1.0-alpha.15 | MIT (one GPL-3.0 EET excerpt) | Rust + Tauri, Windows only | one captured WeiDU.log, not computed | 61 choice groups + 11 by hand | pinned recipe, by hand | **sha256 + size + redirect hosts** |
 | **iemod-fetch** 2.2.0 | MIT | Python CLI, stdlib only | **sorted**, component level | tp2 + rules, auto-resolution | partial | **sha256 + attestation** |
 
 What follows from that:
@@ -92,6 +93,13 @@ What follows from that:
   text, its prompts arrive on stdin, and its automatic EET path answer works
   on Linux only. A UI that installs would either work around this or drive
   WeiDU itself, as BWS-NG and Infinity Mod Runner do.
+- **CEBG is the nearest in kind, the narrowest in reach** (read at 508256a,
+  2026-10-31). It is an installer, not a list: pinned downloads checked by
+  size and sha256, WeiDU run directly (not mod_installer), resume from a
+  ledger, one curated EET collection of 434 components. It has no computed
+  order or conflicts, runs on Windows only, in English, on Steam 2.7.3 games.
+  Its install loop is harder than ours in places worth learning from (M8
+  items 62-71); its order and selection are one player's curation, not taken.
 - **iemod-fetch already does better than all of them** at the parts a UI cannot
   replace: verified downloads, a computed order, automatic resolution and
   running headless. That is the argument for building the UI on top of this
@@ -293,7 +301,8 @@ keyring, py7zr (LGPL, compiled dependencies, no RAR).
 ### M8 — What the other projects do and this tool does not (feature audit)
 
 Read on their code and data (Infinity Mod Runner, the Forge, BWS-NG, Project
-Infinity). Ranked by value to a player installing a large EET setup.
+Infinity; Chriz Easy BG for items 62-71). Ranked by value to a player
+installing a large EET setup.
 
 | # | Item | From | Size |
 |---|---|---|---|
@@ -304,9 +313,27 @@ Infinity). Ranked by value to a player installing a large EET setup.
 | 51 | Release notes and activity (`body`, `pushed`) in the update view; the Forge's `in`, `rec` and `eet_compat` notes in the selection. | Forge | S |
 | 52 | An opt-in set of community patches for known mod bugs (IMR's 62, idempotent), with sha256 before and after; needs its own ADR - it changes mod content. | IMR (MIT data) | M |
 | 53 | `AT_EXIT` scripts kept beside a mod's folder (to be checked first); install-time estimate and slow-component notice; a post-install report and a diagnostic bundle with paths removed; a translated wizard. | IMR, BWS-NG | M |
+| 62 | **A size allowance from a pinned size**: a file over `--max-bytes` (300 MB by default) passes only when its source pins that exact size and sha256 (BWS-NG `files[].size/sha256`, read at runtime; `moddb.py` already reads the size); the unpacked ceiling stays. The HD mods are 0.4-1.9 GB: BGGO 3.6 is 1,459,899,654 bytes, BGEE Graphics Enhanced 1,864,005,883 (G3 thread 41637). Disk check (item 49) counts them. | CEBG `manifest/artifacts/*.toml` (MIT, idea) | S |
+| 63 | **An answer sent only after its question**: keep each recorded answer's question text, send the answer when that text appears, ask the player otherwise, and record what was sent. Today `@wlb-inputs` answers go in order, so a mod whose prompts changed between versions shifts them silently. Extends item 22. | CEBG `engine/src/weidu/runner.rs`, `PromptMatcher` (L666 on) and its use at L385-480 (MIT, idea only) | S-M |
+| 64 | **Real prompts as test cases for item 48**: Bardic Wonders 1008 ("Please select 1 or 2", 2 = No, since Artisan's Kitpack 99001 makes Garrick a Troubadour); Item Randomiser 510 (a percentage from the player) and 1100 ("y" only with Xan's or Rescue & Revise 12); Warlock 0, whose hidden prompt has no unattended answer. Facts, credited. | CEBG `manifest/mods/randomiser.toml` L16/L53, `recipes/curated-full-current/mods/bardicwonders.toml` L40, `manifest/curation-map.toml` L240-243 (MIT) | S |
+| 65 | **Known issue: EET core with a space in the Documents path (Windows)**: EET's `GET_USER_DIRECTORY` (`EET/lib/macros.tph`, `for /f "tokens=3,*"`) keeps the path's first word. Warn before EET core when the path has a space and the EET copy still has that line; a patch only under item 52's ADR. The detection is written here - EET's text is GPL-3.0. Whether EET fixed it after 74e91d72 is not yet checked. | CEBG `engine/src/weidu/eet_compat.rs`, `docs/handover.md` L138-142 (idea); EET (GPL-3.0, not copied) | S (warn) / M (patch) |
+| 66 | **Renames retried on Windows**: an antivirus holding a just-written file fails `os.replace`; retry briefly (CEBG: 12 tries, 10 ms to 1 s, about 5 s) at the 7 rename sites (`atomic.py`, `backup.py` x2, `datasync.py` x2, `net.py`, `toolchain.py`). | CEBG `fs_retry.rs` (MIT, idea) | S |
+| 67 | **The game not running, checked before each batch**: no process running from the game folder, and `dialog.tlk` opens exclusively - before the install and again before each mod_installer batch. Not in item 49. | CEBG `engine/src/preflight.rs` L399, L737 (MIT, idea) | S |
+| 68 | **A gated download supplied by hand**: for a source behind Cloudflare or a JavaScript button (Gibberlings3, SHS, Nexus, weaselmods - what item 57 still misses), open the page, the player picks the saved file, and it is taken only if its size and sha256 match the pinned ones; no folder is scanned or watched. | CEBG `engine/src/acquire/manual.rs` and its hosting research note (MIT, idea) | M |
+| 69 | **A result per component**: WSETUP.DEBUG's `SUCCESSFULLY INSTALLED` / `INSTALLED WITH WARNINGS` / `NOT INSTALLED DUE TO ERRORS` and the WeiDU.log before and after, not the exit code alone; feeds items 47 and 53. | CEBG `engine/src/weidu/verify.rs`, `log.rs` L136-140 (MIT, idea) | S |
+| 70 | **Ordering facts as planner regression tests**: BG1NPC refuses after EET_end; Ascension before Spell Revisions and SCS; Crossmod v30's `After=` leaves out Yeslick; Bubb's Spell Menu after any UI replacement; DLC Merger 3 fails with 32-bit WeiDU, 10 duplicates 1 at v2.1; Artisan's Kitpack 20101/12012 after item mods, 7203 after kit mods. Each checked against our data before it becomes a test. | CEBG `docs/curation/components/*.md` (MIT, credited) | S |
+| 71 | **After installing EEex mods, say how to start the game**: InfinityLoader (or `EEex.exe`), else they do nothing - BGEE Graphics Enhanced and BG2 HD need EEex. Part of item 53's report. | CEBG `EEEX.md` L28-29; G3 thread 40143 | S |
+
+Items 62-71 come from reading Chriz Easy BG and the Gibberlings3 thread on an
+HD remaster (41637), 2026-10-31. From the thread, nothing joins the catalogue:
+every installable HD mod is already known to lcc-docs, BWS-NG or krion64
+(BGGO, BGEE Graphics Enhanced, the AI Denoised Areas mods, Infinity UI++).
+BG2 HD is unreleased, rewrites `Baldur.exe` and targets BG2:EE alone; Project
+IE 4K converts assets for GemRB and is not a mod. What the thread changes for
+this tool is size (item 62) and EEex (item 71).
 
 **Explicitly not planned:**
-- Copying any BIO, BWS-NG or mod_installer code.
+- Copying any BIO, BWS-NG, mod_installer or CEBG code; CEBG's order and selection (one player's curation).
 - Bundling GPL data.
 - A web or Tauri front end. The API allows one later, but none is planned.
 
@@ -366,3 +393,5 @@ request process as any other.
 - [krion64 Forge](https://github.com/krion64/krion64.github.io) (a8d17c4)
 - [Infinity Mod Runner](https://github.com/Anprionsa/infinity-mod-runner)
 - [WeiDU Install Tool](https://github.com/InfinityTools/WeiduInstallTool)
+- [Chriz Easy BG (chriz-bg-collection)](https://github.com/Chrizhermann/chriz-bg-collection) (508256a, MIT)
+- [Gibberlings3: "Baldur's Gate True HD Edition" remaster, how feasible](https://www.gibberlings3.net/forums/topic/41637-baldur%E2%80%99s-gate-%E2%80%9Ctrue-hd-edition%E2%80%9D-remaster-how-feasible-would-it-be-today/) (read 2026-10-31, one page)
