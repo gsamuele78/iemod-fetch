@@ -110,6 +110,13 @@ def _scan(root: str):
     return files, sorted(folders), sorted(links), sorted(mounts)
 
 
+def size(game_dir: str) -> int:
+    """The bytes a backup of `game_dir` copies: what create() would copy
+    (item 49). Nothing is written."""
+    present, _folders, _links, _mounts = _scan(os.path.abspath(game_dir))
+    return sum(os.path.getsize(full) for rel, full in present.items() if _is_copied(rel))
+
+
 def _mount_points() -> dict[str, int]:
     """Linux's mount table, {mount point: device}: a bind mount of the same
     disk has the same st_dev as its parent and is not os.path.ismount, but it

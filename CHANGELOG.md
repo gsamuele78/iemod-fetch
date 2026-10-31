@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **Room and the right WeiDU, said before installing** (GUI-AUDIT item 49,
+  ADR-0055): `api.install_readiness` warns, and never refuses, when:
+  - the backup will not fit where backups go (its exact size);
+  - a game's drive may lack room for the install (an upper estimate, said
+    as one);
+  - WeiDU is older than the one this program is tested with, or than a
+    staged mod requires (`WEIDU_VER >= N`).
+  Not shown in the wizard yet.
 - **Questions answered by question during the install** (GUI-AUDIT item 48,
   ADR-0049 amendment): a question mod_installer puts to this program is
   recognised by its expected text (read from the mod's files in the log's
