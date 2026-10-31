@@ -245,10 +245,9 @@ red where broken, dimmed where they name a whole mod; *Ignore...* keeps a red ro
 call, with why, in `decisions.json`, until it is dragged or breaks another rule. Several
 rows can be selected and dragged together, moved with Ctrl+Up / Ctrl+Down, or found by
 name. *Use the computed order* forgets it. WeiDU's prompts are answered at install
-(phase 5): from a log's `// @wlb-inputs:` answers, each only for a question it fits -
-one the question offers, and the one it was given for before - else by asking you,
-with why, and your answer (also to a question a mod's new version added) is kept for
-next time (ADR-0045);
+(phase 5): from a log's `// @wlb-inputs:` answers in order - except one a question
+plainly does not take (a "2" for a "[y]es or [n]o"), which is asked of you, with why
+(ADR-0045);
 only BWS-NG describes prompts as data, for 4 components (ADR-0036).
 
 **Phase 4, download and extraction** (ADR-0039): *Download* fetches every mod
@@ -577,7 +576,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 1,832 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 1,822 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -829,7 +828,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 1,832, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 1,822, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

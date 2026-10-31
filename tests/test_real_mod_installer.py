@@ -281,8 +281,7 @@ APPEND_OUTER ~twoq-answers.txt~ ~%first% %second%~
 def test_recorded_answers_fit_the_real_window(tmp_path):
     """Item 63, review of #98: mod_installer sends each question with WeiDU's
     lines before it - here the yes/no before "select 1 or 2". The recorded
-    answers both go in, nobody is asked, and the questions kept are the
-    questions' own lines."""
+    answers both go in, nobody is asked, and what was answered is recorded."""
     import json
 
     from test_real_weidu import make_game
@@ -306,9 +305,10 @@ def test_recorded_answers_fit_the_real_window(tmp_path):
     assert [a.source for a in outcome.answered] == ["recorded", "recorded"], transcript
     assert (game / "twoq-answers.txt").read_text().split() == ["y", "2"]
     assert any("Installing [" in a.question for a in outcome.answered), transcript
-    kept = json.loads((plan / "answers.json").read_text())["asked"]["twoq.tp2#0"]
-    assert kept == {"0": {"q": "Restore the tavern? [y]es or [n]o", "r": "y"},
-                    "1": {"q": "Please select 1 or 2 and press Enter.", "r": "2"}}
+    kept = json.loads((plan / "answers.json").read_text())["answered"]
+    assert [(k["question"], k["answer"]) for k in kept] == [
+        ("Restore the tavern? [y]es or [n]o", "y"),
+        ("Please select 1 or 2 and press Enter.", "2")]
 
 
 MENU_AFTER = """BACKUP ~menu/backup~
@@ -348,5 +348,5 @@ def test_a_menu_after_the_question_does_not_limit_its_answer(tmp_path):
     transcript = "\n".join(lines)
     assert outcome.ok and asked == [], transcript
     assert (game / "menu-answer.txt").read_text().split() == ["1"]
-    kept = json.loads((plan / "answers.json").read_text())["asked"]["menu.tp2#0"]["0"]
-    assert kept["q"].startswith("Which portraits?") and kept["r"] == "1", kept
+    kept = json.loads((plan / "answers.json").read_text())["answered"]
+    assert [(k["answer"], k["source"]) for k in kept] == [("1", "recorded")], kept

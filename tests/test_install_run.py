@@ -514,13 +514,6 @@ def with_answers(setup, answers_text):
         "Restorations: v30", f"Restorations: v30 // @wlb-inputs: {answers_text}"))
 
 
-def fresh_games(setup):
-    for game in setup["games"].values():
-        for name in os.listdir(game):
-            if name != "chitin.key":
-                os.remove(os.path.join(game, name))
-
-
 def test_a_recorded_answer_that_does_not_fit_is_asked_of_the_player(setup, monkeypatch):
     """UB's log answer is "2", its question takes y or n: the player is asked,
     told why, and the answer they give goes in."""
@@ -553,112 +546,36 @@ def test_an_earlier_question_in_the_window_is_not_this_one(setup, monkeypatch):
     assert [a.source for a in outcome.answered][-2:] == ["recorded", "recorded"]
 
 
-def test_the_players_answer_stands_for_a_changed_question_from_then_on(setup, monkeypatch):
-    """Review of #98: the question kept is the question's own line (a version
-    bump between installs does not change it); when it changed, the player's
-    answer is kept and given on every install after - not asked each time."""
+def test_what_was_answered_is_recorded_and_never_read_back(setup, monkeypatch):
+    """answers.json says what each question got and from where - for the
+    player and a bug report; a later install decides as if it were not
+    there (third review of #98)."""
     import json
     from pathlib import Path
     with_answers(setup, "y")
-    restore = {"eet.tp2#0": [EET_QUESTION],
-               "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]}
-    monkeypatch.setenv("FAKE_VERSION", "v30")
-    install, _events = run(setup, monkeypatch, restore)
+    questions = {"eet.tp2#0": [EET_QUESTION],
+                 "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]}
+    install, _events = run(setup, monkeypatch, questions)
     assert install.run().ok
     kept = json.loads(Path(setup["plan"], "answers.json").read_text())
-    assert kept["asked"]["setup-ub.tp2#0"] == {
-        "0": {"q": "Restore the tavern? [y]es or [n]o", "r": "y"}}
-
-    fresh_games(setup)
-    monkeypatch.setenv("FAKE_VERSION", "v31")                 # a new version, same question
-    asked = []
-    install, _events = run(setup, monkeypatch, restore,
-                           ask=lambda question, batch: asked.append(question) or "n")
-    assert install.run().ok and asked == []
-
-    changed = {"eet.tp2#0": [EET_QUESTION],
-               "setup-ub.tp2#0": ["Remove the tavern? [y]es or [n]o"]}
-    fresh_games(setup)
-    install, events = run(setup, monkeypatch, changed,
-                          ask=lambda question, batch: asked.append(question) or "n")
-    assert install.run().ok
-    assert len(asked) == 1 and "asked something else here" in asked[0]
-    assert any("asked something else here" in e.text for e in events)
-    kept = json.loads(Path(setup["plan"], "answers.json").read_text())
-    assert kept["asked"]["setup-ub.tp2#0"] == {
-        "0": {"q": "Remove the tavern? [y]es or [n]o", "a": "n", "r": "y"}}
-
-    for _again in range(2):                                   # installs 4 and 5
-        fresh_games(setup)
-        install, _events = run(setup, monkeypatch, changed,
-                               ask=lambda question, batch: asked.append(question) or "y")
-        outcome = install.run()
-        assert outcome.ok and len(asked) == 1                 # not asked again
-        assert answers(setup)[-1] == "n" and outcome.answered[-1].source == "remembered"
-
-
-
-def test_a_question_a_new_version_adds_is_asked_once_not_on_every_install(setup, monkeypatch):
-    """Second review of #98: v2 changes UB's question and adds one; the player
-    answers both once, and both are given on the installs after."""
-    import json
-    from pathlib import Path
-    with_answers(setup, "y")
-    v2 = {"eet.tp2#0": [EET_QUESTION],
-          "setup-ub.tp2#0": ["Please select 1 or 2 and press Enter.", "Which portraits?"]}
-    given = iter(["1", "y"])
-    asked = []
-    install, _events = run(setup, monkeypatch, v2,
-                           ask=lambda question, batch: asked.append(question) or next(given))
-    assert install.run().ok and len(asked) == 2           # "y" does not fit "select 1 or 2"
-    kept = json.loads(Path(setup["plan"], "answers.json").read_text())["asked"]["setup-ub.tp2#0"]
-    assert kept == {"0": {"q": "Please select 1 or 2 and press Enter.", "a": "1", "r": "y"},
-                    "1": {"q": "Which portraits?", "a": "y"}}
-    for _again in range(2):
-        fresh_games(setup)
-        install, _events = run(setup, monkeypatch, v2,
-                               ask=lambda question, batch: asked.append(question) or "?")
-        outcome = install.run()
-        assert outcome.ok and len(asked) == 2             # asked no more
-        assert answers(setup)[-2:] == ["1", "y"]
-        assert [a.source for a in outcome.answered][-2:] == ["remembered", "remembered"]
-
-
-def test_answers_that_run_out_are_kept_for_a_lone_component(setup, monkeypatch):
-    with_answers(setup, "y")
-    two = {"eet.tp2#0": [EET_QUESTION],
-           "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o", "Which portraits?"]}
-    asked = []
-    install, _events = run(setup, monkeypatch, two,
-                           ask=lambda question, batch: asked.append(question) or "2")
-    assert install.run().ok and len(asked) == 1
-    fresh_games(setup)
-    install, _events = run(setup, monkeypatch, two,
-                           ask=lambda question, batch: asked.append(question) or "?")
-    assert install.run().ok and len(asked) == 1 and answers(setup)[-1] == "2"
-
-
-def test_a_kept_file_with_a_broken_entry_keeps_the_others(tmp_path):
-    import json
-
-    from iemod_fetch import install_run
-    path = tmp_path / "answers.json"
-    path.write_text(json.dumps({"asked": {
-        "setup-ub.tp2#0": {"0": {"q": "Restore?", "a": None, "r": "y"}, "x": {"q": "bad"},
-                           "1": "not an entry"},
-        "broken": {"0": {"q": "no number"}},
-        "eet.tp2#0": {"0": {"q": "EET?", "a": "n"}}}}))
-    assert install_run.load_asked(str(path)) == {
-        ("setup-ub.tp2", 0): {0: {"q": "Restore?", "r": "y"}},
-        ("eet.tp2", 0): {0: {"q": "EET?", "a": "n"}}}
-    path.write_text("{not json")
-    assert install_run.load_asked(str(path)) == {}
+    assert kept["v"] == 1
+    assert kept["answered"][-1] == {"question": "Restore the tavern? [y]es or [n]o",
+                                    "answer": "y", "source": "recorded"}
+    Path(setup["plan"], "answers.json").write_text(json.dumps(
+        {"v": 1, "answered": [{"question": "Restore the tavern? [y]es or [n]o",
+                               "answer": "n", "source": "player"}]}))
+    for game in setup["games"].values():
+        for name in os.listdir(game):
+            if name != "chitin.key":
+                os.remove(os.path.join(game, name))
+    install, _events = run(setup, monkeypatch, questions)
+    assert install.run().ok and answers(setup)[-1] == "y"       # the log's, as before
 
 
 def test_batch_mode_from_the_environment_does_not_reach_mod_installer(monkeypatch):
-    """Second review of #98: one batch is one mod's consecutive components only
-    while mod_installer's BATCH_MODE (clap reads it from the environment) is
-    off; it is never passed on."""
+    """One batch is one mod's consecutive components only while
+    mod_installer's BATCH_MODE (clap reads it from the environment) is off;
+    it is never passed on."""
     from iemod_fetch import install_run
     monkeypatch.setenv("BATCH_MODE", "true")
     monkeypatch.setenv("BATCH_SIZE", "50")

@@ -130,75 +130,60 @@ class OutputReader:
         return Event("question", text, self.batch)
 
 
-# What a question offers, when it says so (GUI-AUDIT M8 item 63): "[y]es or
-# [n]o", "(y/n)"; after select/choose/pick/enter/type, a list with "or"
-# ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and 100". Anything
-# else - a path, a free number, "Press Enter" - offers nothing said.
+# What a question offers, when it says so unambiguously (GUI-AUDIT M8 item
+# 63): "[y]es or [n]o", "(y/n)"; after select/choose/pick/enter/type, a list
+# with "or" ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and 100".
 _YES_NO = re.compile(r"\[y\]es\s+or\s+\[n\]o|\(y/n\)|\[y/n\]|\by/n\b", re.IGNORECASE)
 _VERB = r"\b(?:select|choose|pick|enter|type)\b"
 _LIST = re.compile(_VERB + r"[^.?!\n]*?\b(\d{1,3}(?:\s*(?:,|or)\s*\d{1,3})*\s*or\s*\d{1,3})\b",
                    re.IGNORECASE)
 _RANGE = re.compile(_VERB + r"[^.?!\n]*?(?:\b(\d{1,3})\s*-\s*(\d{1,3})\b"
                     r"|\bbetween\s+(\d{1,3})\s+and\s+(\d{1,3})\b)", re.IGNORECASE)
-# a question that also takes something it does not list - an answer bound to
-# it, not the word alone (second review of #98: "Use the default portraits?
-# [y]es or [n]o" is still a yes/no): "0 to skip", "Enter for the default",
-# "[default: 2]", "leave blank", "or press Enter"
+# an answer the line names besides its choices: "0 to skip", "Enter for the
+# default", "[default: 2]", "leave blank", "or press Enter" (reviews of #98)
 _OPEN = re.compile(r"\b\w+\s+to\s+skip\b|\benter\s+(?:for|to\s+(?:keep|accept))\s+(?:the\s+)?"
                    r"default\b|[\[(]default\b|\bdefault\s*[:=]|\bleave\s+(?:it\s+)?blank\b"
                    r"|\bor\s+(?:just\s+)?(?:press\s+)?enter\b", re.IGNORECASE)
-# a menu's option ("1] Original", "2) New", "[3] Both", "4. None")
-_OPTION = re.compile(r"^\s*(?:\[\d{1,3}\]|\d{1,3}\s*[\]).:])")
-# WeiDU's own lines in mod_installer's window, not the question
+# a menu's option: "1] Original", "2) New", "[3] Both", "(4) None", "5. All",
+# "a) Small", "[B] Large"
+_OPTION = re.compile(r"^\s*(?:[\[(]\s*(?:\d{1,3}|[a-z])\s*[\])]|(?:\d{1,3}|[a-z])\s*[\]).])",
+                     re.IGNORECASE)
+# WeiDU's own lines in mod_installer's window
 _NOISE = re.compile(r"^\s*(?:\[[^\]]*\]\s+WeiDU version|Installing\b|Copying\b|Copied\b|"
                     r"Patching\b|Patched\b|Processing\b|Processed\b|Creating\b)", re.IGNORECASE)
 
 
-def _generic(line: str) -> bool:
-    """A line that is only how to answer - an option, or "[Y]es or [N]o" with
-    next to no words of its own - and needs the line above to be a question."""
-    if _OPTION.match(line):
-        return True
-    rest = _YES_NO.sub(" ", line)
-    return rest != line and len(re.findall(r"[A-Za-z]{2,}", rest)) < 3
-
-
-def question_block(text: str) -> list[str]:
-    """
-    The question in what mod_installer sends: it sends WeiDU's last
-    `lookback` lines too, 10 by default (src/parser.rs; review of #98,
-    measured) - WeiDU's version, "Installing [Mod] [v30]", copy lines, an
-    earlier question. The block is the last line, and the lines above it
-    while it is only how to answer: a menu's options, a bare "[Y]es or [N]o"
-    (second review of #98: "Which portraits?" / "1] Original" / "2] Select 5
-    or 10", "Do you want to DELETE your saves?" / "[Y]es or [N]o").
-    """
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return []
-    block = [lines.pop()]
-    while lines and _generic(block[0]) and not _NOISE.match(lines[-1]):
-        block.insert(0, lines.pop())
-    return block
-
-
 def question_line(text: str) -> str:
-    """The question, as one line: its block, joined - what is kept and compared."""
-    return " / ".join(question_block(text))
+    """The last line of what mod_installer sends - kept as what was asked. It
+    sends WeiDU's last `lookback` lines before the question too, 10 by
+    default (src/parser.rs; review of #98, measured with the real 16.0.0):
+    WeiDU's version, "Installing [Mod] [v30]", copy lines, an earlier
+    question, and the lines printed after it."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
 
 
 def offered(question: str) -> set[str] | None:
-    """The answers the question says it takes, lower-case; None when it does
-    not say (then any answer may be right). Read on its block's last line
-    that is not a menu option: a menu's options name its choices, they do
-    not limit them ("2] Select 5 or 10 random ones")."""
-    block = question_block(question)
-    if any(_OPEN.search(line) for line in block):
+    """
+    The answers the question says it takes, lower-case - only when it says
+    so unambiguously; None otherwise (then any answer may be right).
+    Unambiguous: the last line itself names its choices, no menu option is
+    in the window after WeiDU's last own line (a menu's options name its
+    choices, "2] Select 5 or 10" does not limit them), and the line names no
+    other answer (a default, a skip, Enter). From mod_installer's window
+    alone, which question and which component cannot be known (third review
+    of #98); item 48's expected texts will say.
+    """
+    lines = [line.strip() for line in question.splitlines() if line.strip()]
+    for n in range(len(lines) - 1, -1, -1):
+        if _NOISE.match(lines[n]):
+            lines = lines[n + 1:]
+            break
+    if not lines or any(_OPTION.match(line) for line in lines):
         return None
-    prompts = [line for line in block if not _OPTION.match(line)]
-    if not prompts:
+    line = lines[-1]
+    if _OPEN.search(line):
         return None
-    line = prompts[-1]
     if _YES_NO.search(line):
         return {"y", "n", "yes", "no"}
     match = _RANGE.search(line)
@@ -218,103 +203,40 @@ def fits(question: str, answer: str) -> bool:
     return choices is None or answer.strip().lower() in choices
 
 
-def same_question(one: str, other: str) -> bool:
-    """Two askings of one question: the same block, spacing and case aside."""
-    def words(text: str) -> str:
-        return " ".join(question_line(text).lower().split())
-    return words(one) == words(other)
-
-
 @dataclass
 class Answers:
     """
-    The recorded answers of a log, handed out batch by batch, in order - each
-    only for a question it fits (item 63): one the question offers, and, when
-    an earlier install asked this component's question here, that question.
-    After one does not fit, the batch's other recorded answers are not used:
-    answers that shifted against a mod's changed prompts would go on wrong.
-
-    What the player answers instead is kept with its question (`asked_before`,
-    {"q": question, "a": answer, "r": the recorded answer it stood for}) and
-    given ("remembered") whenever that question comes there again - while the
-    log still records the same answer there (second review of #98). A
-    question the log has no answer for (a mod's version added one) is kept
-    past the recorded ones, so it is asked once, not on every install.
+    The recorded answers of a log, handed out batch by batch, in order, as
+    before - except one a question plainly does not take (item 63): the
+    "2" of a log recorded on another version, for a "[y]es or [n]o". That
+    one is not given, nor are the batch's others (they shifted too); the
+    player is asked. Nothing is kept from one install to the next to decide
+    by (third review of #98): which question it is, and which component's,
+    is not known from mod_installer's window.
     """
     recorded: dict[Key, list[str]]
-    asked_before: dict[Key, dict[int, dict]] = field(default_factory=dict)
     _queue: deque = field(default_factory=deque)
     _batch: tuple[Key, ...] = ()
-    refused: str | None = None        # why the last answer was not given
-    last: tuple[Key, int] | None = None   # the place of the answer given
-    source: str = "recorded"          # "recorded", or "remembered" (the player's, kept)
-    _player: deque = field(default_factory=deque)   # places the player answers now
-    _refused_once: bool = False
+    refused: str | None = None        # why the last recorded answer was not given
+    last: tuple[Key, int] | None = None   # the component and place of the one given
 
     def start(self, batch: tuple[Key, ...]) -> None:
-        """A batch starts: its components' answers, in the batch's order, then
-        the places past them where the player's answer is kept."""
-        self._batch, self._player, self._refused_once = batch, deque(), False
-        queue: list = []
-        for key in batch:
-            answers = self.recorded.get(key, [])
-            queue += [(key, n, answer) for n, answer in enumerate(answers)]
-            kept = self.asked_before.get(key, {})
-            queue += [(key, n, None) for n in sorted(kept) if n >= len(answers)
-                      and kept[n].get("a") is not None]
-        self._queue = deque(queue)
-
-    def _remembered(self, key: Key, n: int, answer: str | None, question: str) -> str | None:
-        kept = self.asked_before.get(key, {}).get(n) or {}
-        if (kept.get("a") is not None and kept.get("q") and same_question(kept["q"], question)
-                and kept.get("r") == answer):
-            return str(kept["a"])
-        return None
+        """A batch starts: its components' answers, in the batch's order."""
+        self._batch = batch
+        self._queue = deque((key, n, answer) for key in batch
+                            for n, answer in enumerate(self.recorded.get(key, ())))
 
     def next(self, question: str = "") -> str | None:
-        """The next answer of the batch for `question`, None when there is none
-        or it does not fit (then `refused` says why)."""
+        """The next recorded answer of the batch for `question`, None when there
+        is none or the question plainly does not take it (`refused` says why)."""
         self.refused, self.last = None, None
-        if not self._queue or self._refused_once:
+        if not self._queue:
             return None
         key, n, answer = self._queue[0]
-        if question:
-            remembered = self._remembered(key, n, answer, question)
-            if remembered is not None:
-                self._queue.popleft()
-                self.last, self.source = (key, n), "remembered"
-                return remembered
-            kept = self.asked_before.get(key, {}).get(n) or {}
-            if answer is None:
-                self.refused = (f"{key[0]} #{key[1]}'s answer here was given for another "
-                                f"question ({kept.get('q')!r})")
-            elif kept.get("q") and not same_question(kept["q"], question):
-                self.refused = (f"{key[0]} #{key[1]} asked something else here when this "
-                                f"answer was given ({kept['q']!r})")
-            elif not fits(question, answer):
-                self.refused = f"the recorded answer {answer!r} is not one this question offers"
-        elif answer is None:
-            return None
-        if self.refused:
-            self._player = deque((k, i, a) for k, i, a in self._queue)
+        if question and not fits(question, answer):
+            self.refused = f"the recorded answer {answer!r} is not one this question offers"
             self._queue.clear()
-            self._refused_once = True
             return None
         self._queue.popleft()
-        self.last, self.source = (key, n), "recorded"
+        self.last = (key, n)
         return str(answer)
-
-    def player_place(self) -> tuple[Key, int, str | None] | None:
-        """Where a player's answer is kept: the refused place and those after
-        it in the batch; past them, or when the recorded answers ran out, the
-        next place of a batch's only component (with several, which one asks
-        is not known). None when it cannot be placed."""
-        if self._player:
-            key, n, stood_for = self._player.popleft()
-            return key, int(n), stood_for
-        if len(self._batch) == 1:
-            key = self._batch[0]
-            taken = set(self.asked_before.get(key, {})) | set(
-                range(len(self.recorded.get(key, []))))
-            return key, (max(taken) + 1 if taken else 0), None
-        return None

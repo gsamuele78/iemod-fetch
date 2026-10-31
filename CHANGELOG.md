@@ -9,17 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
-- **A recorded answer goes only to a question it fits** (GUI-AUDIT M8 item
-  63, ADR-0045). A log's `// @wlb-inputs:` answer is sent only when the
-  question offers it ("[y]es or [n]o", "select 1 or 2", "1-3") and, from the
-  second install on, when the question is the one asked there before
-  (`install-plan/answers.json`). The question is read out of what
-  mod_installer sends - WeiDU's last 10 lines before it, a menu after it.
-  Otherwise the player is asked, with the reason; the batch's other recorded
-  answers are not used, and what the player answers - also to a question a
-  mod's version added - is kept and given there next time, while the log
-  records the same answer there. Answers that shifted against a mod's changed
-  prompts no longer go in one question late.
+- **A recorded answer a question plainly does not take is not given**
+  (GUI-AUDIT M8 item 63, ADR-0045). When a question's own line names its
+  choices ("[y]es or [n]o", "select 1 or 2", "1-3") and a log's
+  `// @wlb-inputs:` answer is not one of them - the shape of an answer that
+  shifted against a mod's changed prompts - it is not sent: the player is
+  asked, with the reason, and the batch's other recorded answers are not used.
+  Any other question takes the recorded answers in order, as before.
+  `install-plan/answers.json` records what each question got and from where.
 
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass

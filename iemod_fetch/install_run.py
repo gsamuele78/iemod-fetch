@@ -51,7 +51,7 @@ DRAIN_S = 2.0            # its output still open this long after it ended: stop 
 class Answered:
     question: str
     answer: str
-    source: str           # "EET" | "recorded" | "remembered" | "player"
+    source: str           # "EET" | "recorded" | "player"
 
 
 @dataclass
@@ -68,45 +68,14 @@ class Outcome:
 ASKED_FILE = "answers.json"
 
 
-def load_asked(path: str | None) -> dict:
-    """{(tp2, component): {n: {"q", "r"?, "a"?}}}: the question each answer
-    went to, the log's answer there and the player's where one stood in for
-    it (item 63); {} when there is none yet. An entry that does not read is
-    left out, the others kept (second review of #98)."""
-    try:
-        with open(path or "", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    out: dict = {}
-    asked = data.get("asked") if isinstance(data, dict) else None
-    for name, by in (asked.items() if isinstance(asked, dict) else ()):
-        try:
-            tp2, number = str(name).rsplit("#", 1)
-            key = (tp2, int(number))
-        except ValueError:
-            continue
-        if not isinstance(by, dict):
-            continue
-        for n, kept in by.items():
-            if not (isinstance(kept, dict) and isinstance(kept.get("q"), str)):
-                continue
-            try:
-                place = int(n)
-            except ValueError:
-                continue
-            entry = {"q": kept["q"]}
-            for field_ in ("a", "r"):
-                if isinstance(kept.get(field_), str):
-                    entry[field_] = kept[field_]
-            out.setdefault(key, {})[place] = entry
-    return out
-
-
-def save_asked(path: str | None, asked: dict) -> None:
-    if path and asked:
-        data = {"asked": {f"{tp2}#{number}": {str(n): kept for n, kept in sorted(by.items())}
-                          for (tp2, number), by in sorted(asked.items())}}
+def save_answered(path: str | None, answered: list) -> None:
+    """What this install answered, for the player and a bug report (item 63):
+    each question's last line, the answer, where it came from. A record
+    only: nothing reads it back to decide an answer."""
+    if path and answered:
+        data = {"v": 1, "answered": [
+            {"question": question_line(a.question), "answer": a.answer, "source": a.source}
+            for a in answered]}
         with contextlib.suppress(OSError):
             write_text(path, json.dumps(data, indent=1, ensure_ascii=False) + "\n")
 
@@ -235,10 +204,8 @@ class InstallRun:
                 continue
         self.argv, self.cwd, self.ask, self.on_event = argv, cwd, ask, on_event
         self.bgee_dir = bgee_dir
-        # what earlier installs asked where a recorded answer went (item 63)
-        self.asked_file = asked_file
-        self.asked = load_asked(asked_file)
-        self.answers = Answers(recorded, self.asked)
+        self.asked_file = asked_file          # what was answered, recorded (item 63)
+        self.answers = Answers(recorded)
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
@@ -264,7 +231,7 @@ class InstallRun:
         try:
             self._pump(process, outcome)
         finally:
-            save_asked(self.asked_file, self.asked)
+            save_answered(self.asked_file, outcome.answered)
             # Only standard input is closed here: the output belongs to the
             # thread reading it, which closes it at its end. Closing it from
             # here while that thread waits on it would wait as long as anything
@@ -329,17 +296,13 @@ class InstallRun:
             answer, source = self.bgee_dir, "EET"
         else:
             recorded = self.answers.next(text)
-            if recorded is not None and self.answers.last is not None:
-                answer, source = recorded, self.answers.source
-                key, n = self.answers.last
-                if source == "recorded":   # a stale player's answer here goes
-                    self.asked.setdefault(key, {})[n] = {"q": question_line(text),
-                                                         "r": recorded}
+            if recorded is not None:
+                answer, source = recorded, "recorded"
             else:
                 shown = text
                 if self.answers.refused:
-                    # a recorded answer that does not fit is not sent: it may
-                    # have shifted against the mod's changed prompts (item 63)
+                    # a recorded answer the question plainly does not take is
+                    # not sent: it shifted against the mod's prompts (item 63)
                     why = f"Not answered from the log: {self.answers.refused}"
                     self.on_event(Event("line", why, question.batch))
                     shown = f"{text}\n\n({why}.)"
@@ -347,15 +310,6 @@ class InstallRun:
                 if given is None:
                     return False
                 answer, source = given, "player"
-                place = self.answers.player_place()
-                if place is not None:
-                    # kept with its question and the log's answer there, and
-                    # given next time it comes (second review of #98)
-                    key, n, stood_for = place
-                    kept = {"q": question_line(text), "a": answer}
-                    if stood_for is not None:      # past the log's answers: none
-                        kept["r"] = stood_for
-                    self.asked.setdefault(key, {})[n] = kept
         try:
             if process.stdin is None:
                 raise OSError("no standard input")

@@ -2948,9 +2948,9 @@ version up to the tag).
   dark0dave/mod_installer. Whether to report it is the maintainer's call;
   nothing has been opened.
 
-### GUI-AUDIT M8 item 63: a recorded answer goes only to a question it fits
+### GUI-AUDIT M8 item 63: a recorded answer a question plainly does not take is not given
 
-- **Context.** The log's `// @wlb-inputs:` answers were sent in order, one per
+- **Context.** The log's `// @wlb-inputs:` answers are sent in order, one per
   question, whatever the question. A mod whose prompts changed between the
   version a log was recorded on and the one installed shifts them silently:
   a "2" meant for "select 1 or 2" answers a new "[y]es or [n]o", and every
@@ -2958,69 +2958,56 @@ version up to the tag).
   508256a) sends each answer only after its expected question text appears
   (`engine/src/weidu/runner.rs`, `PromptMatcher`); its recipe authors that
   text. Our logs come from players and BIO, and hold answers only.
-- **What a question is (measured; reviews of #98).** mod_installer does not
-  send the question alone. When a line looks like a question - its parser's
-  choice words and phrases (`src/parser_config.rs`: "select", "choose",
-  "enter", "[y]es or [n]o", ...) - it copies in WeiDU's last `lookback`
-  lines, 10 by default (`src/parser.rs`), then collects until the output
-  goes quiet. With the real 16.0.0 and WeiDU 251 the text was WeiDU's
-  version line, "Installing [First] [v30]", "Copying 1 file ...", and only
-  then the question; an earlier question stays in the window when it is
-  near, and a menu printed after the question follows it ("Which
-  portraits?" / "1] Original" / "2] Select 5 or 10 random ones", where the
-  parser fires on the option line). The player sees the whole window. The
-  question, for the checks, is its *block* (`prompts.question_block`): the
-  last line, and the lines above it while it is only how to answer - a
-  menu's option, a bare "[Y]es or [N]o" - stopping at WeiDU's own lines.
-  `--lookback 1` was not taken: the player would lose a menu's options.
-- **Decision.** `@wlb-inputs` stays as BIO writes it - logs players exchange
-  keep working, and no question text is added to them. Checks instead, in
-  `prompts.Answers`:
-  1. *The answer must be one the question offers*, when its block's last
-     line that is not a menu option says: "[y]es or [n]o", "(y/n)"; after
-     select/choose/pick/enter/type, a list with "or" ("1 or 2", "1, 2 or
-     3"), a range ("1-3") or "between 1 and 100" (`prompts.offered`). A
-     question that says nothing - a path, a free number, a menu whose
-     choices are its options, "Press Enter" - takes any answer, as before;
-     so does one that names an answer it does not list: "0 to skip",
-     "Enter for the default", "[default: 2]", "leave blank", "or press
-     Enter" (a "default" or "skip" that is not an answer, as in "Use the
-     default portraits? [y]es or [n]o", does not).
-  2. *It must be the question an earlier install asked there.* Each
-     answer's question (its block, joined) is kept in
-     `install-plan/answers.json` with the log's answer there:
-     `{"q": ..., "r": ...}`. Another question at that place on a later
-     install does not get it. A version bump, a reordered plan or a resume
-     does not change the block.
-  When either fails, the answer is not sent and the player is asked, with
-  the reason both in the output and in the question shown. The batch's other
-  recorded answers are not used either: once one shifted, the rest have too.
-  3. *What the player answers there is kept*: `{"q", "a", "r"}` for the
-     refused place and the places after it in the batch, and, past the
-     log's answers (a question a version added), the next place of the
-     batch's component when the batch has only one (with several, which
-     one asked is not known). It is given ("remembered") whenever that
-     question comes there again, *while the log still records the same
-     answer there* ("r"): a log changed since wins. The player answers a
-     changed or added question once, not on every install.
-  An entry of `answers.json` that does not read is left out, the others
-  kept. mod_installer's `BATCH_MODE` (clap reads it from the environment)
-  is never passed on (`mod_installer_env`), so a batch is one mod's
-  consecutive components and its places line up.
-- **Consequences.** A shift is caught when the shifted answer is the wrong
-  kind for the question (a number for a yes/no, or out of the offered
-  numbers) or, from the second install on, when the question changed. Not
-  caught: a shift between two questions of the same kind on a first install
-  (a yes/no recorded for another yes/no) - nothing in an answers-only log
-  tells them apart. The patterns are deliberately few; a question they do
-  not read takes any answer, as before, rather than refusing a right one.
-  Item 48's scanner (each component's expected question texts from its
-  READLNs and .tra) can later name the question exactly instead of the
-  block. Tested on the real window: the stand-in mod_installer sends
-  WeiDU's last 10 lines with each question; with the real mod_installer and
-  WeiDU, a yes/no then "select 1 or 2" installs from its recorded "y,2", and
-  a menu printed after "Which portraits?" takes its recorded "1", nobody
-  asked.
+- **What mod_installer sends (measured; reviews of #98).** When a line looks
+  like a question (its parser's choice words and phrases,
+  `src/parser_config.rs`), it copies in WeiDU's last `lookback` lines, 10 by
+  default (`src/parser.rs`), then collects until the output goes quiet.
+  With the real 16.0.0 and WeiDU 251: WeiDU's version line, "Installing
+  [First] [v30]", "Copying 1 file ...", the question; an earlier question
+  stays in the window when it is near, and a menu printed after the
+  question follows it - the parser may fire on an option line ("2] Select
+  5 or 10 random ones"). With 16.0.0's batches, several components share
+  one window's history. The player sees the whole window.
+- **What was tried and dropped.** Three rounds on #98 tried to tell, from
+  that window, which question it was - its last line, then a "block" of
+  lines - and to keep, per component and place, the question an answer
+  went to and the player's answers, so a changed question would not get an
+  old answer and an added one would be asked once. Each round's
+  independent review found the heuristics closing some cases and opening
+  others: with several components in a batch the player's answers were kept
+  under the wrong component, a conditional question skipped by the mod made
+  the next one's right answer refused, short prompts dragged a game path
+  into the question's identity, and kept answers had no expiry across plans
+  and game folders. The cause is structural: which question it is, and
+  which component's, cannot be known from mod_installer's window.
+- **Decision.** The safe subset only, in `prompts.Answers`:
+  1. Recorded answers go in order, as before.
+  2. One is not given when the question *plainly* does not take it: the
+     window's last line itself names its choices - "[y]es or [n]o",
+     "(y/n)"; after select/choose/pick/enter/type, a list with "or", a range,
+     "between X and Y" (`prompts.offered`) - no menu option is in the window
+     after WeiDU's last own line, and the line names no other answer ("0 to
+     skip", "Enter for the default", "[default: 2]", "leave blank", "or
+     press Enter"). Then the player is asked, with the reason in the output
+     and in the question shown, and the batch's other recorded answers are
+     not used (they shifted too). Anything else takes any answer, as before.
+  3. `install-plan/answers.json` records what the last install answered -
+     each question's last line, the answer, recorded/player/EET, under
+     `"v": 1` - for the player and for a bug report. Nothing reads it back
+     to decide.
+  `@wlb-inputs` stays as BIO writes it.
+- **Consequences.** Caught: a shifted answer of the wrong kind for a plain
+  question (a number for a yes/no, out of a plain list) - the common shape
+  of a shift. Not caught: a shift between questions of the same kind, and
+  any shift at a question that is not plain (a menu, free input) - as
+  before. A changed or added question is asked of the player on every
+  install, as before. Which question and which component - and with them
+  answers by question rather than by place - come with item 48's expected
+  texts (each component's READLNs resolved from its .tra, #101). Tested on
+  the real window: the stand-in mod_installer sends WeiDU's last 10 lines
+  with each question; with the real mod_installer and WeiDU, a yes/no then
+  "select 1 or 2" installs from its recorded "y,2", and a menu printed
+  after "Which portraits?" takes its recorded "1", nobody asked.
 
 ---
 
