@@ -31,6 +31,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 
+from . import atomic
 from .archives import safe_extract
 from .childenv import child_env
 from .errors import ConfigError
@@ -234,7 +235,7 @@ def download(client, tool: str, tools_dir: str, progress=None, cancel=None) -> F
             raise ConfigError(f"{tool} from {pin.url} is not the program pinned for it")
         os.chmod(program, 0o700)         # run by the install; the folder is per user
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        os.replace(program, target)
+        atomic.replace(program, target)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return _examine(tool, target, "downloaded")

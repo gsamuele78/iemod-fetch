@@ -35,6 +35,7 @@ from publicsuffixlist import PublicSuffixList
 from typing import TYPE_CHECKING, TypeVar
 from collections.abc import Callable
 
+from . import atomic
 from .archives import Kind, detect_kind
 from .errors import (Cancelled, ChecksumMismatch, HttpStatusError, InsecureURL,
                      NetworkError, NotAnArchive, TooLarge)
@@ -524,7 +525,7 @@ class HttpClient:
                 if expected_sha256 and actual.lower() != expected_sha256.lower():
                     raise ChecksumMismatch(url, expected_sha256, actual)
 
-                os.replace(part, dest_path)
+                atomic.replace(part, dest_path)
                 return DownloadResult(dest_path, actual, total, kind, final_url)
             finally:
                 if os.path.exists(part):
