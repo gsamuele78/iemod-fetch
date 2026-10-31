@@ -38,6 +38,11 @@ jobs:
           python-version-file: .python-version
           cache: pip
           cache-dependency-path: pyproject.toml
+      # The runtime's libraries at their pins first (ADR-0043): build.py vendors
+      # exactly those, and checks the installed version against the pin. The
+      # extras' install below keeps them, so a new filelock or Public Suffix
+      # List release cannot turn this red before its pin is bumped.
+      - run: pip install --require-hashes -r requirements/runtime.txt
       - run: pip install -e ".[test]"
       - name: Test suite
         run: python -m pytest -q
