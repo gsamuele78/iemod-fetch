@@ -67,6 +67,7 @@ class Services:
     progress: Callable[[str, dict], dict] = api.install_progress
     known_issues: Callable[[dict, str], list] = api.install_known_issues
     launch: Callable[[str], list] = api.install_launch_advice
+    readiness: Callable[..., list] = api.install_readiness
     start: Callable[..., Any] = api.start_install
     # the phase-5 questionnaire (ADR-0049)
     questions: Callable[[str, str], dict] = api.install_questions
@@ -467,7 +468,10 @@ class InstallPage(QWidget):
         self.output.clear()
         self.outcome = None
         self._say("Writing the install order...")
-        self._run(lambda: _plan_and_questions(services, game, chosen, labels, folder),
+        games = dict(self.games)
+        weidu = self.found["weidu"].path if self.found.get("weidu") else None
+        self._run(lambda: _plan_and_questions(services, game, chosen, labels, folder,
+                                              games, weidu),
                   self._planned)
 
     def _planned(self, plan: dict) -> None:
@@ -516,6 +520,10 @@ class InstallPage(QWidget):
         known = ("" if not issues else
                  "Known issue(s) this install will meet:\n"
                  + "\n".join(f"  - {issue}" for issue in issues) + "\n\n")
+        room = plan.get("readiness") or []           # item 49: warnings, never a refusal
+        if room:
+            known += ("Before installing, check (item 49):\n"
+                      + "\n".join(f"  - {line}" for line in room) + "\n\n")
         if issues:
             title = ("Resume" if resuming else "Install") + (" anyway," if broken else "") \
                 + " despite a known issue"
@@ -786,15 +794,24 @@ def _offered(question: dict) -> bool:
 
 
 def _plan_and_questions(services: Services, game: str, chosen: list, labels: dict,
-                        folder: str) -> dict:
+                        folder: str, games: dict | None = None,
+                        weidu: str | None = None) -> dict:
     """On a worker thread: write the plan, then read the questions its mods
     will ask - every mod's files, too slow for the window's thread (review
-    of #107). A reading that fails says nothing: {}."""
+    of #107) - and whether there is room and the right WeiDU (item 49: it
+    walks every game and staged mod). A reading that fails says nothing."""
     plan = services.plan(game, chosen, labels, folder)
+    mods = services.mods_dir(folder)
     try:
-        plan["questions"] = services.questions(plan["plan_dir"], services.mods_dir(folder))
+        plan["questions"] = services.questions(plan["plan_dir"], mods)
     except Exception:
         plan["questions"] = {}
+    try:
+        # the backups are made already (the page asks for them first): the
+        # install's room and WeiDU are what is left to say
+        plan["readiness"] = services.readiness(games or {}, mods, weidu) if games else []
+    except Exception:
+        plan["readiness"] = []
     return plan
 
 

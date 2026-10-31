@@ -674,3 +674,21 @@ def test_eeex_left_out_by_this_run_is_not_advised_and_quiet_notes_are_not_listed
                              note="no word on it in the debug file")]
     assert page._show_results(quiet) == "1 installed"
     assert "a.tp2 #0" not in page.output.toPlainText()
+
+
+def test_room_and_weidu_are_said_in_the_confirmation_never_refused(qtbot, world):
+    """Item 49: install_readiness's warnings, read on the plan's worker, are
+    in the confirmation; the install still goes on when the player says yes."""
+    backed_up(world)
+    seen = []
+
+    def readiness(games, mods, weidu):
+        seen.append((dict(games), weidu))
+        return ["BG2EE: the install may need up to 3.0 GiB; 1.0 GiB is free there"]
+    world["services"].readiness = readiness
+    page = page_of(qtbot, world)
+    run_to_end(qtbot, page)
+    assert seen and seen[0][1]                                   # WeiDU's path given
+    text = page.confirmed[-1][1]
+    assert "Before installing, check (item 49):" in text and "1.0 GiB is free" in text
+    assert page.outcome.ok

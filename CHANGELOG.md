@@ -9,6 +9,9 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The install's room and WeiDU said in the confirmation** (GUI-AUDIT item
+  49): the install page reads `api.install_readiness` on the plan's worker
+  thread and lists its warnings before *Install* - never a refusal.
 - **Room and the right WeiDU, said before installing** (GUI-AUDIT item 49,
   ADR-0055): `api.install_readiness` warns, and never refuses, when:
   - the backup will not fit where backups go (its exact size);
