@@ -3741,3 +3741,80 @@ size and sha256 match pinned values. It neither scans nor watches a folder.
 - **Not run against the gated sites**: no runner reaches them. The tests use
   a stub transport and real archives, checking that nothing is fetched and
   that the chosen file is left as it was.
+
+---
+
+## ADR-0053 — What each component came to: WeiDU's verdicts, held to WeiDU.log
+
+**Status:** accepted (2026-10-31, GUI-AUDIT M8 item 69)
+
+### Context
+
+An install ended with mod_installer's exit code: 0, or not. That code does
+not say which component failed, which went in with warnings, or which were
+never reached. Items 47 (the known-issue classifier) and 53 (the
+post-install report) both need that per component.
+
+Chriz Easy BG (`engine/src/weidu/verify.rs`, `log.rs` L136-140, MIT; the
+idea only) reads WeiDU's own verdicts and WeiDU.log before and after.
+
+Measured with the real mod_installer 16.0.0 and WeiDU v251:
+- mod_installer's default `--weidu-log-mode` is `autolog,logapp,log-extern`
+  (`config/log_options.rs`), so it starts WeiDU with `--logapp --autolog
+  --log-extern`;
+- WeiDU therefore appends every run of an install to one `WSETUP.DEBUG` in
+  the game folder;
+- each WeiDU run is a block that opens with `WeiDU v NNNNN Log` and the
+  command line (`... mod/mod.tp2 --force-install-list 0 1 ...`);
+- in each block, every component has `Installing [Name]` and, when it ends,
+  one of `SUCCESSFULLY INSTALLED`, `INSTALLED WITH WARNINGS` or `NOT
+  INSTALLED DUE TO ERRORS` followed by the name.
+
+### Decision
+
+1. **`results.py` (pure, core layer) parses the debug text.** In each
+   block, the command line's component numbers are taken in order by its
+   `Installing [Name]` and `SKIPPING: [Name]` lines. Measured with the real
+   WeiDU: a component whose REQUIRE_PREDICATE fails gets `SKIPPING: [Name]`
+   and no verdict, so it does not shift the others (review of #109). Each
+   verdict goes to the component it names.
+   - The `Installed ~Name~` lines WeiDU saves give the exact number of each
+     component it installed.
+   - Where the order contradicts them (a component passed over without a
+     word), only those exact numbers are kept, and a failure is left to the
+     log.
+   - A run cut short leaves its last component with no verdict.
+2. **WeiDU.log is the authority on what is in the game.** A planned
+   component added to the log during the run is installed; the debug file
+   only adds "with warnings". Where the two disagree, the log wins and a
+   note says so:
+   - the log lists a component the debug file says failed;
+   - the debug file says a component went in, but the log does not list it.
+
+   A component in the log before the run is "already installed". One in
+   neither is "not reached", or "not installed (errors)" when the debug file
+   says so.
+3. **`InstallRun` reads the files, never `results.py`.** Before the run, for
+   each game mod_installer installs into (`phases()`, as `command()` gives
+   them), it records the planned keys, the game's WeiDU.log and the debug
+   file's size. After the run it reads only what was appended past that
+   size, so an earlier install's debug file is never taken for this one. A
+   debug file that shrank was replaced, and is read whole.
+4. **The results go in `Outcome.results`** and in
+   `install-plan/results.json` (`{"v": 1, "components": [...]}`), written on
+   every run, empty when mod_installer cannot start. `Outcome.ok` stays the
+   exit code.
+
+### Consequences
+
+- A component that failed, one that went in with warnings, and the ones the
+  run never reached are now told apart; items 47 and 53 can build on them.
+- The debug file name depends on the log mode, so it is mod_installer's
+  default that this relies on. A player's own `--weidu-log-mode log X`
+  cannot reach it, because this program clears mod_installer's options from
+  the environment (ADR-0045). With another file, no verdicts are found and
+  the log alone decides, which the note says.
+- Measured with the real binaries on Linux; the WeiDU verdict strings are
+  the same on every system.
+- Not shown in the wizard yet: the install page belongs to the other
+  session's work.

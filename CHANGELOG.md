@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **What each component of an install came to** (GUI-AUDIT item 69,
+  ADR-0053): the result is not only mod_installer's exit code. Each planned
+  component is installed, installed with warnings, not installed because of
+  errors, or not reached, according to WeiDU's own verdicts in the game's
+  WSETUP.DEBUG (only what this run appended) checked against its WeiDU.log
+  before and after. Where the two disagree, the log wins. It is written to
+  `install-plan/results.json` and returned as `Outcome.results`. Not shown
+  in the wizard yet.
 - **The questions are answered before the install** (GUI-AUDIT item 48,
   ADR-0049 points 2 and 5): before *Install*, the wizard puts the questions
   the mods will ask to the player in one window - those whose place is sure:

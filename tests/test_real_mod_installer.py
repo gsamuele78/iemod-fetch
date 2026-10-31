@@ -350,3 +350,103 @@ def test_a_menu_after_the_question_does_not_limit_its_answer(tmp_path):
     assert (game / "menu-answer.txt").read_text().split() == ["1"]
     kept = json.loads((plan / "answers.json").read_text())["answered"]
     assert [(k["answer"], k["source"]) for k in kept] == [("1", "recorded")], kept
+
+
+WARNS = """BACKUP ~warns/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~2~
+
+BEGIN ~One~
+COPY ~warns/f.txt~ ~override/one.txt~
+
+BEGIN ~Careful~
+COPY ~warns/f.txt~ ~override/careful.txt~
+WARN ~careful~
+"""
+
+
+def test_each_component_gets_weidus_own_verdict(tmp_path):
+    """Item 69 (ADR-0053): mod_installer starts WeiDU with --logapp --autolog,
+    so every run appends to the game's WSETUP.DEBUG; each component's
+    verdict is read from what this install appended, and held to WeiDU.log."""
+    import json
+
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    # an earlier install's debug file, with a verdict on a component this
+    # install never reaches: not read, only what this install appends is
+    (game / "WSETUP.DEBUG").write_text(
+        f"WeiDU v 25100 Log\n\n {WEIDU} bad/bad.tp2 --force-install-list 2 --logapp\n"
+        "Installing [Later]\nSUCCESSFULLY INSTALLED      Later\n")
+    mods = tmp_path / "mods"
+    for name, tp2 in (("warns", WARNS), ("bad", BAD)):
+        (mods / name).mkdir(parents=True)
+        (mods / name / f"{name}.tp2").write_text(tp2)
+    (mods / "warns" / "f.txt").write_text("f\n")
+    (mods / "bad" / "a.txt").write_text("mod\n")
+    with open(mods / "bad" / "bad.tp2", "a") as fh:
+        fh.write("\nBEGIN ~Later~\nCOPY ~bad/a.txt~ ~override/later.txt~\n")
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
+                                    "~WARNS/WARNS.TP2~ #0 #0 // One\n"
+                                    "~WARNS/WARNS.TP2~ #0 #1 // Careful\n"
+                                    "~BAD/BAD.TP2~ #0 #0 // Fine\n"
+                                    "~BAD/BAD.TP2~ #0 #1 // Broken\n"
+                                    "~BAD/BAD.TP2~ #0 #2 // Later\n")
+    outcome = api.start_install(str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER,
+                                WEIDU, ask=lambda q, b: None).run()
+    assert not outcome.ok                                   # the exit code: something failed
+    got = [(x.key, x.status, x.name) for x in outcome.results]
+    assert got[:4] == [(("warns.tp2", 0), "installed", "One"),
+                       (("warns.tp2", 1), "installed with warnings", "Careful"),
+                       (("bad.tp2", 0), "installed", "Fine"),
+                       (("bad.tp2", 1), "not installed (errors)", "Broken")], got
+    assert all(not x.note for x in outcome.results[:4])
+    assert (got[4][0], got[4][1]) == (("bad.tp2", 2), "not reached")     # stopped before
+    written = json.loads((plan / "results.json").read_text())["components"]
+    assert [c["status"] for c in written[:4]] == [x[1] for x in got[:4]]
+
+
+SKIPS = """BACKUP ~skips/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~1~
+
+BEGIN ~First~
+COPY ~skips/f.txt~ ~override/first.txt~
+
+BEGIN ~Middle~
+REQUIRE_PREDICATE (0 == 1) ~not for this game~
+COPY ~skips/f.txt~ ~override/middle.txt~
+
+BEGIN ~Last~
+COPY ~skips/f.txt~ ~override/last.txt~
+"""
+
+
+def test_weidus_debug_file_for_a_skipped_component_in_a_batch(tmp_path):
+    """Review of #109: WeiDU itself, given three components with the middle
+    one's REQUIRE_PREDICATE false, as a batch would give them - measured,
+    not assumed: `SKIPPING: [Middle]`, no verdict, the others where they are."""
+    import subprocess
+
+    from test_real_weidu import make_game
+
+    from iemod_fetch import results
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "skips").mkdir()
+    (game / "skips" / "skips.tp2").write_text(SKIPS)
+    (game / "skips" / "f.txt").write_text("f\n")
+    subprocess.run([WEIDU, "skips/skips.tp2", "--force-install-list", "0", "1", "2",  # noqa: S603
+                    "--use-lang", "en_US", "--language", "0", "--no-exit-pause",
+                    "--logapp", "--autolog", "--log-extern"], cwd=game,
+                   stdin=subprocess.DEVNULL, capture_output=True, timeout=120, check=False)
+    debug = (game / "WSETUP.DEBUG").read_text(errors="replace")
+    assert "SKIPPING: [Middle]" in debug
+    assert results.debug_verdicts(debug) == {("skips.tp2", 0): (results.OK, "First"),
+                                             ("skips.tp2", 2): (results.OK, "Last")}
+    found = results.results([("skips.tp2", n) for n in (0, 1, 2)], "",
+                            (game / "WeiDU.log").read_text(), debug)
+    assert [x.status for x in found] == [results.OK, results.NOT_REACHED, results.OK]

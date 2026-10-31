@@ -34,6 +34,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from . import gamelock, resume
+from . import results as verdicts
 from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
@@ -59,6 +60,9 @@ class Outcome:
     returncode: int | None
     cancelled: bool = False
     answered: list[Answered] = field(default_factory=list)
+    # what each planned component came to, by WeiDU.log and WeiDU's debug
+    # file (item 69, ADR-0053); `ok` stays mod_installer's exit code
+    results: list[verdicts.Result] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -66,6 +70,69 @@ class Outcome:
 
 
 ASKED_FILE = "answers.json"
+
+
+RESULTS_FILE = "results.json"
+DEBUG_FILE = "WSETUP.DEBUG"     # WeiDU's --autolog, appended to (--logapp)
+
+
+def save_results(path: str | None, found: list) -> None:
+    """What each component came to (item 69), for the player and a bug
+    report; written on every run, like answers.json."""
+    if path:
+        data = {"v": 1, "components": [r.as_dict() for r in found]}
+        with contextlib.suppress(OSError):
+            write_text(path, json.dumps(data, indent=1, ensure_ascii=False) + "\n")
+
+
+def phases(plan_dir: str, games: dict[str, str]) -> list[tuple[str, str]]:
+    """(planned log, game folder) for each game mod_installer installs into,
+    as command() gives them to it."""
+    if "EET" in games and "BGEE" in games:
+        return [(os.path.join(plan_dir, PRE_EET_LOG), games["BGEE"]),
+                (os.path.join(plan_dir, EET_LOG), games["EET"])]
+    if len(games) != 1:
+        raise ConfigError(f"one game, or BG:EE and EET, are installed into; not "
+                          f"{', '.join(games) or 'none'}")
+    (game, folder), = games.items()
+    log = PRE_EET_LOG if game == "BGEE" and not os.path.isfile(
+        os.path.join(plan_dir, EET_LOG)) else EET_LOG
+    return [(os.path.join(plan_dir, log), folder)]
+
+
+def _read(path: str, start: int = 0) -> str:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            return fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _size(path: str) -> int:
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+class _Phase:
+    """One game's WeiDU.log and debug file as they were before the run, to
+    read what the run added (item 69)."""
+
+    def __init__(self, plan_log: str, folder: str) -> None:
+        self.planned = verdicts.log_keys(_read(plan_log))
+        self.log = os.path.join(folder, "WeiDU.log")
+        self.debug = os.path.join(folder, DEBUG_FILE)
+        self.log_before = _read(self.log)
+        self.debug_from = _size(self.debug)
+
+    def results(self) -> list[verdicts.Result]:
+        # appended to: what this run wrote starts where it ended; a file
+        # that shrank was replaced, and is read whole
+        start = self.debug_from if _size(self.debug) >= self.debug_from else 0
+        return verdicts.results(self.planned, self.log_before, _read(self.log),
+                               _read(self.debug, start))
 
 
 def save_answered(path: str | None, answered: list) -> None:
@@ -202,7 +269,9 @@ class InstallRun:
                  grace_s: float = GRACE_S, drain_s: float = DRAIN_S,
                  games: dict[str, str] | None = None, tools: tuple[str, ...] = (),
                  running: Callable[[], list[gamelock.Running] | None] = gamelock.running_executables,
-                 asked_file: str | None = None) -> None:
+                 asked_file: str | None = None,
+                 phases: list[tuple[str, str]] | None = None,
+                 results_file: str | None = None) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -213,6 +282,9 @@ class InstallRun:
         self.argv, self.cwd, self.ask, self.on_event = argv, cwd, ask, on_event
         self.bgee_dir = bgee_dir
         self.asked_file = asked_file          # what was answered, recorded (item 63)
+        # item 69: each game's log and debug file as they were before
+        self._phases = [_Phase(log, folder) for log, folder in phases or []]
+        self.results_file = results_file
         # item 67: a game started during the run is said at the next batch
         self.games, self.tools, self.running = games or {}, tools, running
         self._said: set[str] = set()
@@ -241,6 +313,7 @@ class InstallRun:
         except OSError:
             # it never started: an earlier run's record must not stay (review of #98)
             save_answered(self.asked_file, [])
+            save_results(self.results_file, [])
             raise
         self._process = process
         self._job = _Job.holding(process)
@@ -257,6 +330,8 @@ class InstallRun:
                     process.stdin.close()
             outcome.returncode = process.wait()
             self._job.close()
+            outcome.results = [r for phase in self._phases for r in phase.results()]
+            save_results(self.results_file, outcome.results)
         return outcome
 
     def _pump(self, process: subprocess.Popen, outcome: Outcome) -> None:
@@ -698,6 +773,7 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     plan's beginning is refused.
     """
     asked_file = os.path.join(plan_dir, ASKED_FILE)   # beside the plan, not its rest
+    results_dir = plan_dir
     # EET's core asks for BG:EE's folder: known from the games as given, also
     # when a resume runs the EET game alone (review of #89)
     bgee_dir = games.get("BGEE") if "EET" in games else None
@@ -718,4 +794,5 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
     logs = [os.path.join(plan_dir, name) for name in (PRE_EET_LOG, EET_LOG)]
     return InstallRun(argv, logs, cwd=mods_dir, ask=ask, on_event=on_event,
                       bgee_dir=bgee_dir, games=games, tools=(mod_installer, weidu),
-                      asked_file=asked_file, **timing)
+                      asked_file=asked_file, phases=phases(plan_dir, games),
+                      results_file=os.path.join(results_dir, RESULTS_FILE), **timing)
