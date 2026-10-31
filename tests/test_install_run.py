@@ -713,3 +713,32 @@ def test_recorded_answers_of_another_tool_are_handed_out_in_order(tmp_path):
     # @2 skipped this run: @3 comes second and gets a3, not "nothing"
     assert run._by_question("Please enter the first value:", (("a.tp2", 0),)) == ("a1", "recorded")
     assert run._by_question("Please enter the third value:", (("a.tp2", 0),)) == ("a3", "recorded")
+
+
+def test_a_long_silence_is_said_never_acted_on_and_measured(setup, monkeypatch):
+    """ADR-0049 point 4: no output for longer than the threshold is said once,
+    with the last lines; the install goes on to its end; each batch's longest
+    silence is recorded."""
+    import json
+    monkeypatch.setenv("FAKE_SLOW", "1.5")
+    install, events = run(setup, monkeypatch, {}, silent_s=0.7)
+    outcome = install.run()
+    assert outcome.ok                                           # never stopped
+    said = [e.text for e in events if e.kind == "watchdog"]
+    assert said and all(text.startswith("No output for") for text in said)
+    assert "Nothing is stopped" in said[0] and "The last lines:" in said[0]
+    assert len(said) == len(outcome.silences)                   # once per silence
+    assert all(seconds >= 1.4 for _batch, seconds in outcome.silences)
+    with open(os.path.join(setup["plan"], "results.json"), encoding="utf-8") as fh:
+        kept = json.load(fh)
+    assert len(kept["silences"]) == 3 and kept["silences"][0]["seconds"] >= 1.4
+
+
+def test_a_silence_after_a_question_mod_installer_does_not_ask_says_so(tmp_path):
+    from iemod_fetch.install_run import InstallRun
+    run_ = InstallRun(["x"], [], cwd=str(tmp_path), ask=lambda q, b: None,
+                      expected={("a.tp2", 0): [("@1", "How many extra kits should be installed?")]})
+    text = run_._silence_text(700, ["Installing [A]", "How many extra kits should be installed?"],
+                              (("a.tp2", 0),))
+    assert text.startswith("No output for 12 minute(s)")
+    assert "does not put to anyone" in text and "mod_installer's timeout" in text

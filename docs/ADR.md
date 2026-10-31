@@ -3569,6 +3569,26 @@ through the child's configuration folder, on Windows only in the player's own
 folder (the known-folder API ignores the environment). That is a decision
 still to take (the warn-only watchdog, point 4, will at least say it).
 
+### Amendment (2026-10-31): the watchdog, point 4
+
+Built in `InstallRun._pump`. It tells apart a question being put to the
+player (the loop waits on the answer: nothing is said), output still coming
+(alive), and **no output for longer than `SILENT_S`** with no question: then
+it says so once - an `Event("watchdog")`, shown on the install page with
+`!!` and in the status line - with the last five lines of output, and goes on
+waiting. It never stops the install. When the last lines end with a question
+the batch's mods ask (`match_question`), it says that WeiDU seems to wait for
+an answer mod_installer does not put to anyone, and that it will wait until
+mod_installer's timeout (the limit measured above).
+
+**The threshold is provisional: 10 minutes.** No real install's silences
+could be measured here (no runner has the game data, and the corpus is files,
+not runs). So each run measures them: the longest stretch without output in
+each batch goes into `install-plan/results.json` (`"silences"`), and the
+threshold is to be set from the longest ones real installs record, with a
+margin. Until then a component that works silently for more than 10 minutes
+(SCS's big components, EET's core on a slow disk) is said, not harmed.
+
 ---
 
 ## ADR-0050 — A rename waits out a file Windows holds for a moment

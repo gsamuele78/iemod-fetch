@@ -542,6 +542,9 @@ class InstallPage(QWidget):
                 self._running_batch, text = names, "== " + names
             elif event.kind == "answer":
                 text = f"-> {text}"
+            elif event.kind == "watchdog":         # ADR-0049 point 4: said, not acted on
+                text = f"!! {text}"
+                bridge.status.emit("Installing... (no output for a while - see below)")
             bridge.line.emit(text)
 
         def run() -> Any:

@@ -9,6 +9,13 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **A watchdog that only warns** (ADR-0049 point 4): no output from the
+  install for 10 minutes, and no question, is said once on the install page
+  with the last lines - and, when they end with a question the mods ask that
+  mod_installer does not put to anyone, that it will wait until
+  mod_installer's timeout. It never stops anything. The threshold is
+  provisional: each run records each batch's longest silence in
+  `install-plan/results.json` to set it from real installs.
 - **The install page says what each component came to and how to start the
   game** (GUI-AUDIT items 69 and 71): after an install the components that
   need a look - with warnings, not installed because of errors, not
