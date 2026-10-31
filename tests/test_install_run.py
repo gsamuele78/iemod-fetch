@@ -504,7 +504,7 @@ def test_a_backup_folder_named_with_mod_folder_is_found(setup, monkeypatch):
     assert progress["state"] == "mismatch" and "stopped half-way" in progress["problem"]
 
 
-# ------------------------------------------- answers that fit (item 63)
+# ------------------------------------- what was answered (item 63)
 # The fake sends a question as mod_installer does: WeiDU's last 10 lines -
 # its version, "Installing [x] [vN]", earlier questions - then the question.
 def with_answers(setup, answers_text):
@@ -514,42 +514,27 @@ def with_answers(setup, answers_text):
         "Restorations: v30", f"Restorations: v30 // @wlb-inputs: {answers_text}"))
 
 
-def test_a_recorded_answer_that_does_not_fit_is_asked_of_the_player(setup, monkeypatch):
-    """UB's log answer is "2", its question takes y or n: the player is asked,
-    told why, and the answer they give goes in."""
-    with_answers(setup, "2")
-    asked = []
-    install, events = run(setup, monkeypatch, {
-        "eet.tp2#0": [EET_QUESTION],
-        "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o"]},
-        ask=lambda question, batch: asked.append(question) or "y")
-    outcome = install.run()
-    assert outcome.ok and len(asked) == 1
-    assert "Restore the tavern? [y]es or [n]o\n\n(Not answered from the log" in asked[0]
-    assert answers(setup)[-1] == "y"
-    assert any("Not answered from the log: the recorded answer '2'" in e.text for e in events)
-
-
-def test_an_earlier_question_in_the_window_is_not_this_one(setup, monkeypatch):
-    """Review of #98: the yes/no before it is in the window sent with "select
-    1 or 2"; the recorded "2" still goes to it, nobody is asked."""
-    with_answers(setup, "y,2")
+def test_recorded_answers_go_in_order_whatever_the_question_says(setup, monkeypatch):
+    """Fourth review of #98: Tweaks Anthology #3210 asks "between 6 and 15,
+    or 0 for no minimum" and takes 0 - its tp2 decides, not its text. The
+    recorded answers go in as recorded; nobody is asked."""
+    with_answers(setup, "0,y")
     asked = []
     install, _events = run(setup, monkeypatch, {
         "eet.tp2#0": [EET_QUESTION],
-        "setup-ub.tp2#0": ["Restore the tavern? [y]es or [n]o",
-                           "Please select 1 or 2 and press Enter."]},
+        "setup-ub.tp2#0": [
+            "Select a minimum STRENGTH value, between 6 and 15, or 0 for no minimum:",
+            "Restore the tavern? [y]es or [n]o"]},
         ask=lambda question, batch: asked.append(question) or "x")
     outcome = install.run()
     assert outcome.ok and asked == []
-    assert answers(setup)[-2:] == ["y", "2"]
-    assert [a.source for a in outcome.answered][-2:] == ["recorded", "recorded"]
+    assert answers(setup)[-2:] == ["0", "y"]
 
 
 def test_what_was_answered_is_recorded_and_never_read_back(setup, monkeypatch):
     """answers.json says what each question got and from where - for the
     player and a bug report; a later install decides as if it were not
-    there (third review of #98)."""
+    there."""
     import json
     from pathlib import Path
     with_answers(setup, "y")
@@ -561,6 +546,7 @@ def test_what_was_answered_is_recorded_and_never_read_back(setup, monkeypatch):
     assert kept["v"] == 1
     assert kept["answered"][-1] == {"question": "Restore the tavern? [y]es or [n]o",
                                     "answer": "y", "source": "recorded"}
+    assert kept["answered"][0]["source"] == "EET"
     Path(setup["plan"], "answers.json").write_text(json.dumps(
         {"v": 1, "answered": [{"question": "Restore the tavern? [y]es or [n]o",
                                "answer": "n", "source": "player"}]}))
@@ -570,6 +556,16 @@ def test_what_was_answered_is_recorded_and_never_read_back(setup, monkeypatch):
                 os.remove(os.path.join(game, name))
     install, _events = run(setup, monkeypatch, questions)
     assert install.run().ok and answers(setup)[-1] == "y"       # the log's, as before
+
+
+def test_a_run_that_answers_nothing_leaves_no_earlier_record(setup, monkeypatch):
+    import json
+    from pathlib import Path
+    Path(setup["plan"], "answers.json").write_text('{"v": 1, "answered": [{"answer": "old"}]}')
+    install, _events = run(setup, monkeypatch, {})          # no question asked
+    assert install.run().ok
+    assert json.loads(Path(setup["plan"], "answers.json").read_text()) == \
+        {"v": 1, "answered": []}
 
 
 def test_batch_mode_from_the_environment_does_not_reach_mod_installer(monkeypatch):

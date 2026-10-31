@@ -130,113 +130,30 @@ class OutputReader:
         return Event("question", text, self.batch)
 
 
-# What a question offers, when it says so unambiguously (GUI-AUDIT M8 item
-# 63): "[y]es or [n]o", "(y/n)"; after select/choose/pick/enter/type, a list
-# with "or" ("1 or 2", "1, 2 or 3"), a range ("1-3") or "between 1 and 100".
-_YES_NO = re.compile(r"\[y\]es\s+or\s+\[n\]o|\(y/n\)|\[y/n\]|\by/n\b", re.IGNORECASE)
-_VERB = r"\b(?:select|choose|pick|enter|type)\b"
-_LIST = re.compile(_VERB + r"[^.?!\n]*?\b(\d{1,3}(?:\s*(?:,|or)\s*\d{1,3})*\s*or\s*\d{1,3})\b",
-                   re.IGNORECASE)
-_RANGE = re.compile(_VERB + r"[^.?!\n]*?(?:\b(\d{1,3})\s*-\s*(\d{1,3})\b"
-                    r"|\bbetween\s+(\d{1,3})\s+and\s+(\d{1,3})\b)", re.IGNORECASE)
-# an answer the line names besides its choices: "0 to skip", "Enter for the
-# default", "[default: 2]", "leave blank", "or press Enter" (reviews of #98)
-_OPEN = re.compile(r"\b\w+\s+to\s+skip\b|\benter\s+(?:for|to\s+(?:keep|accept))\s+(?:the\s+)?"
-                   r"default\b|[\[(]default\b|\bdefault\s*[:=]|\bleave\s+(?:it\s+)?blank\b"
-                   r"|\bor\s+(?:just\s+)?(?:press\s+)?enter\b", re.IGNORECASE)
-# a menu's option: "1] Original", "2) New", "[3] Both", "(4) None", "5. All",
-# "a) Small", "[B] Large"
-_OPTION = re.compile(r"^\s*(?:[\[(]\s*(?:\d{1,3}|[a-z])\s*[\])]|(?:\d{1,3}|[a-z])\s*[\]).])",
-                     re.IGNORECASE)
-# WeiDU's own lines in mod_installer's window
-_NOISE = re.compile(r"^\s*(?:\[[^\]]*\]\s+WeiDU version|Installing\b|Copying\b|Copied\b|"
-                    r"Patching\b|Patched\b|Processing\b|Processed\b|Creating\b)", re.IGNORECASE)
-
-
-def question_line(text: str) -> str:
-    """The last line of what mod_installer sends - kept as what was asked. It
-    sends WeiDU's last `lookback` lines before the question too, 10 by
-    default (src/parser.rs; review of #98, measured with the real 16.0.0):
-    WeiDU's version, "Installing [Mod] [v30]", copy lines, an earlier
-    question, and the lines printed after it."""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return lines[-1] if lines else ""
-
-
-def offered(question: str) -> set[str] | None:
-    """
-    The answers the question says it takes, lower-case - only when it says
-    so unambiguously; None otherwise (then any answer may be right).
-    Unambiguous: the last line itself names its choices, no menu option is
-    in the window after WeiDU's last own line (a menu's options name its
-    choices, "2] Select 5 or 10" does not limit them), and the line names no
-    other answer (a default, a skip, Enter). From mod_installer's window
-    alone, which question and which component cannot be known (third review
-    of #98); item 48's expected texts will say.
-    """
-    lines = [line.strip() for line in question.splitlines() if line.strip()]
-    for n in range(len(lines) - 1, -1, -1):
-        if _NOISE.match(lines[n]):
-            lines = lines[n + 1:]
-            break
-    if not lines or any(_OPTION.match(line) for line in lines):
-        return None
-    line = lines[-1]
-    if _OPEN.search(line):
-        return None
-    if _YES_NO.search(line):
-        return {"y", "n", "yes", "no"}
-    match = _RANGE.search(line)
-    if match:
-        low, high = (int(n) for n in (match[1] or match[3], match[2] or match[4]))
-        if low <= high <= low + 200:
-            return {str(n) for n in range(low, high + 1)}
-    match = _LIST.search(line)
-    if match:
-        return set(re.findall(r"\d{1,3}", match[1]))
-    return None
-
-
-def fits(question: str, answer: str) -> bool:
-    """Whether a recorded answer is one `question` offers (or it offers none)."""
-    choices = offered(question)
-    return choices is None or answer.strip().lower() in choices
-
-
 @dataclass
 class Answers:
-    """
-    The recorded answers of a log, handed out batch by batch, in order, as
-    before - except one a question plainly does not take (item 63): the
-    "2" of a log recorded on another version, for a "[y]es or [n]o". That
-    one is not given, nor are the batch's others (they shifted too); the
-    player is asked. Nothing is kept from one install to the next to decide
-    by (third review of #98): which question it is, and which component's,
-    is not known from mod_installer's window.
-    """
+    """The recorded answers of a log, handed out batch by batch, in order."""
     recorded: dict[Key, list[str]]
     _queue: deque = field(default_factory=deque)
     _batch: tuple[Key, ...] = ()
-    refused: str | None = None        # why the last recorded answer was not given
-    last: tuple[Key, int] | None = None   # the component and place of the one given
 
     def start(self, batch: tuple[Key, ...]) -> None:
         """A batch starts: its components' answers, in the batch's order."""
         self._batch = batch
-        self._queue = deque((key, n, answer) for key in batch
-                            for n, answer in enumerate(self.recorded.get(key, ())))
+        self._queue = deque(answer for key in batch for answer in self.recorded.get(key, ()))
 
-    def next(self, question: str = "") -> str | None:
-        """The next recorded answer of the batch for `question`, None when there
-        is none or the question plainly does not take it (`refused` says why)."""
-        self.refused, self.last = None, None
-        if not self._queue:
-            return None
-        key, n, answer = self._queue[0]
-        if question and not fits(question, answer):
-            self.refused = f"the recorded answer {answer!r} is not one this question offers"
-            self._queue.clear()
-            return None
-        self._queue.popleft()
-        self.last = (key, n)
-        return str(answer)
+    def next(self) -> str | None:
+        """The next recorded answer of the batch, None when there is none."""
+        return self._queue.popleft() if self._queue else None
+
+
+def question_line(text: str) -> str:
+    """The last line of what mod_installer sends, kept as what was asked
+    (GUI-AUDIT M8 item 63). It sends WeiDU's last `lookback` lines before
+    the question too, 10 by default (src/parser.rs; measured with the real
+    16.0.0): WeiDU's version, "Installing [Mod] [v30]", copy lines, an
+    earlier question, and the lines printed after it. Which of them is the
+    question, and which component asked it, is not known from that text:
+    item 48's expected texts will say."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else ""

@@ -70,9 +70,10 @@ ASKED_FILE = "answers.json"
 
 def save_answered(path: str | None, answered: list) -> None:
     """What this install answered, for the player and a bug report (item 63):
-    each question's last line, the answer, where it came from. A record
-    only: nothing reads it back to decide an answer."""
-    if path and answered:
+    each question's last line, the answer, where it came from. Written on
+    every run, empty too, so a run that answered nothing does not leave an
+    earlier run's record. A record only: nothing reads it back to decide."""
+    if path:
         data = {"v": 1, "answered": [
             {"question": question_line(a.question), "answer": a.answer, "source": a.source}
             for a in answered]}
@@ -295,18 +296,11 @@ class InstallRun:
         if self.bgee_dir and EET_FOLDER_QUESTION in text.lower():
             answer, source = self.bgee_dir, "EET"
         else:
-            recorded = self.answers.next(text)
+            recorded = self.answers.next()
             if recorded is not None:
                 answer, source = recorded, "recorded"
             else:
-                shown = text
-                if self.answers.refused:
-                    # a recorded answer the question plainly does not take is
-                    # not sent: it shifted against the mod's prompts (item 63)
-                    why = f"Not answered from the log: {self.answers.refused}"
-                    self.on_event(Event("line", why, question.batch))
-                    shown = f"{text}\n\n({why}.)"
-                given = self.ask(shown, question.batch)
+                given = self.ask(text, question.batch)
                 if given is None:
                     return False
                 answer, source = given, "player"

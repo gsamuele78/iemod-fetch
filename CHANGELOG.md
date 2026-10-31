@@ -9,14 +9,12 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
-- **A recorded answer a question plainly does not take is not given**
-  (GUI-AUDIT M8 item 63, ADR-0045). When a question's own line names its
-  choices ("[y]es or [n]o", "select 1 or 2", "1-3") and a log's
-  `// @wlb-inputs:` answer is not one of them - the shape of an answer that
-  shifted against a mod's changed prompts - it is not sent: the player is
-  asked, with the reason, and the batch's other recorded answers are not used.
-  Any other question takes the recorded answers in order, as before.
-  `install-plan/answers.json` records what each question got and from where.
+- **What an install answered is recorded** (GUI-AUDIT M8 item 63,
+  ADR-0045): `install-plan/answers.json` lists each question's last line, the
+  answer and where it came from (the log, the player, EET's folder), written
+  on every install run. Recorded answers still go in order: no rule on a
+  question's text can tell which answers a mod takes (Tweaks Anthology #3210
+  takes 0 outside its "between 6 and 15"), so none holds one back.
 - **The questions a mod will ask, read before installing** (GUI-AUDIT item
   48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
   `ACTION_READLN` it may reach - in its body, the functions and macros it
