@@ -302,3 +302,77 @@ BEGIN @10
 DEFINE_ACTION_FUNCTION ask BEGIN PRINT @1 ACTION_READLN portraits END
 """))
     assert [p.ref for p in found.of(0)] == ["@1"]
+
+
+# ---------------------------------------------------------- second review of #101
+def test_keywords_are_case_sensitive_a_variable_named_fail_or_end_is_not_one():
+    """`OUTER_SET fail = 0` (SCS) and `SET end = 5` (Aura) are variables."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+DEFINE_PATCH_FUNCTION f BEGIN
+  SET end = 5
+  PATCH_PRINT @1
+  PATCH_READLN a
+END
+BEGIN @10
+  OUTER_SET fail = 0
+  PRINT @2
+  ACTION_READLN x
+  COPY_EXISTING ~a.itm~ ~override~ LPF f END
+"""))
+    assert [p.ref for p in found.of(0)] == ["@2", "@1"]
+
+
+def test_a_fail_in_a_try_body_leaves_its_handlers_alive():
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  ACTION_TRY
+    FAIL ~boom~
+  WITH DEFAULT
+    PRINT @1
+    ACTION_READLN x
+  END
+"""))
+    [prompt] = found.of(0)
+    assert prompt.ref == "@1" and prompt.conditional
+
+
+def test_an_else_default_value_does_not_make_the_next_block_conditional():
+    """`READ_LONG 0 x ELSE 0`: a default value, not an IF's ELSE."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  COPY_EXISTING ~a.itm~ ~override~
+    READ_LONG 0 x ELSE 0
+    INNER_ACTION BEGIN
+      PRINT @1
+      ACTION_READLN a
+    END
+"""))
+    assert [p.conditional for p in found.of(0)] == [False]
+
+
+def test_a_readln_after_abort_is_never_asked():
+    found = scan("mymod/setup-mymod.tp2", files("""
+BEGIN @10
+  ABORT ~not on this game~
+  PRINT @1
+  ACTION_READLN a
+"""))
+    assert found.of(0) == []
+
+
+def test_an_unknown_question_is_keyed_by_its_component_too():
+    """LCA: one function asks what its caller passes; two components calling
+    it get different keys (one component calling it twice would not - which
+    is why an unknown question is never answered from a stored answer)."""
+    found = scan("mymod/setup-mymod.tp2", files("""
+DEFINE_ACTION_FUNCTION ask STR_VAR prompt = ~~ BEGIN
+  PRINT ~%prompt%~
+  ACTION_READLN answer
+END
+BEGIN @10
+  LAF ask STR_VAR prompt = @1 END
+BEGIN @11
+  LAF ask STR_VAR prompt = @2 END
+"""))
+    first, second = found.of(0)[0], found.of(1)[0]
+    assert not first.keyed and first.key != second.key

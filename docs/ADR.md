@@ -3312,8 +3312,13 @@ variable set elsewhere (LCA's `%xa_prompt%`), unknown. Of the 6 not reached,
 ### Consequences
 
 - An unknown question (printed from a variable) is keyed by where it is asked
-  - file, line, variable - never by an empty or shared key, so one answer can
-  never answer two such questions; the questionnaire shows it as unknown.
+  and by which component - file, line, variable, component - never by an
+  empty key. One component calling one asking function twice (LCA's
+  `xa_determine_quantity` asks what its caller passes) still shares it, so an
+  unknown question is never answered from a stored answer: it is asked.
+- WeiDU's keywords are read case-sensitively (`SET end = 5` is a variable);
+  a READLN after FAIL or ABORT in its block is never asked, except in a TRY's
+  handlers, which run because the body failed.
 - The component cuts are tp2.py's: a line `BEGIN` followed by a line opening
   with a string (`ACTION_DEFINE_ARRAY x` / `BEGIN` / `~a~`) would be taken
   for a component; no tp2 of the corpus has one. A question printed inside a

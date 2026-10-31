@@ -4,10 +4,12 @@ The questions a mod will ask while it installs, read before installing
 
 WeiDU asks with `ACTION_READLN var` (`PATCH_READLN` inside a patch): it
 reads one line from the player into `var`. The question itself is whatever
-the mod printed just before - nearly always `PRINT @n`, a string of the
-language's .tra - so a prompt is keyed by that reference, which does not
-change with the language or with the lines mod_installer shows around it
-(ADR-0045's window), and shown with its text in the chosen language.
+the mod printed just before: `PRINT @n`, a string of the language's .tra (25
+of the 45 reached in the census), or a fixed text (17), or a variable set
+elsewhere (3, unknown). A prompt is keyed by the .tra reference, which does
+not change with the language or with the lines mod_installer shows around it
+(ADR-0045's window), else by its text, and shown in the chosen language.
+A READLN after FAIL or ABORT in its block is never asked, and not reported.
 
 Read for each component of a tp2: the READLNs in its own body, in the
 functions and macros it launches, and in the files it includes, followed
@@ -52,7 +54,7 @@ _LOOP = {"WHILE", "OUTER_WHILE", "PATCH_WHILE", "FOR", "OUTER_FOR", "PATCH_FOR",
 _END_OPENERS = {"LAF", "LPF", "LAUNCH_ACTION_FUNCTION", "LAUNCH_PATCH_FUNCTION"}
 _BRANCHING = {"ACTION_MATCH", "PATCH_MATCH", "ACTION_TRY", "PATCH_TRY"}   # conditional
 _OPENERS = {"BEGIN"} | _END_OPENERS | _BRANCHING
-_FAIL = {"FAIL", "PATCH_FAIL"}
+_FAIL = {"FAIL", "PATCH_FAIL", "ABORT", "PATCH_ABORT"}
 _WHOLE_VARIABLE = re.compile(r"\s*%[^%\s]+%\s*")
 _CONSTANT = re.compile(r"\bOUTER_(?:TEXT_)?SPRINT\s+~?(\w+)~?\s+~([^~\n]*)~", re.IGNORECASE)
 _COMPONENT_NUMBER = re.compile(r"%COMPONENT_NUMBER%", re.IGNORECASE)
@@ -72,6 +74,7 @@ class Prompt:
     conditional: bool = False  # inside an IF/MATCH: may not be asked
     repeats: bool = False      # inside a loop: asked again until valid
     variable: str = ""         # the variable the answer goes to
+    component: int | None = None   # the component that reaches it
 
     @property
     def keyed(self) -> bool:
@@ -81,9 +84,13 @@ class Prompt:
     @property
     def key(self) -> str:
         """What an answer is stored under: the .tra reference, else the text,
-        else (an unknown question) where it is asked - never empty, never shared
-        by two unknown questions."""
-        return self.ref or self.text or f"{self.file}:{self.line}:{self.variable}"
+        else (an unknown question) where it is asked and by which component -
+        never empty. Two calls of one asking function from one component
+        still share it (LCA's xa_determine_quantity asks what its caller
+        passes), so an unknown question is never answered from a stored
+        answer: it is asked (ADR-0049)."""
+        return (self.ref or self.text
+                or f"{self.file}:{self.line}:{self.variable}#{self.component}")
 
 
 @dataclass
@@ -101,7 +108,8 @@ class ModPrompts:
 
 @dataclass
 class _Token:
-    word: str          # upper-cased bare word, or "" for a string
+    word: str          # a bare word as written (WeiDU's keywords are
+                       # case-sensitive: `SET end = 5` is a variable), "" for a string
     value: str         # the word as written, or the string's content
     raw: str           # the string with its marks, as written ("@12" for a ref)
     at: int
@@ -124,7 +132,7 @@ def _tokens(clean: str) -> list[_Token]:
             i += 1
             continue
         word = bare.group(0)
-        out.append(_Token(word.upper(), word, word, i))
+        out.append(_Token(word, word, word, i))
         i = bare.end()
 
 
@@ -256,33 +264,44 @@ class _Reader:
         toks = src.tokens
         out: list[Prompt] = []
         last_print: _Token | None = None
-        # one frame per open block: (conditional, repeats, dead after a FAIL)
-        stack: list[tuple[bool, bool, bool]] = [(cond, loop, False)]
+        # one frame per open block: (conditional, repeats, dead after a FAIL, kind);
+        # kind "try" is a TRY's body, which its WITH closes: the handlers run
+        # because the body failed, so a FAIL there leaves them alive
+        stack: list[tuple[bool, bool, bool, str]] = [(cond, loop, False, "")]
         pending: str | None = None
+        previous = ""
         k = start
         while k < stop:
             tok = toks[k]
             word = tok.word
-            c, lp, dead = stack[-1]
+            c, lp, dead, kind = stack[-1]
             if word in _DEFINE:
                 # a definition asks nothing until it is launched
                 begin = next((m for m in range(k + 2, stop) if toks[m].word == "BEGIN"), stop)
                 k = _block_end(toks, begin)
+                previous = "END"
                 continue
-            if word in _CONDITION:
+            if word == "ELSE" and previous != "END":
+                pass                                    # READ_LONG 0 x ELSE 0: a default value
+            elif word in _CONDITION:
                 pending = "cond"
             elif word in _LOOP:
                 pending = "loop"
             elif word == "BEGIN":
-                stack.append((c or pending == "cond", lp or pending == "loop", dead))
+                stack.append((c or pending == "cond", lp or pending == "loop", dead, ""))
                 pending = None
+            elif word in ("ACTION_TRY", "PATCH_TRY"):
+                stack.append((c, lp, dead, "try"))      # the body, until WITH
             elif word in _BRANCHING:
-                stack.append((True, lp, dead))          # MATCH/TRY ... END
+                stack.append((True, lp, dead, ""))      # MATCH ... END
+            elif word == "WITH" and kind == "try":
+                parent_dead = stack[-2][2] if len(stack) > 1 else False
+                stack[-1] = (True, lp, parent_dead, "")  # the handlers, until END
             elif word == "END":
                 if len(stack) > 1:
                     stack.pop()
             elif word in _FAIL:
-                stack[-1] = (c, lp, True)               # what follows is never run
+                stack[-1] = (c, lp, True, kind)         # what follows is never run
             elif word in _PRINT and k + 1 < stop:
                 last_print = toks[k + 1]
             elif word in _READLN and k + 1 < stop:
@@ -294,7 +313,7 @@ class _Reader:
             elif word in _LAUNCH and k + 1 < stop:
                 name = toks[k + 1].value.upper()
                 if word in _END_OPENERS:
-                    stack.append((c, lp, dead))         # LAF name ... END
+                    stack.append((c, lp, dead, ""))     # LAF name ... END
                 if not dead and name not in seen and name in self.functions:
                     fsrc, b, e = self.functions[name]
                     out += self.walk(fsrc, b, e, via or f"function {toks[k + 1].value}",
@@ -302,6 +321,7 @@ class _Reader:
                 # a name the mod does not define is WeiDU's own library
                 # (HANDLE_CHARSETS, ADD_CRE_EFFECT, ...), which asks nothing
                 k += 2
+                previous = word
                 continue
             elif word in _INCLUDE:
                 m = k + 1
@@ -321,7 +341,9 @@ class _Reader:
                                              seen | {key}, number, c, lp)
                     m += 1
                 k = m
+                previous = ""
                 continue
+            previous = word
             k += 1
         return out
 
@@ -390,6 +412,8 @@ def scan(tp2_path: str, files: Mapping[str, str], language_index: int = 0,
         prompts = (reader.walk(src, always[0], always[1], "always", frozenset({tp2_key}), number)
                    if always else [])
         prompts += reader.walk(src, lo, hi, "", frozenset({tp2_key}), number)
+        for prompt in prompts:
+            prompt.component = number
         if prompts:
             found.components[number] = prompts
     found.unread = list(dict.fromkeys(reader.unread))
