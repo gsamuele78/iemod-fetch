@@ -18,6 +18,8 @@ The catalogue, the conflict check and the planner are injected, as in the
 other GUI tests: the real ones fetch community data. Nothing but 127.0.0.1 is
 reached; a guard makes any other connection fail the test.
 """
+import faulthandler
+import gc
 import http.server
 import json
 import os
@@ -215,10 +217,23 @@ def loopback_only(monkeypatch):
 
 
 class Latency:
-    """The event loop's longest wait between two 10 ms ticks."""
+    """The event loop's longest wait between two 10 ms ticks.
 
-    def __init__(self):
+    With IEMOD_LATENCY_TRACE set to a file, the run also writes when each gap
+    ended, every garbage collection with its length, each event of the
+    download stamped when its thread sent it, and when the window took each
+    in - what tools/gui_latency_summary.py lines up to say what held a long
+    gap (measured on the Windows runner, where one gap reached 240 ms)."""
+
+    STALL_S = 0.04          # a traced run dumps every thread's stack past this
+
+    def __init__(self, stacks=None):
         self.gaps, self._last = [], None
+        self.ends: list[float] = []
+        # faulthandler's watchdog is a C thread that needs no GIL: re-armed at
+        # every tick, it fires only while the loop is held, and writes what
+        # each thread was running at that moment
+        self.stacks = stacks
         self.timer = QTimer()
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.setInterval(10)
@@ -228,7 +243,10 @@ class Latency:
         now = time.perf_counter()
         if self._last is not None:
             self.gaps.append(now - self._last)
+            self.ends.append(now)
         self._last = now
+        if self.stacks is not None:
+            faulthandler.dump_traceback_later(self.STALL_S, file=self.stacks)
 
     def start(self):
         self._last = None
@@ -236,6 +254,8 @@ class Latency:
 
     def stop(self):
         self.timer.stop()
+        if self.stacks is not None:
+            faulthandler.cancel_dump_traceback_later()
 
 
 # ------------------------------------------------------------ the run
@@ -244,7 +264,7 @@ def states(page):
 
 
 def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
-        qtbot, tmp_path, monkeypatch, server, loopback_only):
+        qtbot, tmp_path, monkeypatch, server, loopback_only, request):
     data = tmp_path / "data"                 # krion64 files bg1ub before the conversion
     (data / "krion64" / "data" / "mods").mkdir(parents=True)
     (data / "krion64" / "data" / "categories.json").write_text(json.dumps(
@@ -335,7 +355,34 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
 
     # 4. Download: cancelled while cdtweaks arrives -------------------------
     page, mods_dir = main.download, project / "Mods"
-    latency = Latency()
+    trace = os.environ.get("IEMOD_LATENCY_TRACE")
+    if trace:       # the test has changed directory by now: relative to where pytest ran
+        trace = os.path.join(str(request.config.invocation_params.dir), trace)
+    collections: list[tuple[float, float, int]] = []
+    sent: list[tuple[float, str, str]] = []         # when the download sent it
+    handled: list[float] = []                       # when the window took it in
+    if trace:
+        started = {}
+
+        def collected(phase, info):
+            if phase == "start":
+                started["t"] = time.perf_counter()
+            elif "t" in started:
+                collections.append((started.pop("t"), time.perf_counter(), info["generation"]))
+        gc.callbacks.append(collected)
+        request.addfinalizer(lambda: gc.callbacks.remove(collected))
+        forward = page._forward             # start() takes it from the page
+
+        def stamped(event):
+            sent.append((time.perf_counter(), str(event.get("event")),
+                         str(event.get("folder", ""))))
+            forward(event)
+        page._forward = stamped
+        page._bridge.event.connect(lambda _event: handled.append(time.perf_counter()))
+        stacks = open(trace + ".stacks.txt", "w", encoding="utf-8")  # noqa: SIM115
+        request.addfinalizer(stacks.close)
+        request.addfinalizer(faulthandler.cancel_dump_traceback_later)
+    latency = Latency(stacks if trace else None)
     latency.start()
     with qtbot.waitSignal(page.finished, timeout=30000):
         qtbot.mouseClick(page.start_button, Qt.MouseButton.LeftButton)
@@ -373,10 +420,16 @@ def test_the_wizard_goes_from_the_game_folders_to_every_mod_downloaded(
         assert (mods_dir / path).is_file(), path
     assert main.next.isEnabled() and page.is_complete()
 
-    gaps = first_run + latency.gaps
-    assert first_run and latency.gaps        # the loop was measured in both runs
+    gaps = latency.gaps                      # both runs: start() does not clear it
+    second_run = gaps[len(first_run):]
+    assert first_run and second_run          # the loop was measured in both runs
     worst = max(gaps)
-    print(f"\nM3: {len(first_run)} + {len(latency.gaps)} event-loop ticks during the "
+    if trace:
+        with open(trace, "w", encoding="utf-8") as fh:
+            json.dump({"gaps": [[end, gap] for end, gap in zip(latency.ends, gaps,
+                                                               strict=True)],
+                       "collections": collections, "events": sent, "handled": handled}, fh)
+    print(f"\nM3: {len(first_run)} + {len(second_run)} event-loop ticks during the "
           f"downloads, the longest gap {worst * 1000:.1f} ms; done before the cancel: "
           f"{sorted(done)}; requests: {server.hits}")
     assert worst < MAX_GAP_S, f"the window was blocked for {worst * 1000:.0f} ms"

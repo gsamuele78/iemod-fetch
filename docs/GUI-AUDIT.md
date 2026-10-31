@@ -379,7 +379,13 @@ now (item 18), so it belongs to M4. What each criterion stands at:
   the catalogue's, so the two then differ in case only.
 - Never blocked for 100 ms during a download: **met on Linux** - the longest
   gap of a 10 ms timer during both downloads is 11-16 ms, 32 ms with every
-  core busy; the same assertion holds on every OS CI runs it on.
+  core busy. **Not yet on Windows every time**: the CI runs passed, but the
+  release gate of 4.0.0 (2026-10-31, same commit as a passing CI run)
+  measured one gap of 240 ms on windows-latest. The `GUI latency` workflow
+  (docs/TESTING.md) found the cause: every new HTTP client built a TLS
+  context, and on Windows that reads the certificate store holding the GIL.
+  Fixed by ADR-0048 (one context per process, built before the window is
+  drawn); the limit stays 100 ms.
 - The `.pyz` standard-library only: kept by the `stdlib-only` CI job until 4.0.0; since ADR-0043 it carries its runtime libraries inside, checked by the same job.
 - The PyInstaller build starts on all three OSes: **met** (item 20,
   ADR-0040). In #42's CI the Linux and Windows bundles were built, unzipped

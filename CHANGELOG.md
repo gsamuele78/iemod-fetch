@@ -8,6 +8,23 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Fixed
+- The wizard's window no longer freezes on Windows when a download, a
+  catalogue update or a conflict check starts (ADR-0048). Every HTTP client
+  built its own TLS context, and on Windows that reads the whole certificate
+  store while holding the GIL: 50-64 ms on a GitHub runner, 240 ms once,
+  enough to fail the 4.0.0 release gate. One context is now built per
+  process, by the wizard before its window is drawn; verification is
+  unchanged. Measured after: worst gap 11.8 ms on windows-latest (was 63.9).
+
+### Added
+- `GUI latency` workflow and `tools/gui_latency_summary.py`: the M3 test, run
+  30 times on Linux and Windows with `IEMOD_LATENCY_TRACE`, lines up each long
+  event-loop gap with the garbage collections and the download's events. The
+  4.0.0 release gate measured one 240 ms gap on windows-latest (limit 100 ms)
+  where CI on the same commit had passed; a faulthandler watchdog dumps every
+  thread's stack while the loop is held, which named the cause above.
+
 ## [4.0.0] - 2026-10-31
 
 ### Upgrading from 3.x

@@ -128,3 +128,12 @@ def test_a_broken_project_file_still_opens_the_wizard(qtbot, tmp_path):
     (tmp_path / api.PROJECT_FILE).write_text("[iemod-fetch]\nworkers = many\n")
     main = window(qtbot, tmp_path)
     assert "could not be read" in main.game.findings.text()
+
+
+def test_the_window_builds_the_tls_context_before_it_is_shown(qtbot, tmp_path, monkeypatch):
+    """ADR-0048: on Windows building it reads the certificate store holding
+    the GIL; built in a download's thread it froze the window 50-240 ms."""
+    from iemod_fetch import net
+    monkeypatch.setattr(net, "_HTTPS_CONTEXT", None)
+    window(qtbot, tmp_path)                     # constructed, never shown
+    assert net._HTTPS_CONTEXT is not None

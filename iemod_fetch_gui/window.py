@@ -30,6 +30,10 @@ class MainWindow(QMainWindow):
                  preview: Previewer = preview_selection,
                  install: Services | None = None) -> None:
         super().__init__()
+        # Before anything is drawn: the TLS context every download shares
+        # reads Windows' certificate store holding the GIL (ADR-0048). Built
+        # in a download's thread, it froze this window 50-240 ms.
+        api.prepare_https()
         self.project_dir = project_dir
         self.setWindowTitle(f"iemod-fetch {api.__version__} - {project_dir}")
         self.resize(960, 640)

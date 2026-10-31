@@ -135,7 +135,8 @@ One mod trickles in as a slow mirror does; the player cancels it, the page
 says so and the target holds only the mods that finished; Download again
 fetches only the rest. A 10 ms timer measures the event loop during both
 downloads and the test fails on a gap of 100 ms or more (11-16 ms on Linux,
-32 ms with every core busy). The catalogue, the conflict check and the planner
+32 ms with every core busy; once 240 ms on windows-latest, see "The event
+loop on Windows" below). The catalogue, the conflict check and the planner
 are injected (the real ones fetch community data), and a socket guard fails
 the test on any connection but to 127.0.0.1.
 
@@ -421,6 +422,39 @@ every RAR5 one, Homebrew's on none. Two solid RAR4 archives (027, 030) no
 open-source tool extracts. The numbers decide the extractor (an ADR); no
 test asserts them.
 
+### The event loop on Windows, traced (GUI-AUDIT M3)
+
+The release gate of 4.0.0 failed on one assertion: the M3 test measured a
+240 ms gap on windows-latest, where the CI run of the same commit had passed
+(Linux: 11-16 ms when M3 was validated, 11-20 ms in local runs on
+2026-10-31). A gap that size can be the garbage collector holding the GIL,
+the worker thread holding it in pure-Python code, or the runner not
+scheduling the window's thread at all. With `IEMOD_LATENCY_TRACE=<file>`
+(relative to where pytest runs) the test writes when every gap ended, every
+collection with its generation and length (`gc.callbacks`), every event of
+the download stamped in its own thread when sent, and when the window took
+each in. `tools/gui_latency_summary.py` lines them up: for each gap over
+50 ms, which collection overlapped it, what the download sent just before and
+during it, and how many events the window handled during it. When the loop
+is held past 40 ms, `faulthandler.dump_traceback_later` - a C watchdog that
+needs no GIL, re-armed at every tick - writes every thread's stack at that
+moment beside the trace, and the summary shows it. The `GUI
+latency` workflow runs the test 30 times on ubuntu-latest and windows-latest
+and publishes that summary.
+
+First measurement (#96, 30 runs each, 2026-10-31): ubuntu-latest median
+11.1 ms, worst 13.8 ms; windows-latest median 15.5 ms, worst 63.9 ms, none
+over 100 ms. The three Windows gaps over 50 ms (58-64 ms) had no collection
+in them and came before the download had sent any event: between the click
+on Download and the run's first event. The 240 ms of the release gate is not
+reproduced in 30 runs. The stack dumps of the next 30 named it: each time
+the download's thread was in `ssl._load_windows_store_certs`, building a
+TLS context for a new `HttpClient` - Windows' certificate store read and
+parsed with the GIL held. The fix is ADR-0048: one context per process,
+built by the wizard before its window is drawn; the limit stays 100 ms.
+With it, windows-latest measured median 10.9 ms, worst 11.8 ms over 30 runs
+(before: 15.5 and 63.9 ms) - what ubuntu-latest measures.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
@@ -462,7 +496,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,781 collected (15 run the real WeiDU, 158 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,787 collected (15 run the real WeiDU, 159 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

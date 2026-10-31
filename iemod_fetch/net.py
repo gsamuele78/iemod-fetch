@@ -23,6 +23,8 @@ import math
 import os
 import random
 import shutil
+import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -175,6 +177,36 @@ def ascii_url(url: str) -> str:
         urllib.parse.quote(parts.fragment, safe=keep + "?")))
 
 
+_HTTPS_CONTEXT: ssl.SSLContext | None = None
+_HTTPS_LOCK = threading.Lock()
+
+
+def https_context() -> ssl.SSLContext:
+    """
+    The process's one verifying TLS context (ADR-0048), built on first use.
+
+    urllib builds a new one for every opener, and building one loads the
+    system's trust store: on Windows `ssl` reads every certificate of the
+    certificate store and parses them while it holds the GIL - 50-60 ms on a
+    GitHub runner, 240 ms once - so a download started from the wizard froze
+    its window that long. Built once and shared (an SSLContext may serve
+    connections from several threads), the cost is paid once per process,
+    and the wizard pays it before its window is drawn (`prepare_https`).
+    Built as http.client builds its own: through
+    ssl._create_default_https_context (so the PEP 476 hook a site may set is
+    still honoured), ALPN http/1.1, post-handshake auth on.
+    """
+    global _HTTPS_CONTEXT  # noqa: PLW0603 (one per process, set once under the lock)
+    with _HTTPS_LOCK:
+        if _HTTPS_CONTEXT is None:
+            context = ssl._create_default_https_context()  # noqa: SLF001 (PEP 476 hook)
+            context.set_alpn_protocols(["http/1.1"])
+            if context.post_handshake_auth is not None:
+                context.post_handshake_auth = True
+            _HTTPS_CONTEXT = context
+        return _HTTPS_CONTEXT
+
+
 class HttpClient:
     def __init__(self, token: str | None = None, allow_http: bool = False,
                  timeout: int = DEFAULT_TIMEOUT, max_bytes: int = DEFAULT_MAX_BYTES,
@@ -192,7 +224,8 @@ class HttpClient:
         # an unchanged answer is a 304 with no body, free with a token
         self.etags: ETagCache | None = None
         self.not_modified = 0
-        self._opener = urllib.request.build_opener(SafeRedirectHandler(allow_http))
+        self._opener = urllib.request.build_opener(
+            SafeRedirectHandler(allow_http), urllib.request.HTTPSHandler(context=https_context()))
 
     # -- policy ------------------------------------------------------------
     def check_url(self, url: str) -> str:
