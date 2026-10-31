@@ -8,6 +8,22 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **The questions a mod will ask, read before installing** (GUI-AUDIT item
+  48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
+  `ACTION_READLN` it may reach - in its body, the functions and macros it
+  launches, the files it includes, its ALWAYS block - with the question's text
+  in the project's language, keyed by its .tra reference, and says which may
+  not be asked (under a condition), which repeat until valid, and what could
+  not be followed. Measured on 105 mods of the reference build
+  (`tools/readln_census.py`): 46 of 51 READLNs reached (90%), 45 of those with
+  their text (98%); the 5 missed are SCS's, behind paths built while
+  installing. Not wired into the wizard yet: the questionnaire before
+  Install is next.
+- ADR-0049: every question is known before the install starts, the player
+  answers them in one place, a timer never answers, and a watchdog only warns
+  when an install goes silent (the owner's decisions).
+
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass
   today's ceilings: read from their zips' central directories by HTTP Range

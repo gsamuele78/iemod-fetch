@@ -307,7 +307,7 @@ installing a large EET setup.
 | # | Item | From | Size |
 |---|---|---|---|
 | 47 | **Known-issue classifier** for install output: the Forge's 37 general patterns and per-mod `ki` matched against WeiDU's output and WSETUP.DEBUG (today only their descriptions are shown, before installing). Measured on a labelled corpus. | IMR, Forge (MIT) | M |
-| 48 | **Prompts known before installing**: every `ACTION_READLN` in the staged tp2s plus the Forge's manual-step notes, and whether an answer is recorded. Never IMR's "answer 1 after 30 s" (ADR-0005). | IMR | S |
+| 48 | **In progress** (ADR-0049): `iemod_fetch/readln.py` reads every READLN a component reaches, keyed by its .tra string, its text in the project's language; measured on 105 mods, 90% reached, 98% of those with text (`tools/readln_census.py`). Left: the Forge's manual-step notes, recorded-answer coverage, the questionnaire before Install. **Prompts known before installing**: every `ACTION_READLN` in the staged tp2s plus the Forge's manual-step notes, and whether an answer is recorded. Never IMR's "answer 1 after 30 s" (ADR-0005). | IMR | S |
 | 49 | **Preflight**: free disk space for the plan and the backup; the WeiDU binary's version against the newest and against what mods need. | IMR, BWS-NG | S |
 | 50 | **Update signal from lcc-docs' dates** (ADR-0044): between 30 and 55 of the supplied 149 mods, depending on how they are matched, have no GitHub release krion64 can see, only an lcc-docs date (ADR-0044). | lcc-docs | S |
 | 51 | Release notes and activity (`body`, `pushed`) in the update view; the Forge's `in`, `rec` and `eet_compat` notes in the selection. | Forge | S |

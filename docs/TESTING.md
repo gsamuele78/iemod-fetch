@@ -397,6 +397,25 @@ property over random orders, rules and moves). On 2026-10-23, p50/p95:
 stored on each row as a string and only the rows whose mark changes were
 painted again). No test asserts a time: a shared runner would make it flaky.
 
+### The questions a mod asks, read before installing (GUI-AUDIT item 48)
+
+`tools/readln_census.py CORPUS` runs `iemod_fetch/readln.py` over checkouts of
+real mods (their .tp2, .tpa, .tph, .tpp, .tpc and .tra files) and compares the
+READLNs it attributes to a component with every READLN in the mod's files.
+Measured on 2026-10-31 on 105 of the reference build's 108 GitHub mods (3
+did not clone; sparse checkouts of the WeiDU files only): 8 mods hold a
+READLN, 51 in all; 46 reached from a component (90%) and 45 of those with
+their question's text found (98%). The 5 not reached are SCS's, in its SFO
+library, behind `%sfo_loc%` paths built while installing - said `unread`,
+not guessed. Getting there took four fixes the census showed:
+`%COMPONENT_NUMBER%` in include paths (Tweaks Anthology's
+`comp_%COMPONENT_NUMBER%_prompts.tpa`), the preamble's `OUTER_SPRINT`
+constants (EEUITweaks' `%PKGNAME%`), BACKUP under `weidu_external`, and a
+tp2 kept below its mod folder (EET's modConverter). What it cannot say:
+whether WeiDU really asks a reached READLN on a given install (a condition may
+skip it) - that takes a real install, which no runner has the games for.
+`tests/test_readln.py` holds each shape as a case.
+
 ### RAR archives, extracted against 7-Zip (GUI-AUDIT item 40)
 
 `tools/rar_measure.py corpus | reference | compare` downloads the distinct
@@ -496,7 +515,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 1,787 collected (15 run the real WeiDU, 159 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 1,799 collected (15 run the real WeiDU, 159 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
