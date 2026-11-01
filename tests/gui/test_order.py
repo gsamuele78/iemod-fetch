@@ -13,9 +13,9 @@ pytest.importorskip("PySide6")
 pytest.importorskip("pytestqt")
 
 from PySide6.QtCore import QModelIndex, Qt  # noqa: E402
-from PySide6.QtWidgets import QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
+from iemod_fetch_gui import text as qtext  # noqa: E402
 from iemod_fetch_gui.pages.order import GREY, RED, ROLE, OrderPage  # noqa: E402
 
 PHASES = {"BG:EE before the conversion": ["bg1ub"],
@@ -209,7 +209,7 @@ def test_a_failing_plan_is_said_and_blocks_next(qtbot, tmp_path):
 def test_an_order_that_cannot_be_saved_is_said(qtbot, tmp_path, monkeypatch):
     widget, planner = page(qtbot, tmp_path)
     shown = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[1]))
+    monkeypatch.setattr(qtext, "critical", lambda *a: shown.append(a[1]))
     monkeypatch.setattr(api, "save_install_order",
                         lambda *a: (_ for _ in ()).throw(OSError("read-only")))
     calls = planner.calls

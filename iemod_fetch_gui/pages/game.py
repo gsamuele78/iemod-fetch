@@ -7,6 +7,7 @@ languages to install in. The folders are checked as WeiDU's GAME_IS sees them
 they are what the game needs. Leaving the phase saves the project's
 iemod-fetch.ini, which the command line reads too.
 """
+import html
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog, QFormLayout,
@@ -166,15 +167,16 @@ class GamePage(QWidget):
         self.timer.stop()
         game = self.game() or "EET"
         self.result = api.check_game_folders(game, self.bgee.path(), self.bg2ee.path())
-        lines = [f"<b>Problem:</b> {problem}" for problem in self.result["problems"]]
+        e = html.escape                       # paths and the folders' own names
+        lines = [f"<b>Problem:</b> {e(problem)}" for problem in self.result["problems"]]
         if self.result["ok"]:
             lines.insert(0, f"<b>The folders are what {game} needs.</b>")
         if self.load_problem:
             lines.append(f"<b>The project's {api.PROJECT_FILE} could not be read</b> "
-                         f"({self.load_problem}). The command line reads the same file: "
+                         f"({e(self.load_problem)}). The command line reads the same file: "
                          f"fix it there.")
-        lines += [f"Not checked: {note}" if note.startswith(("the patch", "whether"))
-                  else f"Note: {note}" for note in self.result["notes"]]
+        lines += [f"Not checked: {e(note)}" if note.startswith(("the patch", "whether"))
+                  else f"Note: {e(note)}" for note in self.result["notes"]]
         self.findings.setText("<br>".join(lines))
         self.completeChanged.emit(self.is_complete())
         return self.result

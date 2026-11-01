@@ -11,6 +11,7 @@ pytest.importorskip("pytestqt")
 from PySide6.QtWidgets import QFileDialog, QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
+from iemod_fetch_gui import text as qtext  # noqa: E402
 
 from .test_conflicts import NEED, TW, UB, choose, page  # noqa: E402
 
@@ -32,7 +33,7 @@ def test_a_saved_preset_loads_back_into_the_tree(qtbot, tmp_path, monkeypatch):
     assert widget.chosen() == []
     answer(monkeypatch, tmp_path / "my build.json")
     shown = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    monkeypatch.setattr(qtext, "information", lambda *a: shown.append(a[2]))
     with qtbot.waitSignal(widget.checked, timeout=5000):
         widget.load_preset.click()
     assert sorted(widget.chosen()) == sorted([(UB, 10), (TW, 100)])
@@ -49,7 +50,7 @@ def test_a_weidu_log_chooses_what_it_lists_and_names_what_it_cannot(qtbot, tmp_p
                    "~ghost\\setup-ghost.tp2~ #0 #1 // not in the list\n")
     answer(monkeypatch, log)
     shown = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    monkeypatch.setattr(qtext, "information", lambda *a: shown.append(a[2]))
     with qtbot.waitSignal(widget.checked, timeout=5000):
         widget.load_preset.click()
     assert sorted(widget.chosen()) == sorted([(UB, 10), (NEED, 0)])
@@ -63,7 +64,7 @@ def test_a_file_that_is_no_preset_changes_nothing(qtbot, tmp_path, monkeypatch):
     bad.write_text("{ not json")
     answer(monkeypatch, bad)
     errors = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: errors.append(a[1]))
+    monkeypatch.setattr(qtext, "critical", lambda *a: errors.append(a[1]))
     widget.load_preset.click()
     assert errors == ["Cannot load the preset"]
     assert widget.chosen() == [(UB, 10)]
@@ -88,7 +89,7 @@ def test_a_log_with_no_component_changes_nothing(qtbot, tmp_path, monkeypatch):
     log.write_text("// Log of Currently Installed WeiDU Mods\n")
     answer(monkeypatch, log)
     errors = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: errors.append(a[2]))
+    monkeypatch.setattr(qtext, "critical", lambda *a: errors.append(a[2]))
     widget.load_preset.click()
     assert errors and "chooses no component" in errors[0]
     assert widget.chosen() == [(UB, 10)]
@@ -100,11 +101,11 @@ def test_replacing_a_choice_asks_first(qtbot, tmp_path, monkeypatch):
     log = tmp_path / "WeiDU.log"
     log.write_text("~CDTWEAKS\\SETUP-CDTWEAKS.TP2~ #0 #100 // x\n")
     answer(monkeypatch, log)
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: QMessageBox.StandardButton.No)
     widget.load_preset.click()
     assert widget.chosen() == [(UB, 10)]                  # No keeps it
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: QMessageBox.StandardButton.Yes)
     with qtbot.waitSignal(widget.checked, timeout=5000):
         widget.load_preset.click()
@@ -120,8 +121,8 @@ def test_a_preset_never_replaces_the_projects_own_files(qtbot, tmp_path, monkeyp
     (tmp_path / api.DECISIONS_FILE).write_text('{"keep": "me"}')
     answer(monkeypatch, tmp_path / name)
     errors = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: errors.append(a[2]))
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "critical", lambda *a: errors.append(a[2]))
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.save_preset.click()
     assert (tmp_path / api.DECISIONS_FILE).read_text() == '{"keep": "me"}'
@@ -133,7 +134,7 @@ def test_a_name_completed_with_json_asks_before_replacing(qtbot, tmp_path, monke
     choose(qtbot, widget, (UB, 10))
     (tmp_path / "mine.json").write_text("old")
     answer(monkeypatch, tmp_path / "mine")
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: QMessageBox.StandardButton.No)
     widget.save_preset.click()
     assert (tmp_path / "mine.json").read_text() == "old"

@@ -14,6 +14,7 @@ pytest.importorskip("pytestqt")
 from PySide6.QtCore import Qt  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
+from iemod_fetch_gui import text as qtext  # noqa: E402
 from iemod_fetch_gui.pages.mods import ROLE, ModsPage  # noqa: E402
 from iemod_fetch_gui.window import MainWindow  # noqa: E402
 from test_project import bg2ee, bgee  # noqa: E402
@@ -223,7 +224,7 @@ def test_the_list_is_chosen_by_kind_and_a_disagreement_is_shown(qtbot, tmp_path)
     turnabout, ascension = (widget.tree.topLevelItem(i) for i in range(2))
     assert ascension.text(3) == "quest"
     assert turnabout.text(3).startswith("\u26a0") and "gameplay, quest" in turnabout.text(3)
-    assert turnabout.toolTip(3) == "lcc-docs: quest; BWS-NG: gameplay"
+    assert turnabout.toolTip(3) == qtext.plain_tip("lcc-docs: quest; BWS-NG: gameplay")
     widget.categories.setCurrentRow(1)
     assert visible() == ["Turnabout"]
     widget.categories.setCurrentRow(0)

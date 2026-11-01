@@ -34,6 +34,15 @@ Python API, which is internal.
   the wizard started on all five once those packages were in.
 
 ### Fixed
+- **Text that is not ours shows as text everywhere in the wizard** (review
+  of #123): Qt renders a tooltip, a default QLabel or a message box as HTML
+  when it looks like HTML. Now as written: the mod list's kind and refused-tp2
+  tooltips, the download table's detail and newer-release tooltips, the
+  install order's tooltips, the status lines of the window, the mod list and
+  the download page, the game page's folder findings, and every message box
+  (errors, questions, the preset summary, "Others need it").
+  `tests/gui/test_tooltips.py` drives each with markup, and fails on a new
+  tooltip that is neither a fixed string nor `plain_tip`.
 - **The README names the system libraries the Linux wizard needs**, per
   distribution (apt, dnf, pacman), as measured: the window on an X11
   desktop needs the `libxcb-*` libraries (`libxcb-cursor` for Qt 6.5 and

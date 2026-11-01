@@ -4468,3 +4468,13 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
   shows them; it neither checks nor follows them.
 - A long changelog is cut. The full text is on the release's page, which
   the wizard does not link from that text.
+- The same rule covers the rest of the wizard (follow-up of #123). The
+  helpers are in `iemod_fetch_gui/text.py`:
+  - `plain_tip` for tooltips;
+  - `critical`, `question` and `information` for message boxes, in plain
+    text;
+  - QLabels that show names or messages are set to `PlainText`.
+
+  A test fails on a tooltip that is neither a fixed string nor
+  `plain_tip`. `pages/install.py` keeps its one confirmation (its own
+  text) and its prerequisites tooltip; it is not changed here.

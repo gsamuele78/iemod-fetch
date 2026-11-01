@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox  # noqa: E402
 
 from iemod_fetch import api  # noqa: E402
+from iemod_fetch_gui import text as qtext  # noqa: E402
 from iemod_fetch_gui.pages.mods import CHECK_DELAY_MS, ModsPage  # noqa: E402
 
 CHECK_WAIT_MS = CHECK_DELAY_MS + 300
@@ -224,7 +225,7 @@ def test_an_unreadable_decisions_file_is_never_overwritten(qtbot, tmp_path, monk
     assert "could not be read" in " ".join(
         label.text() for label in widget.panel.findChildren(QLabel))
     shown = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[1]))
+    monkeypatch.setattr(qtext, "critical", lambda *a: shown.append(a[1]))
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("known", True))
     widget.panel.buttons["accept:conflict-0000000000000002"].click()
     assert shown == ["decisions.json cannot be read"]
@@ -357,12 +358,12 @@ def test_decisions_no_conflict_has_any_more_can_be_forgotten(qtbot, tmp_path, mo
     assert widget.conflicts["stale"] == ["conflict-00000000000000fe",
                                          "conflict-00000000000000ff"]
     asked = []
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: asked.append(a[2]) or QMessageBox.StandardButton.No)
     widget.panel.buttons["forget:"].click()
     assert asked and "conflict-00000000000000ff" in asked[0]
     assert len(api.load_decisions(str(tmp_path))["accept"]) == 2     # No keeps them
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: QMessageBox.StandardButton.Yes)
     click(qtbot, widget, "forget:")
     decided = api.load_decisions(str(tmp_path))
@@ -378,7 +379,7 @@ def test_no_forget_button_while_decisions_json_cannot_be_read(qtbot, tmp_path):
 
 
 def yes(monkeypatch):
-    monkeypatch.setattr(QMessageBox, "question",
+    monkeypatch.setattr(qtext, "question",
                         lambda *a, **k: QMessageBox.StandardButton.Yes)
 
 
@@ -404,7 +405,7 @@ def test_a_check_ending_while_the_question_is_open_is_obeyed(qtbot, tmp_path, mo
         with qtbot.waitSignal(widget.checked, timeout=5000):
             widget.items[(TW, 100)].setCheckState(0, Qt.CheckState.Checked)
         return QMessageBox.StandardButton.Yes
-    monkeypatch.setattr(QMessageBox, "question", question)
+    monkeypatch.setattr(qtext, "question", question)
     widget.panel.buttons["forget:"].click()
     assert api.load_decisions(str(tmp_path))["accept"] == {"conflict-0000000000000002": "known"}
 
