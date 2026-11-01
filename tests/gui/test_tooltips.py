@@ -36,6 +36,7 @@ def shown(tip: str) -> str:
 def test_plain_tip_shows_markup_as_written(qtbot):
     assert shown(qtext.plain_tip(HOSTILE)) == HOSTILE
     assert shown(qtext.plain_tip("a\nb")) == "a\nb"
+    assert shown(qtext.plain_tip("a  b")) == "a  b"           # spaces kept
     assert "<a " not in qtext.plain_tip(HOSTILE) and qtext.plain_tip("") == ""
 
 
@@ -66,7 +67,10 @@ def test_the_order_page_tooltip(qtbot, tmp_path):
         return {"phases": [{"role": "EET", "title": "EET", "units": units}],
                 "cycles": [], "violations": [], "planned": True, "custom": False}
     widget, _planner = page(qtbot, tmp_path, planner)
-    assert HOSTILE in shown(widget.tabs.widget(0).item(1).toolTip())
+    tip = widget.tabs.widget(0).item(1).toolTip()
+    # its first line ("Components: ...") is ours, so Qt read it as text even
+    # before; plain_tip keeps it so whatever comes first (review of #124)
+    assert tip.startswith("<qt") and HOSTILE in shown(tip)
 
 
 def test_the_download_page_tooltips(qtbot, tmp_path):
@@ -120,7 +124,9 @@ def _own_constant(part) -> bool:
 
 
 def test_every_tooltip_is_a_fixed_string_or_plain_tip():
-    """A tooltip added later with data in it, and no plain_tip, fails here."""
+    """A tooltip added later with data in it, and no plain_tip, fails here.
+    A regression guard, not a proof of coverage: it trusts any plain_tip(...)
+    and any f-string of UPPER_CASE names to be ours."""
     offenders = []
     for root, _dirs, files in os.walk(GUI):
         for name in files:
@@ -154,9 +160,51 @@ def test_the_install_page_confirms_and_tips_in_plain_text(qtbot, world, monkeypa
     page = InstallPage(str(world["tmp"]), world["services"])
     qtbot.addWidget(page)
     asked = []
+
+    def static(*_args):                    # the rich-text static box: must not be used
+        raise AssertionError("QMessageBox.question would render the text as HTML")
+    monkeypatch.setattr(QMessageBox, "question", static)
     monkeypatch.setattr(qtext, "question", lambda *a: asked.append(a[2])
                         or QMessageBox.StandardButton.Yes)
     assert page.confirm("Install?", HOSTILE) and asked == [HOSTILE]
     page.refresh()
     tip = page.install_button.toolTip()
-    assert tip.startswith("<qt>") and "<a " not in tip       # escaped, whatever it lists
+    listed = "\n".join(page.ready()) or "Install the planned order into the game folders"
+    assert tip.startswith("<qt") and shown(tip) == listed
+
+
+def test_weidus_question_is_asked_as_written(qtbot, world, monkeypatch):  # noqa: F811
+    """Review of #124: a mod's question ("Enter the kit for <name>:") was a
+    rich-text prompt - <name> vanished, a <span> could hide words."""
+    from PySide6.QtWidgets import QInputDialog, QLabel
+
+    from iemod_fetch_gui.pages.install import InstallPage
+    page = InstallPage(str(world["tmp"]), world["services"])
+    qtbot.addWidget(page)
+    question = 'Enter the kit for <name>: <span style="display:none">secret</span>'
+    seen = []
+
+    def run(dialog):
+        labels = [c for c in dialog.findChildren(QLabel) if question in c.text()]
+        seen.append([c.textFormat() for c in labels])
+        dialog.setTextValue("7")
+        return int(QInputDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QInputDialog, "exec", run)
+    monkeypatch.setattr(QInputDialog, "getText",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("rich prompt")))
+    assert page.ask_player(question) == "7"
+    assert seen == [[Qt.TextFormat.PlainText]]
+
+
+def test_the_game_pages_findings_show_paths_as_written(qtbot, tmp_path, monkeypatch):
+    from iemod_fetch import api
+    from iemod_fetch_gui.pages.game import GamePage
+    monkeypatch.setattr(api, "check_game_folders", lambda *a: {
+        "ok": False, "problems": [f"no chitin.key in {HOSTILE}"], "notes": [HOSTILE]})
+    page = GamePage(str(tmp_path))
+    qtbot.addWidget(page)
+    page.check()
+    doc = QTextDocument()
+    doc.setHtml(page.findings.text())
+    rendered = doc.toPlainText()
+    assert f"no chitin.key in {HOSTILE}" in rendered and f"Note: {HOSTILE}" in rendered

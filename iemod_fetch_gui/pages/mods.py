@@ -337,7 +337,6 @@ class ModsPage(QWidget):
         self.timer.setInterval(CHECK_DELAY_MS)
         self.timer.timeout.connect(self.check_conflicts)
         self.status = QLabel("Loading the mod list...")
-        self.status.setTextFormat(Qt.TextFormat.PlainText)      # mod names, messages
         self.status.setTextFormat(Qt.TextFormat.PlainText)
 
         self.load_preset = QPushButton("Load preset...")

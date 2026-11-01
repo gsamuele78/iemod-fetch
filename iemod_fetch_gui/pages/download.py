@@ -111,7 +111,6 @@ class DownloadPage(QWidget):
         self._bridge.event.connect(self._on_event)
 
         self.summary = QLabel("Nothing downloaded yet.")
-        self.summary.setTextFormat(Qt.TextFormat.PlainText)     # problems, names
         self.summary.setTextFormat(Qt.TextFormat.PlainText)
         self.summary.setWordWrap(True)
         self.start_button = QPushButton("Download")

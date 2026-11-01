@@ -4470,12 +4470,16 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
   the wizard does not link from that text.
 - The same rule covers the rest of the wizard (follow-up of #123). The
   helpers are in `iemod_fetch_gui/text.py`:
-  - `plain_tip` for tooltips;
+  - `plain_tip` for tooltips, spaces kept;
   - `critical`, `question` and `information` for message boxes, in plain
     text;
   - QLabels that show names or messages are set to `PlainText`.
 
   A test fails on a tooltip that is neither a fixed string nor
-  `plain_tip`, in every page. pages/install.py's confirmation (known
-  issues, readiness, mods' names, paths) and its prerequisites tooltip
-  follow the same rule; its other labels were already plain text.
+  `plain_tip`, in every page. pages/install.py follows the same rule:
+  - WeiDU's question to the player, the mod's own text, goes through
+    `get_text`, a QInputDialog whose prompt is plain text (review of #124);
+  - the confirmation (known issues, readiness, mods' names, paths) and the
+    prerequisites tooltip go through `question` and `plain_tip`;
+  - its labels were already plain text, except two that show only our own
+    names.

@@ -30,7 +30,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-                               QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
+                               QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
                                QScrollArea, QVBoxLayout, QWidget)
 
@@ -644,7 +644,8 @@ class InstallPage(QWidget):
 
     def ask_player(self, question: str) -> str | None:
         """The player's answer to WeiDU's question; None cancels the install."""
-        text, ok = QInputDialog.getText(
+        # the mod's own question: shown as written, never as markup
+        text, ok = qtext.get_text(
             self, "WeiDU asks", question + "\n\n(Cancel stops the install.)")
         return text if ok else None
 
