@@ -4075,15 +4075,22 @@ environment first, and asks the known-folder API only when it is unset.
    its source and compared in a test with the file the real binary writes.
    To them it adds one choice phrase for each expected question
    (ADR-0049's texts) that mod_installer would not ask. The phrase
-   (`mi_parser.phrase`) is the longest literal piece of the question's last
-   line, between its `%variables%`, ASCII-lowercased as Rust's
-   `to_ascii_lowercase` does. It must be at least `MIN_TEXT` (12)
-   characters. A line holding a progress word gets no phrase, since nothing
-   would make it a question.
+   (`mi_parser.phrase`) comes from the question **as WeiDU prints it**
+   (`readln.Prompt.raw`: its lines and spaces as written; the `text` the
+   questionnaire shows has its spaces collapsed, and a phrase taken from it
+   matched no printed line when the question had two lines or two spaces -
+   review of #120, reproduced with the real binaries). It is the longest
+   literal piece of any one line, since any line starts mod_installer
+   collecting the question: between the line's `%variables%` and any
+   non-ASCII character (mod_installer drops a line that is not UTF-8, and a
+   mod's text may be in another charset), ASCII-lowercased as Rust's
+   `to_ascii_lowercase` does, at least `MIN_TEXT` (12) characters. A line
+   holding a progress word gives no phrase.
 3. **Version.** The file carries `mod_installer_version = "16.0.0"`, the
-   version the bundle carries. A different mod_installer writes its own
-   defaults over the file (measured), so it behaves as before, and only in
-   this private folder.
+   version the bundle carries. A different mod_installer would write its own
+   defaults over it (measured), so `install_run.version_of` asks the
+   program first (`--version`) and writes nothing for another version: the
+   install then counts no phrase as added.
 4. **What counts as asked.** `mi_parser.asked` replaces the whole-text
    check in two places, the questionnaire's `by_question` (api) and the
    watchdog's "a question mod_installer does not put to anyone". A question
@@ -4104,15 +4111,22 @@ environment first, and asks the known-folder API only when it is unset.
     its key;
   - with the phrase removed, the install waits until the test cancels it
     after 120 s.
-- **The corpus** (105 mods, `tools/readln_census.py`). It has 37 distinct
-  question texts that are known. 11 of them were not asked before this
-  change; with the config, none is left. They are:
+- **A real install, three forms** of that question: one line, a heading line
+  before it, two spaces inside it. Each is answered by its key; before the
+  review's fix the last two waited.
+- **The corpus** (105 mods, `tools/readln_census.py`, which now records the
+  raw text). It has 37 distinct known question texts, 19 of them on more
+  than one line. 11 have none of mod_installer's words on any line:
   - 8 "press a key to continue" lines from SCS's SFO library;
-  - 2 questions from EET's converter;
-  - DLC Merger's "Try again (y/n)?".
+  - 2 questions from EET's converter (menus: the phrase is the question's
+    line, not the last "2. Yes");
+  - DLC Merger's "Try again (y/n)?" (the phrase is the piece before
+    `%dlc_name%`).
 
-  ADR-0049 counted 42 distinct texts; this count dedups differently, but
-  the same 11 remain.
+  Each of the 11 gets a phrase from one of its printed lines. That each one
+  then stops the real mod (SCS, EET, DLC Merger) is **not** measured: the
+  real test runs synthetic mods. ADR-0049 counted 42 distinct texts; this
+  count dedups differently.
 
 ### Consequences
 
@@ -4129,4 +4143,10 @@ environment first, and asks the known-folder API only when it is unset.
   an empty folder. This is not measured.
 - **Version lock.** The defaults are pinned to 16.0.0. A new mod_installer
   needs its defaults compared again; the test against the real binary's
-  file is what catches a change.
+  file is what catches a change. The questionnaire (`by_question`) assumes
+  the phrases will be in place, as they are with the mod_installer the
+  bundle carries: with another, or when the file cannot be written, the
+  install writes none and the watchdog says so, but the questionnaire has
+  already offered those questions.
+- **Charset.** A line with non-ASCII text is still matched by its ASCII
+  piece; a question whose only long pieces are non-ASCII gets no phrase.

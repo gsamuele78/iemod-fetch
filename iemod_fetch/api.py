@@ -918,7 +918,7 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
     log installs it in), and the answers the log records (`// @wlb-inputs:`).
 
     Returns {"components": [{"log", "tp2", "number", "language", "questions":
-    [{"key", "text", "known", "conditional", "repeats", "via", "file",
+    [{"key", "text", "raw", "known", "conditional", "repeats", "via", "file",
     "line"}], "recorded": [answers], "status", "unread": [...]}],
     "unattended": bool, "counts": {status: n}}. A status is:
       "unknown"     the mod is not in the mods folder, a question's text is set
@@ -966,7 +966,7 @@ def install_questions(plan_dir: str, mods_dir: str) -> dict:
             ahead = _beforehand(asked) if read else 0
             components.append({
                 "log": name, "tp2": tp2, "number": number, "language": lang,
-                "questions": [{"key": q.key, "text": q.text, "known": q.keyed,
+                "questions": [{"key": q.key, "text": q.text, "raw": q.raw, "known": q.keyed,
                                "conditional": q.conditional, "repeats": q.repeats,
                                "via": q.via, "file": q.file, "line": q.line,
                                "beforehand": i < ahead} for i, q in enumerate(asked)],
@@ -1091,7 +1091,8 @@ def _by_question(components: list[dict]) -> None:
             for q in c["questions"]:
                 text = " ".join(q["text"].split()) if q["known"] else ""
                 q["by_question"] = bool(
-                    text and prompts.recognisable(text) and mi_parser.asked(q["text"])
+                    text and prompts.recognisable(text)
+                    and mi_parser.asked(q.get("raw") or q["text"])
                     and seen.get(text, set()) == {c["number"]})
 
 
@@ -1232,10 +1233,13 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
     expected: dict[prompts.Key, list[tuple[str, str]]] = {}
     by_key: dict[prompts.Key, dict[str, str]] = {}
     row_keys: dict[prompts.Key, list[str]] = {}
+    raw: dict[tuple[prompts.Key, str], str] = {}     # as WeiDU prints them (ADR-0057)
     for component in questions.get("components", []):
         key = (prompts.tp2_name(component["tp2"]), component["number"])
         expected[key] = [(q["key"], q["text"] if q["known"] else "")
                          for q in component["questions"]]
+        raw.update({(key, q["key"]): q.get("raw") or q["text"]
+                    for q in component["questions"] if q["known"] and q["text"]})
         given = (answers or {}).get(answer_key(component), {})
         by_key[key] = {k: v for k, v in given.items() if v is not None}
         # the recorded answers are this program's row (write_install_answers):
@@ -1252,7 +1256,7 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                              on_event or (lambda _event: None), language=language,
                              allow_existing=allow_existing, resume_install=resume,
                              expected=expected, by_key=by_key, row_keys=row_keys,
-                             **timing)
+                             raw_texts=raw, **timing)
 
 
 def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:

@@ -15,9 +15,11 @@ Python API, which is internal.
   `install-plan/mod_installer-config/`, with the plan's known question texts
   added as choice phrases (ADR-0057). The player's own mod_installer settings
   are neither read nor changed: on Windows too, `APPDATA` is set only for
-  mod_installer. Measured on 105 mods: of 37 known question texts, the 11
-  not asked before are all asked now; checked with the real mod_installer
-  16.0.0 and WeiDU v251.
+  mod_installer, and only when it says it is 16.0.0. Each phrase comes from
+  one line of the question as WeiDU prints it (a question on two lines, or
+  with two spaces, is matched too). On 105 mods, the 11 of 37 known question
+  texts that had none of mod_installer's words each get a phrase; checked
+  with the real mod_installer 16.0.0 and WeiDU v251 on synthetic mods.
 
 ### Documentation
 - `docs/GUIDA-TEST-REALE.md` (in Italian): a real install on Debian trixie,

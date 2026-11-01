@@ -92,7 +92,7 @@ def main(argv=None) -> int:
             for number, prompts in found.components.items():
                 for p in prompts:
                     entry = reached.setdefault((p.file, p.line), {
-                        "file": p.file, "line": p.line, "ref": p.ref, "text": p.text[:120],
+                        "file": p.file, "line": p.line, "ref": p.ref, "text": p.text[:120], "raw": p.raw,
                         "tra": bool(p.ref and p.text),
                         "via": p.via, "conditional": p.conditional, "repeats": p.repeats,
                         "components": []})

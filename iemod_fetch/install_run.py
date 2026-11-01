@@ -189,6 +189,21 @@ MOD_INSTALLER_ENV = (
     "TICK", "TIMEOUT", "WEIDU_BINARY", "WEIDU_LOG_MODE")
 
 
+def version_of(program: str) -> str:
+    """The version `program --version` says (mod_installer 16.0.0 prints
+    "mod_installer 16.0.0"), "" when it says none: the parser config is
+    written only for the version whose defaults it carries (ADR-0057)."""
+    try:
+        out = subprocess.run([program, "--version"], capture_output=True,  # noqa: S603
+                             text=True, encoding="utf-8", errors="replace", timeout=20,
+                             check=False, stdin=subprocess.DEVNULL,
+                             env=mod_installer_env()).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    words = out.split()
+    return words[1] if len(words) >= 2 and words[0] == mi_parser.APP else ""
+
+
 def mod_installer_env() -> dict[str, str]:
     """The child's environment (childenv) without mod_installer's options,
     logging at info so its batches and questions are seen."""
@@ -289,7 +304,8 @@ class InstallRun:
                  expected: dict[Key, list[tuple[str, str]]] | None = None,
                  by_key: dict[Key, dict[str, str]] | None = None,
                  row_keys: dict[Key, list[str]] | None = None,
-                 parser_dir: str | None = None) -> None:
+                 parser_dir: str | None = None,
+                 raw_texts: dict[tuple[Key, str], str] | None = None) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -319,10 +335,18 @@ class InstallRun:
         # ADR-0057: mod_installer's parser config for this install, with the
         # expected questions it would not ask; the phrases added
         self.parser_dir = parser_dir
+        # each expected question as WeiDU prints it, by (component, key): its
+        # lines and spaces, which the phrase is taken from; else its text
+        self.raw_texts = raw_texts or {}
         self.parser_phrases: list[str] = []
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
         self._job = _Job()
+
+    def _raw(self) -> list[str]:
+        """Every expected question as WeiDU prints it - never the text with
+        its spaces collapsed, whose phrase may match no line (review of #120)."""
+        return [raw for raw in self.raw_texts.values() if raw]
 
     def cancel(self) -> None:
         """Stop the install, from any thread."""
@@ -336,9 +360,10 @@ class InstallRun:
         if sys.platform == "win32":
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         env = mod_installer_env()
-        if self.parser_dir:
+        # only the mod_installer whose defaults the file carries uses it
+        if self.parser_dir and version_of(self.argv[0]) == mi_parser.VERSION:
             try:
-                extra, self.parser_phrases = mi_parser.write(self.parser_dir, self.expected)
+                extra, self.parser_phrases = mi_parser.write(self.parser_dir, self._raw())
                 env.update(extra)
             except OSError:
                 self.parser_phrases = []   # its defaults: as without the config
@@ -477,7 +502,8 @@ class InstallRun:
         window = "\n".join(recent)
         found = match_question(window, expected) if expected and window else None
         asked = {(c, k): t for c, k, t in expected}
-        if found is not None and not mi_parser.asked(asked.get(found, ""), self.parser_phrases):
+        if found is not None and not mi_parser.asked(
+                self.raw_texts.get(found) or asked.get(found, ""), self.parser_phrases):
             what = ("WeiDU seems to be waiting for an answer to a question mod_installer "
                     "does not put to anyone (it asks only questions with words such as "
                     "\"enter\" or \"choose\"): it will wait until mod_installer's timeout. "
@@ -906,7 +932,8 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
           resume_install: bool = False,
           expected: dict[Key, list[tuple[str, str]]] | None = None,
           by_key: dict[Key, dict[str, str]] | None = None,
-          row_keys: dict[Key, list[str]] | None = None, **timing) -> InstallRun:
+          row_keys: dict[Key, list[str]] | None = None,
+          raw_texts: dict[tuple[Key, str], str] | None = None, **timing) -> InstallRun:
     """
     An install ready to run, after the checks; ConfigError says what stops
     it. `resume_install`: go on where the games' WeiDU.logs say it stopped
@@ -939,4 +966,5 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
                       results_file=os.path.join(results_dir, RESULTS_FILE),
                       expected=expected, by_key=by_key, row_keys=row_keys,
                       parser_dir=os.path.join(os.path.dirname(asked_file), PARSER_DIR),
+                      raw_texts=raw_texts,
                       **timing)

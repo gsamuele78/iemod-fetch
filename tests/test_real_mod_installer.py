@@ -553,13 +553,22 @@ AUTHOR ~iemod-fetch test~
 VERSION ~v30~
 
 BEGIN ~Asks with no choice word~
-PRINT ~How many extra kits should be installed?~
+PRINT ~{PRINTED}~
 ACTION_READLN kits
 APPEND_OUTER ~plain-answer.txt~ ~%kits%~
 """
 
 
-def test_a_question_without_choice_words_is_asked_through_the_parser_config(tmp_path):
+@pytest.mark.parametrize(("printed", "phrase"), [
+    ("How many extra kits should be installed?", "how many extra kits should be installed?"),
+    # review of #120: the question's text read with its spaces collapsed
+    # gave a phrase no line WeiDU prints holds - two lines, two spaces
+    ("Kits menu\nHow many extra kits should be installed?",
+     "how many extra kits should be installed?"),
+    ("How many extra  kits should be installed?", "how many extra  kits should be installed?"),
+])
+def test_a_question_without_choice_words_is_asked_through_the_parser_config(tmp_path, printed,
+                                                                            phrase):
     """ADR-0057: mod_installer 16.0.0 never puts "How many extra kits should
     be installed?" to anyone (no choice word or phrase): WeiDU would wait for
     its 3-hour timeout. Its expected text, added to mod_installer's parser
@@ -572,7 +581,7 @@ def test_a_question_without_choice_words_is_asked_through_the_parser_config(tmp_
     (game / "plain-answer.txt").write_text("")
     mods = tmp_path / "mods"
     (mods / "plain").mkdir(parents=True)
-    (mods / "plain" / "plain.tp2").write_text(NO_CHOICE_WORD)
+    (mods / "plain" / "plain.tp2").write_text(NO_CHOICE_WORD.replace("{PRINTED}", printed))
     plan = tmp_path / "plan"
     plan.mkdir()
     (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
@@ -581,7 +590,7 @@ def test_a_question_without_choice_words_is_asked_through_the_parser_config(tmp_
     install = api.start_install(
         str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER, WEIDU,
         ask=lambda q, b: None, on_event=lambda e: lines.append(e.text),
-        answers={"plain.tp2#0": {"How many extra kits should be installed?": "4"}})
+        answers={"plain.tp2#0": {" ".join(printed.split()): "4"}})
     timer = threading.Timer(120, install.cancel)
     timer.start()
     try:
@@ -590,7 +599,7 @@ def test_a_question_without_choice_words_is_asked_through_the_parser_config(tmp_
         timer.cancel()
     transcript = "\n".join(lines)
     assert outcome.ok, transcript
-    assert install.parser_phrases == ["how many extra kits should be installed?"], transcript
+    assert install.parser_phrases == [phrase], transcript
     assert (plan / "mod_installer-config").is_dir()
     assert (game / "plain-answer.txt").read_text().split() == ["4"], transcript
     assert [a.source for a in outcome.answered] == ["by question"], transcript

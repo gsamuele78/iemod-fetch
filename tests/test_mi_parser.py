@@ -42,23 +42,33 @@ def test_extra_phrases_are_added_once_and_sorted():
     ("Short one?", None),                                 # too short to tell apart
     ("%a% and %b%", None),
     ("", None),
+    # as WeiDU prints it (review of #120): two lines, two spaces, a tab - the
+    # phrase is one line's text, its spaces as they are
+    ("Kits menu\nHow many extra  kits should be installed?",
+     "how many extra  kits should be installed?"),
+    ("Kits\r\n\tHow many kits\tshould be added?", "how many kits\tshould be added?"),
+    # ASCII only: a line in another charset never reaches mod_installer's check
+    ("Combien de kits voulez-vous installer\u00a0?", "combien de kits voulez-vous installer"),
+    ("Écrivez le nombre de kits voulus", "crivez le nombre de kits voulus"),
 ])
 def test_the_phrase_of_a_question(text, phrase):
     assert mi_parser.phrase(text) == phrase
 
 
-def test_the_phrase_is_lowercased_as_rust_does_ascii_only():
-    """to_ascii_lowercase leaves É as it is: the phrase must too, or it never
-    matches the line mod_installer compares."""
-    assert mi_parser.phrase("ÉCRIVEZ LE NOMBRE DE KITS") == "Écrivez le nombre de kits"
+def test_a_choice_word_on_any_line_is_asked_already():
+    assert mi_parser.asked("Please enter the number\nof kits wanted here")
+    assert mi_parser.phrase("Please enter the number\nof kits wanted here") is None
+    # any line starts the question: the longest piece of any, not only the last
+    assert mi_parser.phrase("Should the tool convert the BG1 unique items?\n 1. No\n 2. Yes") \
+        == "should the tool convert the bg1 unique items?"
+    assert not mi_parser.asked("How many extra kits should be installed?", [])
+    assert mi_parser.asked("How many extra kits should be installed?")
 
 
 def test_phrases_of_an_install():
-    expected = {("a.tp2", 0): [("q1", "How many extra kits should be installed?"),
-                               ("q2", "Do you want it?")],
-                ("b.tp2", 1): [("q1", "How many extra kits should be installed?"),
-                               ("q3", "")]}
-    assert mi_parser.phrases(expected) == ["how many extra kits should be installed?"]
+    texts = ["How many extra kits should be installed?", "Do you want it?",
+             "How many extra kits should be installed?", ""]
+    assert mi_parser.phrases(texts) == ["how many extra kits should be installed?"]
 
 
 def test_toml_strings_are_escaped():
@@ -72,8 +82,7 @@ def test_toml_strings_are_escaped():
     ("win32", "APPDATA", ("mod_installer", "config", "parser.toml")),
 ])
 def test_where_mod_installer_looks(tmp_path, platform, variable, parts):
-    env, extra = mi_parser.write(str(tmp_path), {("a.tp2", 0): [("q", "How many extra kits?? ok")]},
-                                 platform=platform)
+    env, extra = mi_parser.write(str(tmp_path), ["How many extra kits?? ok"], platform=platform)
     assert env == {variable: str(tmp_path)}
     path = tmp_path.joinpath(*parts)
     assert path.is_file()
@@ -84,7 +93,9 @@ def test_where_mod_installer_looks(tmp_path, platform, variable, parts):
 def test_the_install_points_mod_installer_at_its_own_config(tmp_path, monkeypatch):
     """The variable is set only in the child's environment, to a folder
     beside the plan - never the player's own."""
+    from iemod_fetch import install_run
     from iemod_fetch.install_run import InstallRun
+    monkeypatch.setattr(install_run, "version_of", lambda _program: "16.0.0")
     variable = "APPDATA" if sys.platform == "win32" else "XDG_CONFIG_HOME"
     monkeypatch.setenv(variable, str(tmp_path / "players-own"))
     code = f"import os; print(os.environ['{variable}'])"
@@ -92,9 +103,37 @@ def test_the_install_points_mod_installer_at_its_own_config(tmp_path, monkeypatc
     run = InstallRun([sys.executable, "-c", code], [], cwd=str(tmp_path), ask=lambda q, b: None,
                      on_event=lambda e: lines.append(e.text),
                      parser_dir=str(tmp_path / "plan" / "mod_installer-config"),
-                     expected={("a.tp2", 0): [("q", "How many extra kits should be installed?")]})
+                     expected={("a.tp2", 0): [("q", "How many extra kits should be installed?")]},
+                     raw_texts={(("a.tp2", 0), "q"): "Kits\nHow many extra kits should be installed?"})
     assert run.run().returncode == 0
     assert str(tmp_path / "plan" / "mod_installer-config") in lines
     assert run.parser_phrases == ["how many extra kits should be installed?"]
     assert os.environ[variable] == str(tmp_path / "players-own")
     assert not (tmp_path / "players-own").exists()
+
+
+def test_another_mod_installer_gets_no_config(tmp_path, monkeypatch):
+    """A version other than the one whose defaults the file carries would
+    write its own over it: nothing is written, nothing counted as added."""
+    from iemod_fetch import install_run
+    from iemod_fetch.install_run import InstallRun
+    monkeypatch.setattr(install_run, "version_of", lambda _program: "15.0.0")
+    run = InstallRun([sys.executable, "-c", "pass"], [], cwd=str(tmp_path), ask=lambda q, b: None,
+                     parser_dir=str(tmp_path / "cfg"),
+                     raw_texts={(("a.tp2", 0), "q"): "How many extra kits should be installed?"})
+    assert run.run().returncode == 0
+    assert run.parser_phrases == [] and not (tmp_path / "cfg").exists()
+
+
+def test_the_version_mod_installer_says(tmp_path):
+    from iemod_fetch.install_run import version_of
+    script = tmp_path / "mi.py"
+    script.write_text("print('mod_installer 16.0.0')\n")
+    assert version_of(str(tmp_path / "missing")) == ""
+    program = tmp_path / ("mi.cmd" if sys.platform == "win32" else "mi")
+    if sys.platform == "win32":
+        program.write_text(f'@"{sys.executable}" "{script}" %*\r\n')
+    else:
+        program.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n')
+        program.chmod(0o755)
+    assert version_of(str(program)) == "16.0.0"

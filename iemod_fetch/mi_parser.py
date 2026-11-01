@@ -11,8 +11,9 @@ corpus can tell apart). Its parser config is a file it reads at start
 `metadata.mod_installer_version`; otherwise it writes its defaults over it.
 
 What this module does, read from that source:
-- the file is mod_installer's defaults plus, as choice phrases, a literal
-  piece of the last line of each expected question it would not ask;
+- the file is mod_installer's defaults plus, as choice phrases, the longest
+  literal piece of one line of each expected question it would not ask, as
+  WeiDU prints it (readln.Prompt.raw: its lines and spaces as they are);
 - mod_installer checks each line on its own, ASCII-lowercased and trimmed,
   with `contains`: a phrase is one line's literal text, ASCII-lowercased;
 - a line with "installing" or "creating" is never a question, so no phrase
@@ -26,6 +27,7 @@ What this module does, read from that source:
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 
@@ -53,20 +55,27 @@ def _ascii_lower(text: str) -> str:
     return text.translate(_UPPER)
 
 
+_PIECES = re.compile(r"%[^%\s]+%|[^\x00-\x7f]+")
+
+
 def phrase(text: str) -> str | None:
     """The choice phrase that makes mod_installer ask this expected question,
-    or None: when it asks it already, when its last line has no literal
-    piece of MIN_TEXT characters, or when that line has a progress word."""
+    or None: when one of its lines is a question to it already, or no line
+    has a literal piece of MIN_TEXT characters (a line with a progress word
+    is never a question, so none is taken from it). `text` is the question
+    as WeiDU prints it (readln.Prompt.raw); mod_installer checks each line
+    on its own, and any line of the question starts collecting it, so the
+    longest piece of any line is taken - the least likely to be printed by
+    anything else. The piece is ASCII only, between the line's %variables%
+    and any other character: mod_installer drops a line that is not UTF-8,
+    and a mod's text may be in another charset."""
     lines = [line for line in text.splitlines() if line.strip()]
-    if not lines:
+    if any(prompts.mod_installer_asks(prompts._VARIABLE.sub(" ", line)) for line in lines):
         return None
-    last = lines[-1]
-    if prompts.mod_installer_asks(prompts._VARIABLE.sub(" ", last)):
-        return None
-    if any(word in _ascii_lower(last) for word in IN_PROGRESS_WORDS):
-        return None
-    pieces = [piece.strip() for piece in prompts._VARIABLE.split(last)]
-    best = max(pieces, key=len)
+    pieces = [piece.strip() for line in lines
+              if not any(word in _ascii_lower(line) for word in IN_PROGRESS_WORDS)
+              for piece in _PIECES.split(line)]
+    best = max(pieces, key=len, default="")
     if len(best) < prompts.MIN_TEXT:
         return None
     return _ascii_lower(best)
@@ -76,7 +85,8 @@ def asked(text: str, added: list[str] | None = None) -> bool:
     """mod_installer puts this expected question to the player: one of its
     lines looks like a question to it (its %variables% left out: what WeiDU
     fills in is not known), or the phrase it needs is in its config -
-    `added`, the phrases of the install; None: as start_install writes them."""
+    `added`, the phrases of the install; None: as start_install writes them
+    for the mod_installer the bundle carries."""
     lines = [prompts._VARIABLE.sub(" ", line) for line in text.splitlines() if line.strip()]
     if any(prompts.mod_installer_asks(line) for line in lines):
         return True
@@ -84,10 +94,10 @@ def asked(text: str, added: list[str] | None = None) -> bool:
     return needed is not None and (added is None or needed in added)
 
 
-def phrases(expected: dict) -> list[str]:
-    """The phrases for every expected question of the install, sorted, once
-    each. `expected`: component -> [(question key, text)]."""
-    found = {phrase(text) for questions in expected.values() for _key, text in questions}
+def phrases(texts) -> list[str]:
+    """The phrases for the install's expected questions (as WeiDU prints
+    them), sorted, once each."""
+    found = {phrase(text) for text in texts}
     found.discard(None)
     return sorted(found)  # type: ignore[arg-type]
 
@@ -147,10 +157,11 @@ def environment(root: str, platform: str = sys.platform) -> dict[str, str]:
     return {"APPDATA" if platform == "win32" else "XDG_CONFIG_HOME": os.path.abspath(root)}
 
 
-def write(root: str, expected: dict, platform: str = sys.platform) -> tuple[dict[str, str], list[str]]:
-    """Write the parser config of this install under `root`; the variables to
-    add to mod_installer's environment and the phrases added."""
-    extra = phrases(expected)
+def write(root: str, texts, platform: str = sys.platform) -> tuple[dict[str, str], list[str]]:
+    """Write the parser config of this install under `root`, with the phrases
+    of `texts` (the expected questions as WeiDU prints them); the variables
+    to add to mod_installer's environment and the phrases added."""
+    extra = phrases(texts)
     path = config_path(root, platform)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     write_text(path, toml(extra))
