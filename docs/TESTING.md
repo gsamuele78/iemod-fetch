@@ -506,7 +506,10 @@ run as root in each fresh container, measures four things:
 
 Each job's summary lists what was missing and the package that filled it,
 which is what the README and docs/GUIDA-TEST-REALE.md tell a player to install.
-It runs on every published release, or by hand on any tag.
+release.yml dispatches it for each tag it publishes (its own `release`
+event, made with `github.token`, starts no workflow). It also runs on a
+release published by hand, on a pull request that changes the workflow or
+the script (on the latest release), and by hand on any tag.
 
 ## What is deliberately not done
 

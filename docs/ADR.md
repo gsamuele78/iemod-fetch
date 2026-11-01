@@ -4067,8 +4067,11 @@ calls it.
    Nothing comes from a hand-written list: the output names each missing
    soname and the package that filled it.
 2. **`.github/workflows/bundles-distros.yml`** runs the script on a
-   published release's Linux zips. It runs on `release: published` and by
-   hand for any tag, in fedora:latest, archlinux:latest, ubuntu:24.04,
+   published release's Linux zips. release.yml dispatches it for each tag
+   it publishes (its publish uses `github.token`, whose `release` event
+   starts no workflow); it also runs on a release published by hand, on a
+   pull request that changes it or the script (measuring the latest
+   release), and by hand for any tag. It runs in fedora:latest, archlinux:latest, ubuntu:24.04,
    ubuntu:latest and debian:trixie. A job fails if the wizard does not
    start offscreen once its packages are in, or if the command line does
    not answer. A desktop (xcb) library still missing after its package is
@@ -4082,7 +4085,7 @@ calls it.
 
 - The per-distribution package list in the README and docs/GUIDA-TEST-REALE.md
   comes from a measurement of the published bundles, and is measured again
-  at every release.
+  for every tag release.yml publishes.
 - What runs in a container is not a desktop. The xcb and Wayland sets are
   measured by `ldd` (every library resolves) but not started: the first
   real window on each distribution is the real-test guide's to confirm.

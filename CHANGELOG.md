@@ -10,9 +10,10 @@ Python API, which is internal.
 
 ### Added
 - **The Linux bundles measured on the distributions players run** (ADR-0056):
-  the `bundles-distros` workflow starts each release's wizard and
-  command-line zips in fresh fedora, archlinux, ubuntu:24.04, ubuntu:latest
-  and debian:trixie containers, and `tools/distro_libs.sh` names the system
+  the `bundles-distros` workflow, dispatched by release.yml for each tag it
+  publishes, starts the release's wizard and command-line zips in fresh
+  fedora, archlinux, ubuntu:24.04, ubuntu:latest and debian:trixie
+  containers, and `tools/distro_libs.sh` names the system
   libraries Qt lacks there (offscreen, X11/XWayland, Wayland) and the
   package that ships each. On 4.0.1 the command line started on all five;
   the wizard started on all five once those packages were in.

@@ -8,14 +8,17 @@
 # lacks - for a headless start (offscreen), an X11/XWayland desktop (xcb) and
 # a native Wayland session - asks the distro's own package index which
 # package ships each, installs them, and starts the wizard offscreen. That
-# list is what docs/REAL-TEST.md and the README tell a player to install.
+# list is what docs/GUIDA-TEST-REALE.md and the README tell a player to install.
 #
 # A separate workflow, not a job of release.yml: it measures five systems
 # whose images change under it, and a library one of them renames must not
-# hold a release back. release.yml keeps gating the floor, Debian trixie.
+# hold a release back. release.yml keeps gating the floor, Debian trixie,
+# and starts this workflow once it has published (its own publish uses
+# github.token, whose events start no workflow).
 name: Bundles on the target distros
 
 on:
+  # a release published by hand; release.yml's own dispatches this
   release:
     types: [published]
   # a change to this check measures the latest release with it
@@ -30,6 +33,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: bundles-distros-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   distro:
@@ -61,6 +68,7 @@ jobs:
       - name: Measure inside the container
         env:
           IMAGE: ${{ matrix.image }}
+        shell: bash            # -o pipefail: the script's exit is not lost to tee
         run: |
           image=""
           # Docker Hub, else the ECR mirror of Docker's library: both limit
@@ -73,6 +81,7 @@ jobs:
             -v "$PWD/tools/distro_libs.sh:/distro_libs.sh:ro" "$image" \
             sh /distro_libs.sh /gui /cli | tee measured.txt
       - name: Say what was measured
+        if: always()
         env:
           IMAGE: ${{ matrix.image }}
         run: |

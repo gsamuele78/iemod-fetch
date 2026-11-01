@@ -41,7 +41,8 @@ prepare() {
     dnf) dnf -q makecache >/dev/null
          command -v ldd >/dev/null || dnf -q install -y /usr/bin/ldd >/dev/null ;;
     pacman) { pacman-key --init && pacman-key --populate archlinux; } >/dev/null 2>&1
-            pacman -Sy --noconfirm >/dev/null && pacman -Fy --noconfirm >/dev/null ;;
+            # -Syu, not -Sy: installing after a bare -Sy is a partial upgrade
+            pacman -Syu --noconfirm >/dev/null && pacman -Fy --noconfirm >/dev/null ;;
   esac
 }
 
@@ -105,5 +106,6 @@ for set in offscreen xcb wayland; do
   # shellcheck disable=SC2086
   install $(echo $wanted | tr ' ' '\n' | sort -u) || echo "INSTALL $set failed:$wanted"
   for so in $(missing $set); do echo "STILL $set $so"; done
-  [ "$set" = offscreen ] && check after
+  if [ "$set" = offscreen ]; then check after; fi
 done
+exit 0      # the verdict is in the lines; 1 and 2 are PREPARE and UNKNOWN
