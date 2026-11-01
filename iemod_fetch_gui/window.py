@@ -6,10 +6,12 @@ before it is complete; leaving it saves what it decided.
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QPushButton, QStackedWidget,
+                               QMainWindow, QPushButton, QStackedWidget,
                                QVBoxLayout, QWidget)
 
 from iemod_fetch import api
+
+from iemod_fetch_gui import text as qtext
 
 from .pages.download import DownloadPage, Downloader, download_project
 from .pages.game import GamePage
@@ -81,6 +83,7 @@ class MainWindow(QMainWindow):
         central.setLayout(body)
         self.setCentralWidget(central)
         self.status = QLabel()
+        self.status.setTextFormat(Qt.TextFormat.PlainText)      # paths
         self.statusBar().addWidget(self.status, 1)
         self._refresh()
 
@@ -96,7 +99,7 @@ class MainWindow(QMainWindow):
             try:
                 path = self.game.save()
             except Exception as exc:     # an unwritable folder, a bad value
-                QMessageBox.critical(self, "Cannot save the project", str(exc))
+                qtext.critical(self, "Cannot save the project", str(exc))
                 return
             self.status.setText(f"saved {path}")
             self.mods.start(self.game.game() or "EET")
@@ -104,7 +107,7 @@ class MainWindow(QMainWindow):
             try:
                 path = self.mods.save()
             except Exception as exc:     # refused by selection.json's own checks
-                QMessageBox.critical(self, "Cannot save the selection", str(exc))
+                qtext.critical(self, "Cannot save the selection", str(exc))
                 return
             self.status.setText(f"saved {path}")
             self.order.start(self.mods.game, self.mods.chosen(), self.mods.labels())
@@ -123,7 +126,7 @@ class MainWindow(QMainWindow):
         try:
             path = self.mods.save()
         except Exception as exc:     # refused by selection.json's own checks
-            QMessageBox.critical(self, "Cannot save the selection", str(exc))
+            qtext.critical(self, "Cannot save the selection", str(exc))
             return
         self.status.setText(f"saved {path}")
         self.order.start(self.mods.game, self.mods.chosen(), self.mods.labels())

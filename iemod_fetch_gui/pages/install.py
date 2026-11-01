@@ -30,11 +30,12 @@ from typing import Any
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-                               QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
+                               QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
                                QScrollArea, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
+from iemod_fetch_gui import text as qtext
 
 from .mods import _in_thread
 
@@ -376,7 +377,8 @@ class InstallPage(QWidget):
 
     def confirm(self, title: str, text: str) -> bool:
         """Yes or no, asked of the player (a test answers instead)."""
-        answer = QMessageBox.question(self, title, text)
+        # known issues, readiness, mods' names and paths: shown as written
+        answer = qtext.question(self, title, text)
         return bool(answer == QMessageBox.StandardButton.Yes)
 
     def offer_weidu(self) -> None:
@@ -642,7 +644,8 @@ class InstallPage(QWidget):
 
     def ask_player(self, question: str) -> str | None:
         """The player's answer to WeiDU's question; None cancels the install."""
-        text, ok = QInputDialog.getText(
+        # the mod's own question: shown as written, never as markup
+        text, ok = qtext.get_text(
             self, "WeiDU asks", question + "\n\n(Cancel stops the install.)")
         return text if ok else None
 
@@ -774,8 +777,9 @@ class InstallPage(QWidget):
         busy = self.running()
         missing = self.ready()
         self.install_button.setEnabled(not busy and not missing)
-        self.install_button.setToolTip("\n".join(missing) if missing else
-                                       "Install the planned order into the game folders")
+        # paths the player chose may hold "<": text, not markup
+        self.install_button.setToolTip(qtext.plain_tip(
+            "\n".join(missing) if missing else "Install the planned order into the game folders"))
         self.cancel_button.setEnabled(busy)
         self.download_weidu.setEnabled(not busy)
         for button in (*self.choose.values(), *self.backup_button.values()):

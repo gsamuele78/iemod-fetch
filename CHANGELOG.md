@@ -34,6 +34,18 @@ Python API, which is internal.
   the wizard started on all five once those packages were in.
 
 ### Fixed
+- **Text that is not ours shows as text everywhere in the wizard** (review
+  of #123): Qt renders a tooltip, a default QLabel or a message box as HTML
+  when it looks like HTML. Now as written: the question WeiDU asks during an
+  install (a mod's own text: "Enter the kit for <name>:" lost `<name>`, and a
+  `<span>` could hide words), the mod list's kind and refused-tp2 tooltips,
+  the download table's detail and newer-release tooltips, the install
+  order's tooltips, the window's status line, the game page's folder
+  findings, every message box (errors, questions, the preset summary,
+  "Others need it", the install confirmation), and the install button's
+  prerequisites tooltip.
+  `tests/gui/test_tooltips.py` drives each with markup, and fails on a new
+  tooltip that is neither a fixed string nor `plain_tip`.
 - **The README names the system libraries the Linux wizard needs**, per
   distribution (apt, dnf, pacman), as measured: the window on an X11
   desktop needs the `libxcb-*` libraries (`libxcb-cursor` for Qt 6.5 and

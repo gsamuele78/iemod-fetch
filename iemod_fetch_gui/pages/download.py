@@ -33,6 +33,8 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton, QT
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from iemod_fetch import api
+from iemod_fetch_gui import text as qtext
+
 
 from .mods import _in_thread
 
@@ -342,7 +344,7 @@ class DownloadPage(QWidget):
         item.setData(0, Qt.ItemDataRole.UserRole, status)
         item.setText(1, STATES.get(status, status))
         item.setText(DETAIL, detail)
-        item.setToolTip(DETAIL, detail)
+        item.setToolTip(DETAIL, qtext.plain_tip(detail))
 
     def _offer(self, item: QTreeWidgetItem, newer: dict | None) -> None:
         """A box to tick for a newer GitHub release, or none."""
@@ -352,10 +354,10 @@ class DownloadPage(QWidget):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(NEWER, Qt.CheckState.Unchecked)
             item.setText(NEWER, f"{newer.get('version')} ({newer.get('repo')})")
-            item.setToolTip(NEWER, f"GitHub has {newer.get('version')} "
-                                   f"({newer.get('date') or 'no date'}); this copy "
-                                   f"declares {newer.get('installed')}. Tick it and "
-                                   f"install to replace the copy, which is kept aside.")
+            item.setToolTip(NEWER, qtext.plain_tip(
+                f"GitHub has {newer.get('version')} ({newer.get('date') or 'no date'}); "
+                f"this copy declares {newer.get('installed')}. Tick it and install to "
+                f"replace the copy, which is kept aside."))
         else:
             item.setData(NEWER, Qt.ItemDataRole.CheckStateRole, None)
             item.setText(NEWER, "")

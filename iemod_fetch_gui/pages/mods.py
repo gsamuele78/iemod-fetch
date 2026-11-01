@@ -50,6 +50,8 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLin
 
 from iemod_fetch import api
 
+from iemod_fetch_gui import text as qtext
+
 from .conflicts import ConflictsPanel, open_findings
 
 Loader = Callable[[str, dict], list[dict]]
@@ -456,7 +458,7 @@ class ModsPage(QWidget):
             kind = DISAGREE + kind
         item = QTreeWidgetItem([mod.get("name") or mod["key"], version, origin, kind])
         item.setData(0, ROLE, ("mod", mod["key"]))
-        item.setToolTip(KIND_COLUMN, _said(mod) or kind)
+        item.setToolTip(KIND_COLUMN, qtext.plain_tip(_said(mod) or kind))
         if not any(t["components"] and not t.get("refused") for t in tp2s):
             item.setDisabled(True)
             item.setToolTip(0, "Its components are not known until it is downloaded: "
@@ -483,7 +485,7 @@ class ModsPage(QWidget):
                 child.setData(0, ROLE, ("component", key, component))
                 if tp2.get("refused"):
                     child.setDisabled(True)
-                    child.setToolTip(0, tp2["refused"])
+                    child.setToolTip(0, qtext.plain_tip(tp2["refused"]))
                     parent.addChild(child)
                     continue
                 child.setCheckState(0, Qt.CheckState.Checked if key in saved
@@ -689,6 +691,7 @@ class ModsPage(QWidget):
         box = QMessageBox(self)
         box.setWindowTitle("Others need it")
         box.setIcon(QMessageBox.Icon.Question)
+        box.setTextFormat(Qt.TextFormat.PlainText)                # components' names
         box.setText(f"{', '.join(removed)}: needed by {len(needing)} chosen "
                     f"component(s):\n\n" + "\n".join(needing[:20])
                     + ("\n..." if len(needing) > 20 else ""))
@@ -772,7 +775,7 @@ class ModsPage(QWidget):
         self._count()
 
     def confirm_resolve(self, text: str) -> bool:
-        answer = QMessageBox.question(self, "Resolve for this component", text)
+        answer = qtext.question(self, "Resolve for this component", text)
         return bool(answer == QMessageBox.StandardButton.Yes)
 
     # ------------------------------------------------------------ presets
@@ -791,9 +794,9 @@ class ModsPage(QWidget):
             preset = api.import_selection(path, self.game, sorted({k[0] for k in self.items}),
                                           target=_target(project))
         except Exception as exc:        # not a preset, unreadable: say so, change nothing
-            QMessageBox.critical(self, "Cannot load the preset", str(exc))
+            qtext.critical(self, "Cannot load the preset", str(exc))
             return
-        if self.chosen() and QMessageBox.question(
+        if self.chosen() and qtext.question(
                 self, "Load the preset",
                 f"Replace the {len(self.chosen())} component(s) chosen now with the "
                 f"preset's {preset_size(preset)}?") \
@@ -815,7 +818,7 @@ class ModsPage(QWidget):
                          f"the same group, which the preset also chose: "
                          + ", ".join(lost[:10]) + (", ..." if len(lost) > 10 else ""))
         if lines:
-            QMessageBox.information(self, "Preset loaded", "\n\n".join(lines))
+            qtext.information(self, "Preset loaded", "\n\n".join(lines))
 
     def apply_preset(self, chosen: list[Key]) -> list[Key]:
         """Choose exactly `chosen` (each as a click would: its SUBCOMPONENT
@@ -845,23 +848,23 @@ class ModsPage(QWidget):
         if not path.lower().endswith(".json"):
             path += ".json"
             # the dialog asked about the name typed, not this one
-            if os.path.exists(path) and QMessageBox.question(
+            if os.path.exists(path) and qtext.question(
                     self, "Save the preset", f"{path} exists. Replace it?") \
                     != QMessageBox.StandardButton.Yes:
                 return
         if same_folder(os.path.dirname(os.path.abspath(path)), self.project_dir) \
                 and os.path.basename(path).lower() in PROJECT_FILES:
-            QMessageBox.critical(self, "Cannot save the preset",
+            qtext.critical(self, "Cannot save the preset",
                                  f"{os.path.basename(path)} is the project's own file; "
                                  f"give the preset another name.")
             return
         if not self.chosen():
-            QMessageBox.critical(self, "Cannot save the preset", "Nothing is chosen.")
+            qtext.critical(self, "Cannot save the preset", "Nothing is chosen.")
             return
         try:
             saved = api.export_selection(path, self.game, self.chosen(), self.labels())
         except Exception as exc:
-            QMessageBox.critical(self, "Cannot save the preset", str(exc))
+            qtext.critical(self, "Cannot save the preset", str(exc))
             return
         self.status.setText(f"Preset saved: {saved}")
 
@@ -1025,14 +1028,14 @@ class ModsPage(QWidget):
         current = api.load_decisions(self.project_dir)
         if current["problem"]:
             # Never overwrite a file that could not be read: it may hold answers.
-            QMessageBox.critical(self, "decisions.json cannot be read",
+            qtext.critical(self, "decisions.json cannot be read",
                                  f"{current['problem']}\n\nFix or remove it first.")
             return
         change(current["choose"], current["accept"])
         try:
             api.save_decisions(self.project_dir, current["choose"], current["accept"])
         except Exception as exc:
-            QMessageBox.critical(self, "Cannot save the decision", str(exc))
+            qtext.critical(self, "Cannot save the decision", str(exc))
             return
         self.check_conflicts()
 

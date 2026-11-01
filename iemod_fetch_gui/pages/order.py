@@ -46,10 +46,12 @@ from PySide6.QtCore import QItemSelectionModel, QModelIndex, QThread, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout,
                                QInputDialog, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QPushButton, QTabWidget,
+                               QListWidgetItem, QPushButton, QTabWidget,
                                QVBoxLayout, QWidget)
 
 from iemod_fetch import api
+
+from iemod_fetch_gui import text as qtext
 
 from .mods import Key, _in_thread, _target, selection_digest
 
@@ -457,7 +459,7 @@ class OrderPage(QWidget):
         elif unit["flagged"]:
             item.setForeground(QBrush(RED))
             tips.append("An order rule says it is in the wrong place (see below).")
-        item.setToolTip("\n".join(tips))
+        item.setToolTip(qtext.plain_tip("\n".join(tips)))
         return item
 
     # ---------------------------------------------------------- reordering
@@ -504,7 +506,7 @@ class OrderPage(QWidget):
         try:
             api.save_install_order(self.project_dir, self.phases())
         except Exception as exc:
-            QMessageBox.critical(self, "Cannot save the install order", str(exc))
+            qtext.critical(self, "Cannot save the install order", str(exc))
         # Planned again either way: the list must show what is saved, not
         # the drag that could not be.
         self._generation += 1
@@ -647,7 +649,7 @@ class OrderPage(QWidget):
             try:
                 api.save_install_order(self.project_dir, fix["phases"])
             except Exception as exc:
-                QMessageBox.critical(self, "Cannot save the install order", str(exc))
+                qtext.critical(self, "Cannot save the install order", str(exc))
                 return
         if fix["kind"] == "off":
             self.turn_off.emit(fix["keys"])         # the window unticks them and plans
@@ -705,7 +707,7 @@ class OrderPage(QWidget):
                 api.ignore_order(self.project_dir, unit["node"], above,
                                  unit["broken"], why.strip())
             except Exception as exc:
-                QMessageBox.critical(self, "Cannot save the decision", str(exc))
+                qtext.critical(self, "Cannot save the decision", str(exc))
                 return
         self._generation += 1
         self._plan()
@@ -714,7 +716,7 @@ class OrderPage(QWidget):
         try:
             api.unignore_order(self.project_dir, node)
         except Exception as exc:
-            QMessageBox.critical(self, "Cannot save the decision", str(exc))
+            qtext.critical(self, "Cannot save the decision", str(exc))
 
     # ---------------------------------------- moving and finding (item 35)
     def _rows(self, widget: QListWidget) -> list[int]:
@@ -762,7 +764,7 @@ class OrderPage(QWidget):
         try:
             api.reset_install_order(self.project_dir)
         except Exception as exc:
-            QMessageBox.critical(self, "Cannot reset the install order", str(exc))
+            qtext.critical(self, "Cannot reset the install order", str(exc))
         self._generation += 1
         self._plan()
 

@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QInputDialog, QLa
                                QMessageBox, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 
+from iemod_fetch_gui import text as qtext
+
 SEVERITY = {"error": "Error", "warning": "Warning", "note": "Note"}
 ACTIONS = {"deselect": "Deselect", "install": "Choose", "reorder": "Install order:"}
 
@@ -146,7 +148,7 @@ class ConflictsPanel(QWidget):
         return row
 
     def _forget(self, ids: list[str]) -> None:
-        answer = QMessageBox.question(
+        answer = qtext.question(
             self, "Forget decisions",
             f"Remove {len(ids)} decision(s) from decisions.json?\n\n" + "\n".join(ids[:10])
             + ("\n..." if len(ids) > 10 else ""))
