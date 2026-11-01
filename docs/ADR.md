@@ -4391,3 +4391,67 @@ GUI-AUDIT item 61 left two gaps in the bundles (reviews of #70).
   the release as mod_installer's is, because for about 70 packages that
   would add hundreds of MB to every release. Attaching it is the owner's
   call if a distribution host is not enough.
+
+---
+
+## ADR-0059 — What krion64 saw of a mod is shown as its words, with its source and its day
+
+**Status:** accepted (2026-11-01)
+
+### Context
+
+GUI-AUDIT item 51. krion64's data carries two kinds of text that the
+wizard did not show.
+
+- **Its daily repository scan**, `version_cache.json`, gives every
+  repository a few fields. Measured live on 2026-11-01, it covers 690
+  repositories:
+  - `body`: the release notes, the release author's markdown;
+  - `pushed`: the day of the last push;
+  - `archived`;
+  - `release_name`.
+- **Its per-mod records** carry notes. Measured on 814 records (local copy
+  of 2026-10-22):
+  - `no` (notes) in 813;
+  - `rq` (requirements) in 21;
+  - `ic` (incompatibilities, in words) in 46;
+  - `eet_compat` ({ver, place}) in 84;
+  - `in` in 17 and `rec` in 10.
+
+All of it is third-party text, typed by hand. The scan is also a snapshot:
+"archived" is true as of the day krion64 scanned, not necessarily today.
+
+### Decision
+
+1. **Text, never markup.** Release notes and krion64's notes are read as
+   strings:
+   - control characters other than newlines and tabs are removed;
+   - release notes are cut at 1,500 characters, notes at 1,000, with " ...";
+   - in the mod's details they are HTML-escaped whole, newlines kept;
+   - no link and no image is ever made from them. The details panel opens
+     no links either (`setOpenLinks(False)`, as before).
+
+   A test passes `<a href>`, `<img src>` and `javascript:` through both,
+   and they come out as literal text.
+2. **Every line names its source and its day**, for example "Archived on
+   GitHub, according to krion64, data of 2026-10-22". The day is the
+   commit the community-data cache fetched (`sources.json`). When the data
+   is not the cache's, or the cache has no record, the line says "date of
+   its data not known".
+3. **Shown:** notes, requirements, incompatibilities, EET (version and
+   place), and of the repository the last push, "archived", and the release
+   notes with their release's name and date.
+4. **Not shown:** `in` and `rec` are left out. They appear in only 17 and
+   10 of 814 records, too rare to rely on.
+5. **The wizard only.** These go into `mod_choices`' entries. The CLI's
+   mods-v1 document is unchanged.
+
+### Consequences
+
+- On the local data (1,045 mods, the EET list), 502 mods show what the
+  scan saw of their repository: 456 with release notes, 7 archived. 689
+  show krion64's notes.
+- The notes are krion64's and the release authors' words. The wizard
+  shows them; it neither checks nor follows them.
+- A long changelog is cut. The full text is on the release's page, which
+  the wizard does not link from that text.

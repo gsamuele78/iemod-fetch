@@ -640,3 +640,31 @@ def test_a_release_update_and_a_date_both_show_and_a_plain_address_is_text(qtbot
     widget._show(row)
     assert "http://example.org/tweaks" in widget.details.toPlainText()
     assert 'href="http://' not in widget.details.toHtml()
+
+
+HOSTILE = ('<a href="https://evil.example">click</a> <img src="https://evil.example/x.png"> '
+           'javascript:alert(1)')
+
+
+def test_release_notes_and_krion64_notes_are_literal_text_with_source_and_day(qtbot, tmp_path):
+    """Item 51: third-party text, escaped whole - no link, no image - and
+    what krion64 saw is said with the day of its data."""
+    mod = dict(MAYBE_MODS[1], krion_date="2026-10-22",
+               krion_notes=[["Notes", HOSTILE]],
+               release={"repo": "a/b", "tag": "v2", "date": "2026-07-03", "notes": HOSTILE,
+                        "pushed": "2026-09-06", "archived": True})
+    widget = page(qtbot, tmp_path, [mod])
+    widget._show(widget.tree.topLevelItem(0))
+    text, markup = widget.details.toPlainText(), widget.details.toHtml()
+    assert text.count(HOSTILE) == 2                       # shown as written, twice
+    assert 'href="https://evil.example"' not in markup and "<img" not in markup
+    assert "Archived on GitHub, according to krion64, data of 2026-10-22 (a/b)" in text
+    assert "Last push to a/b (krion64, data of 2026-10-22): 2026-09-06" in text
+    assert "Notes (krion64, data of 2026-10-22):" in text
+
+
+def test_without_the_day_of_krion64s_data_it_says_so(qtbot, tmp_path):
+    mod = dict(MAYBE_MODS[1], krion_date=None, krion_notes=[["Notes", "x"]])
+    widget = page(qtbot, tmp_path, [mod])
+    widget._show(widget.tree.topLevelItem(0))
+    assert "Notes (krion64, date of its data not known): x" in widget.details.toPlainText()

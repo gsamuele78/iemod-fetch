@@ -157,3 +157,24 @@ def test_an_unreadable_release_cache_is_a_configuration_error(tmp_path):
     bad.write_text("{not json")
     with pytest.raises(ConfigError):
         api.list_mods(None, catalogues=[], releases=str(bad))
+
+
+# --- what the scan saw of a repository, as text (GUI-AUDIT item 51) ----------
+
+def test_release_notes_and_activity_are_read_as_text():
+    from iemod_fetch.freshness import NOTES_MAX, parse_release_cache
+    raw = {"Argent77/A7-DlcMerger": {
+        "tag": "v2.1", "release_date": "2026-07-03", "release_name": "DLC Merger 2.1",
+        "pushed": "2026-09-06", "archived": False,
+        "body": "Changelog:\r\n- one\x1b[31m red\x07\n- two" + "x" * 3000}}
+    release = parse_release_cache(raw)["argent77/a7-dlcmerger"]
+    assert release.name == "DLC Merger 2.1" and release.pushed == "2026-09-06"
+    assert release.notes.startswith("Changelog:\n- one[31m red\n- two")   # controls out
+    assert len(release.notes) <= NOTES_MAX + 4 and release.notes.endswith(" ...")
+
+
+def test_notes_that_are_not_text_are_none():
+    from iemod_fetch.freshness import parse_release_cache, plain_text
+    release = parse_release_cache({"a/b": {"tag": "v1", "body": {"x": 1}, "pushed": 5}})["a/b"]
+    assert release.notes is None and release.pushed is None
+    assert plain_text("  \x00 ") is None

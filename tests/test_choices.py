@@ -201,3 +201,18 @@ def test_a_copy_replaced_by_hand_with_another_version_marks_nothing(tmp_path):
     assert not _bg1ub(tmp_path, mods_dir)["maybe_updated"]
     (mods_dir / "bg1ub" / "setup-bg1ub.tp2").write_text("VERSION ~v17~\nBEGIN ~One~\n")
     assert _bg1ub(tmp_path, mods_dir)["maybe_updated"]       # the copy fetched, still there
+
+
+def test_krion64s_day_comes_from_the_cache_record(tmp_path):
+    data = tmp_path / "data"
+    (data / "krion64" / "data").mkdir(parents=True)
+    (data / "krion64" / "data" / "version_cache.json").write_text("{}")
+    (data / "sources.json").write_text(json.dumps(
+        {"krion64": {"commit": "abc", "date": "2026-10-22T20:41:00Z"}}))
+    mods = api.mod_choices("BGEE", catalogues=[LCC], krion=krion_dir(tmp_path, BG1UB),
+                           data_dir=str(data))
+    assert {m["krion_date"] for m in mods} == {"2026-10-22"}
+    (tmp_path / "elsewhere.json").write_text("{}")
+    other = api.mod_choices("BGEE", catalogues=[LCC], data_dir=str(data),
+                            releases=str(tmp_path / "elsewhere.json"))
+    assert {m["krion_date"] for m in other} == {None}     # not the cache's: no day

@@ -23,7 +23,7 @@ import os
 from dataclasses import dataclass, field
 
 from .errors import ConfigError
-from .naming import normalize_key
+from .naming import normalize_key, plain_text
 
 _MAX_BYTES = 4 * 1024 * 1024
 
@@ -50,6 +50,8 @@ class ModRecord:
     categories: list[str] = field(default_factory=list)
     install_category: str | None = None
     tags: list[str] = field(default_factory=list)
+    # krion64's notes on the mod (GUI-AUDIT item 51), as text: (label, text)
+    notes: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def best_file(self) -> ModFile | None:
@@ -136,7 +138,8 @@ def _read(path: str, origin: str) -> ModRecord | None:
             games=[g for g in (raw.get("ph") or []) if isinstance(g, str)],
             homepage=raw.get("u"), origin=origin,
             install_category=raw.get("c") if isinstance(raw.get("c"), str) else None,
-            tags=_strings(raw.get("tags")))
+            tags=_strings(raw.get("tags")),
+            notes=_krion_notes(raw))
 
     files = []
     for entry in raw.get("files") or []:
@@ -155,6 +158,26 @@ def _read(path: str, origin: str) -> ModRecord | None:
         games=[g for g in (raw.get("games") or []) if isinstance(g, str)],
         homepage=links.get("homepage") if isinstance(links, dict) else None,
         origin=origin, categories=_strings(raw.get("categories")))
+
+
+# krion64's record fields shown as notes; `in` and `rec` are left out: 17
+# and 10 of its 814 records carry them (measured 2026-10-22)
+_KRION_NOTES = (("no", "Notes"), ("rq", "Requires"), ("ic", "Incompatible with"))
+
+
+def _krion_notes(raw: dict) -> list[tuple[str, str]]:
+    out = []
+    for key, label in _KRION_NOTES:
+        text = plain_text(raw.get(key), 1000)
+        if text:
+            out.append((label, text))
+    eet = raw.get("eet_compat")
+    if isinstance(eet, dict):
+        parts = [plain_text(eet.get(k), 40) for k in ("ver", "place")]
+        said = ", ".join(p for p in parts if p)
+        if said:
+            out.append(("EET", said))
+    return out
 
 
 def _strings(value) -> list[str]:

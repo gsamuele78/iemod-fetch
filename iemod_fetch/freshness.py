@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass
 from collections.abc import Iterable
 
+from .naming import plain_text
 from .versions import compare_published
 
 _GITHUB = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", re.IGNORECASE)
@@ -38,6 +39,14 @@ class Release:
     date: str | None = None
     url: str | None = None
     archived: bool = False
+    # what the scan saw of the repository (GUI-AUDIT item 51): third-party
+    # text, kept as text - control characters out, cut at NOTES_MAX
+    name: str | None = None
+    notes: str | None = None
+    pushed: str | None = None
+
+
+NOTES_MAX = 1500                       # characters of a release's notes kept
 
 
 @dataclass(frozen=True)
@@ -77,7 +86,10 @@ def parse_release_cache(raw) -> dict[str, Release]:
             tag=tag.strip(),
             date=entry.get("release_date") or None,
             url=entry.get("release_url") or None,
-            archived=entry.get("archived") is True)
+            archived=entry.get("archived") is True,
+            name=plain_text(entry.get("release_name"), 200),
+            notes=plain_text(entry.get("body")),
+            pushed=plain_text(entry.get("pushed"), 40))
     return out
 
 

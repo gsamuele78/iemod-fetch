@@ -9,6 +9,13 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **Release notes, repository activity and krion64's notes in the wizard**
+  (GUI-AUDIT item 51, ADR-0059): a mod's details show krion64's notes,
+  requirements, incompatibilities and EET placement, and from its daily
+  scan the repository's last push, whether it was archived and the latest
+  release's notes - escaped plain text cut to a fixed length, never a link,
+  each line naming krion64 and the day of its data. `in` and `rec` are left
+  out (17 and 10 of 814 records).
 - **"Maybe updated" in the wizard's mod selection** (GUI-AUDIT item 50,
   ADR-0044): a mod whose lcc-docs date is after the day this tool fetched
   your copy is marked "(maybe updated)", with a filter and, in its details,

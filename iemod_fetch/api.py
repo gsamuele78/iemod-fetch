@@ -662,6 +662,10 @@ def mod_choices(game: str | None = None, target: str | None = None,
     releases = releases or cached.releases
     mods = list_mods(manifest=manifest, catalogues=catalogues, mod_db=mod_db,
                      releases=releases, weidu_logs=weidu_logs)
+    # the day of krion64's data, said beside what it says (item 51): from the
+    # cache's record of what it fetched, when the data is the cache's
+    krion_date = (_source_day(data_dir or datasync.default_data_dir(), "krion64")
+                  if releases == cached.releases else None)
     if target and os.path.isdir(target):
         # the day each copy under `target` was fetched: lcc-docs' newer date
         # marks it "maybe updated" (ADR-0044); a copy put there by hand has none
@@ -679,7 +683,9 @@ def mod_choices(game: str | None = None, target: str | None = None,
             continue
         entry = mod.as_dict()
         # the wizard's only, not the CLI's mods-v1 document (ADR-0044)
-        entry.update(page=mod.page, fetched=mod.fetched, maybe_updated=mod.maybe_updated)
+        entry.update(page=mod.page, fetched=mod.fetched, maybe_updated=mod.maybe_updated,
+                     release=mod.release, krion_notes=[list(n) for n in mod.notes],
+                     krion_date=krion_date)
         entry["tp2s"] = []
         for tp2 in tp2s.get(choices.folder_key(mod.tp2), []):
             described = tp2.as_dict()
@@ -689,6 +695,13 @@ def mod_choices(game: str | None = None, target: str | None = None,
             entry["tp2s"].append(described)
         out.append(entry)
     return out
+
+
+def _source_day(data_dir: str, name: str) -> str | None:
+    """The day of the commit the cache holds of source `name`, or None."""
+    entry = datasync.load_manifest(data_dir).get(name)
+    day = str(entry.get("date") or "")[:10] if isinstance(entry, dict) else ""
+    return day or None
 
 
 def _fetch_days(target: str) -> dict[str, str]:
