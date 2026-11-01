@@ -11,10 +11,10 @@ Tre cose da sapere prima:
   GOG Galaxy o Heroic aggiornano: un aggiornamento o una "verifica dei file"
   annullerebbe l'installazione senza dirlo. La procedura guidata fa anche un
   backup, ma una copia pulita resta il punto da cui ricominciare.
-- **Quello che non è ancora misurato è scritto come tale.** I nomi dei
-  pacchetti per Fedora/Bazzite e Arch/CachyOS sono quelli attesi: la CI della
-  PR #118 li misura sui container di ogni distribuzione e questa guida verrà
-  aggiornata con l'elenco esatto.
+- **Quello che non è ancora misurato è scritto come tale.** Le librerie di
+  sistema di Qt per ogni distribuzione sono misurate dalla CI (PR #118) sui
+  container di Debian, Ubuntu, Fedora e Arch; quello che resta da misurare è
+  indicato al suo posto.
 - **Limite noto:** mod_installer 16.0.0 mostra solo le domande che contengono
   certe parole ("enter", "choose", "do you want"...). Una domanda senza queste
   parole ferma WeiDU fino al timeout di 3 ore; il watchdog dopo 10 minuti lo
@@ -119,66 +119,94 @@ La procedura guidata è uno zip che contiene già Python e mod_installer. Al
 sistema servono solo: le librerie grafiche di Qt per aprire la finestra, e gli
 strumenti per aprire archivi RAR e 7z (circa metà delle mod li usa).
 
+Gli elenchi qui sotto sono **misurati** (PR #118, run 41289255763) sui
+container puliti di ogni distribuzione: dopo questi pacchetti `ldd` trova
+tutte le librerie di Qt e `--check` passa. Sono il caso peggiore: un desktop
+installato ne ha già la maggior parte, e `apt`/`dnf`/`pacman` salteranno quelli
+presenti. Prima riga: avvio senza finestra; righe `xcb`: la finestra su X11 o
+XWayland; `wayland-cursor`: la finestra su Wayland nativo.
+
 ### Debian trixie
 
 ```bash
 sudo apt update
 sudo apt install unzip libarchive-tools unar \
-  libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-util1 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-xkb1 libxkbcommon-x11-0
+  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
+  libglib2.0-0t64 libxkbcommon0 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+  libxkbcommon-x11-0 libwayland-cursor0
 ```
 
 ### Ubuntu 24.04 LTS e successive
 
-Stessi pacchetti di Debian:
+Identico a Debian (misurato su 24.04 e 26.04):
 
 ```bash
 sudo apt update
 sudo apt install unzip libarchive-tools unar \
-  libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-util1 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-xkb1 libxkbcommon-x11-0
+  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
+  libglib2.0-0t64 libxkbcommon0 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+  libxkbcommon-x11-0 libwayland-cursor0
 ```
 
-La prima riga (librerie `libgl1`...`libdbus-1-3`) basta per i test senza
-finestra; la seconda (xcb) serve per aprire la finestra vera su X11 o XWayland
-(misurato con `ldd` sul bundle, Ubuntu 24.04).
+(Su Ubuntu 22.04 o Debian 12, non misurati, `libglib2.0-0t64` si chiama
+`libglib2.0-0`.)
 
 ### Bazzite (Fedora Atomic)
 
 Il sistema di base non si modifica (è immutabile). La strada pulita è un
 contenitore **Distrobox**, già presente in Bazzite: condivide la tua cartella
-home, quindi vede i giochi e le copie.
+home, quindi vede i giochi e le copie. Con un'immagine Ubuntu:
 
 ```bash
 distrobox create --name iemod --image ubuntu:24.04
 distrobox enter iemod
-# dentro il contenitore, i comandi di Ubuntu qui sopra:
-sudo apt update && sudo apt install unzip libarchive-tools unar libgl1 libegl1 \
-  libxkbcommon0 libfontconfig1 libdbus-1-3 libxcb-cursor0 libxcb-icccm4 \
-  libxcb-util1 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 \
-  libxkbcommon-x11-0
+# dentro il contenitore:
+sudo apt update
+sudo apt install unzip libarchive-tools unar \
+  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
+  libglib2.0-0t64 libxkbcommon0 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+  libxkbcommon-x11-0 libwayland-cursor0
+```
+
+oppure, con un'immagine Fedora (la stessa base di Bazzite):
+
+```bash
+distrobox create --name iemod --image fedora:latest
+distrobox enter iemod
+sudo dnf install unzip bsdtar unar \
+  libglvnd-egl libglvnd-glx libX11 dbus-libs fontconfig freetype libxkbcommon \
+  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+  xcb-util-renderutil xcb-util libxkbcommon-x11 libwayland-cursor
 ```
 
 Tutti i passi da qui in poi si fanno **dentro** `distrobox enter iemod`. La
 finestra della procedura guidata appare sul tuo desktop normalmente.
 
-(In alternativa, senza contenitore: lo zip spesso parte anche così, perché il
-desktop di Bazzite ha già quasi tutte le librerie di Qt. Se `--check` al passo
-5 si lamenta di una libreria, usa il contenitore.)
+(Senza contenitore lo zip spesso parte lo stesso, perché il desktop di Bazzite
+ha già quasi tutte queste librerie. Se `--check` al passo 5 si lamenta, usa il
+contenitore.)
 
 ### CachyOS (Arch)
 
 ```bash
 sudo pacman -S --needed unzip libarchive unarchiver \
-  libglvnd libxkbcommon fontconfig dbus \
-  xcb-util-cursor xcb-util-wm xcb-util xcb-util-image xcb-util-keysyms \
-  xcb-util-renderutil libxkbcommon-x11
+  libglvnd libx11 fontconfig freetype2 libxkbcommon \
+  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+  xcb-util-renderutil xcb-util libxkbcommon-x11
 ```
 
-(`unarchiver` fornisce `unar`; `libarchive` fornisce `bsdtar`. Nomi attesi, da
-confermare con la misura della PR #118.)
+(`unarchiver` fornisce `unar`, `libarchive` fornisce `bsdtar`. Su Arch, dbus,
+glib e Wayland ci sono già nell'immagine di base. Le librerie di Qt sono
+misurate; i nomi di `unar` e `bsdtar` per Fedora e Arch no.)
+
+Non misurato: una finestra davvero disegnata su un display reale. La
+completezza di `ldd` è la misura di riferimento.
 
 ---
 
