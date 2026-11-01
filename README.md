@@ -35,8 +35,14 @@ The standard library at runtime, plus two libraries that earn their place
 of the community data at a time; ADR-0043), carried inside the one file -
 nothing to install but Python 3.14.
 
-**Current release: 4.0.1** - the wizard's window no longer freezes on
-Windows when a download starts (ADR-0048). 4.0.0 brought one Python version,
+**Current release: 4.1.0** - the install learns what it will meet before it
+starts: the questions the mods will ask, put to you in one window and answered
+by question when they come (ADR-0049); the game closed (ADR-0051); room on
+the drives and WeiDU's version (ADR-0055); EET's Documents-path fault; then
+what each component came to and how to start the game (ADR-0053, ADR-0054),
+and a watchdog that warns, never stops. A mod no source can download is
+supplied by hand (ADR-0052). 4.0.1 stopped the wizard's window freezing on
+Windows (ADR-0048). 4.0.0 brought one Python version,
 3.14, and the wizard that
 installs (milestones M5, M5b, M6, and M4 but for its item 24, a real
 end-to-end job on Windows). The wizard now goes from game and
@@ -51,7 +57,7 @@ for Linux (Debian trixie, the minimum, and Ubuntu 24.04), Windows and macOS.
 system's tools (ADR-0047) - see *Upgrading from 3.x* in the changelog. Next
 in the plan: M4's item 24, defects to fix (M7) and what the other projects do that this
 tool does not (M8, which since 2026-10-31 also holds ten ideas read in Chriz
-Easy BG, an MIT installer for one curated EET collection: items 62-71, of which 62 was measured and withdrawn)
+Easy BG, an MIT installer for one curated EET collection: items 62-71, of which 62 was measured and withdrawn and 63, 65-71 shipped in 4.1.0; 64 is left)
 ([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
