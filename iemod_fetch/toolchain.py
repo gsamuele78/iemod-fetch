@@ -33,6 +33,7 @@ from dataclasses import dataclass
 
 from . import atomic
 from .archives import safe_extract
+from . import childenv
 from .childenv import child_env
 from .errors import ConfigError
 
@@ -114,8 +115,8 @@ def version_of(tool: str, path: str, timeout: float = 15.0) -> str | None:
         if tool == MOD_INSTALLER:
             extra = {"APPDATA" if sys.platform == "win32" else "XDG_CONFIG_HOME": scratch}
         try:
-            done = subprocess.run([path, "--version"], capture_output=True,  # noqa: S603
-                                  timeout=timeout, env=child_env(extra or None), check=False)
+            done = childenv.run([path, "--version"], capture_output=True,  # noqa: S603
+                                 timeout=timeout, env=child_env(extra or None), check=False)
         except (OSError, subprocess.SubprocessError):
             return None
     match = _VERSION[tool].search(done.stdout.decode("utf-8", "replace")

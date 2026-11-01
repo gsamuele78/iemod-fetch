@@ -34,6 +34,8 @@ from .auth import resolve_credential
 from . import backup
 from .available import AvailableMod, available_mods, mods_document
 from .catalogues import CatalogueSet
+# around a program the wizard itself starts (a browser): ADR-0058
+from .childenv import spawning as starting_program  # noqa: F401
 from . import datasync
 from .conflicts import ConflictReport, build_conflict_report, render_conflict_report
 from .constraints import ModConstraints, load_constraints, tp2_rules

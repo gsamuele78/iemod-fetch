@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from . import gamelock, mi_parser, resume
 from . import results as verdicts
 from .atomic import write_text
+from . import childenv
 from .childenv import child_env
 from .errors import ConfigError
 from .prompts import (EET_FOLDER_QUESTION, Answers, Event, Key, OutputReader,
@@ -197,11 +198,11 @@ def version_of(program: str, config_dir: str) -> str:
     it reads its arguments (src/main.rs): it is pointed at `config_dir`, the
     install's own folder, never the player's (review of #120)."""
     try:
-        out = subprocess.run([program, "--version"], capture_output=True,  # noqa: S603
-                             text=True, encoding="utf-8", errors="replace", timeout=20,
-                             check=False, stdin=subprocess.DEVNULL,
-                             env={**mod_installer_env(),
-                                  **mi_parser.environment(config_dir)}).stdout
+        out = childenv.run([program, "--version"], capture_output=True,  # noqa: S603
+                           text=True, encoding="utf-8", errors="replace", timeout=20,
+                           check=False, stdin=subprocess.DEVNULL,
+                           env={**mod_installer_env(),
+                                **mi_parser.environment(config_dir)}).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
     words = out.split()
@@ -372,7 +373,7 @@ class InstallRun:
             except OSError:
                 self.parser_phrases = []   # its defaults: as without the config
         try:
-            process = subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
+            process = childenv.popen(  # the player's own mod_installer
                 self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, env=env,
                 text=True, encoding="utf-8", errors="replace", bufsize=1, **group)

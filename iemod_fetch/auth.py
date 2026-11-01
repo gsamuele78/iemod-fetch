@@ -18,6 +18,7 @@ import sys
 import time
 from dataclasses import dataclass
 
+from . import childenv
 from .childenv import child_env
 from .errors import ConfigError, ModFetchError
 
@@ -52,7 +53,7 @@ class Credential:
 
 def _from_gh_cli() -> str | None:
     try:
-        out = subprocess.run(["gh", "auth", "token"], stdout=subprocess.PIPE,
+        out = childenv.run(["gh", "auth", "token"], stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, timeout=15, check=False,
                              env=child_env())
     except (OSError, subprocess.TimeoutExpired):
@@ -82,7 +83,7 @@ def _from_git_credential(host: str = "github.com") -> str | None:
                "credential", "fill"]
     env = child_env({"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"})
     try:
-        proc = subprocess.run(command,
+        proc = childenv.run(command,
                               input=f"protocol=https\nhost={host}\n\n".encode(),
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                               timeout=15, check=False, env=env)

@@ -67,7 +67,9 @@ def _choose_file(parent: QWidget, mod: str) -> str:
 
 
 def _open_url(url: str) -> bool:
-    return bool(QDesktopServices.openUrl(QUrl(url)))
+    # the browser Windows starts must not inherit the bundle's DLL folder
+    with api.starting_program():
+        return bool(QDesktopServices.openUrl(QUrl(url)))
 
 
 def _size(count: int) -> str:

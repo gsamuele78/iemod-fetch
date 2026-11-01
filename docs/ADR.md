@@ -4237,3 +4237,118 @@ environment first, and asks the known-folder API only when it is unset.
   questionnaire still counts it. Not covered. For UTF-8 text the ASCII
   piece is matched; a question with no ASCII piece of 12 letters gets
   none.
+
+---
+
+## ADR-0058 — A bundle's children do not see its libraries, and its libraries ship with their licences
+
+**Status:** accepted (2026-11-01)
+
+### Context
+
+GUI-AUDIT item 61 left two gaps in the bundles (reviews of #70).
+
+1. **The DLL folder on Windows.** PyInstaller's bootloader calls
+   `SetDllDirectoryW` with the bundle's `_internal`. A process the bundle
+   creates (git, gh, 7-Zip, unrar, mod_installer, the browser) inherits
+   that DLL directory and can load the bundle's OpenSSL or libffi instead of
+   its own. `childenv` already did the same job on Linux and macOS, where
+   the bootloader's change is in the environment (`LD_LIBRARY_PATH`). On
+   Windows it is not in the environment, and it belongs to the whole
+   process, not one thread.
+2. **Licence texts.** The texts of the libraries the bundles carry were
+   missing. They were read from the published 4.1.0 zips:
+   - the Linux command line carries 11 libraries from the Ubuntu 24.04
+     build system: libssl and libcrypto (Apache-2.0), libffi, libbz2,
+     liblzma, libsqlite3, libz, libzstd, libuuid, libtinfo, and
+     **libreadline (GPL-3.0)**;
+   - the Linux wizard carries about 90, among them GTK 3 and its stack
+     (pulled in by Qt's gtk3 platform theme), krb5, libgcrypt (LGPL),
+     libsystemd and readline;
+   - neither Linux zip had a text for any of them. The wizard did not even
+     have Python's licence;
+   - on Windows, python.org's LICENSE.txt (676 lines) already carries the
+     third-party texts (bzip2, libffi, the Apache License, zstd...), and
+     the command line shipped it; the wizard did not.
+
+### Decision
+
+1. **`childenv.popen` and `childenv.run`** create every child under one
+   process-wide lock:
+   - on Windows, in a bundle, the DLL directory is cleared just while the
+     child is created, then put back at once;
+   - the wizard's own loading (Qt's plugins, Python's extension modules)
+     sees the DLL directory as before. Clearing it for good would have
+     changed that loading, which was not measured;
+   - outside a Windows bundle, `run` is `subprocess.run` itself;
+   - every call site uses them: auth, archives, toolchain, and
+     mod_installer's start in install_run. The wizard's "open the page"
+     runs under `api.starting_program()`.
+2. **Measured in the real bundle.** On Windows, cli_bundle.py builds a
+   probe with PyInstaller and runs it. A child started through childenv
+   must see no DLL directory, and the bundle must keep its own; otherwise
+   the build stops. This runs in release.yml's bundle jobs, which also run
+   (publishing nothing) on every pull request that touches `packaging/**`,
+   as #121 did. On that run (job 124812676391) the measurement was:
+   - the parent's DLL directory: `...\probe\_internal`;
+   - a plain child: the same `_internal`, so the child inherits it;
+   - a child started through childenv: an empty DLL directory;
+   - the parent afterwards: its own `_internal` again.
+
+   A unit test on Windows CI measures the inheritance itself, both ways.
+3. **readline is excluded from both bundles.** It is GPL-3.0 and serves an
+   interactive prompt neither program has; without the module, the library
+   is not collected. Each bundle's check stops a build that still carries
+   `libreadline*` or `libgdbm*`.
+4. **Every library taken from the build system ships with its licence.**
+   `add_system_licences`, used by both bundles:
+   - lists the shared libraries outside Python's own and outside the
+     wheels' folders. PySide6's Qt and ICU are covered by NOTICE-Qt.txt,
+     including the links to them;
+   - asks dpkg which package installed each one, and copies that package's
+     `/usr/share/doc/<package>/copyright` into `licenses/system/`;
+   - writes NOTICE-system-libraries.txt with each library, its package's
+     exact version, and where that version's source is (Launchpad for
+     Ubuntu, sources.debian.org for Debian). That source address is what
+     the GPL and LGPL ask for;
+   - copies the common licences those copyright files name
+     (`/usr/share/common-licenses/<X>`) into
+     `licenses/system/common-licenses/`. Debian's copyright files point at
+     them without their text (review of #121): Apache-2.0, GPL-2,
+     LGPL-2.1, MPL-1.1 and 9 more in the wizard's local build;
+   - stops the build when a library has no owning package, no copyright
+     file or a named licence with no text, and when a Linux build finds
+     libraries but has no dpkg to ask. It does not ship without a
+     licence;
+   - finds each library's package through the path the loader resolves it
+     to (`ldconfig -p`, where PyInstaller took it), then by name.
+5. **Both bundles carry Python's LICENSE.txt**, the wizard's too.
+
+### Consequences
+
+- The libraries, versions and copyright files are the **build system's**:
+  ubuntu-24.04, the release runner. They are not the player's
+  distribution's. What a player's system must add for the bundle to
+  start is ADR-0056's measurement; this record is what the zip itself
+  carries.
+- Measured locally (Ubuntu 24.04, a standalone Python 3.14): the wizard's
+  bundle carries copyright files for 70 packages and no readline. The
+  dpkg strictness caught Qt's and ICU's links on its first run; they are
+  now recognised as the wheel's.
+- The macOS zip has no dpkg. Python's LICENSE.txt is its record, as
+  before; what that build carries from macOS itself was not measured.
+- GTK 3 still ships in the Linux wizard, now with its licences. Leaving
+  Qt's gtk3 platform theme out would drop it (tens of MB), but that
+  changes how the wizard looks on GNOME, so it is the owner's call and not
+  done here.
+- The lock is held only while a child is created. For a program started
+  with Popen that is milliseconds. For the browser it is as long as
+  `QDesktopServices.openUrl` takes, which goes through ShellExecute:
+  hundreds of milliseconds, possibly seconds. During that time another
+  thread waits to start its child. A Qt plugin the main thread loads in
+  that window would see no DLL directory; this has not been observed.
+- The LGPL and GPL source is offered as an address: Launchpad or
+  sources.debian.org, at the exact version shipped. It is not attached to
+  the release as mod_installer's is, because for about 70 packages that
+  would add hundreds of MB to every release. Attaching it is the owner's
+  call if a distribution host is not enough.

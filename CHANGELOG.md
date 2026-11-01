@@ -38,6 +38,17 @@ Python API, which is internal.
   before an install) no longer creates or resets the player's own
   mod_installer `parser.toml`: mod_installer writes it before it reads its
   arguments, so it is pointed at a scratch folder (ADR-0057).
+- **A program a Windows bundle starts no longer sees the bundle's DLL
+  folder** (GUI-AUDIT item 61, ADR-0058): git, gh, 7-Zip, unrar,
+  mod_installer and the browser are started with PyInstaller's DLL
+  directory cleared, under one lock, and it is put back at once; measured
+  in a real bundle on Windows at build time.
+- **Every library a Linux bundle carries ships with its licence**: the
+  package's copyright file and the address of that exact version's source,
+  in `licenses/system/` and NOTICE-system-libraries.txt (the 4.1.0 zips had
+  none: 11 libraries in the command line, about 90 in the wizard); the
+  wizard carries Python's licence too. GNU Readline (GPL-3.0), which
+  neither program uses, is left out of both.
 
 ### Documentation
 - `docs/GUIDA-TEST-REALE.md` (in Italian): a real install on Debian trixie,

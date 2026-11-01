@@ -45,7 +45,9 @@ RUNTIME = tuple(RUNTIME_PINS)
 FIXED = (1980, 1, 1, 0, 0, 0)                 # every entry's date: same folder, same zip
 ENTRY = "import sys\nfrom iemod_fetch_gui.app import main\n\nsys.exit(main())\n"
 # Qt modules the wizard never uses: kept out to keep the download small.
-EXCLUDE = ("tkinter", "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick",
+# readline: GNU Readline (GPL-3.0) for an interactive prompt neither program
+# has; left out, so is the library (GUI-AUDIT item 61).
+EXCLUDE = ("tkinter", "readline", "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick",
            "PySide6.QtWebEngineCore", "PySide6.QtMultimedia", "PySide6.Qt3DCore")
 
 
@@ -71,7 +73,9 @@ Source code:
            https://code.qt.io/cgit/pyside/pyside-setup.git/
 
 The Python {versions['python']} runtime is under the PSF License Agreement
-(https://docs.python.org/3/license.html). The program was built with
+(licenses/Python-LICENSE.txt, https://docs.python.org/3/license.html). The
+libraries this folder takes from the system it was built on, if any, are in
+NOTICE-system-libraries.txt with their licences. The program was built with
 PyInstaller {versions['pyinstaller']}, whose bootloader exception allows this
 distribution (https://pyinstaller.org/en/stable/license.html).
 
@@ -136,8 +140,166 @@ def add_licences(folder: str) -> None:
     for name in sorted(os.listdir(os.path.join(ROOT, "packaging", "licenses"))):
         shutil.copy(os.path.join(ROOT, "packaging", "licenses", name), licences)
     add_runtime_licences(target)
+    shutil.copy(python_licence(), os.path.join(licences, "Python-LICENSE.txt"))
+    add_system_licences(folder, target)
     with open(os.path.join(target, "NOTICE-Qt.txt"), "w", encoding="utf-8") as fh:
         fh.write(notice(versions()))
+
+
+def python_licence() -> str:
+    """The interpreter's own LICENSE.txt: beside the standard library on
+    POSIX, in the installation's root on Windows (where it also carries the
+    texts of the libraries python.org's build links: OpenSSL, libffi, bzip2...)."""
+    import sysconfig
+    for place in (sysconfig.get_paths()["stdlib"], sys.base_prefix):
+        path = os.path.join(place, "LICENSE.txt")
+        if os.path.isfile(path):
+            return path
+    raise SystemExit("build aborted: this Python has no LICENSE.txt to ship with it")
+
+
+# "/usr/share/common-licenses/GPL-2." in a Debian copyright file
+_COMMON = re.compile(r"/usr/share/common-licenses/([\w.+-]+)")
+# A shared library's file name: libssl.so.3, libz.so.1, libfoo.so
+_SHARED = re.compile(r"\.so(\.\d+)*$")
+
+
+def system_libraries(folder: str) -> list[str]:
+    """The shared libraries PyInstaller took from the build system into the
+    folder: not Python's own (libpython, its extension modules), not what a
+    wheel brought (PySide6's Qt, shiboken6: NOTICE-Qt.txt says those)."""
+    wheels = ("PySide6", "shiboken6")
+    found = set()
+    for here, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in wheels]
+        for name in files:
+            # a link into a wheel's folder (_internal/libQt6Core.so.6) is the wheel's
+            real = os.path.relpath(os.path.realpath(os.path.join(here, name)),
+                                   os.path.realpath(folder)).replace("\\", "/").split("/")
+            if (_SHARED.search(name) and ".cpython-" not in name and ".abi3." not in name
+                    and not name.startswith("libpython3") and not set(real) & set(wheels)):
+                found.add(name)
+    return sorted(found)
+
+
+def debian_package(name: str) -> tuple[str, str, str, str] | None:
+    """(package, version, source package, source version) that installed the
+    library `name` on this system, as dpkg says; None when none did."""
+    owner = None
+    # the path the loader resolves the name to (where PyInstaller took it),
+    # then any path: a basename alone can match a second copy elsewhere
+    cache = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True, check=False)
+    for line in cache.stdout.splitlines():
+        if line.strip().startswith(name + " ") and "=>" in line:
+            path = os.path.realpath(line.split("=>", 1)[1].strip())
+            found = subprocess.run(["dpkg-query", "-S", path], capture_output=True,
+                                   text=True, check=False)
+            if found.returncode == 0:
+                owner = found
+                break
+    if owner is None:
+        owner = subprocess.run(["dpkg-query", "-S", f"*/{name}"], capture_output=True,
+                               text=True, check=False)
+    if owner.returncode != 0:
+        return None
+    package = owner.stdout.splitlines()[0].split(": ", 1)[0].split(", ")[0]
+    fields = subprocess.run(["dpkg-query", "-W", "-f",
+                             "${Package}\t${Version}\t${source:Package}\t${source:Version}",
+                             package], capture_output=True, text=True, check=False)
+    parts = fields.stdout.split("\t")
+    return (parts[0], parts[1], parts[2], parts[3]) if fields.returncode == 0 and \
+        len(parts) == 4 else None
+
+
+def source_link(distro: str, source: str, version: str) -> str:
+    if distro == "ubuntu":
+        return f"https://launchpad.net/ubuntu/+source/{source}/{version}"
+    if distro == "debian":
+        return f"https://sources.debian.org/src/{source}/{version}/"
+    return f"apt-get source {source}={version}"
+
+
+def _distro() -> str:
+    try:
+        with open("/etc/os-release", encoding="utf-8") as fh:
+            return dict(line.rstrip("\n").split("=", 1) for line in fh
+                        if "=" in line).get("ID", "").strip('"')
+    except OSError:
+        return ""
+
+
+def add_system_licences(folder: str, target: str, package_of=debian_package,
+                        distro: str | None = None,
+                        common: str = "/usr/share/common-licenses",
+                        docs: str = "/usr/share/doc") -> list[str]:
+    """For each library the build system gave the folder (GUI-AUDIT item 61):
+    its package's copyright file under licenses/system/, and a line in
+    NOTICE-system-libraries.txt with the package, its version and where its
+    source is. Measured on Debian and Ubuntu (dpkg); a library no package owns
+    stops the build - it would ship without its licence. Elsewhere (Windows,
+    macOS: python.org's builds) Python's LICENSE.txt is the record."""
+    libraries = system_libraries(folder)
+    if not libraries:
+        return []
+    if package_of is debian_package and not shutil.which("dpkg-query"):
+        if platform.system() != "Linux":
+            return []                 # Windows, macOS: Python's LICENSE.txt is the record
+        raise SystemExit("build aborted: this Linux system has no dpkg-query to say whose "
+                         "these bundled libraries are, so no licence would ship with them: "
+                         + ", ".join(libraries))
+    distro = _distro() if distro is None else distro
+    owned: dict[str, tuple[tuple[str, str, str, str], list[str]]] = {}
+    unowned = []
+    for name in libraries:
+        found = package_of(name)
+        if found is None:
+            unowned.append(name)
+        else:
+            owned.setdefault(found[0], (found, []))[1].append(name)
+    if unowned:
+        raise SystemExit("build aborted: no package says where these bundled libraries "
+                         "come from, so no licence ships with them: " + ", ".join(unowned))
+    system = os.path.join(target, "licenses", "system")
+    os.makedirs(system, exist_ok=True)
+    lines = []
+    referred: set[str] = set()
+    for package in sorted(owned):
+        (_, version, source, source_version), names = owned[package]
+        copyright_file = os.path.join(docs, package, "copyright")
+        if os.path.isfile(copyright_file):
+            shutil.copy(copyright_file, os.path.join(system, package + ".copyright"))
+            text = f"licenses/system/{package}.copyright"
+            with open(copyright_file, encoding="utf-8", errors="replace") as fh:
+                referred |= {name.rstrip(".") for name in _COMMON.findall(fh.read())}
+        else:
+            raise SystemExit(f"build aborted: {package} ships no copyright file "
+                             f"({copyright_file}) for {', '.join(names)}")
+        lines.append(f"{', '.join(names)}\n  {package} {version} - {text}\n"
+                     f"  source: {source_link(distro, source, source_version)}\n")
+    # Debian's copyright files name the common licences by path, without
+    # their text (review of #121): the texts they name ship too
+    if referred:
+        texts = os.path.join(system, "common-licenses")
+        os.makedirs(texts, exist_ok=True)
+        missing = [name for name in sorted(referred)
+                   if not os.path.isfile(os.path.join(common, name))]
+        if missing:
+            raise SystemExit("build aborted: a copyright file names a licence this system "
+                             f"has no text of ({common}): " + ", ".join(missing))
+        for name in sorted(referred):
+            shutil.copyfile(os.path.realpath(os.path.join(common, name)),
+                            os.path.join(texts, name))
+    with open(os.path.join(target, "NOTICE-system-libraries.txt"), "w",
+              encoding="utf-8") as fh:
+        fh.write(f"""Libraries this folder carries from the system it was built on ({distro or "unknown"}),
+unmodified, each a separate file under _internal that you may replace with your
+own build. Each one's licence is its package's copyright file; the common
+licences those files name (/usr/share/common-licenses/...) are in
+licenses/system/common-licenses/. The LGPL and GPL ones are offered in source at
+the address given, the exact version shipped.
+
+""" + "\n".join(lines))
+    return sorted(owned)
 
 
 def add_runtime_licences(target: str) -> None:
@@ -201,8 +363,21 @@ def sign(folder: str) -> None:
         subprocess.run(["codesign", "--verify", "--deep", "--strict", folder], check=True)
 
 
+# GPL-3.0 libraries neither program uses: a build that carries one stops
+_UNWANTED = re.compile(r"^lib(readline|gdbm)\b")
+
+
+def check_unwanted(folder: str) -> None:
+    found = sorted(name for _here, _dirs, files in os.walk(folder) for name in files
+                   if _UNWANTED.match(name))
+    if found:
+        raise SystemExit("build aborted: the bundle carries GPL-3.0 libraries it does not "
+                         "use: " + ", ".join(found))
+
+
 def check(folder: str, work: str) -> None:
     """Start the built program once, offscreen, as a player would."""
+    check_unwanted(folder)
     project = os.path.join(work, "project")
     os.makedirs(project, exist_ok=True)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
