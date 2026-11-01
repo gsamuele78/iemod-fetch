@@ -184,6 +184,33 @@ signed by a publisher: Windows SmartScreen warns, and macOS refuses it until
 you allow it (System Settings, Privacy & Security, Open Anyway). `iemod-fetch-gui --check` opens the window and closes it
 at once - the release's own test that a build starts.
 
+On Linux the zip uses the system's graphics, font and window libraries
+(ADR-0056). A desktop install usually has them; a minimal one may not, and
+the wizard then stops with `libGL.so.1: cannot open shared object file`.
+Measured in fresh containers on 4.0.1, everything it may need:
+
+```bash
+# Debian 13, Ubuntu 24.04 and later
+sudo apt install libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
+  libglib2.0-0t64 libxkbcommon0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+  libxcb-keysyms1 libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 \
+  libxcb-xkb1 libxkbcommon-x11-0 libwayland-cursor0
+# Fedora (44)
+sudo dnf install libglvnd-egl libglvnd-glx libX11 dbus-libs fontconfig freetype \
+  libxkbcommon xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+  xcb-util-renderutil xcb-util libxkbcommon-x11 libwayland-cursor
+# Arch
+sudo pacman -S libglvnd libx11 fontconfig freetype2 libxkbcommon xcb-util-cursor \
+  xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util \
+  libxkbcommon-x11
+```
+
+The `libxcb-*`/`xcb-util-*` packages are what opens the window on an X11 or
+XWayland desktop (Qt 6.5 and later need `libxcb-cursor`); the rest is what
+the wizard needs to start at all. The command-line zip needs none of them.
+The `bundles-distros` workflow measures each release again on these
+distributions.
+
 **Testing on a real machine**: [`docs/GUIDA-TEST-REALE.md`](docs/GUIDA-TEST-REALE.md)
 (in Italian) walks through a real install on Debian trixie, Ubuntu 24.04+,
 Bazzite and CachyOS with the games from GOG or Steam - working copies, the

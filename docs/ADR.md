@@ -4028,6 +4028,72 @@ warnings in words. They never refuse: the player decides.
 - How many mods test `WEIDU_VER` was not measured (no unpacked corpus in
   this session). The check reads WeiDU's own variable, as mods use it.
 
+---
+
+## ADR-0056 — The Linux bundles are measured on the distributions players run, after each release
+
+**Status:** accepted (2026-11-01)
+
+### Context
+
+The wizard's and the command line's Linux zips are built on ubuntu-24.04,
+held to Debian trixie's glibc, and started once inside debian:trixie
+(ADR-0043 amendment). Players also run Fedora Atomic (Bazzite), Arch
+(CachyOS) and newer Ubuntus.
+
+The CI and release workflows install five system libraries for Qt
+(`libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3`) on an
+ubuntu-24.04 runner, which has the rest already; the README named none.
+Those cover the offscreen start that CI checks. Read with `ldd` on the 4.0 bundle on an Ubuntu 24.04 host,
+Qt's xcb plugin (the one an X11 or XWayland desktop uses) needed eight
+libraries that list leaves out: `libxcb-cursor`, `-icccm`, `-util`,
+`-image`, `-keysyms`, `-render-util`, `-xkb` and `libxkbcommon-x11`. No
+check had measured what a desktop start needs, or what each distribution
+calls it.
+
+### Decision
+
+1. **`tools/distro_libs.sh`** runs as root in a fresh container of a
+   distribution:
+   - it reads with `ldd` the libraries the bundle's Qt links to and the
+     system lacks, for a headless start (offscreen), an X11/XWayland
+     desktop (xcb) and a native Wayland session;
+   - it asks the distribution's own package index which package ships each
+     one (`apt-file`, `dnf repoquery --whatprovides`, `pacman -F`), and
+     installs them;
+   - it starts the wizard offscreen (`--check`), before and after;
+   - it runs the command line's `--version` and `--help`.
+
+   Nothing comes from a hand-written list: the output names each missing
+   soname and the package that filled it.
+2. **`.github/workflows/bundles-distros.yml`** runs the script on a
+   published release's Linux zips. release.yml dispatches it for each tag
+   it publishes (its publish uses `github.token`, whose `release` event
+   starts no workflow); it also runs on a release published by hand, on a
+   pull request that changes it or the script (measuring the latest
+   release), and by hand for any tag. It runs in fedora:latest, archlinux:latest, ubuntu:24.04,
+   ubuntu:latest and debian:trixie. A job fails if the wizard does not
+   start offscreen once its packages are in, or if the command line does
+   not answer. A desktop (xcb) library still missing after its package is
+   a warning.
+3. **It is a workflow of its own, not a job of release.yml.** It measures
+   five systems whose images change under it, and a library one of them
+   renames must not hold a release back. release.yml keeps gating the
+   floor, Debian trixie, as before.
+
+### Consequences
+
+- The per-distribution package list in the README and docs/GUIDA-TEST-REALE.md
+  comes from a measurement of the published bundles, and is measured again
+  for every tag release.yml publishes.
+- What runs in a container is not a desktop. The xcb and Wayland sets are
+  measured by `ldd` (every library resolves) but not started: the first
+  real window on each distribution is the real-test guide's to confirm.
+- Images on Docker Hub and the ECR mirror limit anonymous pulls. A job that
+  cannot pull fails, named, and runs again by hand.
+
+---
+
 ## ADR-0058 — A bundle's children do not see its libraries, and its libraries ship with their licences
 
 **Status:** accepted (2026-11-01)
@@ -4097,6 +4163,11 @@ GUI-AUDIT item 61 left two gaps in the bundles (reviews of #70).
 
 ### Consequences
 
+- The libraries, versions and copyright files are the **build system's**:
+  ubuntu-24.04, the release runner. They are not the player's
+  distribution's. What a player's system must add for the bundle to
+  start is ADR-0056's measurement; this record is what the zip itself
+  carries.
 - Measured locally (Ubuntu 24.04, a standalone Python 3.14): the wizard's
   bundle carries copyright files for 70 packages and no readline. The
   dpkg strictness caught Qt's and ICU's links on its first run; they are
