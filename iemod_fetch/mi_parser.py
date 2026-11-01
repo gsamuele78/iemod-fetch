@@ -12,8 +12,9 @@ corpus can tell apart). Its parser config is a file it reads at start
 
 What this module does, read from that source:
 - the file is mod_installer's defaults plus, as choice phrases, the longest
-  literal piece of one line of each expected question it would not ask, as
-  WeiDU prints it (readln.Prompt.raw: its lines and spaces as they are);
+  literal piece (MIN_TEXT letters at least) of the last line that has one of
+  each expected question it would not ask, as WeiDU prints it
+  (readln.Prompt.raw: its lines and spaces as they are);
 - mod_installer checks each line on its own, ASCII-lowercased and trimmed,
   with `contains`: a phrase is one line's literal text, ASCII-lowercased;
 - a line with "installing" or "creating" is never a question, so no phrase
@@ -58,27 +59,33 @@ def _ascii_lower(text: str) -> str:
 _PIECES = re.compile(r"%[^%\s]+%|[^\x00-\x7f]+")
 
 
+def _letters(piece: str) -> int:
+    return sum(char.isalpha() for char in piece)
+
+
 def phrase(text: str) -> str | None:
     """The choice phrase that makes mod_installer ask this expected question,
     or None: when one of its lines is a question to it already, or no line
-    has a literal piece of MIN_TEXT characters (a line with a progress word
-    is never a question, so none is taken from it). `text` is the question
-    as WeiDU prints it (readln.Prompt.raw); mod_installer checks each line
-    on its own, and any line of the question starts collecting it, so the
-    longest piece of any line is taken - the least likely to be printed by
-    anything else. The piece is ASCII only, between the line's %variables%
-    and any other character: mod_installer drops a line that is not UTF-8,
-    and a mod's text may be in another charset."""
+    has a piece of MIN_TEXT letters. `text` is the question as WeiDU prints
+    it (readln.Prompt.raw); mod_installer checks each line on its own, and
+    any line starts it collecting the question. The phrase is the longest
+    piece of the **last** line that has one, so a heading or a rule line
+    ("*****", "-----") is taken only when nothing after it says more: a
+    phrase mod_installer meets in any other output makes that a question too
+    (review of #120). A line with a progress word gives none. A piece lies
+    between the line's %variables% and any non-ASCII character (an NBSP
+    before "?" in a UTF-8 text is not part of it)."""
     lines = [line for line in text.splitlines() if line.strip()]
     if any(prompts.mod_installer_asks(prompts._VARIABLE.sub(" ", line)) for line in lines):
         return None
-    pieces = [piece.strip() for line in lines
-              if not any(word in _ascii_lower(line) for word in IN_PROGRESS_WORDS)
-              for piece in _PIECES.split(line)]
-    best = max(pieces, key=len, default="")
-    if len(best) < prompts.MIN_TEXT:
-        return None
-    return _ascii_lower(best)
+    for line in reversed(lines):
+        if any(word in _ascii_lower(line) for word in IN_PROGRESS_WORDS):
+            continue
+        pieces = [piece.strip() for piece in _PIECES.split(line)]
+        best = max((p for p in pieces if _letters(p) >= prompts.MIN_TEXT), key=len, default="")
+        if best:
+            return _ascii_lower(best)
+    return None
 
 
 def asked(text: str, added: list[str] | None = None) -> bool:

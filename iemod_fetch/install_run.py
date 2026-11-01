@@ -189,15 +189,19 @@ MOD_INSTALLER_ENV = (
     "TICK", "TIMEOUT", "WEIDU_BINARY", "WEIDU_LOG_MODE")
 
 
-def version_of(program: str) -> str:
+def version_of(program: str, config_dir: str) -> str:
     """The version `program --version` says (mod_installer 16.0.0 prints
     "mod_installer 16.0.0"), "" when it says none: the parser config is
-    written only for the version whose defaults it carries (ADR-0057)."""
+    written only for the version whose defaults it carries (ADR-0057).
+    mod_installer loads, and on a mismatch rewrites, its parser config before
+    it reads its arguments (src/main.rs): it is pointed at `config_dir`, the
+    install's own folder, never the player's (review of #120)."""
     try:
         out = subprocess.run([program, "--version"], capture_output=True,  # noqa: S603
                              text=True, encoding="utf-8", errors="replace", timeout=20,
                              check=False, stdin=subprocess.DEVNULL,
-                             env=mod_installer_env()).stdout
+                             env={**mod_installer_env(),
+                                  **mi_parser.environment(config_dir)}).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
     words = out.split()
@@ -361,7 +365,7 @@ class InstallRun:
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         env = mod_installer_env()
         # only the mod_installer whose defaults the file carries uses it
-        if self.parser_dir and version_of(self.argv[0]) == mi_parser.VERSION:
+        if self.parser_dir and version_of(self.argv[0], self.parser_dir) == mi_parser.VERSION:
             try:
                 extra, self.parser_phrases = mi_parser.write(self.parser_dir, self._raw())
                 env.update(extra)

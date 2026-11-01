@@ -34,6 +34,10 @@ Python API, which is internal.
   with two spaces, is matched too). On 105 mods, the 11 of 37 known question
   texts that had none of mod_installer's words each get a phrase; checked
   with the real mod_installer 16.0.0 and WeiDU v251 on synthetic mods.
+- Asking mod_installer its version (`--version`, at the folder check and
+  before an install) no longer creates or resets the player's own
+  mod_installer `parser.toml`: mod_installer writes it before it reads its
+  arguments, so it is pointed at a scratch folder (ADR-0057).
 
 ### Documentation
 - `docs/GUIDA-TEST-REALE.md` (in Italian): a real install on Debian trixie,

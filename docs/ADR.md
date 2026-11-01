@@ -4143,18 +4143,27 @@ environment first, and asks the known-folder API only when it is unset.
    (`readln.Prompt.raw`: its lines and spaces as written; the `text` the
    questionnaire shows has its spaces collapsed, and a phrase taken from it
    matched no printed line when the question had two lines or two spaces -
-   review of #120, reproduced with the real binaries). It is the longest
-   literal piece of any one line, since any line starts mod_installer
-   collecting the question: between the line's `%variables%` and any
-   non-ASCII character (mod_installer drops a line that is not UTF-8, and a
-   mod's text may be in another charset), ASCII-lowercased as Rust's
-   `to_ascii_lowercase` does, at least `MIN_TEXT` (12) characters. A line
-   holding a progress word gives no phrase.
+   review of #120, reproduced with the real binaries). Any line starts
+   mod_installer collecting the question (`src/parser.rs`: the lines after
+   it are appended until the output is quiet), so the phrase is the longest
+   piece of the **last** line that has a piece of at least `MIN_TEXT` (12)
+   letters. A rule or heading line ("*****", "=====") is never chosen while
+   a later line says more: a phrase that mod_installer meets in other output
+   makes that output a question too (second review of #120). A piece lies
+   between the line's `%variables%` and any non-ASCII character (an NBSP
+   before "?" in a UTF-8 text is left out), ASCII-lowercased as Rust's
+   `to_ascii_lowercase` does. A line holding a progress word gives no
+   phrase.
 3. **Version.** The file carries `mod_installer_version = "16.0.0"`, the
    version the bundle carries. A different mod_installer would write its own
    defaults over it (measured), so `install_run.version_of` asks the
    program first (`--version`) and writes nothing for another version: the
-   install then counts no phrase as added.
+   install then counts no phrase as added. mod_installer loads, and on a
+   mismatch rewrites, its parser config **before** it reads its arguments
+   (`src/main.rs`, measured): `--version` itself is run against the
+   install's folder (`install_run.version_of`) or a scratch folder
+   (`toolchain.version_of`, which `toolchain.find` and readiness use and
+   which, before this, touched the player's own file).
 4. **What counts as asked.** `mi_parser.asked` replaces the whole-text
    check in two places, the questionnaire's `by_question` (api) and the
    watchdog's "a question mod_installer does not put to anyone". A question
@@ -4187,9 +4196,13 @@ environment first, and asks the known-folder API only when it is unset.
   - DLC Merger's "Try again (y/n)?" (the phrase is the piece before
     `%dlc_name%`).
 
-  Each of the 11 gets a phrase from one of its printed lines. That each one
-  then stops the real mod (SCS, EET, DLC Merger) is **not** measured: the
-  real test runs synthetic mods. ADR-0049 counted 42 distinct texts; this
+  Each of the 11 gets a phrase from one of its printed lines: the 8 SFO
+  lines and the 9th ("... press a key to continue") whole; for EET's two
+  menus, the last option line with enough letters ("1. no (skips usually
+  unneeded changes)", "2. yes (add evaluate_buffer everywhere ...)"); for
+  DLC Merger, `could not find dlc "`. That each one then stops the real mod
+  (SCS, EET, DLC Merger) is **not** measured: the real test runs synthetic
+  mods. ADR-0049 counted 42 distinct texts; this
   count dedups differently.
 
 ### Consequences
@@ -4197,10 +4210,14 @@ environment first, and asks the known-folder API only when it is unset.
 - A known question no longer waits 3 hours just because of its wording.
   Unknown texts (a `%variable%` printed whole, text not resolved) are still
   not covered; the watchdog still reports them.
-- **False positives.** A non-question line that contains a phrase is now
-  sent to this program as a question. It is then either answered by key or
-  put to the player. Its cost is one extra question, not a stuck install.
-  Phrases are at least 12 characters, taken from the batch's own mods.
+- **False positives.** A line printed elsewhere that holds a phrase is sent
+  to this program as a question when the output goes quiet. If no expected
+  text ends that window, it is put to the player - or, where the log still
+  holds unused recorded answers, given the next one, which WeiDU (not
+  reading) keeps for its next READLN: a wrong answer to a later question.
+  Phrases hold at least 12 letters and come from the last line that says
+  enough, never a rule or heading before it; the config holds the whole
+  plan's phrases for every batch. Not measured on a real install.
 - **Inherited variable.** WeiDU, and whatever a mod runs, inherits
   `XDG_CONFIG_HOME` or `APPDATA`. No mod in the corpus was checked for
   reading it. A tool started by a mod that keeps settings there would find
@@ -4212,5 +4229,11 @@ environment first, and asks the known-folder API only when it is unset.
   bundle carries: with another, or when the file cannot be written, the
   install writes none and the watchdog says so, but the questionnaire has
   already offered those questions.
-- **Charset.** A line with non-ASCII text is still matched by its ASCII
-  piece; a question whose only long pieces are non-ASCII gets no phrase.
+- **Charset.** mod_installer drops a whole output line that is not UTF-8
+  (`src/raw_reciever.rs`). When WeiDU prints a mod's text in another
+  charset (a cp1252 .tra and no HANDLE_CHARSETS: mostly the original games,
+  not the Enhanced Editions), a line with an accented letter never reaches
+  the check, whatever its phrase: such a question still waits, and the
+  questionnaire still counts it. Not covered. For UTF-8 text the ASCII
+  piece is matched; a question with no ASCII piece of 12 letters gets
+  none.
