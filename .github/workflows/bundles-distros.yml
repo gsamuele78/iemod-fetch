@@ -18,6 +18,9 @@ name: Bundles on the target distros
 on:
   release:
     types: [published]
+  # a change to this check measures the latest release with it
+  pull_request:
+    paths: [".github/workflows/bundles-distros.yml", "tools/distro_libs.sh"]
   workflow_dispatch:
     inputs:
       tag:
