@@ -182,6 +182,12 @@ signed by a publisher: Windows SmartScreen warns, and macOS refuses it until
 you allow it (System Settings, Privacy & Security, Open Anyway). `iemod-fetch-gui --check` opens the window and closes it
 at once - the release's own test that a build starts.
 
+**Testing on a real machine**: [`docs/GUIDA-TEST-REALE.md`](docs/GUIDA-TEST-REALE.md)
+(in Italian) walks through a real install on Debian trixie, Ubuntu 24.04+,
+Bazzite and CachyOS with the games from GOG or Steam - working copies, the
+system packages measured per distribution, two test rounds, what to collect
+and send back.
+
 **Phase 1, game and folders**: choose EET, BG:EE or BG2:EE, point
 at the game folders - checked as WeiDU's GAME_IS sees them while you type, so
 swapped folders, an EET-converted BG2:EE or a BG:EE without Siege of
