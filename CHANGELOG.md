@@ -21,7 +21,7 @@ Python API, which is internal.
     as one);
   - WeiDU is older than the one this program is tested with, or than a
     staged mod requires (`WEIDU_VER >= N`).
-  Not shown in the wizard yet.
+  Shown in the install confirmation (below).
 - **A watchdog that only warns** (ADR-0049 point 4): no output from the
   install for 10 minutes, and no question, is said once on the install page
   with the last lines - and, when they end with a question the mods ask that
@@ -53,8 +53,8 @@ Python API, which is internal.
   that installs EEex's main component, to start the game with
   InfinityLoader.exe (EEex.exe before v0.9) and never with its own program,
   which crashes. Off Windows it adds that EEex needs the Windows game,
-  through Proton or Wine on Linux or CrossOver on macOS. Not shown in the
-  wizard yet.
+  through Proton or Wine on Linux or CrossOver on macOS. Said by the
+  install page after a successful install (below).
 - **Ordering facts as planner regression tests** (GUI-AUDIT item 70):
   facts from Chriz Easy BG's curation notes that the community data holds,
   run in the community-data workflow on the data it has just fetched:
@@ -69,8 +69,8 @@ Python API, which is internal.
   errors, or not reached, according to WeiDU's own verdicts in the game's
   WSETUP.DEBUG (only what this run appended) checked against its WeiDU.log
   before and after. Where the two disagree, the log wins. It is written to
-  `install-plan/results.json` and returned as `Outcome.results`. Not shown
-  in the wizard yet.
+  `install-plan/results.json` and returned as `Outcome.results`; the
+  install page lists what needs a look (below).
 - **The questions are answered before the install** (GUI-AUDIT item 48,
   ADR-0049 points 2 and 5): before *Install*, the wizard puts the questions
   the mods will ask to the player in one window - those whose place is sure:
@@ -123,20 +123,9 @@ Python API, which is internal.
   "unanswered" or "unknown" (a question whose text is set elsewhere, a path its
   reading could not follow, the mod not in the mods folder), and the plan is
   forecast unattended only when every component is none or answered. A
-  forecast, not a promise. The wizard's planned logs carry no answers yet, so
-  there a component that asks is "unanswered" or "maybe" until the phase-5
-  questionnaire writes them. Not in the wizard yet.
+  forecast, not a promise. The phase-5 questionnaire (above) writes the
+  planned logs' answers from it.
 
-### Release workflow
-- "Latest" is put back on the newest release of CHANGELOG.md
-  (`tools/release_notes.py latest`) every six hours (release-latest.yml) and
-  at every push to `main` that changes CHANGELOG.md or the version: a
-  back-fill's tag starts the tagged commit's own, older release workflow,
-  which marked 4.0.0 Latest over 4.0.1 on 2026-10-31. It fails, changing
-  nothing, when GitHub does not answer. docs/RELEASING.md says how to cancel
-  that second run.
-
-### Added
 - **The questions a mod will ask, read before installing** (GUI-AUDIT item
   48, ADR-0049): `iemod_fetch/readln.py` finds, for each component, every
   `ACTION_READLN` it may reach - in its body, the functions and macros it
@@ -147,11 +136,20 @@ Python API, which is internal.
   (`tools/readln_census.py`): 45 of 51 READLNs reached (88%), the question
   known for 42 of those (25 a .tra string in the player's language, 17 a fixed
   English text); of the 6 not reached, 5 are SCS's, behind paths built while
-  installing, and 1 follows a FAIL. Not wired into the wizard yet: the questionnaire before
-  Install is next.
+  installing, and 1 follows a FAIL. The questionnaire before Install (above)
+  is built on it.
 - ADR-0049: every question is known before the install starts, the player
   answers them in one place, a timer never answers, and a watchdog only warns
   when an install goes silent (the owner's decisions).
+
+### Release workflow
+- "Latest" is put back on the newest release of CHANGELOG.md
+  (`tools/release_notes.py latest`) every six hours (release-latest.yml) and
+  at every push to `main` that changes CHANGELOG.md or the version: a
+  back-fill's tag starts the tagged commit's own, older release workflow,
+  which marked 4.0.0 Latest over 4.0.1 on 2026-10-31. It fails, changing
+  nothing, when GitHub does not answer. docs/RELEASING.md says how to cancel
+  that second run.
 
 ### Documentation
 - **GUI-AUDIT item 62 withdrawn, measured.** The HD mods' archives pass

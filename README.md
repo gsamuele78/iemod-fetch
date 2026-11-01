@@ -57,7 +57,7 @@ for Linux (Debian trixie, the minimum, and Ubuntu 24.04), Windows and macOS.
 system's tools (ADR-0047) - see *Upgrading from 3.x* in the changelog. Next
 in the plan: M4's item 24, defects to fix (M7) and what the other projects do that this
 tool does not (M8, which since 2026-10-31 also holds ten ideas read in Chriz
-Easy BG, an MIT installer for one curated EET collection: items 62-71, of which 62 was measured and withdrawn)
+Easy BG, an MIT installer for one curated EET collection: items 62-71, of which 62 was measured and withdrawn and 63, 65-71 shipped in 4.1.0; 64 is left)
 ([`docs/GUI-AUDIT.md`](docs/GUI-AUDIT.md)). What changed in each
 release is in [`CHANGELOG.md`](CHANGELOG.md).
 
