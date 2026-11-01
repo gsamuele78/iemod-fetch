@@ -4041,9 +4041,10 @@ held to Debian trixie's glibc, and started once inside debian:trixie
 (ADR-0043 amendment). Players also run Fedora Atomic (Bazzite), Arch
 (CachyOS) and newer Ubuntus.
 
-The README names five system libraries for Qt: `libgl1 libegl1
-libxkbcommon0 libfontconfig1 libdbus-1-3`. Those cover the offscreen start
-that CI checks. Read with `ldd` on the 4.0 bundle on an Ubuntu 24.04 host,
+The CI and release workflows install five system libraries for Qt
+(`libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3`) on an
+ubuntu-24.04 runner, which has the rest already; the README named none.
+Those cover the offscreen start that CI checks. Read with `ldd` on the 4.0 bundle on an Ubuntu 24.04 host,
 Qt's xcb plugin (the one an X11 or XWayland desktop uses) needed eight
 libraries that list leaves out: `libxcb-cursor`, `-icccm`, `-util`,
 `-image`, `-keysyms`, `-render-util`, `-xkb` and `libxkbcommon-x11`. No
@@ -4079,7 +4080,7 @@ calls it.
 
 ### Consequences
 
-- The per-distribution package list in the README and docs/REAL-TEST.md
+- The per-distribution package list in the README and docs/GUIDA-TEST-REALE.md
   comes from a measurement of the published bundles, and is measured again
   at every release.
 - What runs in a container is not a desktop. The xcb and Wayland sets are

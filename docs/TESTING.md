@@ -505,7 +505,7 @@ run as root in each fresh container, measures four things:
 - whether the command line answers `--version` and `--help`.
 
 Each job's summary lists what was missing and the package that filled it,
-which is what the README and docs/REAL-TEST.md tell a player to install.
+which is what the README and docs/GUIDA-TEST-REALE.md tell a player to install.
 It runs on every published release, or by hand on any tag.
 
 ## What is deliberately not done
