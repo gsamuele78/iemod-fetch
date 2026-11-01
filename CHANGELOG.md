@@ -24,6 +24,15 @@ Python API, which is internal.
   desktop needs the `libxcb-*` libraries (`libxcb-cursor` for Qt 6.5 and
   later), which nothing named before.
 
+### Documentation
+- `docs/GUIDA-TEST-REALE.md` (in Italian): a real install on Debian trixie,
+  Ubuntu 24.04+, Bazzite (through Distrobox) and CachyOS with the games from
+  GOG or Steam - working copies of the games, the system packages per
+  distribution as PR #118 measured them, verifying the release's zips, two
+  test rounds, collecting the outputs without game files (or through Claude
+  Code's Remote Control), a checklist. Whether WeiDU on Linux needs `tolower`
+  on the Enhanced Editions is to be measured there, not assumed.
+
 ## [4.1.0] - 2026-11-01
 
 ### Added
