@@ -238,5 +238,52 @@ def test_dpkg_names_the_package_of_a_real_library():
     assert bundle.debian_package("libno-such-library.so.9") is None
 
 
-def test_readline_gpl_stays_out_of_both_bundles():
-    assert "readline" in bundle.EXCLUDE
+def _fake_system(tmp_path, copyright_text):
+    docs = tmp_path / "doc" / "libfoo1"
+    docs.mkdir(parents=True)
+    (docs / "copyright").write_text(copyright_text, encoding="utf-8")
+    common = tmp_path / "common"
+    common.mkdir()
+    (common / "LGPL-2.1").write_text("GNU LESSER GENERAL PUBLIC LICENSE 2.1", encoding="utf-8")
+    (common / "Apache-2.0").write_text("Apache License 2.0", encoding="utf-8")
+    owner = {"libfoo.so.1": ("libfoo1", "1.0-1", "foo", "1.0-1")}
+    return str(tmp_path / "doc"), str(common), owner.get
+
+
+def test_the_common_licences_a_copyright_file_names_ship_too(tmp_path):
+    """Debian's copyright files point at /usr/share/common-licenses/<X>
+    without its text (review of #121)."""
+    docs, common, owner = _fake_system(tmp_path, (
+        "License: LGPL-2.1+\n On Debian systems, see /usr/share/common-licenses/LGPL-2.1.\n"
+        "License: Apache-2.0\n see /usr/share/common-licenses/Apache-2.0\n"))
+    folder = _with_libraries(tmp_path, ["libfoo.so.1"])
+    bundle.add_system_licences(str(folder), str(folder), owner, distro="debian",
+                               common=common, docs=docs)
+    texts = folder / "licenses" / "system" / "common-licenses"
+    assert sorted(os.listdir(texts)) == ["Apache-2.0", "LGPL-2.1"]
+    assert "LESSER" in (texts / "LGPL-2.1").read_text(encoding="utf-8")
+
+
+def test_a_named_licence_with_no_text_stops_the_build(tmp_path):
+    docs, common, owner = _fake_system(tmp_path, "see /usr/share/common-licenses/MPL-1.1\n")
+    folder = _with_libraries(tmp_path, ["libfoo.so.1"])
+    with pytest.raises(SystemExit, match="MPL-1.1"):
+        bundle.add_system_licences(str(folder), str(folder), owner, distro="debian",
+                                   common=common, docs=docs)
+
+
+def test_linux_without_dpkg_stops_rather_than_ship_no_licence(tmp_path, monkeypatch):
+    folder = _with_libraries(tmp_path, ["libssl.so.3"])
+    monkeypatch.setattr(bundle.shutil, "which", lambda name: None)
+    monkeypatch.setattr(bundle.platform, "system", lambda: "Linux")
+    with pytest.raises(SystemExit, match="dpkg-query"):
+        bundle.add_system_licences(str(folder), str(folder))
+    monkeypatch.setattr(bundle.platform, "system", lambda: "Windows")
+    assert bundle.add_system_licences(str(folder), str(folder)) == []
+
+
+def test_a_build_that_carries_readline_stops(tmp_path):
+    folder = _with_libraries(tmp_path, ["libreadline.so.8"])
+    with pytest.raises(SystemExit, match="libreadline.so.8"):
+        bundle.check_unwanted(str(folder))
+    bundle.check_unwanted(str(_with_libraries(tmp_path / "ok", ["libssl.so.3"])))

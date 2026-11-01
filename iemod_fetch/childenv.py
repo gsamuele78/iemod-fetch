@@ -42,7 +42,7 @@ def child_env(extra: Mapping[str, str] | None = None) -> dict[str, str] | None:
     return env
 
 
-_SPAWN = threading.Lock()          # the DLL directory is the process's, not a thread's
+_SPAWN = threading.RLock()          # the DLL directory is the process's, not a thread's
 
 
 if sys.platform == "win32":
@@ -86,8 +86,8 @@ def spawning() -> Iterator[None]:
     get, set_ = api
     with _SPAWN:
         before = get()
-        set_(None)
         try:
+            set_(None)
             yield
         finally:
             set_(before or None)
@@ -106,9 +106,14 @@ def run(args, *, input=None, timeout=None, check=False,  # noqa: A002 (subproces
     if _dll_directory_api() is None:
         return subprocess.run(args, input=input, timeout=timeout, check=check,  # noqa: S603
                               capture_output=capture_output, **kwargs)
+    # subprocess.run's own refusals, not a silent override (review of #121)
     if capture_output:
+        if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
+            raise ValueError("stdout and stderr arguments may not be used with capture_output.")
         kwargs["stdout"] = kwargs["stderr"] = subprocess.PIPE
     if input is not None:
+        if kwargs.get("stdin") is not None:
+            raise ValueError("stdin and input arguments may not both be used.")
         kwargs["stdin"] = subprocess.PIPE
     with popen(args, **kwargs) as process:
         try:

@@ -4141,11 +4141,19 @@ GUI-AUDIT item 61 left two gaps in the bundles (reviews of #70).
 2. **Measured in the real bundle.** On Windows, cli_bundle.py builds a
    probe with PyInstaller and runs it. A child started through childenv
    must see no DLL directory, and the bundle must keep its own; otherwise
-   the build stops. A unit test on Windows CI measures the inheritance
-   itself, both ways.
+   the build stops. This runs in release.yml's bundle jobs, which also run
+   (publishing nothing) on every pull request that touches `packaging/**`,
+   as #121 did. On that run (job 124812676391) the measurement was:
+   - the parent's DLL directory: `...\probe\_internal`;
+   - a plain child: the same `_internal`, so the child inherits it;
+   - a child started through childenv: an empty DLL directory;
+   - the parent afterwards: its own `_internal` again.
+
+   A unit test on Windows CI measures the inheritance itself, both ways.
 3. **readline is excluded from both bundles.** It is GPL-3.0 and serves an
    interactive prompt neither program has; without the module, the library
-   is not collected.
+   is not collected. Each bundle's check stops a build that still carries
+   `libreadline*` or `libgdbm*`.
 4. **Every library taken from the build system ships with its licence.**
    `add_system_licences`, used by both bundles:
    - lists the shared libraries outside Python's own and outside the
@@ -4157,8 +4165,17 @@ GUI-AUDIT item 61 left two gaps in the bundles (reviews of #70).
      exact version, and where that version's source is (Launchpad for
      Ubuntu, sources.debian.org for Debian). That source address is what
      the GPL and LGPL ask for;
-   - stops the build when a library has no owning package or no copyright
-     file, rather than shipping without a licence.
+   - copies the common licences those copyright files name
+     (`/usr/share/common-licenses/<X>`) into
+     `licenses/system/common-licenses/`. Debian's copyright files point at
+     them without their text (review of #121): Apache-2.0, GPL-2,
+     LGPL-2.1, MPL-1.1 and 9 more in the wizard's local build;
+   - stops the build when a library has no owning package, no copyright
+     file or a named licence with no text, and when a Linux build finds
+     libraries but has no dpkg to ask. It does not ship without a
+     licence;
+   - finds each library's package through the path the loader resolves it
+     to (`ldconfig -p`, where PyInstaller took it), then by name.
 5. **Both bundles carry Python's LICENSE.txt**, the wizard's too.
 
 ### Consequences
@@ -4178,6 +4195,14 @@ GUI-AUDIT item 61 left two gaps in the bundles (reviews of #70).
   Qt's gtk3 platform theme out would drop it (tens of MB), but that
   changes how the wizard looks on GNOME, so it is the owner's call and not
   done here.
-- A lock held only while a child is created costs nothing measurable. A
-  Qt plugin the main thread loads in that moment would see no DLL
-  directory, a window of microseconds that has not been observed.
+- The lock is held only while a child is created. For a program started
+  with Popen that is milliseconds. For the browser it is as long as
+  `QDesktopServices.openUrl` takes, which goes through ShellExecute:
+  hundreds of milliseconds, possibly seconds. During that time another
+  thread waits to start its child. A Qt plugin the main thread loads in
+  that window would see no DLL directory; this has not been observed.
+- The LGPL and GPL source is offered as an address: Launchpad or
+  sources.debian.org, at the exact version shipped. It is not attached to
+  the release as mod_installer's is, because for about 70 packages that
+  would add hundreds of MB to every release. Attaching it is the owner's
+  call if a distribution host is not enough.

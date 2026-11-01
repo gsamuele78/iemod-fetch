@@ -190,3 +190,19 @@ def test_on_windows_a_child_inherits_the_dll_directory_unless_cleared(monkeypatc
     assert plain.stdout.strip() == str(tmp_path)        # inherited
     assert cleared.stdout.strip() == ""                 # not, through childenv
     assert buffer.value == str(tmp_path)                # this process keeps its own
+
+
+def test_run_in_a_bundle_refuses_what_subprocess_run_refuses(monkeypatch):
+    _fake_bundle(monkeypatch)
+    with pytest.raises(ValueError):
+        childenv.run([sys.executable, "-c", "pass"], capture_output=True,
+                     stdout=subprocess.DEVNULL)
+    with pytest.raises(ValueError):
+        childenv.run([sys.executable, "-c", "pass"], input=b"x", stdin=subprocess.DEVNULL)
+
+
+def test_spawning_nests_without_a_deadlock(monkeypatch):
+    fake = _fake_bundle(monkeypatch)
+    with childenv.spawning(), childenv.spawning():
+        assert fake.value is None
+    assert fake.value == "C:\\iemod-fetch\\_internal"

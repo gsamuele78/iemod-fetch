@@ -137,6 +137,7 @@ def check_glibc(folder: str, limit: tuple[int, int] = MAX_GLIBC) -> None:
 def check(folder: str, work: str) -> None:
     """Run the unzipped program as a player would: its version, then its help
     (neither touches the network), from a folder of its own."""
+    shared.check_unwanted(folder)
     run = os.path.join(work, "run")
     os.makedirs(run, exist_ok=True)
     for argv, expect in (["--version"], "iemod-fetch"), (["--help"], "usage"):
