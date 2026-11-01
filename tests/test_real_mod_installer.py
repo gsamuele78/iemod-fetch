@@ -546,3 +546,51 @@ def test_a_stored_answer_the_mod_refuses_is_given_once_then_the_player_answers(t
     assert outcome.ok and len(asked) == 1, transcript
     assert [a.source for a in outcome.answered] == ["by question", "player"], transcript
     assert (game / "rep-answer.txt").read_text().split() == ["3"]
+
+
+NO_CHOICE_WORD = """BACKUP ~plain/backup~
+AUTHOR ~iemod-fetch test~
+VERSION ~v30~
+
+BEGIN ~Asks with no choice word~
+PRINT ~How many extra kits should be installed?~
+ACTION_READLN kits
+APPEND_OUTER ~plain-answer.txt~ ~%kits%~
+"""
+
+
+def test_a_question_without_choice_words_is_asked_through_the_parser_config(tmp_path):
+    """ADR-0057: mod_installer 16.0.0 never puts "How many extra kits should
+    be installed?" to anyone (no choice word or phrase): WeiDU would wait for
+    its 3-hour timeout. Its expected text, added to mod_installer's parser
+    config for this install, makes it a question, answered by its key. The
+    run is cancelled after 120 s, so a regression fails instead of hanging."""
+    import threading
+    from test_real_weidu import make_game
+    game = tmp_path / "bg2ee"
+    make_game(str(game), "BG2EE")
+    (game / "plain-answer.txt").write_text("")
+    mods = tmp_path / "mods"
+    (mods / "plain").mkdir(parents=True)
+    (mods / "plain" / "plain.tp2").write_text(NO_CHOICE_WORD)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    (plan / "WeiDU.log").write_text("// Log of Currently Installed WeiDU Mods\n"
+                                    "~PLAIN/PLAIN.TP2~ #0 #0 // Asks with no choice word\n")
+    lines: list[str] = []
+    install = api.start_install(
+        str(plan), {"BG2EE": str(game)}, str(mods), MOD_INSTALLER, WEIDU,
+        ask=lambda q, b: None, on_event=lambda e: lines.append(e.text),
+        answers={"plain.tp2#0": {"How many extra kits should be installed?": "4"}})
+    timer = threading.Timer(120, install.cancel)
+    timer.start()
+    try:
+        outcome = install.run()
+    finally:
+        timer.cancel()
+    transcript = "\n".join(lines)
+    assert outcome.ok, transcript
+    assert install.parser_phrases == ["how many extra kits should be installed?"], transcript
+    assert (plan / "mod_installer-config").is_dir()
+    assert (game / "plain-answer.txt").read_text().split() == ["4"], transcript
+    assert [a.source for a in outcome.answered] == ["by question"], transcript

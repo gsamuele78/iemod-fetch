@@ -40,6 +40,7 @@ from .constraints import ModConstraints, load_constraints, tp2_rules
 from .errors import ConfigError
 from .freshness import parse_release_cache
 from . import gamedir
+from . import mi_parser
 from .gamedir import verify_eet
 from .install import State, find_tp2_files
 from .installer import build_installer
@@ -1074,7 +1075,8 @@ def _by_question(components: list[dict]) -> None:
     Marks each question "by_question": answered by its key when it comes
     (start_install) - its text known and long enough to tell apart
     (prompts.recognisable), one mod_installer puts to anyone at all
-    (prompts.mod_installer_asks; else WeiDU waits for its timeout), and no
+    (mi_parser.asked: by its own words, or by the phrase start_install adds
+    to its parser config, ADR-0057; else WeiDU waits for its timeout), and no
     other component of its batch asking the same (match_question would not
     know whose it is). The questionnaire offers these and counts them
     answered; no other (review of #111).
@@ -1089,7 +1091,7 @@ def _by_question(components: list[dict]) -> None:
             for q in c["questions"]:
                 text = " ".join(q["text"].split()) if q["known"] else ""
                 q["by_question"] = bool(
-                    text and prompts.recognisable(text) and prompts.mod_installer_asks(text)
+                    text and prompts.recognisable(text) and mi_parser.asked(q["text"])
                     and seen.get(text, set()) == {c["number"]})
 
 

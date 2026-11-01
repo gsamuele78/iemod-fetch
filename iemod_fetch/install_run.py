@@ -33,13 +33,13 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from . import gamelock, resume
+from . import gamelock, mi_parser, resume
 from . import results as verdicts
 from .atomic import write_text
 from .childenv import child_env
 from .errors import ConfigError
 from .prompts import (EET_FOLDER_QUESTION, Answers, Event, Key, OutputReader,
-                      match_question, mod_installer_asks, question_line, recorded_answers)
+                      match_question, question_line, recorded_answers)
 
 # What the planned logs are called (ordering.PRE_EET_LOG, EET_LOG)
 PRE_EET_LOG, EET_LOG = "WeiDU-BGEE.log", "WeiDU.log"
@@ -80,6 +80,7 @@ ASKED_FILE = "answers.json"
 
 
 RESULTS_FILE = "results.json"
+PARSER_DIR = "mod_installer-config"   # ADR-0057, beside the plan
 DEBUG_FILE = "WSETUP.DEBUG"     # WeiDU's --autolog, appended to (--logapp)
 
 
@@ -287,7 +288,8 @@ class InstallRun:
                  results_file: str | None = None,
                  expected: dict[Key, list[tuple[str, str]]] | None = None,
                  by_key: dict[Key, dict[str, str]] | None = None,
-                 row_keys: dict[Key, list[str]] | None = None) -> None:
+                 row_keys: dict[Key, list[str]] | None = None,
+                 parser_dir: str | None = None) -> None:
         recorded: dict = {}
         for path in logs:
             try:
@@ -314,6 +316,10 @@ class InstallRun:
         self.answers = Answers(recorded, row_keys or {})
         self.quiet_s, self.grace_s, self.drain_s = quiet_s, grace_s, drain_s
         self.silent_s = silent_s
+        # ADR-0057: mod_installer's parser config for this install, with the
+        # expected questions it would not ask; the phrases added
+        self.parser_dir = parser_dir
+        self.parser_phrases: list[str] = []
         self._cancel = threading.Event()
         self._process: subprocess.Popen | None = None
         self._job = _Job()
@@ -329,10 +335,17 @@ class InstallRun:
         group: dict = {"start_new_session": True}
         if sys.platform == "win32":
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        env = mod_installer_env()
+        if self.parser_dir:
+            try:
+                extra, self.parser_phrases = mi_parser.write(self.parser_dir, self.expected)
+                env.update(extra)
+            except OSError:
+                self.parser_phrases = []   # its defaults: as without the config
         try:
             process = subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
                 self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, env=mod_installer_env(),
+                stderr=subprocess.STDOUT, env=env,
                 text=True, encoding="utf-8", errors="replace", bufsize=1, **group)
         except OSError:
             # it never started: an earlier run's record must not stay (review of #98)
@@ -464,7 +477,7 @@ class InstallRun:
         window = "\n".join(recent)
         found = match_question(window, expected) if expected and window else None
         asked = {(c, k): t for c, k, t in expected}
-        if found is not None and not mod_installer_asks(asked.get(found, "")):
+        if found is not None and not mi_parser.asked(asked.get(found, ""), self.parser_phrases):
             what = ("WeiDU seems to be waiting for an answer to a question mod_installer "
                     "does not put to anyone (it asks only questions with words such as "
                     "\"enter\" or \"choose\"): it will wait until mod_installer's timeout. "
@@ -924,4 +937,6 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
                       bgee_dir=bgee_dir, games=games, tools=(mod_installer, weidu),
                       asked_file=asked_file, phases=phases(plan_dir, games),
                       results_file=os.path.join(results_dir, RESULTS_FILE),
-                      expected=expected, by_key=by_key, row_keys=row_keys, **timing)
+                      expected=expected, by_key=by_key, row_keys=row_keys,
+                      parser_dir=os.path.join(os.path.dirname(asked_file), PARSER_DIR),
+                      **timing)

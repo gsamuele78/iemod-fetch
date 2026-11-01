@@ -4027,3 +4027,106 @@ warnings in words. They never refuse: the player decides.
   latest release: no network call is made here.
 - How many mods test `WEIDU_VER` was not measured (no unpacked corpus in
   this session). The check reads WeiDU's own variable, as mods use it.
+
+---
+
+## ADR-0057 — mod_installer is told the plan's questions through its parser config
+
+**Status:** Accepted (2026-11-01). Amends ADR-0049's measured limit.
+
+### Context
+
+mod_installer 16.0.0 puts a line of WeiDU's output to this program only when
+the line looks like a question to it (`src/config/parser_config.rs`,
+`string_looks_like_question`, read from the release's source). It checks
+**each line on its own**, ASCII-lowercased and trimmed:
+
+- a bell character makes it a question;
+- otherwise a progress word ("installing", "creating") makes it not one;
+- otherwise one of its choice phrases or words does.
+
+WeiDU waits on a question with none of these until mod_installer's
+timeout, 3 hours per mod, and then the install fails. Lines that are not
+UTF-8 are dropped before this check (`src/raw_reciever.rs`).
+
+mod_installer reads these words from a parser config. confy 2.0.0 loads it
+as `parser.toml` from an app folder resolved by etcetera 0.10. It uses the
+file only when `metadata.mod_installer_version` equals its own version;
+otherwise it writes its defaults over the file.
+
+ADR-0049 said that on Windows the folder could only be the player's own,
+because the known-folder API ignores the environment. That was wrong. Read
+from etcetera's source: its Windows strategy reads `APPDATA` from the
+environment first, and asks the known-folder API only when it is unset.
+
+### Decision
+
+1. **One config per install, never the player's.** `install_run.start`
+   writes the file under `PROJECT/install-plan/mod_installer-config/`
+   (`mi_parser.write`). Only mod_installer's environment points at it:
+   - Linux and macOS: `XDG_CONFIG_HOME` (etcetera uses its Xdg strategy on
+     macOS too), so the file is `<dir>/mod_installer/parser.toml`;
+   - Windows: `APPDATA`, so the file is
+     `<dir>/mod_installer/config/parser.toml`.
+
+   `HOME` is left alone. The player's own `parser.toml`, if they have one,
+   is neither read nor changed.
+2. **Contents.** The file holds mod_installer 16.0.0's defaults, copied from
+   its source and compared in a test with the file the real binary writes.
+   To them it adds one choice phrase for each expected question
+   (ADR-0049's texts) that mod_installer would not ask. The phrase
+   (`mi_parser.phrase`) is the longest literal piece of the question's last
+   line, between its `%variables%`, ASCII-lowercased as Rust's
+   `to_ascii_lowercase` does. It must be at least `MIN_TEXT` (12)
+   characters. A line holding a progress word gets no phrase, since nothing
+   would make it a question.
+3. **Version.** The file carries `mod_installer_version = "16.0.0"`, the
+   version the bundle carries. A different mod_installer writes its own
+   defaults over the file (measured), so it behaves as before, and only in
+   this private folder.
+4. **What counts as asked.** `mi_parser.asked` replaces the whole-text
+   check in two places, the questionnaire's `by_question` (api) and the
+   watchdog's "a question mod_installer does not put to anyone". A question
+   counts as asked when one of its lines looks like a question to
+   mod_installer, with variables left out, or when its phrase is in the
+   install's config.
+
+### Measured
+
+- **The real binary.** mod_installer 16.0.0 was built from the release's
+  source tarball:
+  - it loads the generated file and leaves it unchanged;
+  - with `15.0.0` in the file, it replaces the file with its defaults.
+- **A real install** with WeiDU v251 (`tests/test_real_mod_installer.py`).
+  A mod asks "How many extra kits should be installed?", which has no
+  choice word:
+  - with the config, the question reaches this program and is answered by
+    its key;
+  - with the phrase removed, the install waits until the test cancels it
+    after 120 s.
+- **The corpus** (105 mods, `tools/readln_census.py`). It has 37 distinct
+  question texts that are known. 11 of them were not asked before this
+  change; with the config, none is left. They are:
+  - 8 "press a key to continue" lines from SCS's SFO library;
+  - 2 questions from EET's converter;
+  - DLC Merger's "Try again (y/n)?".
+
+  ADR-0049 counted 42 distinct texts; this count dedups differently, but
+  the same 11 remain.
+
+### Consequences
+
+- A known question no longer waits 3 hours just because of its wording.
+  Unknown texts (a `%variable%` printed whole, text not resolved) are still
+  not covered; the watchdog still reports them.
+- **False positives.** A non-question line that contains a phrase is now
+  sent to this program as a question. It is then either answered by key or
+  put to the player. Its cost is one extra question, not a stuck install.
+  Phrases are at least 12 characters, taken from the batch's own mods.
+- **Inherited variable.** WeiDU, and whatever a mod runs, inherits
+  `XDG_CONFIG_HOME` or `APPDATA`. No mod in the corpus was checked for
+  reading it. A tool started by a mod that keeps settings there would find
+  an empty folder. This is not measured.
+- **Version lock.** The defaults are pinned to 16.0.0. A new mod_installer
+  needs its defaults compared again; the test against the real binary's
+  file is what catches a change.

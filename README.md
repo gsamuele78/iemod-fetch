@@ -313,8 +313,11 @@ steps that are each yours.
    and, during the install, every other question whose text is known: it is
    recognised when mod_installer shows it and answered by question.
    mod_installer itself only shows a question holding one of its choice
-   words ("enter", "choose", "do you want"...); one without (11 of 42 measured)
-   waits until its 3-hour timeout (ADR-0049). Measured on 105 mods, that is still few questions (most sit
+   words ("enter", "choose", "do you want"...), so each install gives it a
+   parser config of its own (`install-plan/mod_installer-config/`, never your
+   own settings) that adds the plan's known questions (ADR-0057): of the 37
+   known question texts of 105 mods, 11 had none of those words and would
+   wait 3 hours; with the config, none does. Measured on 105 mods, that is still few questions (most sit
    under a condition): the others are asked during the install, as before,
    until a question can be recognised when it comes. Your answers are kept in `PROJECT/install-answers.json`, so the
    next install does not ask again, and written into the planned logs as
@@ -629,7 +632,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,002 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,021 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -883,7 +886,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,002, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,021, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

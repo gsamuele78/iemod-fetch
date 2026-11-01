@@ -8,6 +8,17 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Fixed
+- A question with none of mod_installer's choice words ("press a key to
+  continue", "Try again (y/n)?") no longer leaves WeiDU waiting 3 hours: each
+  install gives mod_installer a parser config of its own, in
+  `install-plan/mod_installer-config/`, with the plan's known question texts
+  added as choice phrases (ADR-0057). The player's own mod_installer settings
+  are neither read nor changed: on Windows too, `APPDATA` is set only for
+  mod_installer. Measured on 105 mods: of 37 known question texts, the 11
+  not asked before are all asked now; checked with the real mod_installer
+  16.0.0 and WeiDU v251.
+
 ### Documentation
 - `docs/GUIDA-TEST-REALE.md` (in Italian): a real install on Debian trixie,
   Ubuntu 24.04+, Bazzite (through Distrobox) and CachyOS with the games from
