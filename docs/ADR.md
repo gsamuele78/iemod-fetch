@@ -4191,13 +4191,13 @@ environment first, and asks the known-folder API only when it is unset.
   raw text). It has 37 distinct known question texts, 19 of them on more
   than one line. 11 have none of mod_installer's words on any line:
   - 8 "press a key to continue" lines from SCS's SFO library;
-  - 2 questions from EET's converter (menus: the phrase is the question's
-    line, not the last "2. Yes");
+  - 2 questions from EET's converter (menus: the phrase is the last option
+    line with 12 letters, not the bare "2. Yes");
   - DLC Merger's "Try again (y/n)?" (the phrase is the piece before
     `%dlc_name%`).
 
   Each of the 11 gets a phrase from one of its printed lines: the 8 SFO
-  lines and the 9th ("... press a key to continue") whole; for EET's two
+  lines ("... press a key to continue") whole; for EET's two
   menus, the last option line with enough letters ("1. no (skips usually
   unneeded changes)", "2. yes (add evaluate_buffer everywhere ...)"); for
   DLC Merger, `could not find dlc "`. That each one then stops the real mod

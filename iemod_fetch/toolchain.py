@@ -108,7 +108,8 @@ def version_of(tool: str, path: str, timeout: float = 15.0) -> str | None:
     mod_installer loads, and on a version mismatch rewrites, its parser config
     before it reads its arguments (src/main.rs): it is pointed at a folder
     thrown away after, never the player's own (review of #120, ADR-0057)."""
-    with tempfile.TemporaryDirectory(prefix="iemod-mi-") as scratch:
+    with tempfile.TemporaryDirectory(prefix="iemod-mi-",
+                                     ignore_cleanup_errors=True) as scratch:
         extra = {}
         if tool == MOD_INSTALLER:
             extra = {"APPDATA" if sys.platform == "win32" else "XDG_CONFIG_HOME": scratch}
