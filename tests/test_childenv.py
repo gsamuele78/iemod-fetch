@@ -49,6 +49,9 @@ def test_every_program_started_gets_that_environment(monkeypatch, tmp_path, call
         return subprocess.CompletedProcess(cmd, 1, b"", b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    # the environment only: on Windows a frozen run creates its child with
+    # Popen under the DLL-directory lock, tested below
+    monkeypatch.setattr(childenv, "_dll_directory_api", lambda: None)
     monkeypatch.setattr(archives, "find_tool", lambda name: "/usr/bin/" + name)
     archive = tmp_path / "a.7z"
     archive.write_bytes(b"7z\xbc\xaf\x27\x1c" + b"\0" * 32)
