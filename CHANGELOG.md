@@ -8,6 +8,8 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-01
+
 ### Added
 - **The install's room and WeiDU said in the confirmation** (GUI-AUDIT item
   49): the install page reads `api.install_readiness` on the plan's worker

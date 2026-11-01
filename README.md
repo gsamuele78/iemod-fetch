@@ -35,8 +35,14 @@ The standard library at runtime, plus two libraries that earn their place
 of the community data at a time; ADR-0043), carried inside the one file -
 nothing to install but Python 3.14.
 
-**Current release: 4.0.1** - the wizard's window no longer freezes on
-Windows when a download starts (ADR-0048). 4.0.0 brought one Python version,
+**Current release: 4.1.0** - the install learns what it will meet before it
+starts: the questions the mods will ask, put to you in one window and answered
+by question when they come (ADR-0049); the game closed (ADR-0051); room on
+the drives and WeiDU's version (ADR-0055); EET's Documents-path fault; then
+what each component came to and how to start the game (ADR-0053, ADR-0054),
+and a watchdog that warns, never stops. A mod no source can download is
+supplied by hand (ADR-0052). 4.0.1 stopped the wizard's window freezing on
+Windows (ADR-0048). 4.0.0 brought one Python version,
 3.14, and the wizard that
 installs (milestones M5, M5b, M6, and M4 but for its item 24, a real
 end-to-end job on Windows). The wizard now goes from game and
