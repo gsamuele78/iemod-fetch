@@ -4094,6 +4094,152 @@ calls it.
 
 ---
 
+## ADR-0057 — mod_installer is told the plan's questions through its parser config
+
+**Status:** Accepted (2026-11-01). Amends ADR-0049's measured limit.
+
+### Context
+
+mod_installer 16.0.0 puts a line of WeiDU's output to this program only when
+the line looks like a question to it (`src/config/parser_config.rs`,
+`string_looks_like_question`, read from the release's source). It checks
+**each line on its own**, ASCII-lowercased and trimmed:
+
+- a bell character makes it a question;
+- otherwise a progress word ("installing", "creating") makes it not one;
+- otherwise one of its choice phrases or words does.
+
+WeiDU waits on a question with none of these until mod_installer's
+timeout, 3 hours per mod, and then the install fails. Lines that are not
+UTF-8 are dropped before this check (`src/raw_reciever.rs`).
+
+mod_installer reads these words from a parser config. confy 2.0.0 loads it
+as `parser.toml` from an app folder resolved by etcetera 0.10. It uses the
+file only when `metadata.mod_installer_version` equals its own version;
+otherwise it writes its defaults over the file.
+
+ADR-0049 said that on Windows the folder could only be the player's own,
+because the known-folder API ignores the environment. That was wrong. Read
+from etcetera's source: its Windows strategy reads `APPDATA` from the
+environment first, and asks the known-folder API only when it is unset.
+
+### Decision
+
+1. **One config per install, never the player's.** `install_run.start`
+   writes the file under `PROJECT/install-plan/mod_installer-config/`
+   (`mi_parser.write`). Only mod_installer's environment points at it:
+   - Linux and macOS: `XDG_CONFIG_HOME` (etcetera uses its Xdg strategy on
+     macOS too), so the file is `<dir>/mod_installer/parser.toml`;
+   - Windows: `APPDATA`, so the file is
+     `<dir>/mod_installer/config/parser.toml`.
+
+   `HOME` is left alone. The player's own `parser.toml`, if they have one,
+   is neither read nor changed.
+2. **Contents.** The file holds mod_installer 16.0.0's defaults, copied from
+   its source and compared in a test with the file the real binary writes.
+   To them it adds one choice phrase for each expected question
+   (ADR-0049's texts) that mod_installer would not ask. The phrase
+   (`mi_parser.phrase`) comes from the question **as WeiDU prints it**
+   (`readln.Prompt.raw`: its lines and spaces as written; the `text` the
+   questionnaire shows has its spaces collapsed, and a phrase taken from it
+   matched no printed line when the question had two lines or two spaces -
+   review of #120, reproduced with the real binaries). Any line starts
+   mod_installer collecting the question (`src/parser.rs`: the lines after
+   it are appended until the output is quiet), so the phrase is the longest
+   piece of the **last** line that has a piece of at least `MIN_TEXT` (12)
+   letters. A rule or heading line ("*****", "=====") is never chosen while
+   a later line says more: a phrase that mod_installer meets in other output
+   makes that output a question too (second review of #120). A piece lies
+   between the line's `%variables%` and any non-ASCII character (an NBSP
+   before "?" in a UTF-8 text is left out), ASCII-lowercased as Rust's
+   `to_ascii_lowercase` does. A line holding a progress word gives no
+   phrase.
+3. **Version.** The file carries `mod_installer_version = "16.0.0"`, the
+   version the bundle carries. A different mod_installer would write its own
+   defaults over it (measured), so `install_run.version_of` asks the
+   program first (`--version`) and writes nothing for another version: the
+   install then counts no phrase as added. mod_installer loads, and on a
+   mismatch rewrites, its parser config **before** it reads its arguments
+   (`src/main.rs`, measured): `--version` itself is run against the
+   install's folder (`install_run.version_of`) or a scratch folder
+   (`toolchain.version_of`, which `toolchain.find` and readiness use and
+   which, before this, touched the player's own file).
+4. **What counts as asked.** `mi_parser.asked` replaces the whole-text
+   check in two places, the questionnaire's `by_question` (api) and the
+   watchdog's "a question mod_installer does not put to anyone". A question
+   counts as asked when one of its lines looks like a question to
+   mod_installer, with variables left out, or when its phrase is in the
+   install's config.
+
+### Measured
+
+- **The real binary.** mod_installer 16.0.0 was built from the release's
+  source tarball:
+  - it loads the generated file and leaves it unchanged;
+  - with `15.0.0` in the file, it replaces the file with its defaults.
+- **A real install** with WeiDU v251 (`tests/test_real_mod_installer.py`).
+  A mod asks "How many extra kits should be installed?", which has no
+  choice word:
+  - with the config, the question reaches this program and is answered by
+    its key;
+  - with the phrase removed, the install waits until the test cancels it
+    after 120 s.
+- **A real install, three forms** of that question: one line, a heading line
+  before it, two spaces inside it. Each is answered by its key; before the
+  review's fix the last two waited.
+- **The corpus** (105 mods, `tools/readln_census.py`, which now records the
+  raw text). It has 37 distinct known question texts, 19 of them on more
+  than one line. 11 have none of mod_installer's words on any line:
+  - 8 "press a key to continue" lines from SCS's SFO library;
+  - 2 questions from EET's converter (menus: the phrase is the last option
+    line with 12 letters, not the bare "2. Yes");
+  - DLC Merger's "Try again (y/n)?" (the phrase is the piece before
+    `%dlc_name%`).
+
+  Each of the 11 gets a phrase from one of its printed lines: the 8 SFO
+  lines ("... press a key to continue") whole; for EET's two
+  menus, the last option line with enough letters ("1. no (skips usually
+  unneeded changes)", "2. yes (add evaluate_buffer everywhere ...)"); for
+  DLC Merger, `could not find dlc "`. That each one then stops the real mod
+  (SCS, EET, DLC Merger) is **not** measured: the real test runs synthetic
+  mods. ADR-0049 counted 42 distinct texts; this
+  count dedups differently.
+
+### Consequences
+
+- A known question no longer waits 3 hours just because of its wording.
+  Unknown texts (a `%variable%` printed whole, text not resolved) are still
+  not covered; the watchdog still reports them.
+- **False positives.** A line printed elsewhere that holds a phrase is sent
+  to this program as a question when the output goes quiet. If no expected
+  text ends that window, it is put to the player - or, where the log still
+  holds unused recorded answers, given the next one, which WeiDU (not
+  reading) keeps for its next READLN: a wrong answer to a later question.
+  Phrases hold at least 12 letters and come from the last line that says
+  enough, never a rule or heading before it; the config holds the whole
+  plan's phrases for every batch. Not measured on a real install.
+- **Inherited variable.** WeiDU, and whatever a mod runs, inherits
+  `XDG_CONFIG_HOME` or `APPDATA`. No mod in the corpus was checked for
+  reading it. A tool started by a mod that keeps settings there would find
+  an empty folder. This is not measured.
+- **Version lock.** The defaults are pinned to 16.0.0. A new mod_installer
+  needs its defaults compared again; the test against the real binary's
+  file is what catches a change. The questionnaire (`by_question`) assumes
+  the phrases will be in place, as they are with the mod_installer the
+  bundle carries: with another, or when the file cannot be written, the
+  install writes none and the watchdog says so, but the questionnaire has
+  already offered those questions.
+- **Charset.** mod_installer drops a whole output line that is not UTF-8
+  (`src/raw_reciever.rs`). When WeiDU prints a mod's text in another
+  charset (a cp1252 .tra and no HANDLE_CHARSETS: mostly the original games,
+  not the Enhanced Editions), a line with an accented letter never reaches
+  the check, whatever its phrase: such a question still waits, and the
+  questionnaire still counts it. Not covered. For UTF-8 text the ASCII
+  piece is matched; a question with no ASCII piece of 12 letters gets
+  none.
+
+---
+
 ## ADR-0058 — A bundle's children do not see its libraries, and its libraries ship with their licences
 
 **Status:** accepted (2026-11-01)

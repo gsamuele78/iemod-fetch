@@ -75,6 +75,7 @@ class Prompt:
     repeats: bool = False      # inside a loop: asked again until valid
     variable: str = ""         # the variable the answer goes to
     component: int | None = None   # the component that reaches it
+    raw: str = ""              # the text as WeiDU prints it: its lines and spaces (ADR-0057)
 
     @property
     def keyed(self) -> bool:
@@ -315,7 +316,8 @@ class _Reader:
                 if not dead:
                     ref, text = self.text_of(last_print)
                     out.append(Prompt(ref, " ".join(text.split()), src.path,
-                                      _line(src.text, tok.at), via, c, lp, toks[k + 1].value))
+                                      _line(src.text, tok.at), via, c, lp, toks[k + 1].value,
+                                      raw=text))
                 last_print = None
             elif word in _LAUNCH and k + 1 < stop:
                 name = toks[k + 1].value.upper()

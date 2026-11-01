@@ -23,6 +23,21 @@ Python API, which is internal.
   distribution (apt, dnf, pacman), as measured: the window on an X11
   desktop needs the `libxcb-*` libraries (`libxcb-cursor` for Qt 6.5 and
   later), which nothing named before.
+- A question with none of mod_installer's choice words ("press a key to
+  continue", "Try again (y/n)?") no longer leaves WeiDU waiting 3 hours: each
+  install gives mod_installer a parser config of its own, in
+  `install-plan/mod_installer-config/`, with the plan's known question texts
+  added as choice phrases (ADR-0057). The player's own mod_installer settings
+  are neither read nor changed: on Windows too, `APPDATA` is set only for
+  mod_installer, and only when it says it is 16.0.0. Each phrase comes from
+  one line of the question as WeiDU prints it (a question on two lines, or
+  with two spaces, is matched too). On 105 mods, the 11 of 37 known question
+  texts that had none of mod_installer's words each get a phrase; checked
+  with the real mod_installer 16.0.0 and WeiDU v251 on synthetic mods.
+- Asking mod_installer its version (`--version`, at the folder check and
+  before an install) no longer creates or resets the player's own
+  mod_installer `parser.toml`: mod_installer writes it before it reads its
+  arguments, so it is pointed at a scratch folder (ADR-0057).
 - **A program a Windows bundle starts no longer sees the bundle's DLL
   folder** (GUI-AUDIT item 61, ADR-0058): git, gh, 7-Zip, unrar,
   mod_installer and the browser are started with PyInstaller's DLL
