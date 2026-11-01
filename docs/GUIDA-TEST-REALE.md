@@ -16,11 +16,12 @@ Tre cose da sapere prima:
   container di Debian, Ubuntu, Fedora e Arch; quello che resta da misurare è
   indicato al suo posto.
 - **Limite noto:** mod_installer 16.0.0 mostra solo le domande che contengono
-  certe parole ("enter", "choose", "do you want"...). Una domanda senza queste
-  parole ferma WeiDU fino al timeout di 3 ore; il watchdog dopo 10 minuti lo
-  dice nell'output. Se succede, annota quale mod era: è uno dei dati che
-  servono (il rimedio, la configurazione del parser di mod_installer, è il
-  prossimo lavoro).
+  certe parole ("enter", "choose", "do you want"...). Dalla versione
+  successiva alla 4.1.0 la procedura guidata gli passa una configurazione con
+  i testi delle domande note (ADR-0057); con la 4.1.0 una domanda senza
+  queste parole ferma ancora WeiDU fino al timeout di 3 ore. In entrambi i
+  casi il watchdog dopo 10 minuti lo dice nell'output: se succede, annota
+  quale mod era, è uno dei dati che servono.
 
 ---
 

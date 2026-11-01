@@ -104,12 +104,20 @@ class Found:
 
 
 def version_of(tool: str, path: str, timeout: float = 15.0) -> str | None:
-    """`path --version`, read: the version, None when it does not answer as `tool`."""
-    try:
-        done = subprocess.run([path, "--version"], capture_output=True, timeout=timeout,  # noqa: S603
-                              env=child_env(), check=False)
-    except (OSError, subprocess.SubprocessError):
-        return None
+    """`path --version`, read: the version, None when it does not answer as `tool`.
+    mod_installer loads, and on a version mismatch rewrites, its parser config
+    before it reads its arguments (src/main.rs): it is pointed at a folder
+    thrown away after, never the player's own (review of #120, ADR-0057)."""
+    with tempfile.TemporaryDirectory(prefix="iemod-mi-",
+                                     ignore_cleanup_errors=True) as scratch:
+        extra = {}
+        if tool == MOD_INSTALLER:
+            extra = {"APPDATA" if sys.platform == "win32" else "XDG_CONFIG_HOME": scratch}
+        try:
+            done = subprocess.run([path, "--version"], capture_output=True,  # noqa: S603
+                                  timeout=timeout, env=child_env(extra or None), check=False)
+        except (OSError, subprocess.SubprocessError):
+            return None
     match = _VERSION[tool].search(done.stdout.decode("utf-8", "replace")
                                   + done.stderr.decode("utf-8", "replace"))
     return match[1] if match else None

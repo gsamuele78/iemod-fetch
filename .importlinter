@@ -71,6 +71,7 @@ source_modules =
     iemod_fetch.premeta
     iemod_fetch.sortorder
     iemod_fetch.prompts
+    iemod_fetch.mi_parser
     iemod_fetch.resume
     iemod_fetch.results
     iemod_fetch.launch
@@ -214,6 +215,7 @@ forbidden_modules =
     iemod_fetch.backup
     iemod_fetch.install
     iemod_fetch.install_run
+    iemod_fetch.mi_parser
     iemod_fetch.gamelock
     iemod_fetch.readiness
     iemod_fetch.toolchain
