@@ -177,7 +177,9 @@ is added minutes later, once GitHub's macOS runner built it. Unzip it (with
 `iemod-fetch-gui` inside; it is
 attested and listed in `SHA256SUMS` like the other assets. It is one folder,
 not one file, so Qt's libraries stay separate and replaceable (Qt is
-LGPL-3.0; the licence texts and `NOTICE-Qt.txt` are in the folder). It is not
+LGPL-3.0; the licence texts and `NOTICE-Qt.txt` are in the folder, and on
+Linux `NOTICE-system-libraries.txt` names each library taken from the build
+system with its licence and source, ADR-0058). It is not
 signed by a publisher: Windows SmartScreen warns, and macOS refuses it until
 you allow it (System Settings, Privacy & Security, Open Anyway). `iemod-fetch-gui --check` opens the window and closes it
 at once - the release's own test that a build starts.
@@ -629,7 +631,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,002 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,020 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -883,7 +885,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,002, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,020, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 64 modules |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

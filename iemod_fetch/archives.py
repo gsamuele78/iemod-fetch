@@ -20,6 +20,7 @@ import zlib
 from dataclasses import dataclass
 
 from . import atomic
+from . import childenv
 from .childenv import child_env
 from .errors import ExtractionError, UnsafeArchive
 
@@ -260,7 +261,7 @@ def _seven_zip_listing(path: str) -> list[tuple] | None:
     if not tool:
         return None
     try:
-        proc = subprocess.run([tool, "l", "-slt", "-ba", "--", path],
+        proc = childenv.run([tool, "l", "-slt", "-ba", "--", path],
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                               timeout=_TOOL_TIMEOUT, check=False, env=child_env())
     except (OSError, subprocess.TimeoutExpired):
@@ -336,7 +337,7 @@ def _extract_external(path: str, dest: str, kind: Kind) -> None:
         work = tempfile.mkdtemp(prefix=".unpack-", dir=os.path.dirname(os.path.abspath(dest)))
         try:
             try:
-                proc = subprocess.run([binary, *_COMMANDS[tool](path, work)],
+                proc = childenv.run([binary, *_COMMANDS[tool](path, work)],
                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                       timeout=_TOOL_TIMEOUT, check=False, env=child_env())
             except (OSError, subprocess.TimeoutExpired) as exc:

@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from iemod_fetch import archives, auth
+from iemod_fetch import archives, auth, childenv
 from iemod_fetch.childenv import child_env
 
 
@@ -63,3 +63,127 @@ def test_every_program_started_gets_that_environment(monkeypatch, tmp_path, call
             archives._extract_external(str(archive), str(tmp_path / "out"), archives.Kind.SEVENZIP)
     assert seen, "no program was started"
     assert all(env is not None and "LD_LIBRARY_PATH" not in env for env in seen)
+
+
+# --- the DLL directory on Windows (GUI-AUDIT item 61, ADR-0058) -------------
+
+_PRINT_DLL_DIRECTORY = (
+    "import ctypes\n"
+    "b = ctypes.create_unicode_buffer(32768)\n"
+    "ctypes.windll.kernel32.GetDllDirectoryW(32768, b)\n"
+    "print(b.value)\n")
+
+
+class _FakeDllDirectory:
+    """kernel32's DLL directory, as a value the test can watch."""
+
+    def __init__(self, value):
+        self.value, self.calls = value, []
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.calls.append(value)
+        self.value = value
+
+
+def _fake_bundle(monkeypatch, value="C:\\iemod-fetch\\_internal"):
+    fake = _FakeDllDirectory(value)
+    monkeypatch.setattr(childenv, "_dll_directory_api", lambda: (fake.get, fake.set))
+    return fake
+
+
+def test_a_child_is_created_with_no_dll_directory_and_it_is_put_back(monkeypatch):
+    fake = _fake_bundle(monkeypatch)
+    seen = []
+    real_popen = subprocess.Popen
+
+    def popen(args, **kw):
+        seen.append(fake.value)
+        return real_popen(args, **kw)
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    done = childenv.run([sys.executable, "-c", "print('hi')"], capture_output=True)
+    assert seen == [None] and done.returncode == 0 and done.stdout.strip() == b"hi"
+    assert fake.calls == [None, "C:\\iemod-fetch\\_internal"]
+    assert fake.value == "C:\\iemod-fetch\\_internal"
+
+
+def test_none_before_is_left_none(monkeypatch):
+    fake = _fake_bundle(monkeypatch, value=None)
+    childenv.popen([sys.executable, "-c", "pass"]).wait()
+    assert fake.calls == [None, None]
+
+
+def test_the_directory_is_put_back_when_the_program_cannot_start(monkeypatch, tmp_path):
+    fake = _fake_bundle(monkeypatch)
+    with pytest.raises(OSError):
+        childenv.run([str(tmp_path / "no-such-program")])
+    assert fake.value == "C:\\iemod-fetch\\_internal"
+
+
+def test_run_in_a_bundle_answers_as_subprocess_run(monkeypatch):
+    _fake_bundle(monkeypatch)
+    echo = [sys.executable, "-c", "import sys; sys.stdout.write(sys.stdin.read().upper())"]
+    done = childenv.run(echo, input=b"abc", stdout=subprocess.PIPE, check=True)
+    assert done.stdout == b"ABC" and done.args == echo
+    with pytest.raises(subprocess.CalledProcessError) as failed:
+        childenv.run([sys.executable, "-c", "raise SystemExit(3)"], check=True)
+    assert failed.value.returncode == 3
+    with pytest.raises(subprocess.TimeoutExpired):
+        childenv.run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+
+
+def test_creations_from_two_threads_do_not_interleave(monkeypatch):
+    """The DLL directory is the process's: one thread's put-back must not
+    land while another thread's child is being created."""
+    import threading
+    fake = _fake_bundle(monkeypatch)
+    real_popen = subprocess.Popen
+    seen = []
+
+    def popen(args, **kw):
+        seen.append(fake.value)
+        return real_popen(args, **kw)
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    threads = [threading.Thread(target=lambda: childenv.run([sys.executable, "-c", "pass"]))
+               for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert seen == [None] * 8
+    assert fake.calls == [None, "C:\\iemod-fetch\\_internal"] * 8
+
+
+def test_outside_a_bundle_nothing_is_touched(monkeypatch):
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    assert childenv._dll_directory_api() is None
+    seen = []
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: seen.append(args) or
+                        subprocess.CompletedProcess(args, 0, b"", b""))
+    childenv.run(["x"], check=False)
+    assert seen == [["x"]]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="kernel32's DLL directory")
+def test_on_windows_a_child_inherits_the_dll_directory_unless_cleared(monkeypatch, tmp_path):
+    """Measured, not assumed: what PyInstaller's bootloader does
+    (SetDllDirectoryW with `_internal`), then a child started both ways."""
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert kernel32.SetDllDirectoryW(str(tmp_path))
+    try:
+        command = [sys.executable, "-c", _PRINT_DLL_DIRECTORY]
+        plain = subprocess.run(command, capture_output=True, text=True, check=True)
+        cleared = childenv.run(command, capture_output=True, text=True, check=True)
+        buffer = ctypes.create_unicode_buffer(32768)
+        kernel32.GetDllDirectoryW(32768, buffer)
+    finally:
+        kernel32.SetDllDirectoryW(None)
+    assert plain.stdout.strip() == str(tmp_path)        # inherited
+    assert cleared.stdout.strip() == ""                 # not, through childenv
+    assert buffer.value == str(tmp_path)                # this process keeps its own

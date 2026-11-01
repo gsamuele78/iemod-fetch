@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from . import gamelock, resume
 from . import results as verdicts
 from .atomic import write_text
+from . import childenv
 from .childenv import child_env
 from .errors import ConfigError
 from .prompts import (EET_FOLDER_QUESTION, Answers, Event, Key, OutputReader,
@@ -330,7 +331,7 @@ class InstallRun:
         if sys.platform == "win32":
             group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         try:
-            process = subprocess.Popen(  # noqa: S603 (the player's own mod_installer)
+            process = childenv.popen(  # the player's own mod_installer
                 self.argv, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, env=mod_installer_env(),
                 text=True, encoding="utf-8", errors="replace", bufsize=1, **group)

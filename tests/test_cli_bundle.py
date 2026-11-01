@@ -114,3 +114,7 @@ def test_a_linux_bundle_that_would_not_start_on_debian_trixie_stops_the_build(tm
     with pytest.raises(SystemExit, match="glibc 2.36"):
         cli.check_glibc(str(tmp_path), limit=(2, 35))
     assert cli.MAX_GLIBC == (2, 41)
+
+
+def test_readline_stays_out():
+    assert "readline" in cli.EXCLUDE

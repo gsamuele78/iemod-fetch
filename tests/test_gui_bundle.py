@@ -52,6 +52,7 @@ def test_the_folder_carries_the_licences(tmp_path, monkeypatch):
     assert (folder / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
     assert sorted(os.listdir(folder / "licenses")) == ["GPL-3.0-only.txt",
                                                        "LGPL-3.0-only.txt",
+                                                       "Python-LICENSE.txt",
                                                        "filelock-LICENSE",
                                                        "publicsuffixlist-LICENSE"]
     # MIT asks for its text and notice, which the licence file is: no source offer
@@ -165,3 +166,77 @@ def test_mod_installer_goes_beside_the_program_with_its_licence(tmp_path):
     assert "unmodified" in notice and "General Public License v3.0" in notice
     assert "https://github.com/dark0dave/mod_installer/tree/3b6827a" in notice
     assert "mod_installer-16.0.0-source.tar.gz" in notice
+
+
+# --- the libraries a bundle takes from the build system (GUI-AUDIT item 61) --
+
+def _with_libraries(tmp_path, names):
+    folder = tmp_path / "b"
+    for name in names:
+        path = folder / "_internal" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\x7fELF")
+    return folder
+
+
+def test_only_what_the_build_system_gave_is_counted(tmp_path):
+    folder = _with_libraries(tmp_path, [
+        "libssl.so.3", "libz.so.1", "libfoo.so",
+        "libpython3.14.so.1.0",                                   # Python's (PSF)
+        "python3.14/lib-dynload/_ssl.cpython-314-x86_64-linux-gnu.so",
+        "libpyside6.abi3.so.6.12",                                # the wheel's
+        "PySide6/Qt/lib/libQt6Core.so.6", "shiboken6/libshiboken6.abi3.so.6.12",
+        "readme.txt"])
+    assert bundle.system_libraries(str(folder)) == ["libfoo.so", "libssl.so.3", "libz.so.1"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links")
+def test_a_link_into_a_wheels_folder_is_the_wheels(tmp_path):
+    folder = _with_libraries(tmp_path, ["PySide6/Qt/lib/libicuuc.so.73", "libssl.so.3"])
+    os.symlink("PySide6/Qt/lib/libicuuc.so.73", folder / "_internal" / "libicuuc.so.73")
+    assert bundle.system_libraries(str(folder)) == ["libssl.so.3"]
+
+
+@pytest.mark.skipif(not os.path.isfile("/usr/share/doc/zlib1g/copyright"),
+                    reason="needs a Debian or Ubuntu system's zlib1g")
+def test_each_library_ships_with_its_package_copyright_and_source(tmp_path):
+    folder = _with_libraries(tmp_path, ["libz.so.1"])
+    owners = {"libz.so.1": ("zlib1g", "1:1.3.dfsg-3.1ubuntu2.2", "zlib",
+                            "1:1.3.dfsg-3.1ubuntu2.2")}
+    got = bundle.add_system_licences(str(folder), str(folder), owners.get, distro="ubuntu")
+    assert got == ["zlib1g"]
+    assert (folder / "licenses" / "system" / "zlib1g.copyright").read_text(encoding="utf-8")
+    notice = (folder / "NOTICE-system-libraries.txt").read_text(encoding="utf-8")
+    assert "libz.so.1" in notice and "zlib1g 1:1.3.dfsg-3.1ubuntu2.2" in notice
+    assert "https://launchpad.net/ubuntu/+source/zlib/1:1.3.dfsg-3.1ubuntu2.2" in notice
+
+
+def test_a_library_no_package_owns_stops_the_build(tmp_path):
+    folder = _with_libraries(tmp_path, ["libmystery.so.1"])
+    with pytest.raises(SystemExit, match="libmystery.so.1"):
+        bundle.add_system_licences(str(folder), str(folder), lambda name: None, distro="ubuntu")
+
+
+def test_no_system_library_writes_no_notice(tmp_path):
+    folder = _with_libraries(tmp_path, ["libpython3.14.so.1.0"])
+    assert bundle.add_system_licences(str(folder), str(folder), lambda name: None) == []
+    assert not (folder / "NOTICE-system-libraries.txt").exists()
+
+
+@pytest.mark.parametrize("distro, expected", [
+    ("ubuntu", "https://launchpad.net/ubuntu/+source/openssl/3.0.13-0ubuntu3.16"),
+    ("debian", "https://sources.debian.org/src/openssl/3.0.13-0ubuntu3.16/"),
+    ("fedora", "apt-get source openssl=3.0.13-0ubuntu3.16")])
+def test_the_source_is_named_where_the_distribution_keeps_it(distro, expected):
+    assert bundle.source_link(distro, "openssl", "3.0.13-0ubuntu3.16") == expected
+
+
+@pytest.mark.skipif(not os.path.isfile("/var/lib/dpkg/status"), reason="needs dpkg")
+def test_dpkg_names_the_package_of_a_real_library():
+    found = bundle.debian_package("libz.so.1")
+    assert found is not None and found[0].startswith("zlib1g") and found[2] == "zlib"
+    assert bundle.debian_package("libno-such-library.so.9") is None
+
+
+def test_readline_gpl_stays_out_of_both_bundles():
+    assert "readline" in bundle.EXCLUDE

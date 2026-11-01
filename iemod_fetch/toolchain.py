@@ -33,6 +33,7 @@ from dataclasses import dataclass
 
 from . import atomic
 from .archives import safe_extract
+from . import childenv
 from .childenv import child_env
 from .errors import ConfigError
 
@@ -106,7 +107,7 @@ class Found:
 def version_of(tool: str, path: str, timeout: float = 15.0) -> str | None:
     """`path --version`, read: the version, None when it does not answer as `tool`."""
     try:
-        done = subprocess.run([path, "--version"], capture_output=True, timeout=timeout,  # noqa: S603
+        done = childenv.run([path, "--version"], capture_output=True, timeout=timeout,  # noqa: S603
                               env=child_env(), check=False)
     except (OSError, subprocess.SubprocessError):
         return None
