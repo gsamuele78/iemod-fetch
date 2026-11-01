@@ -412,7 +412,7 @@ class ModsPage(QWidget):
         version = mod.get("version") or ""
         if mod.get("update_available"):
             version = f"{mod.get('installed') or version} -> {latest.get('version', '?')}"
-        elif mod.get("maybe_updated"):
+        if mod.get("maybe_updated"):              # both, as the filters list it
             version = f"{version} ({MAYBE})" if version else MAYBE
         tp2s = mod.get("tp2s") or []
         origin = ", ".join(sorted({t["origin"] for t in tp2s})) or "not known yet"
@@ -1065,8 +1065,9 @@ class ModsPage(QWidget):
             lines.append(f"<b>lcc-docs last update:</b> {e(str(mod['last_update']))}")
         if mod.get("maybe_updated"):
             page = str(mod.get("page") or "")
+            # an https page is a link; any other address is shown, not followed
             link = (f' - <a href="{e(page, quote=True)}">{e(page)}</a>'
-                    if page.startswith("https://") else "")
+                    if page.startswith("https://") else f" - {e(page)}" if page else "")
             lines.append(f"<b>Maybe updated:</b> lcc-docs lists a change on "
                          f"{e(str(mod.get('last_update')))}, after your copy was fetched "
                          f"on {e(str(mod.get('fetched')))}. A date, not a version: the "

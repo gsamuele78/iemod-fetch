@@ -179,7 +179,10 @@ def available_mods(manifest: Manifest | None = None,
                 mod._kinds(entry.origin, to_kinds(entry.categories, LCC_DOCS))
                 mod.safe = mod.safe if mod.safe is not None else entry.safe
                 mod.last_update = mod.last_update or entry.last_update
-                mod.page = mod.page or next(iter(entry.http_urls), None)
+                # a page, not an archive lcc-docs links directly (review of #122:
+                # 114 of 2,134 entries list an archive first)
+                mod.page = mod.page or next((url for url in entry.http_urls
+                                             if url not in entry.direct_urls), None)
                 mod.blocking = mod.blocking or entry.blocking
                 mod.advisories.extend(a for a in entry.advisories()
                                       if a not in mod.advisories)

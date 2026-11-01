@@ -226,8 +226,9 @@ Next saves `iemod-fetch.ini` in the project folder, the file the CLI reads:
 line can carry on where the wizard stops.
 
 **Phase 2, mod selection**: categories down the left, search and filters
-(chosen only, updates available, maybe updated - lcc-docs lists a change after
-the day your copy was fetched, a date and never a version, ADR-0044) above a
+(chosen only, conflicts only, updates available, maybe updated - lcc-docs
+lists a change after the day your copy was fetched, a date and never a
+version, ADR-0044 - and kinds disagree) above a
 mod -> component tree, details on
 the right. The list loads in a background thread and works offline from the
 last good community data. Components come from the mod's own tp2 once it is
@@ -665,7 +666,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,069 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,073 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -919,7 +920,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,069, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,073, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

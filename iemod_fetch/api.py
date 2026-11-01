@@ -665,9 +665,7 @@ def mod_choices(game: str | None = None, target: str | None = None,
     if target and os.path.isdir(target):
         # the day each copy under `target` was fetched: lcc-docs' newer date
         # marks it "maybe updated" (ADR-0044); a copy put there by hand has none
-        mark_fetched(mods, {normalize_key(folder): entry.get("installed_at", "")
-                            for folder, entry in State.load(target).mods.items()
-                            if isinstance(entry, dict)})
+        mark_fetched(mods, _fetch_days(target))
     staged = (choices.from_described(describe_mods(target, preferences))
               if target and os.path.isdir(target) else {})
     records = os.path.join(krion, "mods") if krion else None
@@ -691,6 +689,32 @@ def mod_choices(game: str | None = None, target: str | None = None,
             entry["tp2s"].append(described)
         out.append(entry)
     return out
+
+
+def _fetch_days(target: str) -> dict[str, str]:
+    """{mod key: installed_at} for the copies this tool fetched that are still
+    the ones in `target`: the folder is there and, where the record has the
+    tp2's VERSION, the tp2 still says it (review of #122: a release the
+    player unpacked by hand over a fetched folder keeps the old record)."""
+    try:
+        present = {name.lower(): name for name in os.listdir(target)}
+    except OSError:
+        return {}
+    days = {}
+    records: Mapping[str, object] = State.load(target).mods     # a hand-edited file
+    for folder, entry in records.items():
+        if not isinstance(entry, dict):
+            continue
+        actual = present.get(folder.lower())
+        if actual is None or not os.path.isdir(os.path.join(target, actual)):
+            continue
+        recorded, tp2_file = entry.get("mod_version"), entry.get("tp2_file")
+        if recorded and tp2_file:
+            info = read_mod_tp2(os.path.join(target, actual), tp2_file)
+            if info is None or info.version != recorded:
+                continue
+        days[normalize_key(folder)] = str(entry.get("installed_at") or "")
+    return days
 
 
 def save_selection(folder: str, game: str, chosen: Sequence[tuple[str, int]],

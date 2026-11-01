@@ -111,3 +111,17 @@ def test_a_copy_with_no_fetch_day_is_not_marked():
     mod = AvailableMod(key="x", tp2="x", name="X", last_update="2025-08-25")
     mark_fetched([mod], {"x": "not a time", "other": "2020-01-01T00:00:00Z"})
     assert mod.fetched is None and not mod.maybe_updated
+
+
+def test_the_page_is_a_page_not_an_archive_lcc_docs_links():
+    from iemod_fetch.available import available_mods
+    from iemod_fetch.catalogues import CatalogueSet
+    import json as _json
+    import tempfile
+    entry = {"id": 1, "name": "M", "tp2": "m", "games": ["bgee"], "status": [],
+             "categories": [], "last_update": "2025-08-25",
+             "urls": ["https://example.org/m-v2.zip", "http://example.org/m/"]}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        _json.dump([entry], fh)
+    (mod,) = available_mods(None, CatalogueSet.load([fh.name]))
+    assert mod.page == "http://example.org/m/"          # the archive is skipped

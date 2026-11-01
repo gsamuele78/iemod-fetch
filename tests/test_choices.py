@@ -166,3 +166,38 @@ def test_a_copy_put_there_by_hand_has_no_day_and_no_mark(tmp_path):
                            krion=krion_dir(tmp_path, BG1UB), data_dir=str(tmp_path / "x"))
     bg1ub = next(m for m in mods if m["key"] == "bg1ub")
     assert bg1ub["fetched"] is None and not bg1ub["maybe_updated"]
+
+
+def _fetched_state(mods_dir, **fields):
+    entry = {"installed_at": "2025-08-01T09:00:00Z", **fields}
+    (mods_dir / ".iemod-fetch-state.json").write_text(
+        json.dumps({"version": 1, "mods": {"bg1ub": entry}}))
+
+
+def _bg1ub(tmp_path, mods_dir):
+    krion = tmp_path / "krion"
+    if not krion.exists():
+        krion = krion_dir(tmp_path, BG1UB)
+    mods = api.mod_choices("BGEE", target=str(mods_dir), catalogues=[LCC],
+                           krion=str(krion), data_dir=str(tmp_path / "x"))
+    return next(m for m in mods if m["key"] == "bg1ub")
+
+
+def test_a_record_whose_folder_is_gone_marks_nothing(tmp_path):
+    """Review of #122: the record outlives a folder the player deleted."""
+    mods_dir = tmp_path / "Mods"
+    mods_dir.mkdir()
+    _fetched_state(mods_dir)
+    assert not _bg1ub(tmp_path, mods_dir)["maybe_updated"]
+
+
+def test_a_copy_replaced_by_hand_with_another_version_marks_nothing(tmp_path):
+    """Review of #122: a newer release unpacked over the folder keeps the old
+    record (the runner skips it as installed); its tp2 VERSION tells."""
+    mods_dir = tmp_path / "Mods"
+    (mods_dir / "bg1ub").mkdir(parents=True)
+    (mods_dir / "bg1ub" / "setup-bg1ub.tp2").write_text("VERSION ~v18~\nBEGIN ~One~\n")
+    _fetched_state(mods_dir, mod_version="v17", tp2_file="setup-bg1ub.tp2")
+    assert not _bg1ub(tmp_path, mods_dir)["maybe_updated"]
+    (mods_dir / "bg1ub" / "setup-bg1ub.tp2").write_text("VERSION ~v17~\nBEGIN ~One~\n")
+    assert _bg1ub(tmp_path, mods_dir)["maybe_updated"]       # the copy fetched, still there

@@ -627,3 +627,16 @@ def test_maybe_updated_is_shown_as_a_date_and_filtered(qtbot, tmp_path):
     text = widget.details.toPlainText()
     assert "lcc-docs last update: 2025-08-25" in text
     assert "after your copy was fetched on 2025-08-01" in text and "not a version" in text
+
+
+def test_a_release_update_and_a_date_both_show_and_a_plain_address_is_text(qtbot, tmp_path):
+    """Review of #122: the column agrees with both filters; an http page is
+    shown, never dropped and never a link."""
+    both = dict(MAYBE_MODS[0], update_available=True, installed="v15",
+                latest={"version": "v16"}, page="http://example.org/tweaks")
+    widget = page(qtbot, tmp_path, [both])
+    row = widget.tree.topLevelItem(0)
+    assert row.text(1) == "v15 -> v16 (maybe updated)"
+    widget._show(row)
+    assert "http://example.org/tweaks" in widget.details.toPlainText()
+    assert 'href="http://' not in widget.details.toHtml()
