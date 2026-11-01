@@ -230,7 +230,9 @@ line can carry on where the wizard stops.
 lists a change after the day your copy was fetched, a date and never a
 version, ADR-0044 - and kinds disagree) above a
 mod -> component tree, details on
-the right. The list loads in a background thread and works offline from the
+the right - with krion64's notes on the mod and, from its daily scan, the
+repository's last push, whether it was archived and the release notes, as
+plain text with the day of krion64's data (ADR-0059). The list loads in a background thread and works offline from the
 last good community data. Components come from the mod's own tp2 once it is
 downloaded, else from krion64's records - which have 1,471 of the 1,529
 components WeiDU lists for 105 real mods (ADR-0035) - and each mod says which.
@@ -666,7 +668,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,073 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,083 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -920,7 +922,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,073, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,083, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

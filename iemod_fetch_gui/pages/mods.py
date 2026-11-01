@@ -68,6 +68,41 @@ KRION_NOTE = ("Components from krion64's records: the mod is not downloaded yet.
               "Its own tp2 decides once it is, and the choice is checked again then.")
 
 
+def _text(value) -> str:
+    """A third party's text (release notes, krion64's notes) for the details:
+    escaped whole, newlines kept, never a link or markup (item 51)."""
+    return html.escape(str(value)).replace("\n", "<br>")
+
+
+def _krion_lines(mod: dict) -> list[str]:
+    """What krion64 says of the mod and its repository, with the source and
+    the day of its data: what it saw then, not a fact now (item 51)."""
+    when = mod.get("krion_date")
+    said = f"krion64, data of {when}" if when else "krion64, date of its data not known"
+    lines = [f"<b>{_text(label)} ({_text(said)}):</b> {_text(text)}"
+             for label, text in mod.get("krion_notes") or []]
+    release = mod.get("release") or {}
+    if release:
+        # what the scan saw is as old as its look at that repository, which
+        # can be months before the data's day (review of #123)
+        if release.get("checked"):
+            said = f"krion64's scan of {release['checked']}"
+        elif when:
+            said = f"krion64, data of {when}, day of its scan not known"
+        repo = _text(release.get("repo", ""))
+        if release.get("archived"):
+            lines.append(f"<b>Archived</b> on GitHub, according to {_text(said)} ({repo})")
+        if release.get("pushed"):
+            lines.append(f"<b>Last push to {repo}</b> ({_text(said)}): "
+                         f"{_text(release['pushed'])}")
+        if release.get("notes"):
+            title = release.get("name") or release.get("tag") or ""
+            lines.append(f"<b>Release notes of {_text(title)}</b> "
+                         f"({_text(release.get('date') or 'no date')}, from GitHub through "
+                         f"{_text(said)}):<br>{_text(release['notes'])}")
+    return lines
+
+
 def _target(project: dict) -> str:
     """The CLI's --target, resolved as the CLI resolves it when run in the project."""
     folder = os.path.dirname(project["path"])
@@ -1072,6 +1107,7 @@ class ModsPage(QWidget):
                          f"{e(str(mod.get('last_update')))}, after your copy was fetched "
                          f"on {e(str(mod.get('fetched')))}. A date, not a version: the "
                          f"page may only have been edited{link}")
+        lines += _krion_lines(mod)
         lines += [f"<b>Warning:</b> {e(str(text))}" for text in mod.get("advisories") or []]
         lines += [f"<b>Cannot be chosen:</b> {e(t['refused'])}"
                   for t in mod.get("tp2s") or [] if t.get("refused")]

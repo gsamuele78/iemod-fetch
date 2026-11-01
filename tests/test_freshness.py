@@ -157,3 +157,42 @@ def test_an_unreadable_release_cache_is_a_configuration_error(tmp_path):
     bad.write_text("{not json")
     with pytest.raises(ConfigError):
         api.list_mods(None, catalogues=[], releases=str(bad))
+
+
+# --- what the scan saw of a repository, as text (GUI-AUDIT item 51) ----------
+
+def test_release_notes_and_activity_are_read_as_text():
+    from iemod_fetch.freshness import NOTES_MAX, parse_release_cache
+    raw = {"Argent77/A7-DlcMerger": {
+        "tag": "v2.1", "release_date": "2026-07-03", "release_name": "DLC Merger 2.1",
+        "pushed": "2026-09-06", "archived": False,
+        "body": "Changelog:\r\n- one\x1b[31m red\x07\n- two" + "x" * 3000}}
+    release = parse_release_cache(raw)["argent77/a7-dlcmerger"]
+    assert release.name == "DLC Merger 2.1" and release.pushed == "2026-09-06"
+    assert release.notes.startswith("Changelog:\n- one[31m red\n- two")   # controls out
+    assert len(release.notes) <= NOTES_MAX + 4 and release.notes.endswith(" ...")
+
+
+def test_notes_that_are_not_text_are_none():
+    from iemod_fetch.freshness import parse_release_cache, plain_text
+    release = parse_release_cache({"a/b": {"tag": "v1", "body": {"x": 1}, "pushed": 5}})["a/b"]
+    assert release.notes is None and release.pushed is None
+    assert plain_text("  \x00 ") is None
+
+
+def test_bidi_overrides_and_lone_carriage_returns_do_not_survive():
+    """Review of #123: an RLO would turn the following lines around."""
+    from iemod_fetch.freshness import plain_text
+    assert plain_text("a\u202eb\u2066c\u200fd") == "abcd"
+    assert plain_text("one\rtwo\r\nthree") == "one\ntwo\nthree"
+
+
+def test_the_scan_day_tag_and_date_are_text_with_a_cap():
+    from iemod_fetch.freshness import parse_release_cache
+    raw = {"a/b": {"tag": "v1" + "x" * 500, "release_date": {"no": 1},
+                   "checked": "2026-03-14T08:00:00Z"},
+           "c/d": {"tag": 5}}
+    releases = parse_release_cache(raw)
+    assert set(releases) == {"a/b"}
+    assert len(releases["a/b"].tag) <= 104 and releases["a/b"].date is None
+    assert releases["a/b"].checked == "2026-03-14T08:00:00Z"

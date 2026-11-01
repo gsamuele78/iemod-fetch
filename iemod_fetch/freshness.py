@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass
 from collections.abc import Iterable
 
+from .naming import plain_text
 from .versions import compare_published
 
 _GITHUB = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", re.IGNORECASE)
@@ -38,6 +39,15 @@ class Release:
     date: str | None = None
     url: str | None = None
     archived: bool = False
+    # what the scan saw of the repository (GUI-AUDIT item 51): third-party
+    # text, kept as text - control characters out, cut at NOTES_MAX
+    name: str | None = None
+    notes: str | None = None
+    pushed: str | None = None
+    checked: str | None = None         # the day the scan last looked at it
+
+
+NOTES_MAX = 1500                       # characters of a release's notes kept
 
 
 @dataclass(frozen=True)
@@ -70,14 +80,18 @@ def parse_release_cache(raw) -> dict[str, Release]:
     for repo, entry in raw.items():
         if not isinstance(repo, str) or not isinstance(entry, dict):
             continue
-        tag = entry.get("tag")
-        if not isinstance(tag, str) or not tag.strip():
+        tag = plain_text(entry.get("tag"), 100)
+        if not tag:
             continue                 # a repository with no release says nothing
         out[repo.lower()] = Release(
-            tag=tag.strip(),
-            date=entry.get("release_date") or None,
+            tag=tag,
+            date=plain_text(entry.get("release_date"), 40),
             url=entry.get("release_url") or None,
-            archived=entry.get("archived") is True)
+            archived=entry.get("archived") is True,
+            name=plain_text(entry.get("release_name"), 200),
+            notes=plain_text(entry.get("body")),
+            pushed=plain_text(entry.get("pushed"), 40),
+            checked=plain_text(entry.get("checked"), 40))
     return out
 
 

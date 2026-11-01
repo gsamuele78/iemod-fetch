@@ -125,3 +125,21 @@ def test_the_page_is_a_page_not_an_archive_lcc_docs_links():
         _json.dump([entry], fh)
     (mod,) = available_mods(None, CatalogueSet.load([fh.name]))
     assert mod.page == "http://example.org/m/"          # the archive is skipped
+
+
+def test_the_release_seen_and_krion64s_notes_reach_the_mod_not_the_cli():
+    from iemod_fetch.available import available_mods
+    from iemod_fetch.freshness import Release
+    from iemod_fetch.moddb import ModDatabase, ModRecord
+    db = ModDatabase(records={"bg1ub": ModRecord(
+        key="bg1ub", name="BG1UB", version="v17",
+        homepage="https://github.com/Pocket-Plane-Group/bg1ub",
+        notes=[("Notes", "Restores cut content.")])}, origin="krion64")
+    releases = {"pocket-plane-group/bg1ub": Release(
+        "v17", "2025-01-01", None, archived=True, name="v17", notes="Fixes", pushed="2025-02")}
+    (mod,) = available_mods(None, None, db, releases=releases)
+    assert mod.release == {"repo": "pocket-plane-group/bg1ub", "tag": "v17", "name": "v17",
+                           "date": "2025-01-01", "notes": "Fixes", "pushed": "2025-02",
+                           "archived": True}
+    assert mod.notes == [("Notes", "Restores cut content.")]
+    assert "release" not in mod.as_dict() and "notes" not in mod.as_dict()   # mods-v1

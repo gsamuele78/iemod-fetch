@@ -65,6 +65,8 @@ class AvailableMod:
     latest: Candidate | None = None
     update_available: bool | None = None
     page: str | None = None               # lcc-docs' first link for it
+    release: dict | None = None           # what krion64's scan saw of its repository
+    notes: list[tuple[str, str]] = field(default_factory=list)   # krion64's
     fetched: str | None = None            # the day this tool fetched the player's copy
 
     def _repo(self, url: str | None) -> None:
@@ -218,6 +220,11 @@ def available_mods(manifest: Manifest | None = None,
             if release:
                 mod.candidates.insert(0, Candidate(release.tag, RELEASE, release.date,
                                                    release.url))
+                mod.release = {k: v for k, v in (
+                    ("repo", repo), ("tag", release.tag), ("name", release.name),
+                    ("date", release.date), ("notes", release.notes),
+                    ("pushed", release.pushed), ("archived", release.archived),
+                    ("checked", (release.checked or "")[:10])) if v}
                 break
         mod.latest = latest(mod.candidates)
         mod.installed = (installed or {}).get(mod.key)
@@ -240,6 +247,9 @@ def _record_versions(mod: AvailableMod, record, origin: str) -> None:
         mod._repo(url)
     if record.version:
         mod.candidates.append(Candidate(record.version, origin))
+    for note in getattr(record, "notes", ()):
+        if note not in mod.notes:
+            mod.notes.append(note)
 
 
 def _record_kinds(mod: AvailableMod, record, origin: str) -> None:
