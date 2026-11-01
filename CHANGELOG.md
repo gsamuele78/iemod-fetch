@@ -8,6 +8,22 @@ Python API, which is internal.
 
 ## [Unreleased]
 
+### Added
+- **The Linux bundles measured on the distributions players run** (ADR-0056):
+  the `bundles-distros` workflow, dispatched by release.yml for each tag it
+  publishes, starts the release's wizard and command-line zips in fresh
+  fedora, archlinux, ubuntu:24.04, ubuntu:latest and debian:trixie
+  containers, and `tools/distro_libs.sh` names the system
+  libraries Qt lacks there (offscreen, X11/XWayland, Wayland) and the
+  package that ships each. On 4.0.1 the command line started on all five;
+  the wizard started on all five once those packages were in.
+
+### Fixed
+- **The README names the system libraries the Linux wizard needs**, per
+  distribution (apt, dnf, pacman), as measured: the window on an X11
+  desktop needs the `libxcb-*` libraries (`libxcb-cursor` for Qt 6.5 and
+  later), which nothing named before.
+
 ### Documentation
 - `docs/GUIDA-TEST-REALE.md` (in Italian): a real install on Debian trixie,
   Ubuntu 24.04+, Bazzite (through Distrobox) and CachyOS with the games from

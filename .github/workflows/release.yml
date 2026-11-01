@@ -512,6 +512,26 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: gh workflow run release-macos.yml --repo "$REPOSITORY" --ref main -f tag="$TAG"
 
+  # The Linux bundles on the target distros (bundles-distros.yml, ADR-0056).
+  # The publish above uses github.token, and GitHub starts no workflow for
+  # an event that token made: its `release: published` would never fire.
+  # Like the macOS bundle, only queued: a distro that renamed a library
+  # does not turn the release red.
+  distros:
+    name: Start the target-distro check for this release
+    needs: [decide, publish-github]
+    if: needs.decide.outputs.release == 'true' && !inputs.dry_run && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write           # workflow_dispatch of bundles-distros.yml, nothing else
+    steps:
+      - name: Dispatch bundles-distros.yml for the tag
+        env:
+          TAG: ${{ needs.decide.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: gh workflow run bundles-distros.yml --repo "$REPOSITORY" --ref main -f tag="$TAG"
+
   publish-pypi:
     name: PyPI (trusted publishing)
     needs: [decide, build, provenance]
