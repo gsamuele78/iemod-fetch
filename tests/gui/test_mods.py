@@ -652,15 +652,16 @@ def test_release_notes_and_krion64_notes_are_literal_text_with_source_and_day(qt
     mod = dict(MAYBE_MODS[1], krion_date="2026-10-22",
                krion_notes=[["Notes", HOSTILE]],
                release={"repo": "a/b", "tag": "v2", "date": "2026-07-03", "notes": HOSTILE,
-                        "pushed": "2026-09-06", "archived": True})
+                        "pushed": "2026-09-06", "archived": True, "checked": "2026-03-14"})
     widget = page(qtbot, tmp_path, [mod])
     widget._show(widget.tree.topLevelItem(0))
     text, markup = widget.details.toPlainText(), widget.details.toHtml()
     assert text.count(HOSTILE) == 2                       # shown as written, twice
     assert 'href="https://evil.example"' not in markup and "<img" not in markup
-    assert "Archived on GitHub, according to krion64, data of 2026-10-22 (a/b)" in text
-    assert "Last push to a/b (krion64, data of 2026-10-22): 2026-09-06" in text
-    assert "Notes (krion64, data of 2026-10-22):" in text
+    # what the scan saw carries the day of its look, older than the data's
+    assert "Archived on GitHub, according to krion64's scan of 2026-03-14 (a/b)" in text
+    assert "Last push to a/b (krion64's scan of 2026-03-14): 2026-09-06" in text
+    assert "Notes (krion64, data of 2026-10-22):" in text      # notes: the data's day
 
 
 def test_without_the_day_of_krion64s_data_it_says_so(qtbot, tmp_path):
@@ -668,3 +669,12 @@ def test_without_the_day_of_krion64s_data_it_says_so(qtbot, tmp_path):
     widget = page(qtbot, tmp_path, [mod])
     widget._show(widget.tree.topLevelItem(0))
     assert "Notes (krion64, date of its data not known): x" in widget.details.toPlainText()
+
+
+def test_a_scan_with_no_day_of_its_own_says_so(qtbot, tmp_path):
+    mod = dict(MAYBE_MODS[1], krion_date="2026-10-22",
+               release={"repo": "a/b", "tag": "v2", "pushed": "2026-09-06"})
+    widget = page(qtbot, tmp_path, [mod])
+    widget._show(widget.tree.topLevelItem(0))
+    assert ("Last push to a/b (krion64, data of 2026-10-22, day of its scan not known)"
+            in widget.details.toPlainText())

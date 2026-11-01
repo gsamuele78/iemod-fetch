@@ -4425,7 +4425,11 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
 
 1. **Text, never markup.** Release notes and krion64's notes are read as
    strings:
-   - control characters other than newlines and tabs are removed;
+   - control characters other than newlines and tabs are removed, as
+     are the bidirectional marks and overrides (U+200E/F, U+202A-202E,
+     U+2066-2069); a lone CR becomes a newline;
+   - the tag and the release date go through the same filter, with a
+     length cap;
    - release notes are cut at 1,500 characters, notes at 1,000, with " ...";
    - in the mod's details they are HTML-escaped whole, newlines kept;
    - no link and no image is ever made from them. The details panel opens
@@ -4433,11 +4437,20 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
 
    A test passes `<a href>`, `<img src>` and `javascript:` through both,
    and they come out as literal text.
-2. **Every line names its source and its day**, for example "Archived on
-   GitHub, according to krion64, data of 2026-10-22". The day is the
-   commit the community-data cache fetched (`sources.json`). When the data
-   is not the cache's, or the cache has no record, the line says "date of
-   its data not known".
+2. **Every line names its source and its day.**
+   - For what the scan saw of a repository (archived, last push, release
+     notes), the day is that entry's own `checked`: "Archived on GitHub,
+     according to krion64's scan of 2026-03-14". It can be months before
+     the cache's commit. In the live data, 52 of 690 entries were last
+     checked in March 2026 and 1 in May, against a commit of October
+     (review of #123).
+   - For krion64's notes (no, rq, ic, EET), the day is the commit the
+     community-data cache fetched (`sources.json`).
+   - When the data is not the cache's, or the cache has no record, the line
+     says the day is not known.
+   - The "krion64" label is about where the data comes from. A caller that
+     passes its own `mod_db` or releases to `mod_choices` gets the label
+     with no day; the wizard never does this.
 3. **Shown:** notes, requirements, incompatibilities, EET (version and
    place), and of the repository the last push, "archived", and the release
    notes with their release's name and date.

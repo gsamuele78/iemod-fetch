@@ -83,6 +83,12 @@ def _krion_lines(mod: dict) -> list[str]:
              for label, text in mod.get("krion_notes") or []]
     release = mod.get("release") or {}
     if release:
+        # what the scan saw is as old as its look at that repository, which
+        # can be months before the data's day (review of #123)
+        if release.get("checked"):
+            said = f"krion64's scan of {release['checked']}"
+        elif when:
+            said = f"krion64, data of {when}, day of its scan not known"
         repo = _text(release.get("repo", ""))
         if release.get("archived"):
             lines.append(f"<b>Archived</b> on GitHub, according to {_text(said)} ({repo})")

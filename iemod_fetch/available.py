@@ -223,7 +223,8 @@ def available_mods(manifest: Manifest | None = None,
                 mod.release = {k: v for k, v in (
                     ("repo", repo), ("tag", release.tag), ("name", release.name),
                     ("date", release.date), ("notes", release.notes),
-                    ("pushed", release.pushed), ("archived", release.archived)) if v}
+                    ("pushed", release.pushed), ("archived", release.archived),
+                    ("checked", (release.checked or "")[:10])) if v}
                 break
         mod.latest = latest(mod.candidates)
         mod.installed = (installed or {}).get(mod.key)

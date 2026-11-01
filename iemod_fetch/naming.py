@@ -107,7 +107,9 @@ def expected_tp2_names(folder: str) -> tuple:
 
 # Third-party text (release notes, catalogue notes) kept as text: control
 # characters out, cut to a length (GUI-AUDIT item 51, ADR-0059)
-_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# with the bidirectional marks and overrides: an RLO in a note would turn
+# the lines after it around too (review of #123)
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
 
 
 def plain_text(value, limit: int = 1500) -> str | None:
@@ -115,7 +117,7 @@ def plain_text(value, limit: int = 1500) -> str | None:
     newlines and tabs) out, cut at `limit` with an ellipsis; None if empty."""
     if not isinstance(value, str):
         return None
-    text = _CONTROL.sub("", value.replace("\r\n", "\n")).strip()
+    text = _CONTROL.sub("", value.replace("\r\n", "\n").replace("\r", "\n")).strip()
     if len(text) > limit:
         text = text[:limit].rstrip() + " ..."
     return text or None

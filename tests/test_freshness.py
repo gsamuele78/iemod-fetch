@@ -178,3 +178,21 @@ def test_notes_that_are_not_text_are_none():
     release = parse_release_cache({"a/b": {"tag": "v1", "body": {"x": 1}, "pushed": 5}})["a/b"]
     assert release.notes is None and release.pushed is None
     assert plain_text("  \x00 ") is None
+
+
+def test_bidi_overrides_and_lone_carriage_returns_do_not_survive():
+    """Review of #123: an RLO would turn the following lines around."""
+    from iemod_fetch.freshness import plain_text
+    assert plain_text("a\u202eb\u2066c\u200fd") == "abcd"
+    assert plain_text("one\rtwo\r\nthree") == "one\ntwo\nthree"
+
+
+def test_the_scan_day_tag_and_date_are_text_with_a_cap():
+    from iemod_fetch.freshness import parse_release_cache
+    raw = {"a/b": {"tag": "v1" + "x" * 500, "release_date": {"no": 1},
+                   "checked": "2026-03-14T08:00:00Z"},
+           "c/d": {"tag": 5}}
+    releases = parse_release_cache(raw)
+    assert set(releases) == {"a/b"}
+    assert len(releases["a/b"].tag) <= 104 and releases["a/b"].date is None
+    assert releases["a/b"].checked == "2026-03-14T08:00:00Z"
