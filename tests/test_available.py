@@ -79,3 +79,49 @@ def test_the_json_schema_accepts_the_document():
         schema = json.load(fh)
     jsonschema.validate(json.loads(mods_document(available_mods(MANIFEST, LCC, DB))),
                         schema)
+
+
+# --- lcc-docs' date as a second signal (ADR-0044, GUI-AUDIT item 50) ----------
+
+from iemod_fetch.available import AvailableMod, mark_fetched, newer_by_day  # noqa: E402
+
+
+@pytest.mark.parametrize("date, since, expected", [
+    ("2025-08-25", "2025-08-24", True),
+    ("2025-08-25", "2025-08-25", False),                 # the same day: not newer
+    ("2025-08-25", "2025-08-25T23:59:59Z", False),       # cut to the day, no zone guessed
+    ("2025-08-26", "2025-08-25T23:59:59Z", True),
+    ("2025-08-24", "2025-08-25", False),
+    (None, "2025-08-25", False), ("2025-08-25", None, False),    # unknown: silence
+    ("soon", "2025-08-25", False), ("2025-08-25", "", False),
+])
+def test_dates_are_compared_by_day_and_doubt_says_nothing(date, since, expected):
+    assert newer_by_day(date, since) is expected
+
+
+def test_a_date_is_never_a_version_or_an_update():
+    mod = AvailableMod(key="bg1ub", tp2="bg1ub", name="BG1UB", last_update="2025-08-25")
+    mark_fetched([mod], {"bg1ub": "2025-01-02T10:00:00Z"})
+    assert mod.fetched == "2025-01-02" and mod.maybe_updated
+    assert mod.update_available is None and mod.latest is None and mod.version is None
+    assert "maybe_updated" not in mod.as_dict()          # not in the CLI's mods-v1
+
+
+def test_a_copy_with_no_fetch_day_is_not_marked():
+    mod = AvailableMod(key="x", tp2="x", name="X", last_update="2025-08-25")
+    mark_fetched([mod], {"x": "not a time", "other": "2020-01-01T00:00:00Z"})
+    assert mod.fetched is None and not mod.maybe_updated
+
+
+def test_the_page_is_a_page_not_an_archive_lcc_docs_links():
+    from iemod_fetch.available import available_mods
+    from iemod_fetch.catalogues import CatalogueSet
+    import json as _json
+    import tempfile
+    entry = {"id": 1, "name": "M", "tp2": "m", "games": ["bgee"], "status": [],
+             "categories": [], "last_update": "2025-08-25",
+             "urls": ["https://example.org/m-v2.zip", "http://example.org/m/"]}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        _json.dump([entry], fh)
+    (mod,) = available_mods(None, CatalogueSet.load([fh.name]))
+    assert mod.page == "http://example.org/m/"          # the archive is skipped

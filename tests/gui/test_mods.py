@@ -597,3 +597,46 @@ def test_a_check_is_not_run_again_when_nothing_it_reads_changed(qtbot, tmp_path)
     with qtbot.waitSignal(widget.checked, timeout=5000):
         widget.check_conflicts()
     assert widget.checks == ran + 1
+
+
+MAYBE_MODS = [
+    {"key": "tweaks", "name": "Tweak Anthology", "games": ["EET"], "categories": [],
+     "status": ["stable"], "advisories": [], "version": "v16", "installed": None,
+     "update_available": None, "latest": None, "last_update": "2025-08-25",
+     "fetched": "2025-08-01", "maybe_updated": True, "page": "https://example.org/tweaks",
+     "tp2s": [{"tp2": "tweaks/setup-tweaks.tp2", "origin": "tp2",
+               "components": [component(0, "One")]}]},
+    {"key": "other", "name": "Other", "games": ["EET"], "categories": [], "status": [],
+     "advisories": [], "version": "1", "last_update": "2025-08-25", "fetched": None,
+     "maybe_updated": False, "tp2s": [{"tp2": "other/setup-other.tp2", "origin": "tp2",
+                                       "components": [component(0, "One")]}]},
+]
+
+
+def test_maybe_updated_is_shown_as_a_date_and_filtered(qtbot, tmp_path):
+    widget = page(qtbot, tmp_path, MAYBE_MODS)
+    tweaks, other = widget.tree.topLevelItem(0), widget.tree.topLevelItem(1)
+    assert tweaks.text(0) == "Tweak Anthology" and tweaks.text(1) == "v16 (maybe updated)"
+    assert other.text(1) == "1"
+    widget.filter.setCurrentText("Maybe updated")
+    assert [widget.tree.topLevelItem(i).text(0) for i in range(2)
+            if not widget.tree.topLevelItem(i).isHidden()] == ["Tweak Anthology"]
+    widget.filter.setCurrentText("Updates available")   # a date is not an update
+    assert all(widget.tree.topLevelItem(i).isHidden() for i in range(2))
+    widget._show(tweaks)
+    text = widget.details.toPlainText()
+    assert "lcc-docs last update: 2025-08-25" in text
+    assert "after your copy was fetched on 2025-08-01" in text and "not a version" in text
+
+
+def test_a_release_update_and_a_date_both_show_and_a_plain_address_is_text(qtbot, tmp_path):
+    """Review of #122: the column agrees with both filters; an http page is
+    shown, never dropped and never a link."""
+    both = dict(MAYBE_MODS[0], update_available=True, installed="v15",
+                latest={"version": "v16"}, page="http://example.org/tweaks")
+    widget = page(qtbot, tmp_path, [both])
+    row = widget.tree.topLevelItem(0)
+    assert row.text(1) == "v15 -> v16 (maybe updated)"
+    widget._show(row)
+    assert "http://example.org/tweaks" in widget.details.toPlainText()
+    assert 'href="http://' not in widget.details.toHtml()
