@@ -490,6 +490,24 @@ built by the wizard before its window is drawn; the limit stays 100 ms.
 With it, windows-latest measured median 10.9 ms, worst 11.8 ms over 30 runs
 (before: 15.5 and 63.9 ms) - what ubuntu-latest measures.
 
+### The Linux bundles on the target distros (ADR-0056)
+
+`.github/workflows/bundles-distros.yml` takes a published release's Linux
+zips and starts them inside fedora (Bazzite's base), archlinux (CachyOS's
+base), ubuntu 24.04 and latest, and debian trixie. `tools/distro_libs.sh`,
+run as root in each fresh container, measures four things:
+- which libraries the bundle's Qt links to and the system lacks, read with
+  `ldd`, for three sets: a headless start (offscreen), an X11/XWayland
+  desktop (xcb) and a native Wayland session;
+- which package ships each library, asked of the distro's own index
+  (`apt-file`, `dnf repoquery`, `pacman -F`), then installs them;
+- whether the wizard starts offscreen (`--check`), before and after;
+- whether the command line answers `--version` and `--help`.
+
+Each job's summary lists what was missing and the package that filled it,
+which is what the README and docs/REAL-TEST.md tell a player to install.
+It runs on every published release, or by hand on any tag.
+
 ## What is deliberately not done
 
 **No network in the test suite, ever.** Not even against a local server. The
