@@ -87,13 +87,19 @@ cp -a "<cartella di BG2:EE>" bg2ee
 ls bgee/chitin.key bg2ee/chitin.key     # devono esistere entrambi
 ```
 
+La cartella giusta è quella che contiene `chitin.key`. Con l'installer Linux
+di GOG il gioco sta nella sottocartella `game/` (per esempio
+`~/GOG Games/Baldur's Gate II Enhanced Edition/game`): copia quella, non la
+cartella sopra.
+
 Per EET la cartella `bg2ee` diventa il gioco EET; `bgee` resta la sorgente.
 
 ### Nomi in minuscolo: da misurare, non da dare per scontato
 
 Le guide storiche di WeiDU su Linux dicono di portare in minuscolo i nomi dei
-file del gioco con lo strumento `tolower` (è nello zip di WeiDU per Linux, che
-la procedura guidata scarica nella fase 5). Sulle Enhanced Edition questo può
+file del gioco con lo strumento `tolower`. Sta nello zip di WeiDU per Linux,
+ma la procedura guidata tiene solo il programma `weidu` e scarta il resto,
+quindi `tolower` va preso a mano (passo 2 qui sotto). Sulle Enhanced Edition questo può
 però rinominare anche il programma del gioco (`BaldursGate` →
 `baldursgate`) e rompere l'avvio da GOG o Steam. Quindi:
 
@@ -104,12 +110,14 @@ però rinominare anche il programma del gioco (`BaldursGate` →
    dentro ciascuna copia (rispondi sì alle sue domande), e annota se il gioco
    parte ancora:
    ```bash
-   cd ~/iemod-test/games/bgee  && <cartella di WeiDU>/tolower
-   cd ~/iemod-test/games/bg2ee && <cartella di WeiDU>/tolower
+   mkdir -p ~/iemod-test/weidu-zip && cd ~/iemod-test/weidu-zip
+   curl -LO https://github.com/WeiDUorg/weidu/releases/download/v251.00/WeiDU-Linux-251.zip
+   echo "3e1a34ec5d6e934b1d4a34541a1312d0170b120c6efe903a732415acde3bd3c0  WeiDU-Linux-251.zip" | sha256sum --check
+   unzip -o WeiDU-Linux-251.zip WeiDU-Linux/tolower
+   cd ~/iemod-test/games/bgee  && ~/iemod-test/weidu-zip/WeiDU-Linux/tolower
+   cd ~/iemod-test/games/bg2ee && ~/iemod-test/weidu-zip/WeiDU-Linux/tolower
    ```
-
-(La cartella di WeiDU la mostra la procedura guidata nella fase 5, riga
-"WeiDU".)
+   (La somma è la stessa che la procedura guidata controlla per questo zip.)
 
 ---
 
@@ -123,8 +131,10 @@ Gli elenchi qui sotto sono **misurati** (PR #118, run 41289255763) sui
 container puliti di ogni distribuzione: dopo questi pacchetti `ldd` trova
 tutte le librerie di Qt e `--check` passa. Sono il caso peggiore: un desktop
 installato ne ha già la maggior parte, e `apt`/`dnf`/`pacman` salteranno quelli
-presenti. Prima riga: avvio senza finestra; righe `xcb`: la finestra su X11 o
-XWayland; `wayland-cursor`: la finestra su Wayland nativo.
+presenti. In ordine: gli strumenti per gli archivi (`unzip`, `bsdtar`,
+`unar`); le librerie per l'avvio senza finestra (EGL/GL, X11, D-Bus, font,
+GLib, xkbcommon); le librerie `xcb` per la finestra su X11 o XWayland;
+`wayland-cursor` per la finestra su Wayland nativo.
 
 ### Debian trixie
 
@@ -152,8 +162,9 @@ sudo apt install unzip libarchive-tools unar \
   libxkbcommon-x11-0 libwayland-cursor0
 ```
 
-(Su Ubuntu 22.04 o Debian 12, non misurati, `libglib2.0-0t64` si chiama
-`libglib2.0-0`.)
+Ubuntu 22.04 e Debian 12 **non sono supportati**: lo zip è costruito per
+Debian trixie e successivi (glibc più recente) e lì molto probabilmente non
+parte.
 
 ### Bazzite (Fedora Atomic)
 
@@ -264,7 +275,16 @@ Due giri, nell'ordine: prima piccolo, poi grande.
 6. Alla fine leggi il riepilogo: quanti componenti installati, con avvisi, non
    installati, non raggiunti.
 7. **Avvia il gioco** dalla copia e controlla che arrivi al menu e carichi una
-   partita nuova.
+   partita nuova. Lancia il programma **dentro la copia**, non da Steam o GOG
+   Galaxy/Heroic, che avvierebbero la cartella originale:
+   ```bash
+   cd ~/iemod-test/games/bg2ee && ./BaldursGateII     # nome esatto: ls
+   ```
+   La versione Steam nativa, lanciata così, può riavviarsi tramite Steam e
+   aprire la cartella originale. Se succede, crea nella copia un file
+   `steam_appid.txt` con l'ID del gioco (BG2:EE `257350`, BG:EE `228280`) e
+   riprova; se ancora non basta, annotalo in `note.txt`. Per EET si lancia il
+   gioco della cartella `bg2ee`.
 
 ### Giro B - EET (ore)
 
@@ -278,7 +298,20 @@ watchdog avvisa (`!!` nell'output), annota mod e ora.
 
 ## 7. Cosa raccogliere
 
-Questo script raccoglie tutto quello che mi serve, **senza** i file dei giochi:
+Prima scrivi, a mano, `~/iemod-test/report/note.txt` con:
+
+- giro A o B, distribuzione, giochi da GOG o Steam, nativi o Windows;
+- il testo dell'output della procedura guidata (selezionalo nella finestra e
+  incollalo), soprattutto le righe `!!` e quelle di errore;
+- se il gioco parte dopo l'installazione;
+- qualunque cosa ti sia sembrata strana.
+
+Su Bazzite scrivi anche che lavori in Distrobox: dentro il contenitore
+`/etc/os-release` (in `system.txt`) descrive l'immagine Ubuntu o Fedora, non
+Bazzite.
+
+Poi questo script raccoglie il resto e crea l'archivio, **senza** i file dei
+giochi:
 
 ```bash
 cd ~/iemod-test
@@ -296,13 +329,7 @@ tar czf iemod-report.tar.gz report
 ls -lh iemod-report.tar.gz
 ```
 
-Aggiungi, a mano, in `report/note.txt`:
-
-- giro A o B, distribuzione, giochi da GOG o Steam, nativi o Windows;
-- il testo dell'output della procedura guidata (selezionalo nella finestra e
-  incollalo), soprattutto le righe `!!` e quelle di errore;
-- se il gioco parte dopo l'installazione;
-- qualunque cosa ti sia sembrata strana.
+Se modifichi `note.txt` dopo, rilancia la riga `tar czf ...`.
 
 Non metterci token, password o il nome utente se non vuoi: `results.json` e
 `answers.json` contengono nomi di mod e risposte, non dati personali, ma i
