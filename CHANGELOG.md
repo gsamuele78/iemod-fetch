@@ -40,7 +40,8 @@ Python API, which is internal.
   tooltips, the download table's detail and newer-release tooltips, the
   install order's tooltips, the status lines of the window, the mod list and
   the download page, the game page's folder findings, and every message box
-  (errors, questions, the preset summary, "Others need it").
+  (errors, questions, the preset summary, "Others need it", the install
+  confirmation), and the install button's prerequisites tooltip.
   `tests/gui/test_tooltips.py` drives each with markup, and fails on a new
   tooltip that is neither a fixed string nor `plain_tip`.
 - **The README names the system libraries the Linux wizard needs**, per

@@ -4476,5 +4476,6 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
   - QLabels that show names or messages are set to `PlainText`.
 
   A test fails on a tooltip that is neither a fixed string nor
-  `plain_tip`. `pages/install.py` keeps its one confirmation (its own
-  text) and its prerequisites tooltip; it is not changed here.
+  `plain_tip`, in every page. pages/install.py's confirmation (known
+  issues, readiness, mods' names, paths) and its prerequisites tooltip
+  follow the same rule; its other labels were already plain text.

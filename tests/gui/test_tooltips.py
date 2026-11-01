@@ -18,6 +18,8 @@ from PySide6.QtGui import Qt as GuiQt, QTextDocument  # noqa: E402
 
 from iemod_fetch_gui import text as qtext  # noqa: E402
 
+from .test_install import world  # noqa: E402,F401 (the install page's fixture)
+
 HOSTILE = '<a href="https://evil.example">x</a> <img src="https://evil.example/i.png"> <b>B</b>'
 GUI = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "iemod_fetch_gui")
 
@@ -118,13 +120,11 @@ def _own_constant(part) -> bool:
 
 
 def test_every_tooltip_is_a_fixed_string_or_plain_tip():
-    """A tooltip added later with data in it, and no plain_tip, fails here.
-    pages/install.py is the other session's (its one tooltip lists local
-    prerequisites); it is reported, not changed, by this PR."""
+    """A tooltip added later with data in it, and no plain_tip, fails here."""
     offenders = []
     for root, _dirs, files in os.walk(GUI):
         for name in files:
-            if not name.endswith(".py") or name == "install.py":
+            if not name.endswith(".py"):
                 continue
             path = os.path.join(root, name)
             with open(path, encoding="utf-8") as fh:
@@ -143,3 +143,20 @@ def test_every_tooltip_is_a_fixed_string_or_plain_tip():
                     if not (fixed or tipped):
                         offenders.append(f"{name}:{node.lineno}")
     assert offenders == []
+
+
+def test_the_install_page_confirms_and_tips_in_plain_text(qtbot, world, monkeypatch):  # noqa: F811
+    """pages/install.py: the confirmation names known issues, readiness, mods
+    and paths; the button's tooltip, prerequisites with paths chosen by hand."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from iemod_fetch_gui.pages.install import InstallPage
+    page = InstallPage(str(world["tmp"]), world["services"])
+    qtbot.addWidget(page)
+    asked = []
+    monkeypatch.setattr(qtext, "question", lambda *a: asked.append(a[2])
+                        or QMessageBox.StandardButton.Yes)
+    assert page.confirm("Install?", HOSTILE) and asked == [HOSTILE]
+    page.refresh()
+    tip = page.install_button.toolTip()
+    assert tip.startswith("<qt>") and "<a " not in tip       # escaped, whatever it lists
