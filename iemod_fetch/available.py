@@ -25,6 +25,7 @@ source's facts and where they came from. Nothing is fetched: this reads only
 what was given.
 """
 import json
+import re
 from dataclasses import dataclass, field
 from collections.abc import Mapping, Sequence
 
@@ -63,6 +64,8 @@ class AvailableMod:
     installed: str | None = None
     latest: Candidate | None = None
     update_available: bool | None = None
+    page: str | None = None               # lcc-docs' first link for it
+    fetched: str | None = None            # the day this tool fetched the player's copy
 
     def _repo(self, url: str | None) -> None:
         repo = github_repo(url)
@@ -74,6 +77,13 @@ class AvailableMod:
             origin = source_name(origin)
             self.kinds_by_source[origin] = to_kinds(
                 self.kinds_by_source.get(origin, ()) + found, {})
+
+    @property
+    def maybe_updated(self) -> bool:
+        """lcc-docs' date is after the day the player's copy was fetched
+        (ADR-0044): a page edited or a release made since. A date, never a
+        version - and unknown is silence, not a guess."""
+        return newer_by_day(self.last_update, self.fetched)
 
     @property
     def kinds(self) -> tuple[str, ...]:
@@ -102,6 +112,26 @@ class AvailableMod:
                 "kinds_by_source": {o: list(k) for o, k in self.kinds_by_source.items()},
                 "kind_disagreement": self.kind_disagreement,
                 "install_category": self.install_category, "tags": list(self.tags)}
+
+
+_DAY = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def newer_by_day(date: str | None, since: str | None) -> bool:
+    """`date` is a later day than `since`. lcc-docs' dates are days with no
+    time or zone, so both are cut to the day: the same day is not newer,
+    and any doubt (no date, not a date) says nothing (ADR-0044)."""
+    a, b = _DAY.match(date or ""), _DAY.match(since or "")
+    return a is not None and b is not None and a.groups() > b.groups()
+
+
+def mark_fetched(mods: Sequence[AvailableMod], fetched: Mapping[str, str]) -> None:
+    """Give each mod the day its copy was fetched ({mod key: ISO time}, from
+    install.State's `installed_at`, UTC)."""
+    for mod in mods:
+        when = fetched.get(mod.key)
+        if when and _DAY.match(when):
+            mod.fetched = when[:10]
 
 
 def _games(values) -> tuple[str, ...]:
@@ -149,6 +179,7 @@ def available_mods(manifest: Manifest | None = None,
                 mod._kinds(entry.origin, to_kinds(entry.categories, LCC_DOCS))
                 mod.safe = mod.safe if mod.safe is not None else entry.safe
                 mod.last_update = mod.last_update or entry.last_update
+                mod.page = mod.page or next(iter(entry.http_urls), None)
                 mod.blocking = mod.blocking or entry.blocking
                 mod.advisories.extend(a for a in entry.advisories()
                                       if a not in mod.advisories)

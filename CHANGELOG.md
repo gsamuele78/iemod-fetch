@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **"Maybe updated" in the wizard's mod selection** (GUI-AUDIT item 50,
+  ADR-0044): a mod whose lcc-docs date is after the day this tool fetched
+  your copy is marked "(maybe updated)", with a filter and, in its details,
+  both dates and lcc-docs' page - a date, never a version, so never "update
+  available". It reaches mods with no GitHub release (30 to 55 of the
+  supplied 149). The copy's day is the one recorded when it was fetched, not
+  the tp2's file date (a zip unpacks with today's), compared by day; a copy
+  with no record is not marked.
 - **The Linux bundles measured on the distributions players run** (ADR-0056):
   the `bundles-distros` workflow, dispatched by release.yml for each tag it
   publishes, starts the release's wizard and command-line zips in fresh

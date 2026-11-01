@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping, Sequence
 from .atomic import write_text
 from .auth import resolve_credential
 from . import backup
-from .available import AvailableMod, available_mods, mods_document
+from .available import AvailableMod, available_mods, mark_fetched, mods_document
 from .catalogues import CatalogueSet
 # around a program the wizard itself starts (a browser): ADR-0058
 from .childenv import spawning as starting_program  # noqa: F401
@@ -662,6 +662,12 @@ def mod_choices(game: str | None = None, target: str | None = None,
     releases = releases or cached.releases
     mods = list_mods(manifest=manifest, catalogues=catalogues, mod_db=mod_db,
                      releases=releases, weidu_logs=weidu_logs)
+    if target and os.path.isdir(target):
+        # the day each copy under `target` was fetched: lcc-docs' newer date
+        # marks it "maybe updated" (ADR-0044); a copy put there by hand has none
+        mark_fetched(mods, {normalize_key(folder): entry.get("installed_at", "")
+                            for folder, entry in State.load(target).mods.items()
+                            if isinstance(entry, dict)})
     staged = (choices.from_described(describe_mods(target, preferences))
               if target and os.path.isdir(target) else {})
     records = os.path.join(krion, "mods") if krion else None
@@ -674,6 +680,8 @@ def mod_choices(game: str | None = None, target: str | None = None,
         if wanted and mod.games and wanted not in {g.lower() for g in mod.games}:
             continue
         entry = mod.as_dict()
+        # the wizard's only, not the CLI's mods-v1 document (ADR-0044)
+        entry.update(page=mod.page, fetched=mod.fetched, maybe_updated=mod.maybe_updated)
         entry["tp2s"] = []
         for tp2 in tp2s.get(choices.folder_key(mod.tp2), []):
             described = tp2.as_dict()

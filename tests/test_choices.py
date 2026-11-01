@@ -139,3 +139,30 @@ def test_a_failed_write_leaves_no_temporary_file(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         api.save_selection(str(tmp_path), "EET", [("m/m.tp2", 0)])
     assert os.listdir(tmp_path) == []
+
+
+def test_a_copy_fetched_before_lcc_docs_date_is_maybe_updated(tmp_path):
+    """ADR-0044: the day this tool fetched the copy (install.State), not the
+    tp2's mtime - a zip unpacks with today's, a tar with the archive's."""
+    mods_dir = tmp_path / "Mods"
+    (mods_dir / "bg1ub").mkdir(parents=True)
+    (mods_dir / "bg1ub" / "setup-bg1ub.tp2").write_text("BEGIN ~Only this~\n")
+    state = {"version": 1, "mods": {"bg1ub": {"installed_at": "2025-08-01T09:00:00Z"}}}
+    (mods_dir / ".iemod-fetch-state.json").write_text(json.dumps(state))
+    mods = api.mod_choices("BGEE", target=str(mods_dir), catalogues=[LCC],
+                           krion=krion_dir(tmp_path, BG1UB), data_dir=str(tmp_path / "x"))
+    bg1ub = next(m for m in mods if m["key"] == "bg1ub")
+    assert bg1ub["maybe_updated"] and bg1ub["fetched"] == "2025-08-01"
+    assert bg1ub["last_update"] == "2025-08-25"
+    assert bg1ub["page"] == "https://www.pocketplane.net/bg1-unfinished-business/"
+    assert bg1ub["update_available"] is not True        # a date says no version
+
+
+def test_a_copy_put_there_by_hand_has_no_day_and_no_mark(tmp_path):
+    mods_dir = tmp_path / "Mods"
+    (mods_dir / "bg1ub").mkdir(parents=True)
+    (mods_dir / "bg1ub" / "setup-bg1ub.tp2").write_text("BEGIN ~Only this~\n")
+    mods = api.mod_choices("BGEE", target=str(mods_dir), catalogues=[LCC],
+                           krion=krion_dir(tmp_path, BG1UB), data_dir=str(tmp_path / "x"))
+    bg1ub = next(m for m in mods if m["key"] == "bg1ub")
+    assert bg1ub["fetched"] is None and not bg1ub["maybe_updated"]

@@ -58,7 +58,9 @@ Checker = Callable[[str, list[Key], dict, str], dict]
 ROLE = Qt.ItemDataRole.UserRole
 ALL = "All kinds"
 FILTERS = ["All mods", "Chosen only", "Conflicts only", "Updates available",
-           "Kinds disagree"]
+           "Maybe updated", "Kinds disagree"]
+# A date is not a version (ADR-0044): never "update available" from lcc-docs
+MAYBE = "maybe updated"
 KIND_COLUMN = 3
 DISAGREE = "\u26a0 "        # the mark on a row whose sources disagree on its kind
 CHECK_DELAY_MS = 700      # a burst of clicks is checked once, after it ends
@@ -410,6 +412,8 @@ class ModsPage(QWidget):
         version = mod.get("version") or ""
         if mod.get("update_available"):
             version = f"{mod.get('installed') or version} -> {latest.get('version', '?')}"
+        elif mod.get("maybe_updated"):
+            version = f"{version} ({MAYBE})" if version else MAYBE
         tp2s = mod.get("tp2s") or []
         origin = ", ".join(sorted({t["origin"] for t in tp2s})) or "not known yet"
         kind = ", ".join(kinds_of(mod))
@@ -1026,6 +1030,8 @@ class ModsPage(QWidget):
                 visible = visible and mod.get("key") in in_conflict
             elif mode == "Updates available":
                 visible = visible and bool(mod.get("update_available"))
+            elif mode == "Maybe updated":
+                visible = visible and bool(mod.get("maybe_updated"))
             elif mode == "Kinds disagree":
                 visible = visible and bool(mod.get("kind_disagreement"))
             item.setHidden(not visible)
@@ -1055,6 +1061,16 @@ class ModsPage(QWidget):
             lines.append(f"<b>Newest version:</b> {e(str(latest.get('version')))} "
                          f"({e(str(latest.get('origin')))}, "
                          f"{e(str(latest.get('date') or 'no date'))})")
+        if mod.get("last_update"):
+            lines.append(f"<b>lcc-docs last update:</b> {e(str(mod['last_update']))}")
+        if mod.get("maybe_updated"):
+            page = str(mod.get("page") or "")
+            link = (f' - <a href="{e(page, quote=True)}">{e(page)}</a>'
+                    if page.startswith("https://") else "")
+            lines.append(f"<b>Maybe updated:</b> lcc-docs lists a change on "
+                         f"{e(str(mod.get('last_update')))}, after your copy was fetched "
+                         f"on {e(str(mod.get('fetched')))}. A date, not a version: the "
+                         f"page may only have been edited{link}")
         lines += [f"<b>Warning:</b> {e(str(text))}" for text in mod.get("advisories") or []]
         lines += [f"<b>Cannot be chosen:</b> {e(t['refused'])}"
                   for t in mod.get("tp2s") or [] if t.get("refused")]

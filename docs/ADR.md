@@ -2755,6 +2755,29 @@ The 30 to 55 mods with no GitHub release get a signal they lack today. Some mark
 pages edited without a new release; the wording says so. A test pins that a
 date is never presented as a version.
 
+### Amendment (2026-11-01, GUI-AUDIT item 50): which date is "the player's copy"
+
+- **Measured: the tp2's mtime cannot be used.** Through `archives.safe_extract`,
+  a tp2 dated 2019-05-04 in a zip came out dated the day it was unpacked
+  (2026-11-01), while the same tp2 in a tar.gz kept 2019-05-04. Python's
+  zipfile does not restore the time; tar and 7-Zip do. The same mod would
+  be marked or not depending on its archive format.
+- **The date used is the day this tool fetched the copy**: `installed_at`
+  in the mods folder's `.iemod-fetch-state.json` (install.State, UTC),
+  written when a download or a supplied file is placed. A copy fetched on
+  day D holds whatever was published by D, so an lcc-docs date after D
+  means the page changed since.
+- **Compared by day.** lcc-docs gives a day with no time or zone, so both
+  dates are cut to the day. The same day is not newer, which leans toward
+  not marking. A missing or unreadable date marks nothing.
+- **A copy with no record says nothing.** That covers a folder put there
+  by hand, or a mod only named by a WeiDU.log. Nothing is guessed.
+- **Shown in the wizard only.** Mod selection gets "(maybe updated)" in
+  the version column, a "Maybe updated" filter, and in the details
+  lcc-docs' date, the fetch day and the page. The CLI's mods-v1 document
+  is unchanged, since no fetch day is known there. lcc-docs' status was
+  already shown.
+
 ---
 
 ## ADR-0045 — The wizard runs mod_installer, on the player's word (amends ADR-0022)
