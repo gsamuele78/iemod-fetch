@@ -104,7 +104,7 @@ jobs:
       # existed (3.0.0) was built on 3.12, and is built on it again.
       - name: The Python this tag was built with
         run: test -f .python-version || echo 3.12 > .python-version
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with: { python-version-file: .python-version }
       - name: The runtime's libraries, by hash (ADR-0043)
         run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
