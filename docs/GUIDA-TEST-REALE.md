@@ -124,28 +124,31 @@ però rinominare anche il programma del gioco (`BaldursGate` →
 
 ## 4. Preparare il sistema
 
-La procedura guidata è uno zip che contiene già Python e mod_installer. Al
-sistema servono solo: le librerie grafiche di Qt per aprire la finestra, e gli
-strumenti per aprire archivi RAR e 7z (circa metà delle mod li usa).
+La procedura guidata contiene già Python, mod_installer e quasi tutte le
+librerie di Qt. Al sistema servono solo: il **driver grafico** (EGL/GL), le
+librerie **xcb** per la finestra su X11 o XWayland (solo con lo zip 4.1.0) e
+gli strumenti per aprire archivi RAR e 7z (circa metà delle mod li usa).
 
-Gli elenchi qui sotto sono **misurati** (PR #118, run 41289255763) sui
-container puliti di ogni distribuzione: dopo questi pacchetti `ldd` trova
-tutte le librerie di Qt e `--check` passa. Sono il caso peggiore: un desktop
-installato ne ha già la maggior parte, e `apt`/`dnf`/`pacman` salteranno quelli
-presenti. In ordine: gli strumenti per gli archivi (`unzip`, `bsdtar`,
-`unar`); le librerie per l'avvio senza finestra (EGL/GL, X11, D-Bus, font,
-GLib, xkbcommon); le librerie `xcb` per la finestra su X11 o XWayland;
-`wayland-cursor` per la finestra su Wayland nativo.
+Gli elenchi qui sotto sono **misurati in CI su container puliti** di ogni
+distribuzione (PR #131, run 43965747309, con il conteggio corretto: le
+librerie che il bundle porta già contano come presenti). Un desktop
+installato ne ha già la maggior parte, e `apt`/`dnf`/`pacman` salteranno
+quelli presenti.
+
+- **Con l'AppImage o lo zip della prossima release** (ADR-0060): le librerie
+  xcb sono già dentro; servono solo il driver grafico e gli strumenti per gli
+  archivi (la prima e l'ultima riga dei comandi qui sotto).
+- **Con lo zip 4.1.0**: servono anche le librerie xcb (la riga in mezzo) per
+  la finestra su X11/XWayland, e `wayland-cursor` per Wayland nativo.
 
 ### Debian trixie
 
 ```bash
 sudo apt update
-sudo apt install unzip libarchive-tools unar \
-  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+sudo apt install unzip libarchive-tools unar libegl1 libgl1
+# solo con lo zip 4.1.0:
+sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
   libxkbcommon-x11-0 libwayland-cursor0
 ```
 
@@ -155,11 +158,10 @@ Identico a Debian (misurato su 24.04 e 26.04):
 
 ```bash
 sudo apt update
-sudo apt install unzip libarchive-tools unar \
-  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+sudo apt install unzip libarchive-tools unar libegl1 libgl1
+# solo con lo zip 4.1.0:
+sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
   libxkbcommon-x11-0 libwayland-cursor0
 ```
 
@@ -169,53 +171,39 @@ parte.
 
 ### Bazzite (Fedora Atomic)
 
-Il sistema di base non si modifica (è immutabile). La strada pulita è un
-contenitore **Distrobox**, già presente in Bazzite: condivide la tua cartella
-home, quindi vede i giochi e le copie. Con un'immagine Ubuntu:
-
-```bash
-distrobox create --name iemod --image ubuntu:24.04
-distrobox enter iemod
-# dentro il contenitore:
-sudo apt update
-sudo apt install unzip libarchive-tools unar \
-  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
-  libxkbcommon-x11-0 libwayland-cursor0
-```
-
-oppure, con un'immagine Fedora (la stessa base di Bazzite):
+Con l'AppImage (passo 5) non serve niente: parte direttamente sul sistema,
+che ha già il driver grafico. Gli strumenti per gli archivi si mettono in un
+contenitore **Distrobox**, già presente in Bazzite, che condivide la tua
+cartella home e quindi vede i giochi e le copie. Con lo zip 4.1.0 conviene
+far girare anche la procedura guidata dentro il contenitore:
 
 ```bash
 distrobox create --name iemod --image fedora:latest
 distrobox enter iemod
-sudo dnf install unzip bsdtar unar \
-  libglvnd-egl libglvnd-glx libX11 dbus-libs fontconfig freetype libxkbcommon \
-  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+sudo dnf install unzip bsdtar unar libglvnd-egl libglvnd-glx
+# solo con lo zip 4.1.0:
+sudo dnf install xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
   xcb-util-renderutil xcb-util libxkbcommon-x11 libwayland-cursor
 ```
 
-Tutti i passi da qui in poi si fanno **dentro** `distrobox enter iemod`. La
-finestra della procedura guidata appare sul tuo desktop normalmente.
+oppure, con un'immagine Ubuntu, i comandi di Ubuntu qui sopra dopo
+`distrobox create --name iemod --image ubuntu:24.04` e `distrobox enter iemod`.
 
-(Senza contenitore lo zip spesso parte lo stesso, perché il desktop di Bazzite
-ha già quasi tutte queste librerie. Se `--check` al passo 5 si lamenta, usa il
-contenitore.)
+Con lo zip, tutti i passi da qui in poi si fanno **dentro** `distrobox enter
+iemod`. La finestra della procedura guidata appare sul tuo desktop
+normalmente.
 
 ### CachyOS (Arch)
 
 ```bash
-sudo pacman -S --needed unzip libarchive unarchiver \
-  libglvnd libx11 fontconfig freetype2 libxkbcommon \
-  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+sudo pacman -S --needed unzip libarchive unarchiver libglvnd
+# solo con lo zip 4.1.0:
+sudo pacman -S --needed xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
   xcb-util-renderutil xcb-util libxkbcommon-x11
 ```
 
-(`unarchiver` fornisce `unar`, `libarchive` fornisce `bsdtar`. Su Arch, dbus,
-glib e Wayland ci sono già nell'immagine di base. Le librerie di Qt sono
-misurate; i nomi di `unar` e `bsdtar` per Fedora e Arch no.)
+(`unarchiver` fornisce `unar`, `libarchive` fornisce `bsdtar`. Le librerie di
+Qt sono misurate; i nomi di `unar` e `bsdtar` per Fedora e Arch no.)
 
 Non misurato: una finestra davvero disegnata su un display reale. La
 completezza di `ldd` è la misura di riferimento.
