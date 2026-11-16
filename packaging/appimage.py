@@ -67,7 +67,7 @@ def fetch(url: str, digest: str, path: str) -> str:
         raise SystemExit(f"build aborted: {url} has sha256 {found}, not the pinned {digest}")
     with open(path, "wb") as fh:
         fh.write(data)
-    os.chmod(path, 0o755)                   # noqa: S103 (a program, run here)
+    os.chmod(path, 0o700)                   # run by this build only
     return path
 
 
@@ -83,7 +83,7 @@ def app_dir(zip_path: str, work: str) -> str:
     source = os.path.join(HERE, "appimage")
     for name in ("AppRun", f"{NAME}.desktop", f"{NAME}.svg"):
         shutil.copy2(os.path.join(source, name), os.path.join(root, name))
-    os.chmod(os.path.join(root, "AppRun"), 0o755)  # noqa: S103 (AppImage's entry point)
+    # AppRun is committed executable (100755) and copy2 keeps its mode
     os.symlink(f"{NAME}.svg", os.path.join(root, ".DirIcon"))
     with open(os.path.join(lib, NAME, "NOTICE-AppImage-runtime.txt"), "w",
               encoding="utf-8") as fh:

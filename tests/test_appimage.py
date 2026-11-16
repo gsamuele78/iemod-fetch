@@ -47,10 +47,13 @@ def test_the_appdir_holds_the_zips_folder_unchanged(tmp_path):
     with open(os.path.join(folder, "NOTICE-AppImage-runtime.txt"), encoding="utf-8") as fh:
         notice = fh.read()
     assert appimage.RUNTIME_TAG in notice and "LGPL" in notice and "MIT" in notice
-    assert os.access(os.path.join(root, "AppRun"), os.X_OK)
+    if sys.platform != "win32":               # no execute bit to keep there
+        assert os.stat(os.path.join(root, "AppRun")).st_mode & 0o111 == 0o111
     assert os.readlink(os.path.join(root, ".DirIcon")) == f"{NAME}.svg"
 
 
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="AppRun is a POSIX shell script; the AppImage is Linux-only")
 def test_apprun_starts_the_folders_program(tmp_path):
     root = appimage.app_dir(a_zip(tmp_path), str(tmp_path / "work"))
     done = subprocess.run([os.path.join(root, "AppRun")], capture_output=True, text=True,
@@ -79,7 +82,8 @@ def test_a_download_with_another_digest_is_refused(tmp_path, monkeypatch):
     assert not (tmp_path / "tool").exists()
     good = hashlib.sha256(b"not the pinned tool").hexdigest()
     path = appimage.fetch("https://example.org/tool", good, str(tmp_path / "tool"))
-    assert os.access(path, os.X_OK)
+    if sys.platform != "win32":
+        assert os.stat(path).st_mode & 0o777 == 0o700     # the build's own user only
 
 
 def test_the_pins_are_https_and_sha256():
@@ -94,3 +98,14 @@ def test_the_desktop_entry_is_valid():
     done = subprocess.run(["desktop-file-validate", path], capture_output=True, text=True,
                           check=False)
     assert done.returncode == 0 and not done.stdout.strip(), done.stdout
+
+
+def test_apprun_is_committed_executable():
+    """copy2 keeps the mode it has in the repository: 100755, not set at
+    build time with a constant (CodeQL, review of #131)."""
+    done = subprocess.run(["git", "ls-files", "-s", "packaging/appimage/AppRun"],
+                          cwd=os.path.join(HERE, os.pardir), capture_output=True, text=True,
+                          check=False)
+    if done.returncode != 0 or not done.stdout:
+        pytest.skip("not a git checkout")
+    assert done.stdout.split()[0] == "100755"
