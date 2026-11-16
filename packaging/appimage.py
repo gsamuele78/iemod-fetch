@@ -46,9 +46,10 @@ RUNTIME = (
      "runtime-x86_64"),
     "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d")
 RUNTIME_NOTICE = f"""The first part of this AppImage, the program that mounts it, is the AppImage
-type2-runtime ({RUNTIME_TAG}), under the MIT License, with these libraries linked
-in statically: libfuse (GNU Lesser General Public License v2.1, LGPL-2.1), squashfuse
-(BSD-2-Clause) and zstd (BSD-3-Clause).
+type2-runtime ({RUNTIME_TAG}), under the MIT License, built with musl libc (MIT)
+and with these libraries linked in statically: libfuse (GNU Lesser General Public
+License v2.1, LGPL-2.1: its text is licenses/appimage-runtime/LGPL-2.1),
+squashfuse (BSD-2-Clause), zstd (BSD-3-Clause) and zlib (zlib License).
 
 Its source, and the exact sources it was built from:
   https://github.com/AppImage/type2-runtime/tree/{RUNTIME_TAG}
@@ -71,7 +72,12 @@ def fetch(url: str, digest: str, path: str) -> str:
     return path
 
 
-def app_dir(zip_path: str, work: str) -> str:
+# The LGPL-2.1's text, for libfuse in the runtime (review of #131): from the
+# build system's common licences, as add_system_licences takes the others
+LGPL_21 = "/usr/share/common-licenses/LGPL-2.1"
+
+
+def app_dir(zip_path: str, work: str, lgpl: str = LGPL_21) -> str:
     """The AppDir: AppRun, the desktop entry, the icon, and the zip's folder
     unpacked as it is (links kept) under usr/lib/."""
     root = os.path.join(work, f"{NAME}.AppDir")
@@ -88,6 +94,11 @@ def app_dir(zip_path: str, work: str) -> str:
     with open(os.path.join(lib, NAME, "NOTICE-AppImage-runtime.txt"), "w",
               encoding="utf-8") as fh:
         fh.write(RUNTIME_NOTICE)
+    if not os.path.isfile(lgpl):
+        raise SystemExit(f"build aborted: no LGPL-2.1 text at {lgpl} for the runtime's libfuse")
+    texts = os.path.join(lib, NAME, "licenses", "appimage-runtime")
+    os.makedirs(texts, exist_ok=True)
+    shutil.copyfile(os.path.realpath(lgpl), os.path.join(texts, "LGPL-2.1"))
     return root
 
 

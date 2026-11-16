@@ -403,6 +403,9 @@ Limiti da sapere:
 | Cosa | Atteso |
 |---|---|
 | `--check` | la finestra si apre e si chiude senza errori |
+| Finestra vera, X11 | su una sessione X11 (o `QT_QPA_PLATFORM=xcb`) la procedura guidata si apre e si usa: in CI gira solo "offscreen", le librerie xcb del bundle non vengono mai caricate lì |
+| Finestra vera, Wayland | su una sessione Wayland (Bazzite, Steam Deck in modalità desktop) si apre; se no, prova `QT_QPA_PLATFORM=xcb` e indica quale funziona |
+| AppImage | parte con `chmod +x` e doppio clic o da terminale; indica se è servito `--appimage-extract-and-run` |
 | Download | ogni mod scaricata o, se bloccata, fornita a mano |
 | Gioco chiuso | con il gioco aperto, *Install* rifiuta e dice di chiuderlo |
 | Questionario | compare per le mod che fanno domande; le risposte vengono date da sole durante l'installazione (`-> ... (by question)` nell'output) |

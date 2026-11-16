@@ -24,6 +24,19 @@ SPEC.loader.exec_module(appimage)
 NAME = appimage.NAME
 
 
+@pytest.fixture(autouse=True)
+def lgpl_text(tmp_path, monkeypatch):
+    """The LGPL-2.1 text the runtime's libfuse ships with, wherever the
+    test runs (a build reads /usr/share/common-licenses)."""
+    path = tmp_path / "LGPL-2.1"
+    path.write_text("GNU LESSER GENERAL PUBLIC LICENSE\nVersion 2.1, February 1999\n")
+    monkeypatch.setattr(appimage, "LGPL_21", str(path))
+    defaults = list(appimage.app_dir.__defaults__)
+    defaults[-1] = str(path)
+    monkeypatch.setattr(appimage.app_dir, "__defaults__", tuple(defaults))
+    return path
+
+
 def a_zip(tmp_path, with_program=True):
     path = tmp_path / f"{NAME}-linux-x86_64.zip"
     with zipfile.ZipFile(path, "w") as zf:
@@ -109,3 +122,21 @@ def test_apprun_is_committed_executable():
     if done.returncode != 0 or not done.stdout:
         pytest.skip("not a git checkout")
     assert done.stdout.split()[0] == "100755"
+
+
+def test_the_runtimes_lgpl_text_ships_and_its_absence_stops_the_build(tmp_path):
+    """Review of #131: libfuse, in the runtime, is LGPL-2.1; its text goes in."""
+    root = appimage.app_dir(a_zip(tmp_path), str(tmp_path / "work"))
+    text = os.path.join(root, "usr", "lib", NAME, "licenses", "appimage-runtime", "LGPL-2.1")
+    with open(text, encoding="utf-8") as fh:
+        assert "LESSER GENERAL PUBLIC LICENSE" in fh.read()
+    (tmp_path / "again").mkdir()
+    with pytest.raises(SystemExit, match="LGPL-2.1"):
+        appimage.app_dir(a_zip(tmp_path / "again"), str(tmp_path / "work2"),
+                         lgpl=str(tmp_path / "missing"))
+
+
+def test_the_runtime_notice_names_every_component():
+    for part in ("MIT", "musl", "libfuse", "LGPL-2.1", "squashfuse", "zstd", "zlib",
+                 "licenses/appimage-runtime/LGPL-2.1", appimage.RUNTIME_TAG):
+        assert part in appimage.RUNTIME_NOTICE

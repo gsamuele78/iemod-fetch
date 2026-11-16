@@ -4553,9 +4553,12 @@ Measured while building one, 2026-11-16:
    icon are inside the AppImage, for the player's AppImage manager (Gear
    Lever, AppImageLauncher) if they use one. Nothing is written into the
    home folder unasked.
-6. **The runtime's licences are stated.** It is MIT, with libfuse
-   (LGPL-2.1), squashfuse and zstd linked in statically.
-   NOTICE-AppImage-runtime.txt names them and the tagged source.
+6. **The runtime's licences are stated.** It is MIT, built with musl
+   (MIT), with libfuse (LGPL-2.1), squashfuse (BSD-2-Clause), zstd
+   (BSD-3-Clause) and zlib linked in statically.
+   NOTICE-AppImage-runtime.txt names them and the tagged source. The
+   LGPL-2.1 text is copied from the build system to
+   `licenses/appimage-runtime/LGPL-2.1`; without it, the build stops.
 7. **distro_libs.sh counts what the bundle's own folder holds as present**,
    as the bootloader does. It does this by taking those names out of
    `ldd`'s "not found" list, not by setting LD_LIBRARY_PATH. With that
@@ -4575,10 +4578,16 @@ Measured while building one, 2026-11-16:
 - **libfuse is LGPL-2.1 and linked statically** into the runtime. Its
   source is the runtime's tagged source. Whether that covers relinking for
   every distributor is not argued here; it is how AppImages are
-  distributed.
+  distributed. The offer of source rests on the upstream tag staying. It
+  could be attached to the release, as mod_installer's is, if the owner
+  wants it independent of upstream.
 - **Not measured yet:**
   - a real desktop, mounted with FUSE rather than extracted: the guide's to
     confirm, Bazzite and Steam Deck first;
+  - a real window. Every start in CI is offscreen (QT_QPA_PLATFORM), so
+    the xcb and Wayland plugins and the xcb libraries now in the bundle
+    are measured with ldd but never loaded. The real-test guide's
+    checklist has a row for each;
   - bundles-distros' full package measurement of an AppImage: it starts
     with the first release that carries one.
 - The README's per-distribution package lists come from the old
