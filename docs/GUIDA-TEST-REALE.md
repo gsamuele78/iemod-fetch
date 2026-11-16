@@ -171,11 +171,27 @@ parte.
 
 ### Bazzite (Fedora Atomic)
 
-Con l'AppImage (passo 5) non serve niente: parte direttamente sul sistema,
-che ha già il driver grafico. Gli strumenti per gli archivi si mettono in un
-contenitore **Distrobox**, già presente in Bazzite, che condivide la tua
-cartella home e quindi vede i giochi e le copie. Con lo zip 4.1.0 conviene
-far girare anche la procedura guidata dentro il contenitore:
+**Con l'AppImage** (passo 5) la procedura guidata parte direttamente sul
+sistema, che ha già il driver grafico. Gli strumenti per gli archivi però li
+cerca **sul sistema dove gira** (`archives.py` non ne include di propri): se
+sono installati solo in un contenitore Distrobox, l'AppImage avviata fuori
+non li vede e le mod in RAR/7z falliscono. Controlla sul sistema:
+
+```bash
+command -v unzip bsdtar unar 7z      # annota quali mancano
+```
+
+Se manca `unar` (basta da solo per RAR e 7z), una di queste vie, **non
+misurate**:
+- `brew install unar` (Homebrew è previsto su Bazzite);
+- `rpm-ostree install unar bsdtar`, poi riavvia;
+- oppure fai girare anche l'AppImage **dentro** Distrobox, come lo zip qui
+  sotto.
+
+**Con lo zip 4.1.0**, la strada pulita è un contenitore **Distrobox**, già
+presente in Bazzite, che condivide la tua cartella home e quindi vede i giochi
+e le copie; la procedura guidata gira dentro il contenitore insieme agli
+strumenti:
 
 ```bash
 distrobox create --name iemod --image fedora:latest
@@ -214,8 +230,8 @@ completezza di `ldd` è la misura di riferimento.
 
 **Da quando la release lo contiene, la via principale su Linux è l'AppImage**
 (ADR-0060): un solo file, niente da estrarre, e le librerie di Qt sono già
-dentro. Il sistema deve fornire solo il driver grafico, X11 e i font, che
-ogni desktop ha già. Scarica `iemod-fetch-gui-linux-x86_64.AppImage` e
+dentro. Il sistema deve fornire solo il driver grafico (EGL/GL), che ogni
+desktop ha già (misurato sullo zip, che contiene la stessa cartella). Scarica `iemod-fetch-gui-linux-x86_64.AppImage` e
 `SHA256SUMS`:
 
 ```bash
@@ -231,8 +247,9 @@ chmod +x iemod-fetch-gui-linux-x86_64.AppImage
   avvialo così (si estrae in una cartella temporanea, è un po' più lento):
   `./iemod-fetch-gui-linux-x86_64.AppImage --appimage-extract-and-run --check`.
 - **Bazzite (Fedora Atomic).** L'AppImage parte **direttamente sul sistema**,
-  senza Distrobox: è il caso principale da provare. Il contenitore del passo 4
-  serve solo per lo zip, se l'AppImage non dovesse partire.
+  senza Distrobox: è il caso principale da provare. Gli strumenti per gli
+  archivi devono essere sul sistema stesso (passo 4, Bazzite): `command -v
+  bsdtar unar 7z` prima di iniziare.
 - Nessuna voce di menu viene creata da sola. Se la vuoi, usa Gear Lever (da
   Flathub, se non c'è già) o AppImageLauncher.
 - Copia l'output intero di `--check` se fallisce, e indica se hai usato
@@ -394,6 +411,7 @@ Limiti da sapere:
 | Finestra vera, X11 | su una sessione X11 (o `QT_QPA_PLATFORM=xcb`) la procedura guidata si apre e si usa: in CI gira solo "offscreen", le librerie xcb del bundle non vengono mai caricate lì |
 | Finestra vera, Wayland | su una sessione Wayland (Bazzite, Steam Deck in modalità desktop) si apre; se no, prova `QT_QPA_PLATFORM=xcb` e indica quale funziona |
 | AppImage | parte con `chmod +x` e doppio clic o da terminale; indica se è servito `--appimage-extract-and-run` |
+| Archivi RAR/7z con l'AppImage | `command -v bsdtar unar 7z` sul sistema dove gira l'AppImage; una mod in RAR e una in 7z si estraggono (su Bazzite: indica come hai installato `unar`) |
 | Download | ogni mod scaricata o, se bloccata, fornita a mano |
 | Gioco chiuso | con il gioco aperto, *Install* rifiuta e dice di chiuderlo |
 | Questionario | compare per le mod che fanno domande; le risposte vengono date da sole durante l'installazione (`-> ... (by question)` nell'output) |

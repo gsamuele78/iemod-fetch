@@ -191,8 +191,10 @@ holds the same folder. Make it executable and start it, nothing installed:
 chmod +x iemod-fetch-gui-linux-x86_64.AppImage && ./iemod-fetch-gui-linux-x86_64.AppImage
 ```
 
-Like every AppImage it uses the system's graphics driver, X11 and fonts,
-which any desktop has. It is mounted with FUSE, which most desktops have;
+It needs only the system's graphics driver (EGL/GL), which any desktop has:
+measured on the zip, the same folder; X11, fontconfig and freetype are in
+it. RAR and 7z mods need `bsdtar`, `unar` or 7-Zip on the system it runs on,
+as with the zip. It is mounted with FUSE, which most desktops have;
 without it, `--appimage-extract-and-run` starts it all the same. From the
 first release that carries it, Qt's X11 libraries (`libxcb-cursor` and the
 like) travel inside the bundle, in the zip as well.
