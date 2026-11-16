@@ -156,26 +156,41 @@ def test_a_zip_without_the_program_or_its_licences_stops_the_build(tmp_path, mis
 
 
 class FakeWindows:
-    """setup.exe, the installed program and unins000.exe, as subprocess.run
-    sees them; `uninstall` says what the uninstaller removes."""
+    """The two installers, the installed program, unins000.exe and the
+    "Installed apps" entry, as the check sees them. `upgrade` is what the
+    second install does to the first ("replace", or "beside" as a second
+    copy would), `unregister` whether the uninstaller removes the entry,
+    `uninstall` what it removes from disk."""
 
-    def __init__(self, app, *, starts=True, uninstall=None):
+    def __init__(self, app, *, starts=True, uninstall=None, upgrade="replace",
+                 unregister=True):
         self.app, self.starts, self.calls = app, starts, []
+        self.upgrade, self.unregister, self.registered = upgrade, unregister, None
         self.uninstall = uninstall or (lambda: shutil.rmtree(app))
 
     def __call__(self, args, **kwargs):
-        self.calls.append(os.path.basename(args[0]))
-        if args[0].endswith("setup.exe"):
-            os.makedirs(os.path.join(self.app, "licenses"))
-            for name in (f"{NAME}.exe", "LICENSE", "unins000.exe"):
-                open(os.path.join(self.app, name), "w").close()
+        name = os.path.basename(args[0])
+        self.calls.append(name)
+        if name.endswith("setup.exe"):
+            first = not os.path.exists(self.app)
+            os.makedirs(os.path.join(self.app, "licenses", "inno-setup"), exist_ok=True)
+            files = [f"{NAME}.exe", "LICENSE", "NOTICE-installer.txt",
+                     os.path.join("licenses", "inno-setup", "license.txt"), "unins000.exe"]
+            if not first and self.upgrade == "beside":
+                files.append("unins001.exe")
+            for each in files:
+                open(os.path.join(self.app, each), "w").close()
+            if first or self.upgrade == "replace":
+                self.registered = wi.PREVIOUS if name.startswith("previous") else "9.9.9"
             return subprocess.CompletedProcess(args, 0)
-        if args[0].endswith(f"{NAME}.exe"):
+        if name == f"{NAME}.exe":
             assert kwargs["env"]["QT_QPA_PLATFORM"] == "offscreen"
             return subprocess.CompletedProcess(args, 0 if self.starts else 1,
                                                "ok\n" if self.starts else "", "")
-        assert args[0].endswith("unins000.exe")
+        assert name == "unins000.exe"
         self.uninstall()
+        if self.unregister:
+            self.registered = None
         return subprocess.CompletedProcess(args, 0)
 
 
@@ -188,60 +203,92 @@ def local(tmp_path, monkeypatch):
     return path
 
 
-def test_the_check_installs_starts_and_uninstalls(tmp_path, local, monkeypatch):
-    app = str(local / "Programs" / NAME)
-    fake = FakeWindows(app)
-    monkeypatch.setattr(wi.subprocess, "run", fake)
+def run_check(tmp_path, local, monkeypatch, **fake):
+    windows = FakeWindows(str(local / "Programs" / NAME), **fake)
+    monkeypatch.setattr(wi.subprocess, "run", windows)
+    monkeypatch.setattr(wi, "registered_version", lambda: windows.registered)
     work = tmp_path / "work"
-    work.mkdir()
-    wi.check(str(tmp_path / "setup.exe"), str(work))
-    assert fake.calls == ["setup.exe", f"{NAME}.exe", "unins000.exe"]
-    assert not os.path.exists(app)
+    work.mkdir(exist_ok=True)
+    wi.check(str(tmp_path / "setup.exe"), str(work / "previous-setup.exe"), str(work),
+             "9.9.9")
+    return windows
+
+
+def test_the_check_upgrades_starts_and_uninstalls(tmp_path, local, monkeypatch):
+    windows = run_check(tmp_path, local, monkeypatch)
+    assert windows.calls == ["previous-setup.exe", "setup.exe", f"{NAME}.exe",
+                             "unins000.exe"]
+    assert not os.path.exists(local / "Programs" / NAME) and windows.registered is None
     # the markers it left are its own to remove; the data folder stays
     assert os.listdir(local / "iemod-fetch" / "data") == []
 
 
 def test_the_check_fails_when_the_installed_program_does_not_start(tmp_path, local,
                                                                      monkeypatch):
-    monkeypatch.setattr(wi.subprocess, "run",
-                        FakeWindows(str(local / "Programs" / NAME), starts=False))
-    work = tmp_path / "work"
-    work.mkdir()
     with pytest.raises(SystemExit, match="does not start"):
-        wi.check(str(tmp_path / "setup.exe"), str(work))
+        run_check(tmp_path, local, monkeypatch, starts=False)
+
+
+def test_the_check_fails_when_an_upgrade_installs_beside_the_previous(tmp_path, local,
+                                                                       monkeypatch):
+    with pytest.raises(SystemExit, match="Installed apps lists '0.0.0'"):
+        run_check(tmp_path, local, monkeypatch, upgrade="beside")
 
 
 def test_the_check_fails_when_the_uninstaller_takes_the_players_data(tmp_path, local,
                                                                       monkeypatch):
-    app = str(local / "Programs" / NAME)
-
     def too_much():
-        shutil.rmtree(app)
+        shutil.rmtree(local / "Programs" / NAME)
         shutil.rmtree(local / "iemod-fetch")
-    monkeypatch.setattr(wi.subprocess, "run", FakeWindows(app, uninstall=too_much))
-    work = tmp_path / "work"
-    work.mkdir()
     with pytest.raises(SystemExit, match="removed what the player made"):
-        wi.check(str(tmp_path / "setup.exe"), str(work))
+        run_check(tmp_path, local, monkeypatch, uninstall=too_much)
 
 
 def test_the_check_fails_when_the_uninstaller_leaves_the_program(tmp_path, local,
                                                                  monkeypatch):
-    monkeypatch.setattr(wi.subprocess, "run",
-                        FakeWindows(str(local / "Programs" / NAME), uninstall=lambda: None))
     monkeypatch.setattr(wi.time, "sleep", lambda s: None)
     monkeypatch.setattr(wi.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
-    work = tmp_path / "work"
-    work.mkdir()
     with pytest.raises(SystemExit, match="left .* behind"):
-        wi.check(str(tmp_path / "setup.exe"), str(work))
+        run_check(tmp_path, local, monkeypatch, uninstall=lambda: None)
+
+
+def test_the_check_fails_when_the_uninstaller_leaves_it_registered(tmp_path, local,
+                                                                   monkeypatch):
+    with pytest.raises(SystemExit, match="left the program in Installed apps"):
+        run_check(tmp_path, local, monkeypatch, unregister=False)
 
 
 def test_the_check_refuses_to_install_over_an_existing_copy(tmp_path, local, monkeypatch):
     (local / "Programs" / NAME).mkdir(parents=True)
-    monkeypatch.setattr(wi.subprocess, "run", FakeWindows(str(local / "Programs" / NAME)))
     with pytest.raises(SystemExit, match="exists already"):
-        wi.check(str(tmp_path / "setup.exe"), str(tmp_path))
+        run_check(tmp_path, local, monkeypatch)
+
+
+def test_inno_setups_licence_and_a_notice_go_into_the_folder(tmp_path):
+    inno = tmp_path / "inno"
+    inno.mkdir()
+    (inno / "license.txt").write_text("Inno Setup License\n==================\n")
+    source = tmp_path / "src"
+    source.mkdir()
+    wi.add_inno_licence(str(source), str(inno / "ISCC.exe"))
+    assert (source / "licenses" / "inno-setup" / "license.txt").read_text().startswith(
+        "Inno Setup License")
+    notice = (source / "NOTICE-installer.txt").read_text()
+    assert "licenses/inno-setup/license.txt" in notice and "is-6_7_3" in notice
+    assert "6.7.3" in notice and wi.INNO[0].split("/")[-2] == "is-6_7_3"
+
+
+@pytest.mark.parametrize("text", [None, "something else"])
+def test_a_missing_or_wrong_inno_licence_stops_the_build(tmp_path, text):
+    if text is not None:
+        (tmp_path / "license.txt").write_text(text)
+    with pytest.raises(SystemExit, match="licence"):
+        wi.add_inno_licence(str(tmp_path / "src"), str(tmp_path / "ISCC.exe"))
+
+
+def test_the_registry_key_is_the_scripts_app_id():
+    assert setup_section()["AppId"] == "{" + wi.APP_ID
+    assert wi.UNINSTALL_KEY.endswith(wi.APP_ID + "_is1")
 
 
 def test_it_is_built_on_windows_only(tmp_path, monkeypatch):

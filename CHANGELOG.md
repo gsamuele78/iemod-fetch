@@ -14,8 +14,9 @@ Python API, which is internal.
   (pinned by sha256), installs the zip's folder unchanged into
   %LOCALAPPDATA%\Programs without an administrator, with a Start-menu entry
   and an uninstaller that leaves projects and the data cache alone; in
-  SHA256SUMS and attested. Every release build installs it, starts it and
-  uninstalls it on windows-latest. Not signed yet.
+  SHA256SUMS and attested. Inno Setup's licence ships with it. Every release
+  build installs a previous version, upgrades it, starts it and uninstalls
+  it on windows-latest. Not signed yet: SmartScreen warns.
 - **The wizard as an AppImage on Linux** (ADR-0060):
   `iemod-fetch-gui-linux-x86_64.AppImage`, one file to make executable and
   start, with a desktop entry and an icon - the zip's folder unchanged

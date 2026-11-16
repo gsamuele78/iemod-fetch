@@ -12,13 +12,18 @@ The installer holds the same PyInstaller folder as the zip, unchanged: the
 same files, LICENSE, NOTICE-*.txt and licenses/ included, LICENSE shown on
 the licence page. The zip stays in the release for whoever prefers it.
 
-Inno Setup (its own licence, free for any use) is downloaded at a pinned
-version, checked by sha256, and installed for this build only, in its work
-folder. Its compiler builds the installer from packaging/windows/.
+Inno Setup is downloaded at a pinned version, checked by sha256, and
+installed for this build only, in its work folder. Its compiler builds the
+installer from packaging/windows/. The installer's own code - the setup
+program and unins000.exe - is Inno Setup's, under its licence (BSD-style):
+its text goes into the installed folder, licenses/inno-setup/license.txt,
+named by NOTICE-installer.txt.
 
-The installer is then tried as a player would use it: installed silently,
-the installed program started once offscreen with --check, uninstalled; the
-uninstaller must leave the data cache and the project alone.
+The installer is then tried as a player would use it: a previous version
+installed first, this one installed over it (one copy, one uninstaller,
+this version registered), the installed program started once offscreen
+with --check, uninstalled; the uninstaller must leave the data cache and
+the project alone and unregister the program.
 """
 import argparse
 import hashlib
@@ -42,9 +47,22 @@ SCRIPT = os.path.join(HERE, "windows", f"{NAME}.iss")
 INNO = (
     "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
     "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732")
+INNO_VERSION = "6.7.3"
 # What [Setup] DefaultDirName={autopf}\iemod-fetch-gui gives without administrator
 INSTALL_DIR = os.path.join("Programs", NAME)
 QUIET = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
+# Where Windows lists it under "Installed apps": [Setup] AppId, per user
+APP_ID = "{483B2769-37EB-4CC9-B7A8-410A2C01BCD1}"
+UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}_is1"
+# The version the upgrade check installs first, then replaces
+PREVIOUS = "0.0.0"
+INSTALLER_NOTICE = f"""The installer this folder came from, and its uninstaller (unins000.exe),
+are Inno Setup {INNO_VERSION}'s, by Jordan Russell and Martijn Laan, under the Inno
+Setup License: its text is licenses/inno-setup/license.txt. Its source:
+  https://github.com/jrsoftware/issrc/tree/is-{INNO_VERSION.replace(".", "_")}
+The program itself is iemod-fetch-gui's folder, with its own licences and notices
+(LICENSE, NOTICE-*.txt, licenses/).
+"""
 
 
 def version(root: str = shared.ROOT) -> str:
@@ -101,15 +119,49 @@ def inno(work: str) -> str:
     return iscc
 
 
-def build(zip_path: str, work: str, dist: str) -> str:
-    source = source_dir(zip_path, work)
-    name = f"{NAME}-{shared.tag()}-setup"
-    subprocess.run(compile_args(inno(work), source, dist, name, version()),
-                   check=True, timeout=1800)
-    out = os.path.join(dist, name + ".exe")
+def add_inno_licence(source: str, iscc: str) -> None:
+    """Inno Setup's licence, from the copy that compiles this installer, and
+    a notice naming it, into the folder the installer installs."""
+    text = os.path.join(os.path.dirname(iscc), "license.txt")
+    if not os.path.isfile(text):
+        raise SystemExit(f"build aborted: no Inno Setup licence at {text}")
+    with open(text, encoding="utf-8", errors="replace") as fh:
+        if "Inno Setup License" not in fh.read():
+            raise SystemExit(f"build aborted: {text} is not Inno Setup's licence")
+    target = os.path.join(source, "licenses", "inno-setup")
+    os.makedirs(target, exist_ok=True)
+    shutil.copyfile(text, os.path.join(target, "license.txt"))
+    with open(os.path.join(source, "NOTICE-installer.txt"), "w", encoding="utf-8") as fh:
+        fh.write(INSTALLER_NOTICE)
+
+
+def compile_setup(iscc: str, source: str, out_dir: str, name: str, ver: str) -> str:
+    subprocess.run(compile_args(iscc, source, out_dir, name, ver), check=True, timeout=1800)
+    out = os.path.join(out_dir, name + ".exe")
     if not os.path.isfile(out):
         raise SystemExit(f"build aborted: the compiler made no {out}")
     return out
+
+
+def build(zip_path: str, work: str, dist: str, *, previous: bool) -> tuple[str, str | None]:
+    """The installer in `dist`; with `previous`, also one of the same folder
+    as version PREVIOUS, in `work`, for the upgrade check."""
+    source = source_dir(zip_path, work)
+    iscc = inno(work)
+    add_inno_licence(source, iscc)
+    out = compile_setup(iscc, source, dist, f"{NAME}-{shared.tag()}-setup", version())
+    old = compile_setup(iscc, source, work, "previous-setup", PREVIOUS) if previous else None
+    return out, old
+
+
+def registered_version() -> str | None:
+    """The version "Installed apps" lists for this user, None if none."""
+    import winreg  # Windows only
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+            return str(winreg.QueryValueEx(key, "DisplayVersion")[0])
+    except FileNotFoundError:
+        return None
 
 
 def _wait_gone(path: str, seconds: int = 180) -> None:
@@ -122,17 +174,34 @@ def _wait_gone(path: str, seconds: int = 180) -> None:
         time.sleep(1)
 
 
-def check(setup: str, work: str) -> None:
-    """Install silently, start the installed program once, uninstall; what
-    the player made must still be there."""
+def _install(setup: str, work: str, log: str) -> None:
+    subprocess.run([setup, *QUIET, f"/LOG={os.path.join(work, log)}"], check=True,
+                   timeout=600)
+
+
+def check(setup: str, previous: str, work: str, ver: str) -> None:
+    """Install the previous version, this one over it, start the installed
+    program once, uninstall; one copy at a time, and what the player made
+    must still be there."""
     local = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
     app = os.path.join(local, INSTALL_DIR)
-    if os.path.exists(app):
-        raise SystemExit(f"{app} exists already: this check installs there")
-    subprocess.run([setup, *QUIET, f"/LOG={os.path.join(work, 'install.log')}"],
-                   check=True, timeout=600)
+    if os.path.exists(app) or registered_version() is not None:
+        raise SystemExit(f"{app} exists already, or is registered: this check installs there")
+    _install(previous, work, "install-previous.log")
+    if registered_version() != PREVIOUS:
+        raise SystemExit(f"the previous version registered {registered_version()!r}, "
+                         f"not {PREVIOUS!r}")
+    _install(setup, work, "install.log")
+    # an upgrade replaces: the same folder, one uninstaller, this version listed
+    if registered_version() != ver:
+        raise SystemExit(f"after the upgrade, Installed apps lists {registered_version()!r}, "
+                         f"not {ver!r}")
+    if os.path.exists(os.path.join(app, "unins001.exe")):
+        raise SystemExit("the upgrade installed beside the previous version (unins001.exe)")
     program = os.path.join(app, f"{NAME}.exe")
     for needed in (program, os.path.join(app, "LICENSE"), os.path.join(app, "licenses"),
+                   os.path.join(app, "NOTICE-installer.txt"),
+                   os.path.join(app, "licenses", "inno-setup", "license.txt"),
                    os.path.join(app, "unins000.exe")):
         if not os.path.exists(needed):
             raise SystemExit(f"the installer did not put {needed} in place")
@@ -154,6 +223,8 @@ def check(setup: str, work: str) -> None:
             fh.write("left by packaging/windows_installer.py\n")
     subprocess.run([os.path.join(app, "unins000.exe"), *QUIET], check=True, timeout=600)
     _wait_gone(program)
+    if registered_version() is not None:
+        raise SystemExit("the uninstaller left the program in Installed apps")
     lost = [m for m in markers if not os.path.isfile(m)]
     for marker in markers:
         if os.path.isfile(marker):
@@ -174,9 +245,10 @@ def main(argv=None) -> int:
     dist = os.path.abspath(args.dist)
     os.makedirs(dist, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="iemod-setup-") as work:
-        out = build(os.path.abspath(args.zip), work, dist)
-        if not args.no_check:
-            check(out, work)
+        out, previous = build(os.path.abspath(args.zip), work, dist,
+                              previous=not args.no_check)
+        if previous:
+            check(out, previous, work, version())
         shutil.rmtree(os.path.join(work, "inno"), ignore_errors=True)
     sys.stdout.write(f"{out} ({os.path.getsize(out):,} bytes)\n")
     return 0

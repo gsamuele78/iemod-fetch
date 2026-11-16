@@ -202,11 +202,21 @@ like) travel inside the bundle, in the zip as well.
 **On Windows, an installer** (ADR-0061):
 `iemod-fetch-gui-windows-x86_64-setup.exe` installs the same folder for you
 only, in `%LOCALAPPDATA%\Programs\iemod-fetch-gui`, with no administrator,
-and adds a Start-menu entry. Remove it from Settings, Apps, Installed apps:
-the uninstaller leaves your projects and the data cache
-(`%LOCALAPPDATA%\iemod-fetch\data`) where they are. It is not signed yet,
-so SmartScreen may warn ("More info", "Run anyway"); the zip stays for whoever
-prefers to unpack it.
+and adds a Start-menu entry. A newer installer replaces the installed
+version. Remove it from Settings, Apps, Installed apps: the uninstaller
+removes the program folder and nothing else. What stays, and how to remove
+it by hand if you want:
+- your projects, in the folders you chose - delete them like any folder;
+- the community-data cache, `%LOCALAPPDATA%\iemod-fetch\data` - delete
+  the `%LOCALAPPDATA%\iemod-fetch` folder;
+- `%APPDATA%\iemod-fetch.ini`, only if you made one yourself;
+- what the wizard installed into your games: WeiDU's own uninstall, or a
+  clean copy of the game.
+
+It is not signed yet, so SmartScreen warns, as it does for the zip's exe:
+"More info", then "Run anyway". The zip stays for whoever prefers to unpack
+it. The installer's own code is Inno Setup's: its licence is in the
+installed folder (`licenses\inno-setup\license.txt`, `NOTICE-installer.txt`).
 
 On Linux the zip uses the system's graphics driver and, for the window,
 Qt's X11 libraries (ADR-0056). A desktop install usually has them; a
@@ -695,7 +705,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,125 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,131 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -949,7 +959,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,125, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,131, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

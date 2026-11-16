@@ -4646,16 +4646,32 @@ Options weighed:
      (%LOCALAPPDATA%\iemod-fetch\data), the projects and anything the
      player made stay.
 2. **`packaging/windows_installer.py`** builds it on Windows:
-   - it downloads Inno Setup 6.7.3 from the project's GitHub releases
-     (jrsoftware/issrc), refused unless its sha256 matches;
+   - it downloads Inno Setup 6.7.3 and refuses it unless its sha256
+     matches, before running it. The binary comes from the release assets
+     of jrsoftware/issrc, Inno Setup's own repository, where its authors
+     publish each version: a release asset does not change once published,
+     so its digest is stable. jrsoftware.org serves the same version but
+     refuses this build environment (HTTP 403), so the digest could not be
+     measured there;
    - it installs it silently, portable, into the build's work folder;
+   - it puts Inno Setup's licence into the folder it installs, from the
+     copy that compiles it: `licenses\inno-setup\license.txt`, with
+     `NOTICE-installer.txt` naming it, the version and its tagged source.
+     The setup program and `unins000.exe` are Inno Setup's code, under its
+     licence (BSD-style: keep the copyright notice, do not misrepresent the
+     origin). Without the text, the build stops;
    - it compiles the script, with the version read from `iemod_fetch`.
 3. **Every release build tries it as a player would** on windows-latest:
-   - installs it silently, into the default folder;
+   - installs a build of the same folder as version 0.0.0, then this one
+     over it. "Installed apps" must then list this version, in the same
+     folder, with one uninstaller (no `unins001.exe`): an upgrade replaces,
+     it does not install a second copy;
+   - checks the installed folder holds the program, LICENSE, licenses\,
+     Inno Setup's licence and its notice;
    - starts the installed program once, offscreen, with `--check`;
    - puts a file in the data cache and in a project;
    - uninstalls it silently, waits for the program to be gone, and fails if
-     either file went with it.
+     it stays in "Installed apps" or either file went with it.
 4. **It is a release asset** like the zips: `iemod-fetch-gui-windows-x86_64-setup.exe`,
    in SHA256SUMS, attested (its name matches `dist/iemod-fetch-*`), named
    in the notes. The zip stays.
@@ -4671,12 +4687,27 @@ Options weighed:
 - **The wizard does not read the installer's folder for data.** It reads
   mod_installer beside its own exe, as from the zip, and keeps its data in
   %LOCALAPPDATA%\iemod-fetch; projects stay where the player put them.
-- Inno Setup's own licence is permissive (free, including commercially);
-  the installer's stub is Inno Setup's. Nothing of it is linked into the
-  wizard.
-- **Not measured yet:** a real desktop, with a window and SmartScreen; an
-  upgrade over an installed older version (the first release with the
-  installer has none to upgrade). The real-test guide's checklist has a
-  row for each.
+- **What the uninstaller leaves**, and how to remove it by hand (the
+  README says the same):
+  - the projects, in the folders the player chose;
+  - the community-data cache, `%LOCALAPPDATA%\iemod-fetch\data`: delete
+    `%LOCALAPPDATA%\iemod-fetch`;
+  - `%APPDATA%\iemod-fetch.ini`, only if the player wrote one: the program
+    reads it, never creates it;
+  - what was installed into the games, which WeiDU's own uninstall or a
+    clean game copy undoes.
+  The wizard writes nothing else under %APPDATA% or the registry; the only
+  registry entry is Inno Setup's "Installed apps" one, which the
+  uninstaller removes (checked).
+- Inno Setup's licence is permissive (free, including commercially); its
+  text and a notice ship in the installed folder. Nothing of it is linked
+  into the wizard.
+- **Measured in CI, not on a desktop:** the upgrade from a previous
+  version, between two builds of the same folder. A real upgrade, from one
+  release to the next, starts with the second release that carries the
+  installer.
+- **Not measured yet:** a real desktop, with a window and SmartScreen; a
+  real upgrade between releases. The real-test guide's checklist has a row
+  for each.
 - **Next, in separate PRs:** winget (its manifest points at this
   installer), then Flatpak.

@@ -503,13 +503,16 @@ the system (the GL driver, X11/xcb, fontconfig, freetype). Unit tests:
 
 `packaging/windows_installer.py` turns the checked Windows zip into a
 per-user installer with Inno Setup, pinned by sha256 and installed for the
-build only. On windows-latest it then installs it silently into
-%LOCALAPPDATA%\Programs, starts the installed program once offscreen with
-`--check`, leaves a file in the data cache and in a project, uninstalls it,
-and fails if the program stays or either file goes. Unit tests:
+build only, with Inno Setup's licence and a notice put into the folder. On
+windows-latest it then installs a build of the same folder as version 0.0.0,
+installs this one over it (Installed apps must list this version, with one
+uninstaller), starts the installed program once offscreen with `--check`,
+leaves a file in the data cache and in a project, uninstalls it, and fails
+if the program stays, stays registered, or either file goes. Unit tests:
 `tests/test_windows_installer.py` (the script's sections and settings, the
-pin, the command lines, and the check against a fake installer that does
-not start or that takes the player's data).
+pin, the licence, the command lines, and the check against a fake Windows
+whose installer does not start, installs beside the previous version, or
+whose uninstaller takes the player's data or stays registered).
 
 ### The Linux bundles on the target distros (ADR-0056)
 
@@ -573,7 +576,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,125 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,131 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
