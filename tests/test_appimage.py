@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import zipfile
@@ -42,7 +43,9 @@ def a_zip(tmp_path, with_program=True):
     with zipfile.ZipFile(path, "w") as zf:
         if with_program:
             info = zipfile.ZipInfo(f"{NAME}/{NAME}")
-            info.external_attr = 0o755 << 16
+            # a regular file's full mode, as pack() writes it (ZipInfo.from_file):
+            # macOS's ditto, which unpack() uses there, ignores a bare 0o755
+            info.external_attr = (stat.S_IFREG | 0o755) << 16
             zf.writestr(info, "#!/bin/sh\necho ok\n")
         zf.writestr(f"{NAME}/NOTICE-system-libraries.txt", "libz.so.1 ...")
         zf.writestr(f"{NAME}/_internal/libz.so.1", "x")
@@ -140,3 +143,18 @@ def test_the_runtime_notice_names_every_component():
     for part in ("MIT", "musl", "libfuse", "LGPL-2.1", "squashfuse", "zstd", "zlib",
                  "licenses/appimage-runtime/LGPL-2.1", appimage.RUNTIME_TAG):
         assert part in appimage.RUNTIME_NOTICE
+
+
+def test_a_packed_programs_mode_survives_this_systems_unpack(tmp_path):
+    """Review of #131: the real path, not the fixture's - pack() a folder with
+    an executable and unpack() it the way this system does (ditto on macOS,
+    zipfile elsewhere); the program must still be executable."""
+    folder = tmp_path / NAME
+    folder.mkdir()
+    program = folder / NAME
+    program.write_text("#!/bin/sh\necho ok\n")
+    os.chmod(program, 0o700)
+    path = appimage.shared.pack(str(folder), str(tmp_path / "dist"))
+    appimage.shared.unpack(path, str(tmp_path / "out"))
+    if sys.platform != "win32":
+        assert os.stat(tmp_path / "out" / NAME / NAME).st_mode & 0o100
