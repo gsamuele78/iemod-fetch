@@ -7,6 +7,9 @@
 ; %LOCALAPPDATA%\Programs. The uninstaller removes what it installed and
 ; nothing else: no [UninstallDelete] - the projects, the community-data cache
 ; (%LOCALAPPDATA%\iemod-fetch\data) and anything the player made stay.
+; An upgrade empties _internal first ([InstallDelete]): it is PyInstaller's,
+; all of it, and a library the new version no longer carries must not stay.
+; A downgrade is not refused: an older installer replaces a newer version.
 
 #ifndef AppVersion
   #error AppVersion is passed by packaging/windows_installer.py
@@ -39,9 +42,13 @@ CloseApplications=yes
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
-; the zip's folder, unchanged: the program, Qt as separate DLLs (LGPL-3.0),
-; mod_installer, LICENSE, NOTICE-*.txt and licenses\
+; the zip's folder, plus Inno Setup's licence and NOTICE-installer.txt: the
+; program, Qt as separate DLLs (LGPL-3.0), mod_installer, LICENSE, NOTICE-*.txt
+; and licenses\
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

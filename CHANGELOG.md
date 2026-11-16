@@ -11,12 +11,12 @@ Python API, which is internal.
 ### Added
 - **The wizard as a per-user installer on Windows** (ADR-0061):
   `iemod-fetch-gui-windows-x86_64-setup.exe`, built with Inno Setup 6.7.3
-  (pinned by sha256), installs the zip's folder unchanged into
-  %LOCALAPPDATA%\Programs without an administrator, with a Start-menu entry
+  (pinned by sha256), installs the zip's folder, plus Inno Setup's licence
+  and a notice, into %LOCALAPPDATA%\Programs without an administrator, with a Start-menu entry
   and an uninstaller that leaves projects and the data cache alone; in
   SHA256SUMS and attested. Inno Setup's licence ships with it. Every release
-  build installs a previous version, upgrades it, starts it and uninstalls
-  it on windows-latest. Not signed yet: SmartScreen warns.
+  build installs a previous version, upgrades it (the previous version's
+  `_internal` emptied first), starts it and uninstalls it on windows-latest. Not signed yet: SmartScreen warns.
 - **The wizard as an AppImage on Linux** (ADR-0060):
   `iemod-fetch-gui-linux-x86_64.AppImage`, one file to make executable and
   start, with a desktop entry and an icon - the zip's folder unchanged

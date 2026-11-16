@@ -8,9 +8,9 @@ uninstalls cleanly.
     python packaging/gui_bundle.py --dist gui-dist          # the zip, checked
     python packaging/windows_installer.py gui-dist/iemod-fetch-gui-windows-x86_64.zip --dist gui-dist
 
-The installer holds the same PyInstaller folder as the zip, unchanged: the
-same files, LICENSE, NOTICE-*.txt and licenses/ included, LICENSE shown on
-the licence page. The zip stays in the release for whoever prefers it.
+The installer holds the same PyInstaller folder as the zip - the same
+files, LICENSE, NOTICE-*.txt and licenses/ included, LICENSE shown on the
+licence page - plus Inno Setup's licence and NOTICE-installer.txt. The zip stays in the release for whoever prefers it.
 
 Inno Setup is downloaded at a pinned version, checked by sha256, and
 installed for this build only, in its work folder. Its compiler builds the
@@ -54,8 +54,10 @@ QUIET = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
 # Where Windows lists it under "Installed apps": [Setup] AppId, per user
 APP_ID = "{483B2769-37EB-4CC9-B7A8-410A2C01BCD1}"
 UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}_is1"
-# The version the upgrade check installs first, then replaces
+# The version the upgrade check installs first, then replaces; it carries
+# one file more, in _internal, which the upgrade must take away
 PREVIOUS = "0.0.0"
+STALE = os.path.join("_internal", "left-by-the-previous-version.txt")
 INSTALLER_NOTICE = f"""The installer this folder came from, and its uninstaller (unins000.exe),
 are Inno Setup {INNO_VERSION}'s, by Jordan Russell and Martijn Laan, under the Inno
 Setup License: its text is licenses/inno-setup/license.txt. Its source:
@@ -150,8 +152,13 @@ def build(zip_path: str, work: str, dist: str, *, previous: bool) -> tuple[str, 
     iscc = inno(work)
     add_inno_licence(source, iscc)
     out = compile_setup(iscc, source, dist, f"{NAME}-{shared.tag()}-setup", version())
-    old = compile_setup(iscc, source, work, "previous-setup", PREVIOUS) if previous else None
-    return out, old
+    if not previous:
+        return out, None
+    older = os.path.join(work, "previous-source")
+    shutil.copytree(source, older, symlinks=True)
+    with open(os.path.join(older, STALE), "w", encoding="utf-8") as fh:
+        fh.write("only in the previous version: an upgrade must remove it\n")
+    return out, compile_setup(iscc, older, work, "previous-setup", PREVIOUS)
 
 
 def registered_version() -> str | None:
@@ -164,14 +171,21 @@ def registered_version() -> str | None:
         return None
 
 
-def _wait_gone(path: str, seconds: int = 180) -> None:
+def _wait_uninstalled(program: str, seconds: int = 180) -> None:
     """The uninstaller copies itself to %TEMP% and returns at once: wait for
-    its work, not for the process."""
+    its work, not for the process - the program gone, then the
+    "Installed apps" entry, which it removes last."""
     end = time.monotonic() + seconds
-    while os.path.exists(path):
+    while os.path.exists(program) or registered_version() is not None:
         if time.monotonic() > end:
-            raise SystemExit(f"the uninstaller left {path} behind")
+            left = program if os.path.exists(program) else "the program in Installed apps"
+            raise SystemExit(f"the uninstaller left {left} behind")
         time.sleep(1)
+
+
+def say(text: str) -> None:
+    sys.stdout.write(f"windows_installer: {text}\n")
+    sys.stdout.flush()
 
 
 def _install(setup: str, work: str, log: str) -> None:
@@ -191,13 +205,20 @@ def check(setup: str, previous: str, work: str, ver: str) -> None:
     if registered_version() != PREVIOUS:
         raise SystemExit(f"the previous version registered {registered_version()!r}, "
                          f"not {PREVIOUS!r}")
+    if not os.path.isfile(os.path.join(app, STALE)):
+        raise SystemExit(f"the previous version did not install {STALE}")
+    say(f"installed {PREVIOUS} in {app}")
     _install(setup, work, "install.log")
-    # an upgrade replaces: the same folder, one uninstaller, this version listed
+    # an upgrade replaces: the same folder, one uninstaller, this version
+    # listed, and nothing of the previous version's _internal left
     if registered_version() != ver:
         raise SystemExit(f"after the upgrade, Installed apps lists {registered_version()!r}, "
                          f"not {ver!r}")
     if os.path.exists(os.path.join(app, "unins001.exe")):
         raise SystemExit("the upgrade installed beside the previous version (unins001.exe)")
+    if os.path.exists(os.path.join(app, STALE)):
+        raise SystemExit(f"the upgrade left the previous version's {STALE}")
+    say(f"upgraded to {ver}: one entry in Installed apps, {STALE} removed")
     program = os.path.join(app, f"{NAME}.exe")
     for needed in (program, os.path.join(app, "LICENSE"), os.path.join(app, "licenses"),
                    os.path.join(app, "NOTICE-installer.txt"),
@@ -213,6 +234,7 @@ def check(setup: str, previous: str, work: str, ver: str) -> None:
     if done.returncode != 0 or "ok" not in done.stdout:
         raise SystemExit(f"the installed program does not start (exit {done.returncode}):\n"
                          f"{done.stdout}\n{done.stderr}")
+    say("the installed program started: --check ok")
     # what a player has made by now: the community-data cache and a project
     data = os.environ.get("IEMOD_DATA_DIR") or os.path.join(local, "iemod-fetch", "data")
     os.makedirs(data, exist_ok=True)
@@ -222,15 +244,14 @@ def check(setup: str, previous: str, work: str, ver: str) -> None:
         with open(marker, "w", encoding="utf-8") as fh:
             fh.write("left by packaging/windows_installer.py\n")
     subprocess.run([os.path.join(app, "unins000.exe"), *QUIET], check=True, timeout=600)
-    _wait_gone(program)
-    if registered_version() is not None:
-        raise SystemExit("the uninstaller left the program in Installed apps")
+    _wait_uninstalled(program)
     lost = [m for m in markers if not os.path.isfile(m)]
     for marker in markers:
         if os.path.isfile(marker):
             os.remove(marker)
     if lost:
         raise SystemExit("the uninstaller removed what the player made: " + ", ".join(lost))
+    say("uninstalled: program and Installed apps entry gone, data cache and project kept")
 
 
 def main(argv=None) -> int:

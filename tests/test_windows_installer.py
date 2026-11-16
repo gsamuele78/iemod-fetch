@@ -68,7 +68,9 @@ def test_the_uninstaller_removes_only_what_it_installed():
     lines = [line.strip() for line in script().splitlines()
              if not line.lstrip().startswith(";")]
     sections = {line for line in lines if line.startswith("[")}
-    assert sections == {"[Setup]", "[Tasks]", "[Files]", "[Icons]", "[Run]"}
+    # [InstallDelete] empties _internal on an upgrade (test below); nothing
+    # runs or deletes at uninstall beyond what was installed
+    assert sections == {"[Setup]", "[Tasks]", "[InstallDelete]", "[Files]", "[Icons]", "[Run]"}
     files = [line for line in lines if line.startswith("Source:")]
     assert files == [('Source: "{#SourceDir}\\*"; DestDir: "{app}"; '
                       "Flags: ignoreversion recursesubdirs createallsubdirs")]
@@ -159,23 +161,33 @@ class FakeWindows:
     """The two installers, the installed program, unins000.exe and the
     "Installed apps" entry, as the check sees them. `upgrade` is what the
     second install does to the first ("replace", or "beside" as a second
-    copy would), `unregister` whether the uninstaller removes the entry,
-    `uninstall` what it removes from disk."""
+    copy would); `clears_internal` whether it empties _internal first, as
+    [InstallDelete] does; `unregister` whether the uninstaller removes the
+    entry; `uninstall` what it removes from disk."""
 
     def __init__(self, app, *, starts=True, uninstall=None, upgrade="replace",
-                 unregister=True):
+                 clears_internal=True, unregister=True):
         self.app, self.starts, self.calls = app, starts, []
-        self.upgrade, self.unregister, self.registered = upgrade, unregister, None
+        self.upgrade, self.clears_internal = upgrade, clears_internal
+        self.unregister, self.registered = unregister, None
         self.uninstall = uninstall or (lambda: shutil.rmtree(app))
+
+    def read(self):
+        return self.registered
 
     def __call__(self, args, **kwargs):
         name = os.path.basename(args[0])
         self.calls.append(name)
         if name.endswith("setup.exe"):
             first = not os.path.exists(self.app)
-            os.makedirs(os.path.join(self.app, "licenses", "inno-setup"), exist_ok=True)
+            if not first and self.clears_internal:
+                shutil.rmtree(os.path.join(self.app, "_internal"))
+            for folder in (os.path.join("licenses", "inno-setup"), "_internal"):
+                os.makedirs(os.path.join(self.app, folder), exist_ok=True)
             files = [f"{NAME}.exe", "LICENSE", "NOTICE-installer.txt",
                      os.path.join("licenses", "inno-setup", "license.txt"), "unins000.exe"]
+            if name.startswith("previous"):
+                files.append(wi.STALE)
             if not first and self.upgrade == "beside":
                 files.append("unins001.exe")
             for each in files:
@@ -206,7 +218,7 @@ def local(tmp_path, monkeypatch):
 def run_check(tmp_path, local, monkeypatch, **fake):
     windows = FakeWindows(str(local / "Programs" / NAME), **fake)
     monkeypatch.setattr(wi.subprocess, "run", windows)
-    monkeypatch.setattr(wi, "registered_version", lambda: windows.registered)
+    monkeypatch.setattr(wi, "registered_version", windows.read)
     work = tmp_path / "work"
     work.mkdir(exist_ok=True)
     wi.check(str(tmp_path / "setup.exe"), str(work / "previous-setup.exe"), str(work),
@@ -245,17 +257,73 @@ def test_the_check_fails_when_the_uninstaller_takes_the_players_data(tmp_path, l
 
 
 def test_the_check_fails_when_the_uninstaller_leaves_the_program(tmp_path, local,
-                                                                 monkeypatch):
-    monkeypatch.setattr(wi.time, "sleep", lambda s: None)
-    monkeypatch.setattr(wi.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+                                                                 monkeypatch, fast_clock):
     with pytest.raises(SystemExit, match="left .* behind"):
         run_check(tmp_path, local, monkeypatch, uninstall=lambda: None)
 
 
+@pytest.fixture
+def fast_clock(monkeypatch):
+    monkeypatch.setattr(wi.time, "sleep", lambda s: None)
+    monkeypatch.setattr(wi.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+
+
 def test_the_check_fails_when_the_uninstaller_leaves_it_registered(tmp_path, local,
-                                                                   monkeypatch):
-    with pytest.raises(SystemExit, match="left the program in Installed apps"):
+                                                                   monkeypatch, fast_clock):
+    with pytest.raises(SystemExit, match="left the program in Installed apps behind"):
         run_check(tmp_path, local, monkeypatch, unregister=False)
+
+
+def test_the_check_waits_for_the_entry_the_uninstaller_removes_last(tmp_path, local,
+                                                                    monkeypatch):
+    monkeypatch.setattr(wi.time, "sleep", lambda s: None)
+    windows = FakeWindows(str(local / "Programs" / NAME))
+    reads = []
+
+    def read():
+        reads.append(windows.calls[-1] if windows.calls else None)
+        # still listed for the first two reads after the uninstaller returned
+        if reads[-1] == "unins000.exe" and reads.count("unins000.exe") <= 2:
+            return "9.9.9"
+        return windows.registered
+    monkeypatch.setattr(wi.subprocess, "run", windows)
+    monkeypatch.setattr(wi, "registered_version", read)
+    (tmp_path / "work").mkdir()
+    wi.check(str(tmp_path / "setup.exe"), str(tmp_path / "work" / "previous-setup.exe"),
+             str(tmp_path / "work"), "9.9.9")
+    assert reads.count("unins000.exe") == 3
+
+
+def test_the_check_fails_when_an_upgrade_leaves_the_previous_versions_files(
+        tmp_path, local, monkeypatch):
+    with pytest.raises(SystemExit, match="left the previous version's"):
+        run_check(tmp_path, local, monkeypatch, clears_internal=False)
+
+
+def test_an_upgrade_empties_internal_first():
+    lines = [line.strip() for line in script().splitlines()]
+    at = lines.index("[InstallDelete]")
+    assert lines[at + 1] == 'Type: filesandordirs; Name: "{app}\\_internal"'
+    assert lines[at + 2] == ""          # and nothing else
+
+
+def test_main_checks_unless_told_not_to(tmp_path, monkeypatch):
+    monkeypatch.setattr(wi.sys, "platform", "win32")
+    out = tmp_path / "dist" / "setup.exe"
+    built, checked = [], []
+
+    def build(zip_path, work, dist, *, previous):
+        built.append(previous)
+        out.parent.mkdir(exist_ok=True)
+        out.write_bytes(b"x")
+        return str(out), (os.path.join(work, "previous-setup.exe") if previous else None)
+    monkeypatch.setattr(wi, "build", build)
+    monkeypatch.setattr(wi, "check", lambda *args: checked.append(args))
+    wi.main([windows_zip(tmp_path), "--dist", str(tmp_path / "dist")])
+    assert built == [True] and len(checked) == 1
+    assert checked[0][0] == str(out) and checked[0][3] == wi.version()
+    wi.main([windows_zip(tmp_path), "--dist", str(tmp_path / "dist"), "--no-check"])
+    assert built == [True, False] and len(checked) == 1
 
 
 def test_the_check_refuses_to_install_over_an_existing_copy(tmp_path, local, monkeypatch):

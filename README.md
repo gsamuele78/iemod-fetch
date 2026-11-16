@@ -200,10 +200,11 @@ first release that carries it, Qt's X11 libraries (`libxcb-cursor` and the
 like) travel inside the bundle, in the zip as well.
 
 **On Windows, an installer** (ADR-0061):
-`iemod-fetch-gui-windows-x86_64-setup.exe` installs the same folder for you
-only, in `%LOCALAPPDATA%\Programs\iemod-fetch-gui`, with no administrator,
-and adds a Start-menu entry. A newer installer replaces the installed
-version. Remove it from Settings, Apps, Installed apps: the uninstaller
+`iemod-fetch-gui-windows-x86_64-setup.exe` installs the same folder, plus
+Inno Setup's licence and a notice, for you only, in
+`%LOCALAPPDATA%\Programs\iemod-fetch-gui`, with no administrator, and adds
+a Start-menu entry. Another installer replaces the installed version - a
+newer one, or an older one if you go back on purpose: it is not refused. Remove it from Settings, Apps, Installed apps: the uninstaller
 removes the program folder and nothing else. What stays, and how to remove
 it by hand if you want:
 - your projects, in the folders you chose - delete them like any folder;
@@ -705,7 +706,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,131 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,135 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -959,7 +960,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,131, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,135, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

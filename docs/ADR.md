@@ -4633,18 +4633,30 @@ Options weighed:
 ### Decision
 
 1. **`packaging/windows/iemod-fetch-gui.iss`** installs the zip's folder
-   unchanged: the program, Qt as separate DLLs, mod_installer, LICENSE,
-   NOTICE-*.txt and licenses\.
+   with two additions: the program, Qt as separate DLLs, mod_installer,
+   LICENSE, NOTICE-*.txt and licenses\, plus Inno Setup's licence
+   (`licenses\inno-setup\license.txt`) and `NOTICE-installer.txt`.
    - It installs per user, without an administrator: `PrivilegesRequired=lowest`
      with no override, `{autopf}` = %LOCALAPPDATA%\Programs\iemod-fetch-gui.
    - It shows LICENSE on the licence page.
    - It adds a Start-menu entry; a desktop icon only if the player ticks it.
    - Its AppId is fixed, so a newer version upgrades the installed one.
    - It is x64 only, like the zip.
-   - It has no [UninstallDelete] and no [InstallDelete]. The uninstaller
-     removes what it installed and nothing else: the community-data cache
+   - It has no [UninstallDelete]. The uninstaller removes what it installed
+     and nothing else: the community-data cache
      (%LOCALAPPDATA%\iemod-fetch\data), the projects and anything the
      player made stay.
+   - Its one [InstallDelete] empties `{app}\_internal` before installing.
+     That folder is PyInstaller's, all of it, so nothing a player made is
+     there; without this, a library or plugin a newer version no longer
+     carries would stay beside the new ones after an upgrade (review of
+     #132). The program, mod_installer and the licence files beside it are
+     replaced file by file.
+   - **A downgrade is not refused.** An older installer replaces a newer
+     version, as an upgrade does, with the same emptying of `_internal`.
+     A player going back to an older release on purpose is served by it;
+     refusing would need Pascal code in the script for a case nobody has
+     reported. The README says so.
 2. **`packaging/windows_installer.py`** builds it on Windows:
    - it downloads Inno Setup 6.7.3 and refuses it unless its sha256
      matches, before running it. The binary comes from the release assets
@@ -4662,16 +4674,20 @@ Options weighed:
      origin). Without the text, the build stops;
    - it compiles the script, with the version read from `iemod_fetch`.
 3. **Every release build tries it as a player would** on windows-latest:
-   - installs a build of the same folder as version 0.0.0, then this one
-     over it. "Installed apps" must then list this version, in the same
-     folder, with one uninstaller (no `unins001.exe`): an upgrade replaces,
-     it does not install a second copy;
+   - installs a build of the same folder as version 0.0.0, with one file
+     more in `_internal`, then this one over it. "Installed apps" must then
+     list this version, in the same folder, with one uninstaller (no
+     `unins001.exe`), and the extra file must be gone: an upgrade replaces,
+     it does not install a second copy or keep the old one's libraries;
    - checks the installed folder holds the program, LICENSE, licenses\,
      Inno Setup's licence and its notice;
    - starts the installed program once, offscreen, with `--check`;
    - puts a file in the data cache and in a project;
-   - uninstalls it silently, waits for the program to be gone, and fails if
-     it stays in "Installed apps" or either file went with it.
+   - uninstalls it silently, then waits, up to 3 minutes, for the program
+     and then the "Installed apps" entry to be gone (the uninstaller returns
+     at once and removes the entry last); fails if either stays, or if
+     either file went with it;
+   - prints one line per step, so the release log shows each.
 4. **It is a release asset** like the zips: `iemod-fetch-gui-windows-x86_64-setup.exe`,
    in SHA256SUMS, attested (its name matches `dist/iemod-fetch-*`), named
    in the notes. The zip stays.
@@ -4703,7 +4719,8 @@ Options weighed:
   text and a notice ship in the installed folder. Nothing of it is linked
   into the wizard.
 - **Measured in CI, not on a desktop:** the upgrade from a previous
-  version, between two builds of the same folder. A real upgrade, from one
+  version, between two builds of the same folder, one carrying a file the
+  other does not. A real upgrade, from one
   release to the next, starts with the second release that carries the
   installer.
 - **Not measured yet:** a real desktop, with a window and SmartScreen; a
