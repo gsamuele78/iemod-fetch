@@ -499,6 +499,18 @@ it inside debian:trixie with only the libraries every AppImage leaves to
 the system (the GL driver, X11/xcb, fontconfig, freetype). Unit tests:
 `tests/test_appimage.py` (the AppDir, AppRun, the pins, the desktop entry).
 
+### The Windows installer (ADR-0061)
+
+`packaging/windows_installer.py` turns the checked Windows zip into a
+per-user installer with Inno Setup, pinned by sha256 and installed for the
+build only. On windows-latest it then installs it silently into
+%LOCALAPPDATA%\Programs, starts the installed program once offscreen with
+`--check`, leaves a file in the data cache and in a project, uninstalls it,
+and fails if the program stays or either file goes. Unit tests:
+`tests/test_windows_installer.py` (the script's sections and settings, the
+pin, the command lines, and the check against a fake installer that does
+not start or that takes the player's data).
+
 ### The Linux bundles on the target distros (ADR-0056)
 
 `.github/workflows/bundles-distros.yml` takes a published release's Linux
@@ -561,7 +573,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,104 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,125 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

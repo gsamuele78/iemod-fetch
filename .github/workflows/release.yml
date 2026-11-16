@@ -304,6 +304,17 @@ jobs:
           if [ -f packaging/appimage.py ]; then
             python packaging/appimage.py gui-dist/iemod-fetch-gui-linux-*.zip --dist gui-dist
           fi
+      # The same folder as a per-user installer (ADR-0061); a commit made
+      # before packaging/windows_installer.py existed builds none. Installed
+      # into %LOCALAPPDATA%\Programs, started once offscreen, uninstalled:
+      # the data cache and the project must still be there.
+      - name: The installer (Windows), installed, started and uninstalled
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if [ -f packaging/windows_installer.py ]; then
+            python packaging/windows_installer.py gui-dist/iemod-fetch-gui-windows-*.zip --dist gui-dist
+          fi
       - name: The Linux zip on Debian trixie, the oldest system it is for
         if: runner.os == 'Linux'
         run: |
@@ -370,6 +381,7 @@ jobs:
           path: |
             gui-dist/*.zip
             gui-dist/*.AppImage
+            gui-dist/*-setup.exe
       # mod_installer's Corresponding Source (GPL-3.0 section 6(d)): attached
       # to the release beside the bundles that carry the program. One copy -
       # `git archive` of the commit is the same bytes on every runner.
@@ -454,9 +466,9 @@ jobs:
 
       # Says which workflow, at which commit, produced these bytes. Verifiable
       # with `gh attestation verify dist/iemod-fetch.pyz --repo <owner>/<repo>`.
-      # One glob for the bundles: the zips, and the AppImage when this commit
-      # built one - a back-filled older version has none, and this pattern
-      # still names its zips.
+      # One glob for the bundles: the zips, and the AppImage and the Windows
+      # installer when this commit built them - a back-filled older version
+      # has neither, and this pattern still names its zips.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -499,6 +511,9 @@ jobs:
           if ls iemod-fetch-*.AppImage > /dev/null 2>&1; then
             sha256sum iemod-fetch-*.AppImage >> SHA256SUMS
           fi
+          if ls iemod-fetch-*-setup.exe > /dev/null 2>&1; then
+            sha256sum iemod-fetch-*-setup.exe >> SHA256SUMS
+          fi
           if ls mod_installer-*-source.tar.gz > /dev/null 2>&1; then
             sha256sum mod_installer-*-source.tar.gz >> SHA256SUMS
           fi
@@ -527,6 +542,11 @@ jobs:
             if ls dist/iemod-fetch-gui-*.AppImage > /dev/null 2>&1; then
               echo 'On Linux it is also one file, `iemod-fetch-gui-linux-x86_64.AppImage` (ADR-0060): make it'
               echo 'executable and start it; the same folder inside, in SHA256SUMS and attested too.'
+            fi
+            if ls dist/iemod-fetch-gui-*-setup.exe > /dev/null 2>&1; then
+              echo 'On Windows it is also an installer, `iemod-fetch-gui-windows-x86_64-setup.exe` (ADR-0061):'
+              echo 'for this user only, no administrator, uninstalled from Installed apps; the same folder'
+              echo 'inside, in SHA256SUMS and attested too. It is not signed yet: SmartScreen may warn.'
             fi
             if ls dist/mod_installer-*-source.tar.gz > /dev/null 2>&1; then
               echo 'The wizard carries mod_installer (GPL-3.0, by dark0dave), built unchanged from'

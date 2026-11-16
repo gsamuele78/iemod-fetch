@@ -199,6 +199,15 @@ without it, `--appimage-extract-and-run` starts it all the same. From the
 first release that carries it, Qt's X11 libraries (`libxcb-cursor` and the
 like) travel inside the bundle, in the zip as well.
 
+**On Windows, an installer** (ADR-0061):
+`iemod-fetch-gui-windows-x86_64-setup.exe` installs the same folder for you
+only, in `%LOCALAPPDATA%\Programs\iemod-fetch-gui`, with no administrator,
+and adds a Start-menu entry. Remove it from Settings, Apps, Installed apps:
+the uninstaller leaves your projects and the data cache
+(`%LOCALAPPDATA%\iemod-fetch\data`) where they are. It is not signed yet,
+so SmartScreen may warn ("More info", "Run anyway"); the zip stays for whoever
+prefers to unpack it.
+
 On Linux the zip uses the system's graphics driver and, for the window,
 Qt's X11 libraries (ADR-0056). A desktop install usually has them; a
 minimal one may not, and the wizard then stops with `libGL.so.1: cannot
@@ -686,7 +695,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,104 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,125 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -940,7 +949,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,104, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,125, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

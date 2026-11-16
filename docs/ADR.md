@@ -4607,3 +4607,76 @@ Measured while building one, 2026-11-16:
 - **Next, in separate PRs:** a Windows per-user installer (Inno Setup),
   winget, then Flatpak. Signing (SignPath Foundation) is the owner's
   application to make.
+
+## ADR-0061 — On Windows the wizard is also a per-user installer, built with Inno Setup
+
+**Status:** accepted (2026-11-16)
+
+### Context
+
+The owner asked for a Windows exe that installs itself, as the community
+does it (ADR-0060's context). The zip works, but a player must choose where
+to unpack it, finds no Start-menu entry, and has nothing in "Installed apps"
+to remove it with.
+
+Options weighed:
+- **PyInstaller `--onefile`:** one exe that unpacks itself into %TEMP% on
+  every start. That is slower, antivirus programs flag it more often, and it
+  hides Qt's DLLs, which the LGPL wants replaceable (ADR-0043). Dropped.
+- **MSI (WiX):** what administrators deploy. Per-user MSIs are awkward, and
+  WiX adds a .NET toolchain to the release. Dropped for now.
+- **NSIS:** capable, but its scripting language is harder to review.
+- **Inno Setup:** free for any use, widely used by open-source Windows
+  programs, a declarative script, and per-user installs without UAC
+  (`PrivilegesRequired=lowest`). Chosen.
+
+### Decision
+
+1. **`packaging/windows/iemod-fetch-gui.iss`** installs the zip's folder
+   unchanged: the program, Qt as separate DLLs, mod_installer, LICENSE,
+   NOTICE-*.txt and licenses\.
+   - It installs per user, without an administrator: `PrivilegesRequired=lowest`
+     with no override, `{autopf}` = %LOCALAPPDATA%\Programs\iemod-fetch-gui.
+   - It shows LICENSE on the licence page.
+   - It adds a Start-menu entry; a desktop icon only if the player ticks it.
+   - Its AppId is fixed, so a newer version upgrades the installed one.
+   - It is x64 only, like the zip.
+   - It has no [UninstallDelete] and no [InstallDelete]. The uninstaller
+     removes what it installed and nothing else: the community-data cache
+     (%LOCALAPPDATA%\iemod-fetch\data), the projects and anything the
+     player made stay.
+2. **`packaging/windows_installer.py`** builds it on Windows:
+   - it downloads Inno Setup 6.7.3 from the project's GitHub releases
+     (jrsoftware/issrc), refused unless its sha256 matches;
+   - it installs it silently, portable, into the build's work folder;
+   - it compiles the script, with the version read from `iemod_fetch`.
+3. **Every release build tries it as a player would** on windows-latest:
+   - installs it silently, into the default folder;
+   - starts the installed program once, offscreen, with `--check`;
+   - puts a file in the data cache and in a project;
+   - uninstalls it silently, waits for the program to be gone, and fails if
+     either file went with it.
+4. **It is a release asset** like the zips: `iemod-fetch-gui-windows-x86_64-setup.exe`,
+   in SHA256SUMS, attested (its name matches `dist/iemod-fetch-*`), named
+   in the notes. The zip stays.
+
+### Consequences
+
+- A player double-clicks one file, with no administrator and no UAC
+  prompt, gets a Start-menu entry, and removes it from "Installed apps".
+- **It is not signed.** SmartScreen warns about the installer as it does
+  about the zip's exe, perhaps more, since installers are watched closely.
+  Signing (SignPath Foundation) is the owner's application to make; until
+  then the notes say so.
+- **The wizard does not read the installer's folder for data.** It reads
+  mod_installer beside its own exe, as from the zip, and keeps its data in
+  %LOCALAPPDATA%\iemod-fetch; projects stay where the player put them.
+- Inno Setup's own licence is permissive (free, including commercially);
+  the installer's stub is Inno Setup's. Nothing of it is linked into the
+  wizard.
+- **Not measured yet:** a real desktop, with a window and SmartScreen; an
+  upgrade over an installed older version (the first release with the
+  installer has none to upgrade). The real-test guide's checklist has a
+  row for each.
+- **Next, in separate PRs:** winget (its manifest points at this
+  installer), then Flatpak.

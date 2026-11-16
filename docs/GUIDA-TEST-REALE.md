@@ -412,6 +412,7 @@ Limiti da sapere:
 | Finestra vera, Wayland | su una sessione Wayland (Bazzite, Steam Deck in modalità desktop) si apre; se no, prova `QT_QPA_PLATFORM=xcb` e indica quale funziona |
 | AppImage | parte con `chmod +x` e doppio clic o da terminale; indica se è servito `--appimage-extract-and-run` |
 | Archivi RAR/7z con l'AppImage | `command -v bsdtar unar 7z` sul sistema dove gira l'AppImage; una mod in RAR e una in 7z si estraggono (su Bazzite: indica come hai installato `unar`) |
+| Installer Windows (solo se provi anche su Windows) | `iemod-fetch-gui-windows-x86_64-setup.exe` si installa senza richiesta di amministratore; indica cosa dice SmartScreen; la voce nel menu Start apre la procedura guidata; la disinstallazione da "App installate" lascia i progetti e `%LOCALAPPDATA%\iemod-fetch\data`; con una versione precedente già installata, la nuova la sostituisce senza crearne una seconda |
 | Download | ogni mod scaricata o, se bloccata, fornita a mano |
 | Gioco chiuso | con il gioco aperto, *Install* rifiuta e dice di chiuderlo |
 | Questionario | compare per le mod che fanno domande; le risposte vengono date da sole durante l'installazione (`-> ... (by question)` nell'output) |
