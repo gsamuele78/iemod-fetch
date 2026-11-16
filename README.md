@@ -184,10 +184,25 @@ signed by a publisher: Windows SmartScreen warns, and macOS refuses it until
 you allow it (System Settings, Privacy & Security, Open Anyway). `iemod-fetch-gui --check` opens the window and closes it
 at once - the release's own test that a build starts.
 
+**On Linux, one file** (ADR-0060): `iemod-fetch-gui-linux-x86_64.AppImage`
+holds the same folder. Make it executable and start it, nothing installed:
+
+```bash
+chmod +x iemod-fetch-gui-linux-x86_64.AppImage && ./iemod-fetch-gui-linux-x86_64.AppImage
+```
+
+Like every AppImage it uses the system's graphics driver, X11 and fonts,
+which any desktop has. It is mounted with FUSE, which most desktops have;
+without it, `--appimage-extract-and-run` starts it all the same. From the
+first release that carries it, Qt's X11 libraries (`libxcb-cursor` and the
+like) travel inside the bundle, in the zip as well.
+
 On Linux the zip uses the system's graphics, font and window libraries
 (ADR-0056). A desktop install usually has them; a minimal one may not, and
 the wizard then stops with `libGL.so.1: cannot open shared object file`.
-Measured in fresh containers on 4.0.1, everything it may need:
+Measured in fresh containers on 4.0.1, everything it may need (likely an
+over-count: that measurement did not look in the bundle's own folder,
+ADR-0060; the next release's measurement replaces it):
 
 ```bash
 # Debian 13, Ubuntu 24.04 and later
@@ -668,7 +683,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,095 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,101 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -922,7 +937,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,095, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,101, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

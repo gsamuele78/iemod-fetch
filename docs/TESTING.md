@@ -490,6 +490,15 @@ built by the wizard before its window is drawn; the limit stays 100 ms.
 With it, windows-latest measured median 10.9 ms, worst 11.8 ms over 30 runs
 (before: 15.5 and 63.9 ms) - what ubuntu-latest measures.
 
+### The Linux AppImage (ADR-0060)
+
+`packaging/appimage.py` wraps the checked Linux zip into an AppImage with
+appimagetool and the AppImage runtime, both pinned by sha256, and starts it
+once offscreen with `--check` (extracted, no FUSE). release.yml then starts
+it inside debian:trixie with only the libraries every AppImage leaves to
+the system (the GL driver, X11/xcb, fontconfig, freetype). Unit tests:
+`tests/test_appimage.py` (the AppDir, AppRun, the pins, the desktop entry).
+
 ### The Linux bundles on the target distros (ADR-0056)
 
 `.github/workflows/bundles-distros.yml` takes a published release's Linux
@@ -552,7 +561,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,095 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,101 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

@@ -3,7 +3,7 @@
 # measured inside it (GUI-AUDIT item "the bundles start on the target
 # distros", ADR-0056). Run as root inside a fresh container of the distro:
 #
-#   distro_libs.sh BUNDLE_DIR [CLI_DIR]
+#   distro_libs.sh BUNDLE_DIR [CLI_DIR [APPIMAGE]]
 #
 # BUNDLE_DIR holds iemod-fetch-gui/ (the unzipped wizard zip); CLI_DIR holds
 # iemod-fetch/ (the unzipped command-line zip). Nothing is guessed from a
@@ -15,6 +15,7 @@
 #   PACKAGE <set> <soname> <package>
 #   STILL   <set> <soname>      after the packages (should be none)
 #   CHECK   <before|after> <ok|failed>
+#   APPIMAGE <before|after> <ok|failed>   the AppImage, extracted (no FUSE)
 #   CLI     <ok|failed>
 #
 # Sets: offscreen (what `--check` and a headless start need), xcb (an X11 or
@@ -22,6 +23,7 @@
 set -u
 BUNDLE=$1/iemod-fetch-gui
 CLI=${2:-}
+APPIMAGE=${3:-}
 QT=$BUNDLE/_internal/PySide6/Qt
 . /etc/os-release
 FAMILY=${ID_LIKE:-$ID}
@@ -76,10 +78,21 @@ files_of() {
   esac
 }
 
-missing() {     # the sonames the set's files link to and the system lacks
+missing() {     # the sonames the set's files link to and neither the bundle nor the system has
+  # the bundle's own folder first, as its bootloader puts it on
+  # LD_LIBRARY_PATH: ldd alone counted libraries the bundle carries (ADR-0060)
   for f in $(files_of "$1"); do
-    [ -e "$f" ] && ldd "$f" 2>/dev/null | awk '/not found/ {print $1}'
+    [ -e "$f" ] && LD_LIBRARY_PATH="$BUNDLE/_internal" ldd "$f" 2>/dev/null \
+      | awk '/not found/ {print $1}'
   done | sort -u
+}
+
+check_appimage() {
+  [ -n "$APPIMAGE" ] || return 0
+  mkdir -p /tmp/project
+  if (cd /tmp && APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen "$APPIMAGE" --check \
+        --project /tmp/project >/tmp/appimage.log 2>&1); then echo "APPIMAGE $1 ok"; else
+    echo "APPIMAGE $1 failed"; sed 's/^/  | /' /tmp/appimage.log | tail -15; fi
 }
 
 check() {
@@ -94,6 +107,7 @@ if [ -n "$CLI" ]; then
   then echo "CLI ok"; else echo "CLI failed"; fi
 fi
 check before
+check_appimage before
 prepare || { echo "PREPARE failed"; exit 1; }
 for set in offscreen xcb wayland; do
   wanted=""
@@ -106,6 +120,6 @@ for set in offscreen xcb wayland; do
   # shellcheck disable=SC2086
   install $(echo $wanted | tr ' ' '\n' | sort -u) || echo "INSTALL $set failed:$wanted"
   for so in $(missing $set); do echo "STILL $set $so"; done
-  if [ "$set" = offscreen ]; then check after; fi
+  if [ "$set" = offscreen ]; then check after; check_appimage after; fi
 done
 exit 0      # the verdict is in the lines; 1 and 2 are PREPARE and UNKNOWN

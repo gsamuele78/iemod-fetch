@@ -4483,3 +4483,85 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
     prerequisites tooltip go through `question` and `plain_tip`;
   - its labels were already plain text, except two that show only our own
     names.
+
+---
+
+## ADR-0060 — On Linux the wizard is also an AppImage, and Qt's X11 libraries travel inside it
+
+**Status:** accepted (2026-11-16)
+
+### Context
+
+The owner chose AppImage now, and Flatpak later, for Linux. On Windows, a
+per-user installer will sit beside the zip. A GUI rewrite (Electron,
+Tauri) was weighed and dropped:
+- it would rewrite the wizard and its 181 GUI tests, and put a second
+  runtime beside the Python core;
+- on Linux it still needs GTK (Electron) or WebKitGTK (Tauri) from the
+  system;
+- its default is HTML, the class of problem #124 closed.
+
+Apptainer was dropped too: it runs on no gamer's Windows, and is rarely
+installed on a gaming desktop.
+
+Measured while building one, 2026-11-16:
+- **PyInstaller copies a library only if the build machine has it.** The
+  release runner lacked libxcb-cursor and the rest of the xcb set, so the
+  zip went without them and players had to install them. On the build
+  machine here, installing them first put all eight in the bundle, with
+  their copyright files (ADR-0058), for about 200 KB more.
+- **tools/distro_libs.sh ran `ldd` without the bundle's own folder.** The
+  bootloader puts that folder first on LD_LIBRARY_PATH, so the
+  per-distribution lists (ADR-0056) may name libraries the bundle already
+  carries.
+- **AppImage's excludelist** leaves to the host the GL driver (libGL,
+  libEGL, libdrm, libgbm), libX11/libxcb, libwayland-client, fontconfig,
+  freetype, harfbuzz, expat and zlib. They must match the host's driver
+  and X server.
+
+### Decision
+
+1. **The release installs Qt's X11 libraries before building.** These are
+   libxcb-cursor0, -icccm4, -image0, -keysyms1, -render-util0, -util1,
+   -xkb1 and libxkbcommon-x11-0. The zip and the AppImage then carry them,
+   with their copyright files.
+2. **`packaging/appimage.py`** builds the AppImage:
+   - it unpacks the checked zip unchanged into an AppDir under `usr/lib/`;
+   - it adds AppRun, a desktop entry checked by desktop-file-validate, and
+     an SVG icon;
+   - it packs the AppDir with appimagetool 1.9.0 and the type2-runtime
+     tagged 20251108, both downloaded at pinned URLs and refused unless
+     their sha256 matches;
+   - it starts the result once, offscreen, with `--check`.
+3. **The release checks the AppImage on the oldest system it is for.** It
+   starts it inside debian:trixie with only the excludelist's libraries
+   installed (libgl1, libegl1, libx11-6, libx11-xcb1, libxcb1,
+   libfontconfig1, libfreetype6), extracted, since a container has no FUSE.
+4. **The AppImage is a release asset** like the zips: in SHA256SUMS,
+   attested, and named in the notes. The zip stays.
+5. **The runtime's licences are stated.** It is MIT, with libfuse
+   (LGPL-2.1), squashfuse and zstd linked in statically.
+   NOTICE-AppImage-runtime.txt names them and the tagged source.
+6. **distro_libs.sh puts the bundle's own folder first in `ldd`**, as the
+   bootloader does. It also starts a release's AppImage, when one is
+   attached, before and after the offscreen packages ("APPIMAGE before|after").
+
+### Consequences
+
+- A player starts one file, with no `apt install` for Qt's own libraries.
+  The desktop must still provide its GL driver, X11 and fonts, as for any
+  AppImage, plus FUSE to mount it, or `--appimage-extract-and-run`.
+- It is 70 MB locally against the zip's 75 MB, from the same folder.
+- **libfuse is LGPL-2.1 and linked statically** into the runtime. Its
+  source is the runtime's tagged source. Whether that covers relinking for
+  every distributor is not argued here; it is how AppImages are
+  distributed.
+- **Not measured yet:**
+  - the AppImage on Fedora, Arch and Ubuntu: bundles-distros measures a
+    published release, and none carries an AppImage yet;
+  - a real desktop with FUSE: the guide's to confirm.
+- The README's per-distribution package lists come from the old
+  measurement. The next release's run replaces them.
+- **Next, in separate PRs:** a Windows per-user installer (Inno Setup),
+  winget, then Flatpak. Signing (SignPath Foundation) is the owner's
+  application to make.

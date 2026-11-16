@@ -268,11 +268,16 @@ jobs:
         run: test -f .python-version || echo 3.12 > .python-version
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version-file: .python-version }
+      # Qt's own system libraries, and the ones its X11 plugin links to: PyInstaller
+      # puts in the bundle what it finds here, and skipped these when absent -
+      # the zip then needed libxcb-cursor0 & co on the player's system (ADR-0060)
       - name: Qt's system libraries (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+          sudo apt-get install -y -q libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0 desktop-file-utils
       - name: The runtime's libraries, by hash (ADR-0043)
         shell: bash
         run: test ! -f requirements/runtime.txt || pip install --require-hashes -r requirements/runtime.txt
@@ -290,6 +295,14 @@ jobs:
             python packaging/gui_bundle.py --dist gui-dist --mod-installer mod_installer-build
           else
             python packaging/gui_bundle.py --dist gui-dist
+          fi
+      # The same folder as one file (ADR-0060); a commit made before
+      # packaging/appimage.py existed builds none. Started once in it, offscreen.
+      - name: The AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if [ -f packaging/appimage.py ]; then
+            python packaging/appimage.py gui-dist/iemod-fetch-gui-linux-*.zip --dist gui-dist
           fi
       - name: The Linux zip on Debian trixie, the oldest system it is for
         if: runner.os == 'Linux'
@@ -311,10 +324,24 @@ jobs:
               libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 >/dev/null
             mkdir -p /tmp/project
             QT_QPA_PLATFORM=offscreen /b/iemod-fetch-gui/iemod-fetch-gui --check --project /tmp/project'
+          # The AppImage with only what every AppImage leaves to the system
+          # (its excludelist: the GL driver, X11/xcb, fontconfig, freetype) -
+          # none of Qt's own; no FUSE in a container, so extracted and run
+          if ls gui-dist/*.AppImage > /dev/null 2>&1; then
+            docker run --rm -v "$PWD/gui-dist:/d:ro" "$image" sh -euc '
+              apt-get update -q >/dev/null
+              apt-get install -y -q --no-install-recommends \
+                libgl1 libegl1 libx11-6 libx11-xcb1 libxcb1 libfontconfig1 libfreetype6 >/dev/null
+              mkdir -p /tmp/project && cd /tmp
+              APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen \
+                /d/iemod-fetch-gui-linux-x86_64.AppImage --check --project /tmp/project'
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gui-${{ matrix.os }}
-          path: gui-dist/*.zip
+          path: |
+            gui-dist/*.zip
+            gui-dist/*.AppImage
       # mod_installer's Corresponding Source (GPL-3.0 section 6(d)): attached
       # to the release beside the bundles that carry the program. One copy -
       # `git archive` of the commit is the same bytes on every runner.
@@ -399,13 +426,16 @@ jobs:
 
       # Says which workflow, at which commit, produced these bytes. Verifiable
       # with `gh attestation verify dist/iemod-fetch.pyz --repo <owner>/<repo>`.
+      # One glob for the bundles: the zips, and the AppImage when this commit
+      # built one - a back-filled older version has none, and this pattern
+      # still names its zips.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/iemod-fetch.pyz
             dist/*.whl
             dist/*.tar.gz
-            dist/iemod-fetch-*.zip
+            dist/iemod-fetch-*
 
   publish-github:
     name: Tag and GitHub Release
@@ -438,6 +468,9 @@ jobs:
         run: |
           cd dist
           sha256sum iemod-fetch-*.zip >> SHA256SUMS
+          if ls iemod-fetch-*.AppImage > /dev/null 2>&1; then
+            sha256sum iemod-fetch-*.AppImage >> SHA256SUMS
+          fi
           if ls mod_installer-*-source.tar.gz > /dev/null 2>&1; then
             sha256sum mod_installer-*-source.tar.gz >> SHA256SUMS
           fi
@@ -463,6 +496,10 @@ jobs:
             echo 'The wizard without Python: `iemod-fetch-gui-<os>-<arch>.zip` (Linux, Windows),'
             echo 'in SHA256SUMS and attested the same way; a macOS zip, with its own .sha256, is added'
             echo 'by release-macos.yml when its runner built it. Qt inside it is LGPL-3.0: see NOTICE-Qt.txt.'
+            if ls dist/iemod-fetch-gui-*.AppImage > /dev/null 2>&1; then
+              echo 'On Linux it is also one file, `iemod-fetch-gui-linux-x86_64.AppImage` (ADR-0060): make it'
+              echo 'executable and start it; the same folder inside, in SHA256SUMS and attested too.'
+            fi
             if ls dist/mod_installer-*-source.tar.gz > /dev/null 2>&1; then
               echo 'The wizard carries mod_installer (GPL-3.0, by dark0dave), built unchanged from'
               echo 'its source: `mod_installer-*-source.tar.gz`, attached here (ADR-0046).'
