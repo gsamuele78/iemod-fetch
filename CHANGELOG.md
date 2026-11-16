@@ -50,7 +50,10 @@ Python API, which is internal.
 - **The target-distro measurement counted libraries the bundle carries**:
   `tools/distro_libs.sh` read `ldd` without the bundle's own folder, which
   its bootloader puts first, so the per-distribution lists may name
-  libraries the bundle already has; the next release's run re-measures.
+  libraries the bundle already has; the names the bundle holds are now taken
+  out (not by LD_LIBRARY_PATH, which broke Arch's bash-script ldd), a
+  measurement that finds nothing for a bundle that does not start fails,
+  and the next release's run re-measures.
 - **Text that is not ours shows as text everywhere in the wizard** (review
   of #123): Qt renders a tooltip, a default QLabel or a message box as HTML
   when it looks like HTML. Now as written: the question WeiDU asks during an

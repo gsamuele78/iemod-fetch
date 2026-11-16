@@ -99,7 +99,7 @@ jobs:
           {
             echo "### $IMAGE"
             echo '```'
-            grep -E '^(DISTRO|CLI|CHECK|APPIMAGE|MISSING|PACKAGE|STILL|INSTALL|PREPARE)' measured.txt
+            grep -E '^(DISTRO|CLI|CHECK|APPIMAGE|MISSING|PACKAGE|STILL|INSTALL|PREPARE|EMPTY)' measured.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if grep -q '^STILL xcb' measured.txt; then
@@ -107,6 +107,11 @@ jobs:
           fi
           # the start that matters: the wizard offscreen once its packages are
           # in, and the command line as it is
+          # a measurement that names nothing for a bundle that does not start
+          # is a broken measurement, never a complete system (review of #131)
+          if grep -q '^EMPTY' measured.txt; then
+            echo "::error::$IMAGE: $(grep '^EMPTY' measured.txt)"; exit 1
+          fi
           grep -q '^CHECK after ok' measured.txt
           grep -q '^CLI ok' measured.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -4556,9 +4556,15 @@ Measured while building one, 2026-11-16:
 6. **The runtime's licences are stated.** It is MIT, with libfuse
    (LGPL-2.1), squashfuse and zstd linked in statically.
    NOTICE-AppImage-runtime.txt names them and the tagged source.
-7. **distro_libs.sh puts the bundle's own folder first in `ldd`**, as the
-   bootloader does. It also starts a release's AppImage, when one is
-   attached, before and after the offscreen packages ("APPIMAGE before|after").
+7. **distro_libs.sh counts what the bundle's own folder holds as present**,
+   as the bootloader does. It does this by taking those names out of
+   `ldd`'s "not found" list, not by setting LD_LIBRARY_PATH. With that
+   variable set, Arch's ldd listed nothing: ldd is a bash script, and bash
+   loaded the bundle's libreadline and libtinfo from Ubuntu and could not
+   start; `2>/dev/null` hid the error. When the bundle does not start but
+   the measurement names nothing, the job fails with "EMPTY". It also
+   starts a release's AppImage, when one is attached, before and after the
+   offscreen packages ("APPIMAGE before|after").
 
 ### Consequences
 

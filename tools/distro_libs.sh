@@ -79,12 +79,16 @@ files_of() {
 }
 
 missing() {     # the sonames the set's files link to and neither the bundle nor the system has
-  # the bundle's own folder first, as its bootloader puts it on
-  # LD_LIBRARY_PATH: ldd alone counted libraries the bundle carries (ADR-0060)
+  # ldd as the system resolves, then the names the bundle carries in its own
+  # folder taken out (its bootloader puts that folder first). Not ldd with
+  # LD_LIBRARY_PATH set to it: on Arch ldd (a bash script) then listed
+  # nothing - bash itself loaded the bundle's Ubuntu-built libreadline and
+  # libtinfo and could not start; 2>/dev/null hid it (review of #131)
   for f in $(files_of "$1"); do
-    [ -e "$f" ] && LD_LIBRARY_PATH="$BUNDLE/_internal" ldd "$f" 2>/dev/null \
-      | awk '/not found/ {print $1}'
-  done | sort -u
+    [ -e "$f" ] && ldd "$f" 2>/dev/null | awk '/not found/ {print $1}'
+  done | sort -u | while read -r so; do
+    [ -e "$BUNDLE/_internal/$so" ] || echo "$so"
+  done
 }
 
 check_appimage() {
@@ -98,20 +102,27 @@ check_appimage() {
 check() {
   mkdir -p /tmp/project
   if QT_QPA_PLATFORM=offscreen "$BUNDLE/iemod-fetch-gui" --check --project /tmp/project \
-       >/tmp/check.log 2>&1; then echo "CHECK $1 ok"; else
-    echo "CHECK $1 failed"; sed 's/^/  | /' /tmp/check.log | tail -15; fi
+       >/tmp/check.log 2>&1; then echo "CHECK $1 ok" | tee -a /tmp/check-state; else
+    echo "CHECK $1 failed" | tee -a /tmp/check-state; sed 's/^/  | /' /tmp/check.log | tail -15; fi
 }
 
 if [ -n "$CLI" ]; then
   if "$CLI/iemod-fetch/iemod-fetch" --version && "$CLI/iemod-fetch/iemod-fetch" --help >/dev/null
   then echo "CLI ok"; else echo "CLI failed"; fi
 fi
+: > /tmp/check-state
 check before
 check_appimage before
 prepare || { echo "PREPARE failed"; exit 1; }
 for set in offscreen xcb wayland; do
   wanted=""
-  for so in $(missing $set); do
+  found=$(missing $set)
+  # a bundle that does not start yet whose measurement names nothing: the
+  # measurement is wrong, not the system complete (review of #131)
+  if [ "$set" = offscreen ] && [ -z "$found" ] && grep -q '^CHECK before failed' /tmp/check-state; then
+    echo "EMPTY offscreen: the measurement found nothing but the bundle does not start"
+  fi
+  for so in $found; do
     echo "MISSING $set $so"
     pkg=$(package_of "$so")
     echo "PACKAGE $set $so ${pkg:-?}"
