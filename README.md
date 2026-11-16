@@ -197,33 +197,34 @@ without it, `--appimage-extract-and-run` starts it all the same. From the
 first release that carries it, Qt's X11 libraries (`libxcb-cursor` and the
 like) travel inside the bundle, in the zip as well.
 
-On Linux the zip uses the system's graphics, font and window libraries
-(ADR-0056). A desktop install usually has them; a minimal one may not, and
-the wizard then stops with `libGL.so.1: cannot open shared object file`.
-Measured in fresh containers on 4.0.1, everything it may need (likely an
-over-count: that measurement did not look in the bundle's own folder,
-ADR-0060; the next release's measurement replaces it):
+On Linux the zip uses the system's graphics driver and, for the window,
+Qt's X11 libraries (ADR-0056). A desktop install usually has them; a
+minimal one may not, and the wizard then stops with `libGL.so.1: cannot
+open shared object file`. Measured in fresh containers on 4.1.0 (ADR-0060:
+the libraries the bundle carries counted as present), everything the 4.1.0
+zip may need:
 
 ```bash
 # Debian 13, Ubuntu 24.04 and later
-sudo apt install libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
-  libxcb-keysyms1 libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 \
-  libxcb-xkb1 libxkbcommon-x11-0 libwayland-cursor0
-# Fedora (44)
-sudo dnf install libglvnd-egl libglvnd-glx libX11 dbus-libs fontconfig freetype \
-  libxkbcommon xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
-  xcb-util-renderutil xcb-util libxkbcommon-x11 libwayland-cursor
+sudo apt install libegl1 libgl1 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-shape0 libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0 libwayland-cursor0
+# Fedora
+sudo dnf install libglvnd-egl libglvnd-glx \
+  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil \
+  xcb-util libxkbcommon-x11 libwayland-cursor
 # Arch
-sudo pacman -S libglvnd libx11 fontconfig freetype2 libxkbcommon xcb-util-cursor \
-  xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util \
-  libxkbcommon-x11
+sudo pacman -S libglvnd xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+  xcb-util-renderutil xcb-util libxkbcommon-x11
 ```
 
-The `libxcb-*`/`xcb-util-*` packages are what opens the window on an X11 or
-XWayland desktop (Qt 6.5 and later need `libxcb-cursor`); the rest is what
-the wizard needs to start at all. The command-line zip needs none of them.
-The `bundles-distros` workflow measures each release again on these
+The first line (EGL/GL, the graphics driver) is what the wizard needs to
+start at all; the `xcb` ones open its window on an X11 or XWayland desktop
+(Qt 6.5 and later need `libxcb-cursor`), and `libwayland-cursor` a native
+Wayland one. From the first release with the AppImage, the `xcb` libraries
+travel inside the zip and the AppImage, and only the graphics driver is
+the system's. The command-line zip needs none of them. The
+`bundles-distros` workflow measures each release again on these
 distributions.
 
 **Testing on a real machine**: [`docs/GUIDA-TEST-REALE.md`](docs/GUIDA-TEST-REALE.md)

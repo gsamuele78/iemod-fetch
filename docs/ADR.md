@@ -4574,7 +4574,8 @@ Measured while building one, 2026-11-16:
 - A player starts one file, with no `apt install` for Qt's own libraries.
   The desktop must still provide its GL driver, X11 and fonts, as for any
   AppImage, plus FUSE to mount it, or `--appimage-extract-and-run`.
-- It is 70 MB locally against the zip's 75 MB, from the same folder.
+- It is 70 MB locally against the zip's 75 MB, from the same folder; 85.9 MB
+  in CI, where the zip is about 93 MB.
 - **libfuse is LGPL-2.1 and linked statically** into the runtime. Its
   source is the runtime's tagged source. Whether that covers relinking for
   every distributor is not argued here; it is how AppImages are
@@ -4590,8 +4591,19 @@ Measured while building one, 2026-11-16:
     checklist has a row for each;
   - bundles-distros' full package measurement of an AppImage: it starts
     with the first release that carries one.
-- The README's per-distribution package lists come from the old
-  measurement. The next release's run replaces them.
+- **Re-measured on 4.1.0 with the corrected count** (this PR's
+  bundles-distros run, all five distributions):
+  - to start offscreen, the zip needs only the graphics driver: libegl1
+    and libgl1, libglvnd-egl/-glx, or libglvnd. The old list's libX11,
+    fontconfig, freetype, glib, dbus and xkbcommon were already in the
+    bundle;
+  - the window needs the xcb set, which this PR puts in the bundle, and
+    libwayland-cursor for native Wayland;
+  - the README's lists are the new measurement.
+- **The AppImage built in this PR's CI** (85.9 MB) started with `--check`
+  on fedora, archlinux, ubuntu:24.04, ubuntu:latest and debian:trixie.
+  Each had only the excludelist's libraries installed, and none of Qt's
+  own.
 - **Next, in separate PRs:** a Windows per-user installer (Inno Setup),
   winget, then Flatpak. Signing (SignPath Foundation) is the owner's
   application to make.

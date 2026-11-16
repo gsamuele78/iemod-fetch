@@ -51,9 +51,11 @@ Python API, which is internal.
   `tools/distro_libs.sh` read `ldd` without the bundle's own folder, which
   its bootloader puts first, so the per-distribution lists may name
   libraries the bundle already has; the names the bundle holds are now taken
-  out (not by LD_LIBRARY_PATH, which broke Arch's bash-script ldd), a
-  measurement that finds nothing for a bundle that does not start fails,
-  and the next release's run re-measures.
+  out (not by LD_LIBRARY_PATH, which broke Arch's bash-script ldd), and a
+  measurement that finds nothing for a bundle that does not start fails.
+  Re-measured on 4.1.0: to start, the zip needs only the graphics driver
+  (EGL/GL); libX11, fontconfig, freetype, glib, dbus and xkbcommon were
+  already in it. The README's lists are the new measurement.
 - **Text that is not ours shows as text everywhere in the wizard** (review
   of #123): Qt renders a tooltip, a default QLabel or a message box as HTML
   when it looks like HTML. Now as written: the question WeiDU asks during an
