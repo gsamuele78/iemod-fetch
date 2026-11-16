@@ -62,7 +62,15 @@ jobs:
           else
             gh release download -D zips -p 'iemod-fetch-gui-linux-*.zip' -p 'iemod-fetch-cli-linux-*.zip'
           fi
-          ls -l zips
+          # the AppImage, from the first release that carries one (ADR-0060)
+          mkdir appimage
+          if [ -n "$TAG" ]; then
+            gh release download "$TAG" -D appimage -p 'iemod-fetch-gui-linux-*.AppImage' || true
+          else
+            gh release download -D appimage -p 'iemod-fetch-gui-linux-*.AppImage' || true
+          fi
+          chmod +x appimage/*.AppImage 2>/dev/null || true
+          ls -l zips appimage
           unzip -q zips/iemod-fetch-gui-linux-*.zip -d gui
           unzip -q zips/iemod-fetch-cli-linux-*.zip -d cli
       - name: Measure inside the container
@@ -77,9 +85,12 @@ jobs:
             if docker pull -q "$candidate"; then image="$candidate"; break; fi
           done
           test -n "$image" || { echo "::error::no registry gave $IMAGE"; exit 1; }
+          appimage=""
+          for f in appimage/*.AppImage; do [ -f "$f" ] && appimage="/appimage/$(basename "$f")"; done
           docker run --rm -v "$PWD/gui:/gui:ro" -v "$PWD/cli:/cli:ro" \
+            -v "$PWD/appimage:/appimage:ro" \
             -v "$PWD/tools/distro_libs.sh:/distro_libs.sh:ro" "$image" \
-            sh /distro_libs.sh /gui /cli | tee measured.txt
+            sh /distro_libs.sh /gui /cli "$appimage" | tee measured.txt
       - name: Say what was measured
         if: always()
         env:
@@ -88,7 +99,7 @@ jobs:
           {
             echo "### $IMAGE"
             echo '```'
-            grep -E '^(DISTRO|CLI|CHECK|MISSING|PACKAGE|STILL|INSTALL|PREPARE)' measured.txt
+            grep -E '^(DISTRO|CLI|CHECK|APPIMAGE|MISSING|PACKAGE|STILL|INSTALL|PREPARE|EMPTY)' measured.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if grep -q '^STILL xcb' measured.txt; then
@@ -96,6 +107,11 @@ jobs:
           fi
           # the start that matters: the wizard offscreen once its packages are
           # in, and the command line as it is
+          # a measurement that names nothing for a bundle that does not start
+          # is a broken measurement, never a complete system (review of #131)
+          if grep -q '^EMPTY' measured.txt; then
+            echo "::error::$IMAGE: $(grep '^EMPTY' measured.txt)"; exit 1
+          fi
           grep -q '^CHECK after ok' measured.txt
           grep -q '^CLI ok' measured.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

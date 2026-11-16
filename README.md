@@ -184,31 +184,49 @@ signed by a publisher: Windows SmartScreen warns, and macOS refuses it until
 you allow it (System Settings, Privacy & Security, Open Anyway). `iemod-fetch-gui --check` opens the window and closes it
 at once - the release's own test that a build starts.
 
-On Linux the zip uses the system's graphics, font and window libraries
-(ADR-0056). A desktop install usually has them; a minimal one may not, and
-the wizard then stops with `libGL.so.1: cannot open shared object file`.
-Measured in fresh containers on 4.0.1, everything it may need:
+**On Linux, one file** (ADR-0060): `iemod-fetch-gui-linux-x86_64.AppImage`
+holds the same folder. Make it executable and start it, nothing installed:
+
+```bash
+chmod +x iemod-fetch-gui-linux-x86_64.AppImage && ./iemod-fetch-gui-linux-x86_64.AppImage
+```
+
+It needs only the system's graphics driver (EGL/GL), which any desktop has:
+measured on the zip, the same folder; X11, fontconfig and freetype are in
+it. RAR and 7z mods need `bsdtar`, `unar` or 7-Zip on the system it runs on,
+as with the zip. It is mounted with FUSE, which most desktops have;
+without it, `--appimage-extract-and-run` starts it all the same. From the
+first release that carries it, Qt's X11 libraries (`libxcb-cursor` and the
+like) travel inside the bundle, in the zip as well.
+
+On Linux the zip uses the system's graphics driver and, for the window,
+Qt's X11 libraries (ADR-0056). A desktop install usually has them; a
+minimal one may not, and the wizard then stops with `libGL.so.1: cannot
+open shared object file`. Measured in fresh containers on 4.1.0 (ADR-0060:
+the libraries the bundle carries counted as present), everything the 4.1.0
+zip may need:
 
 ```bash
 # Debian 13, Ubuntu 24.04 and later
-sudo apt install libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
-  libxcb-keysyms1 libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 \
-  libxcb-xkb1 libxkbcommon-x11-0 libwayland-cursor0
-# Fedora (44)
-sudo dnf install libglvnd-egl libglvnd-glx libX11 dbus-libs fontconfig freetype \
-  libxkbcommon xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
-  xcb-util-renderutil xcb-util libxkbcommon-x11 libwayland-cursor
+sudo apt install libegl1 libgl1 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-shape0 libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0 libwayland-cursor0
+# Fedora
+sudo dnf install libglvnd-egl libglvnd-glx \
+  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil \
+  xcb-util libxkbcommon-x11 libwayland-cursor
 # Arch
-sudo pacman -S libglvnd libx11 fontconfig freetype2 libxkbcommon xcb-util-cursor \
-  xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util \
-  libxkbcommon-x11
+sudo pacman -S libglvnd xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+  xcb-util-renderutil xcb-util libxkbcommon-x11
 ```
 
-The `libxcb-*`/`xcb-util-*` packages are what opens the window on an X11 or
-XWayland desktop (Qt 6.5 and later need `libxcb-cursor`); the rest is what
-the wizard needs to start at all. The command-line zip needs none of them.
-The `bundles-distros` workflow measures each release again on these
+The first line (EGL/GL, the graphics driver) is what the wizard needs to
+start at all; the `xcb` ones open its window on an X11 or XWayland desktop
+(Qt 6.5 and later need `libxcb-cursor`), and `libwayland-cursor` a native
+Wayland one. From the first release with the AppImage, the `xcb` libraries
+travel inside the zip and the AppImage, and only the graphics driver is
+the system's. The command-line zip needs none of them. The
+`bundles-distros` workflow measures each release again on these
 distributions.
 
 **Testing on a real machine**: [`docs/GUIDA-TEST-REALE.md`](docs/GUIDA-TEST-REALE.md)
@@ -668,7 +686,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,095 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,104 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -922,7 +940,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,095, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,104, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 74 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

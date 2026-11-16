@@ -1,0 +1,5 @@
+#!/bin/sh
+# The wizard's PyInstaller folder, as it is in the zip; its bootloader finds
+# the bundle's libraries itself (ADR-0060).
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/iemod-fetch-gui/iemod-fetch-gui" "$@"

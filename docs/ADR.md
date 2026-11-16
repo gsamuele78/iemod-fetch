@@ -4483,3 +4483,127 @@ All of it is third-party text, typed by hand. The scan is also a snapshot:
     prerequisites tooltip go through `question` and `plain_tip`;
   - its labels were already plain text, except two that show only our own
     names.
+
+---
+
+## ADR-0060 — On Linux the wizard is also an AppImage, and Qt's X11 libraries travel inside it
+
+**Status:** accepted (2026-11-16)
+
+### Context
+
+The owner chose AppImage now, and Flatpak later, for Linux. On Windows, a
+per-user installer will sit beside the zip. A GUI rewrite (Electron,
+Tauri) was weighed and dropped:
+- it would rewrite the wizard and its 181 GUI tests, and put a second
+  runtime beside the Python core;
+- on Linux it still needs GTK (Electron) or WebKitGTK (Tauri) from the
+  system;
+- its default is HTML, the class of problem #124 closed.
+
+Apptainer was dropped too: it runs on no gamer's Windows, and is rarely
+installed on a gaming desktop.
+
+Measured while building one, 2026-11-16:
+- **PyInstaller copies a library only if the build machine has it.** The
+  release runner lacked libxcb-cursor and the rest of the xcb set, so the
+  zip went without them and players had to install them. On the build
+  machine here, installing them first put all eight in the bundle, with
+  their copyright files (ADR-0058), for about 200 KB more.
+- **tools/distro_libs.sh ran `ldd` without the bundle's own folder.** The
+  bootloader puts that folder first on LD_LIBRARY_PATH, so the
+  per-distribution lists (ADR-0056) may name libraries the bundle already
+  carries.
+- **AppImage's excludelist** leaves to the host the GL driver (libGL,
+  libEGL, libdrm, libgbm), libX11/libxcb, libwayland-client, fontconfig,
+  freetype, harfbuzz, expat and zlib. They must match the host's driver
+  and X server.
+
+### Decision
+
+1. **The release installs Qt's X11 libraries before building.** These are
+   libxcb-cursor0, -icccm4, -image0, -keysyms1, -render-util0, -util1,
+   -xkb1 and libxkbcommon-x11-0. The zip and the AppImage then carry them,
+   with their copyright files.
+2. **`packaging/appimage.py`** builds the AppImage:
+   - it unpacks the checked zip unchanged into an AppDir under `usr/lib/`;
+   - it adds AppRun, a desktop entry checked by desktop-file-validate, and
+     an SVG icon;
+   - it packs the AppDir with appimagetool 1.9.0 and the type2-runtime
+     tagged 20251108, both downloaded at pinned URLs and refused unless
+     their sha256 matches;
+   - it starts the result once, offscreen, with `--check`.
+3. **The release checks the AppImage on five distributions.** It starts it
+   in fedora:latest, archlinux:latest, ubuntu:24.04, ubuntu:latest and
+   debian:trixie, every time the release workflow builds, pull requests
+   included. Each container has only the excludelist's libraries installed:
+   GL/EGL, X11, xcb, fontconfig and freetype, under each distribution's
+   names. The AppImage runs extracted (`APPIMAGE_EXTRACT_AND_RUN=1`) because
+   a container has no FUSE; this is also the documented fallback for a
+   player.
+   - The runtime (type2-runtime) is static and does not need libfuse2. To
+     mount, it needs `fusermount3`, which a desktop with FUSE has.
+4. **The AppImage is a release asset** like the zips: in SHA256SUMS,
+   attested, and named in the notes. The zip stays. The release's SBOM
+   describes the Python package's environment; neither the zips nor the
+   AppImage are in it, and that is unchanged here. Their folder's own
+   records stay: NOTICE-system-libraries.txt, licenses/system/, and readline
+   left out.
+5. **No integration into the desktop by itself.** The desktop entry and the
+   icon are inside the AppImage, for the player's AppImage manager (Gear
+   Lever, AppImageLauncher) if they use one. Nothing is written into the
+   home folder unasked.
+6. **The runtime's licences are stated.** It is MIT, built with musl
+   (MIT), with libfuse (LGPL-2.1), squashfuse (BSD-2-Clause), zstd
+   (BSD-3-Clause) and zlib linked in statically.
+   NOTICE-AppImage-runtime.txt names them and the tagged source. The
+   LGPL-2.1 text is copied from the build system to
+   `licenses/appimage-runtime/LGPL-2.1`; without it, the build stops.
+7. **distro_libs.sh counts what the bundle's own folder holds as present**,
+   as the bootloader does. It does this by taking those names out of
+   `ldd`'s "not found" list, not by setting LD_LIBRARY_PATH. With that
+   variable set, Arch's ldd listed nothing: ldd is a bash script, and bash
+   loaded the bundle's libreadline and libtinfo from Ubuntu and could not
+   start; `2>/dev/null` hid the error. When the bundle does not start but
+   the measurement names nothing, the job fails with "EMPTY". It also
+   starts a release's AppImage, when one is attached, before and after the
+   offscreen packages ("APPIMAGE before|after").
+
+### Consequences
+
+- A player starts one file, with no `apt install` for Qt's own libraries.
+  The desktop must still provide its GL driver, X11 and fonts, as for any
+  AppImage, plus FUSE to mount it, or `--appimage-extract-and-run`.
+- It is 70 MB locally against the zip's 75 MB, from the same folder; 85.9 MB
+  in CI, where the zip is about 93 MB.
+- **libfuse is LGPL-2.1 and linked statically** into the runtime. Its
+  source is the runtime's tagged source. Whether that covers relinking for
+  every distributor is not argued here; it is how AppImages are
+  distributed. The offer of source rests on the upstream tag staying. It
+  could be attached to the release, as mod_installer's is, if the owner
+  wants it independent of upstream.
+- **Not measured yet:**
+  - a real desktop, mounted with FUSE rather than extracted: the guide's to
+    confirm, Bazzite and Steam Deck first;
+  - a real window. Every start in CI is offscreen (QT_QPA_PLATFORM), so
+    the xcb and Wayland plugins and the xcb libraries now in the bundle
+    are measured with ldd but never loaded. The real-test guide's
+    checklist has a row for each;
+  - bundles-distros' full package measurement of an AppImage: it starts
+    with the first release that carries one.
+- **Re-measured on 4.1.0 with the corrected count** (this PR's
+  bundles-distros run, all five distributions):
+  - to start offscreen, the zip needs only the graphics driver: libegl1
+    and libgl1, libglvnd-egl/-glx, or libglvnd. The old list's libX11,
+    fontconfig, freetype, glib, dbus and xkbcommon were already in the
+    bundle;
+  - the window needs the xcb set, which this PR puts in the bundle, and
+    libwayland-cursor for native Wayland;
+  - the README's lists are the new measurement.
+- **The AppImage built in this PR's CI** (85.9 MB) started with `--check`
+  on fedora, archlinux, ubuntu:24.04, ubuntu:latest and debian:trixie.
+  Each had only the excludelist's libraries installed, and none of Qt's
+  own.
+- **Next, in separate PRs:** a Windows per-user installer (Inno Setup),
+  winget, then Flatpak. Signing (SignPath Foundation) is the owner's
+  application to make.

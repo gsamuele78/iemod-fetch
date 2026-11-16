@@ -9,6 +9,13 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The wizard as an AppImage on Linux** (ADR-0060):
+  `iemod-fetch-gui-linux-x86_64.AppImage`, one file to make executable and
+  start, with a desktop entry and an icon - the zip's folder unchanged
+  inside, in SHA256SUMS and attested. appimagetool 1.9.0 and the AppImage
+  runtime (20251108) are pinned by sha256; the runtime's licences (MIT,
+  libfuse LGPL-2.1) are in NOTICE-AppImage-runtime.txt. The release starts
+  it in Debian trixie with only what every AppImage leaves to the system.
 - **Release notes, repository activity and krion64's notes in the wizard**
   (GUI-AUDIT item 51, ADR-0059): a mod's details show krion64's notes,
   requirements, incompatibilities and EET placement, and from its daily
@@ -34,6 +41,21 @@ Python API, which is internal.
   the wizard started on all five once those packages were in.
 
 ### Fixed
+- **Qt's X11 libraries travel in the Linux bundles**: PyInstaller copies the
+  libraries it finds on the build machine and skipped `libxcb-cursor`,
+  `-icccm`, `-image`, `-keysyms`, `-render-util`, `-util`, `-xkb` and
+  `libxkbcommon-x11`, absent there - the player had to install them. The
+  release now installs them before building, so the zip and the AppImage
+  carry them, with their copyright files.
+- **The target-distro measurement counted libraries the bundle carries**:
+  `tools/distro_libs.sh` read `ldd` without the bundle's own folder, which
+  its bootloader puts first, so the per-distribution lists may name
+  libraries the bundle already has; the names the bundle holds are now taken
+  out (not by LD_LIBRARY_PATH, which broke Arch's bash-script ldd), and a
+  measurement that finds nothing for a bundle that does not start fails.
+  Re-measured on 4.1.0: to start, the zip needs only the graphics driver
+  (EGL/GL); libX11, fontconfig, freetype, glib, dbus and xkbcommon were
+  already in it. The README's lists are the new measurement.
 - **Text that is not ours shows as text everywhere in the wizard** (review
   of #123): Qt renders a tooltip, a default QLabel or a message box as HTML
   when it looks like HTML. Now as written: the question WeiDU asks during an

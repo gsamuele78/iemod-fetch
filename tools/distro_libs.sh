@@ -3,7 +3,7 @@
 # measured inside it (GUI-AUDIT item "the bundles start on the target
 # distros", ADR-0056). Run as root inside a fresh container of the distro:
 #
-#   distro_libs.sh BUNDLE_DIR [CLI_DIR]
+#   distro_libs.sh BUNDLE_DIR [CLI_DIR [APPIMAGE]]
 #
 # BUNDLE_DIR holds iemod-fetch-gui/ (the unzipped wizard zip); CLI_DIR holds
 # iemod-fetch/ (the unzipped command-line zip). Nothing is guessed from a
@@ -15,6 +15,7 @@
 #   PACKAGE <set> <soname> <package>
 #   STILL   <set> <soname>      after the packages (should be none)
 #   CHECK   <before|after> <ok|failed>
+#   APPIMAGE <before|after> <ok|failed>   the AppImage, extracted (no FUSE)
 #   CLI     <ok|failed>
 #
 # Sets: offscreen (what `--check` and a headless start need), xcb (an X11 or
@@ -22,6 +23,7 @@
 set -u
 BUNDLE=$1/iemod-fetch-gui
 CLI=${2:-}
+APPIMAGE=${3:-}
 QT=$BUNDLE/_internal/PySide6/Qt
 . /etc/os-release
 FAMILY=${ID_LIKE:-$ID}
@@ -76,28 +78,51 @@ files_of() {
   esac
 }
 
-missing() {     # the sonames the set's files link to and the system lacks
+missing() {     # the sonames the set's files link to and neither the bundle nor the system has
+  # ldd as the system resolves, then the names the bundle carries in its own
+  # folder taken out (its bootloader puts that folder first). Not ldd with
+  # LD_LIBRARY_PATH set to it: on Arch ldd (a bash script) then listed
+  # nothing - bash itself loaded the bundle's Ubuntu-built libreadline and
+  # libtinfo and could not start; 2>/dev/null hid it (review of #131)
   for f in $(files_of "$1"); do
     [ -e "$f" ] && ldd "$f" 2>/dev/null | awk '/not found/ {print $1}'
-  done | sort -u
+  done | sort -u | while read -r so; do
+    [ -e "$BUNDLE/_internal/$so" ] || echo "$so"
+  done
+}
+
+check_appimage() {
+  [ -n "$APPIMAGE" ] || return 0
+  mkdir -p /tmp/project
+  if (cd /tmp && APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen "$APPIMAGE" --check \
+        --project /tmp/project >/tmp/appimage.log 2>&1); then echo "APPIMAGE $1 ok"; else
+    echo "APPIMAGE $1 failed"; sed 's/^/  | /' /tmp/appimage.log | tail -15; fi
 }
 
 check() {
   mkdir -p /tmp/project
   if QT_QPA_PLATFORM=offscreen "$BUNDLE/iemod-fetch-gui" --check --project /tmp/project \
-       >/tmp/check.log 2>&1; then echo "CHECK $1 ok"; else
-    echo "CHECK $1 failed"; sed 's/^/  | /' /tmp/check.log | tail -15; fi
+       >/tmp/check.log 2>&1; then echo "CHECK $1 ok" | tee -a /tmp/check-state; else
+    echo "CHECK $1 failed" | tee -a /tmp/check-state; sed 's/^/  | /' /tmp/check.log | tail -15; fi
 }
 
 if [ -n "$CLI" ]; then
   if "$CLI/iemod-fetch/iemod-fetch" --version && "$CLI/iemod-fetch/iemod-fetch" --help >/dev/null
   then echo "CLI ok"; else echo "CLI failed"; fi
 fi
+: > /tmp/check-state
 check before
+check_appimage before
 prepare || { echo "PREPARE failed"; exit 1; }
 for set in offscreen xcb wayland; do
   wanted=""
-  for so in $(missing $set); do
+  found=$(missing $set)
+  # a bundle that does not start yet whose measurement names nothing: the
+  # measurement is wrong, not the system complete (review of #131)
+  if [ "$set" = offscreen ] && [ -z "$found" ] && grep -q '^CHECK before failed' /tmp/check-state; then
+    echo "EMPTY offscreen: the measurement found nothing but the bundle does not start"
+  fi
+  for so in $found; do
     echo "MISSING $set $so"
     pkg=$(package_of "$so")
     echo "PACKAGE $set $so ${pkg:-?}"
@@ -106,6 +131,6 @@ for set in offscreen xcb wayland; do
   # shellcheck disable=SC2086
   install $(echo $wanted | tr ' ' '\n' | sort -u) || echo "INSTALL $set failed:$wanted"
   for so in $(missing $set); do echo "STILL $set $so"; done
-  if [ "$set" = offscreen ]; then check after; fi
+  if [ "$set" = offscreen ]; then check after; check_appimage after; fi
 done
 exit 0      # the verdict is in the lines; 1 and 2 are PREPARE and UNKNOWN

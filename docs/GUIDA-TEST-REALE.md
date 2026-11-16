@@ -124,28 +124,31 @@ però rinominare anche il programma del gioco (`BaldursGate` →
 
 ## 4. Preparare il sistema
 
-La procedura guidata è uno zip che contiene già Python e mod_installer. Al
-sistema servono solo: le librerie grafiche di Qt per aprire la finestra, e gli
-strumenti per aprire archivi RAR e 7z (circa metà delle mod li usa).
+La procedura guidata contiene già Python, mod_installer e quasi tutte le
+librerie di Qt. Al sistema servono solo: il **driver grafico** (EGL/GL), le
+librerie **xcb** per la finestra su X11 o XWayland (solo con lo zip 4.1.0) e
+gli strumenti per aprire archivi RAR e 7z (circa metà delle mod li usa).
 
-Gli elenchi qui sotto sono **misurati** (PR #118, run 41289255763) sui
-container puliti di ogni distribuzione: dopo questi pacchetti `ldd` trova
-tutte le librerie di Qt e `--check` passa. Sono il caso peggiore: un desktop
-installato ne ha già la maggior parte, e `apt`/`dnf`/`pacman` salteranno quelli
-presenti. In ordine: gli strumenti per gli archivi (`unzip`, `bsdtar`,
-`unar`); le librerie per l'avvio senza finestra (EGL/GL, X11, D-Bus, font,
-GLib, xkbcommon); le librerie `xcb` per la finestra su X11 o XWayland;
-`wayland-cursor` per la finestra su Wayland nativo.
+Gli elenchi qui sotto sono **misurati in CI su container puliti** di ogni
+distribuzione (PR #131, run 43965747309, con il conteggio corretto: le
+librerie che il bundle porta già contano come presenti). Un desktop
+installato ne ha già la maggior parte, e `apt`/`dnf`/`pacman` salteranno
+quelli presenti.
+
+- **Con l'AppImage o lo zip della prossima release** (ADR-0060): le librerie
+  xcb sono già dentro; servono solo il driver grafico e gli strumenti per gli
+  archivi (la prima e l'ultima riga dei comandi qui sotto).
+- **Con lo zip 4.1.0**: servono anche le librerie xcb (la riga in mezzo) per
+  la finestra su X11/XWayland, e `wayland-cursor` per Wayland nativo.
 
 ### Debian trixie
 
 ```bash
 sudo apt update
-sudo apt install unzip libarchive-tools unar \
-  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+sudo apt install unzip libarchive-tools unar libegl1 libgl1
+# solo con lo zip 4.1.0:
+sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
   libxkbcommon-x11-0 libwayland-cursor0
 ```
 
@@ -155,11 +158,10 @@ Identico a Debian (misurato su 24.04 e 26.04):
 
 ```bash
 sudo apt update
-sudo apt install unzip libarchive-tools unar \
-  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+sudo apt install unzip libarchive-tools unar libegl1 libgl1
+# solo con lo zip 4.1.0:
+sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
   libxkbcommon-x11-0 libwayland-cursor0
 ```
 
@@ -169,53 +171,55 @@ parte.
 
 ### Bazzite (Fedora Atomic)
 
-Il sistema di base non si modifica (è immutabile). La strada pulita è un
-contenitore **Distrobox**, già presente in Bazzite: condivide la tua cartella
-home, quindi vede i giochi e le copie. Con un'immagine Ubuntu:
+**Con l'AppImage** (passo 5) la procedura guidata parte direttamente sul
+sistema, che ha già il driver grafico. Gli strumenti per gli archivi però li
+cerca **sul sistema dove gira** (`archives.py` non ne include di propri): se
+sono installati solo in un contenitore Distrobox, l'AppImage avviata fuori
+non li vede e le mod in RAR/7z falliscono. Controlla sul sistema:
 
 ```bash
-distrobox create --name iemod --image ubuntu:24.04
-distrobox enter iemod
-# dentro il contenitore:
-sudo apt update
-sudo apt install unzip libarchive-tools unar \
-  libegl1 libgl1 libx11-6 libdbus-1-3 libfontconfig1 libfreetype6 \
-  libglib2.0-0t64 libxkbcommon0 \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-render0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
-  libxkbcommon-x11-0 libwayland-cursor0
+command -v unzip bsdtar unar 7z      # annota quali mancano
 ```
 
-oppure, con un'immagine Fedora (la stessa base di Bazzite):
+Se manca `unar` (basta da solo per RAR e 7z), una di queste vie, **non
+misurate**:
+- `brew install unar` (Homebrew è previsto su Bazzite);
+- `rpm-ostree install unar bsdtar`, poi riavvia;
+- oppure fai girare anche l'AppImage **dentro** Distrobox, come lo zip qui
+  sotto.
+
+**Con lo zip 4.1.0**, la strada pulita è un contenitore **Distrobox**, già
+presente in Bazzite, che condivide la tua cartella home e quindi vede i giochi
+e le copie; la procedura guidata gira dentro il contenitore insieme agli
+strumenti:
 
 ```bash
 distrobox create --name iemod --image fedora:latest
 distrobox enter iemod
-sudo dnf install unzip bsdtar unar \
-  libglvnd-egl libglvnd-glx libX11 dbus-libs fontconfig freetype libxkbcommon \
-  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+sudo dnf install unzip bsdtar unar libglvnd-egl libglvnd-glx
+# solo con lo zip 4.1.0:
+sudo dnf install xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
   xcb-util-renderutil xcb-util libxkbcommon-x11 libwayland-cursor
 ```
 
-Tutti i passi da qui in poi si fanno **dentro** `distrobox enter iemod`. La
-finestra della procedura guidata appare sul tuo desktop normalmente.
+oppure, con un'immagine Ubuntu, i comandi di Ubuntu qui sopra dopo
+`distrobox create --name iemod --image ubuntu:24.04` e `distrobox enter iemod`.
 
-(Senza contenitore lo zip spesso parte lo stesso, perché il desktop di Bazzite
-ha già quasi tutte queste librerie. Se `--check` al passo 5 si lamenta, usa il
-contenitore.)
+Con lo zip, tutti i passi da qui in poi si fanno **dentro** `distrobox enter
+iemod`. La finestra della procedura guidata appare sul tuo desktop
+normalmente.
 
 ### CachyOS (Arch)
 
 ```bash
-sudo pacman -S --needed unzip libarchive unarchiver \
-  libglvnd libx11 fontconfig freetype2 libxkbcommon \
-  xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
+sudo pacman -S --needed unzip libarchive unarchiver libglvnd
+# solo con lo zip 4.1.0:
+sudo pacman -S --needed xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms \
   xcb-util-renderutil xcb-util libxkbcommon-x11
 ```
 
-(`unarchiver` fornisce `unar`, `libarchive` fornisce `bsdtar`. Su Arch, dbus,
-glib e Wayland ci sono già nell'immagine di base. Le librerie di Qt sono
-misurate; i nomi di `unar` e `bsdtar` per Fedora e Arch no.)
+(`unarchiver` fornisce `unar`, `libarchive` fornisce `bsdtar`. Le librerie di
+Qt sono misurate; i nomi di `unar` e `bsdtar` per Fedora e Arch no.)
 
 Non misurato: una finestra davvero disegnata su un display reale. La
 completezza di `ldd` è la misura di riferimento.
@@ -224,7 +228,34 @@ completezza di `ldd` è la misura di riferimento.
 
 ## 5. Scaricare e verificare iemod-fetch 4.1.0
 
-Dalla pagina della release
+**Da quando la release lo contiene, la via principale su Linux è l'AppImage**
+(ADR-0060): un solo file, niente da estrarre, e le librerie di Qt sono già
+dentro. Il sistema deve fornire solo il driver grafico (EGL/GL), che ogni
+desktop ha già (misurato sullo zip, che contiene la stessa cartella). Scarica `iemod-fetch-gui-linux-x86_64.AppImage` e
+`SHA256SUMS`:
+
+```bash
+cd ~/iemod-test
+sha256sum --check --ignore-missing SHA256SUMS      # deve dire OK
+chmod +x iemod-fetch-gui-linux-x86_64.AppImage
+./iemod-fetch-gui-linux-x86_64.AppImage --version
+./iemod-fetch-gui-linux-x86_64.AppImage --check    # apre la finestra e la chiude
+```
+
+- **FUSE.** L'AppImage si monta con FUSE: Bazzite, Steam Deck, CachyOS e
+  Ubuntu desktop ce l'hanno. Se dice `fusermount` / "Cannot mount AppImage",
+  avvialo così (si estrae in una cartella temporanea, è un po' più lento):
+  `./iemod-fetch-gui-linux-x86_64.AppImage --appimage-extract-and-run --check`.
+- **Bazzite (Fedora Atomic).** L'AppImage parte **direttamente sul sistema**,
+  senza Distrobox: è il caso principale da provare. Gli strumenti per gli
+  archivi devono essere sul sistema stesso (passo 4, Bazzite): `command -v
+  bsdtar unar 7z` prima di iniziare.
+- Nessuna voce di menu viene creata da sola. Se la vuoi, usa Gear Lever (da
+  Flathub, se non c'è già) o AppImageLauncher.
+- Copia l'output intero di `--check` se fallisce, e indica se hai usato
+  `--appimage-extract-and-run`.
+
+**Con lo zip** (la 4.1.0 ha solo questo, e resta disponibile): dalla pagina della release
 <https://github.com/gsamuele78/iemod-fetch/releases/tag/v4.1.0> scarica
 `iemod-fetch-gui-linux-x86_64.zip` e `SHA256SUMS`.
 
@@ -377,6 +408,10 @@ Limiti da sapere:
 | Cosa | Atteso |
 |---|---|
 | `--check` | la finestra si apre e si chiude senza errori |
+| Finestra vera, X11 | su una sessione X11 (o `QT_QPA_PLATFORM=xcb`) la procedura guidata si apre e si usa: in CI gira solo "offscreen", le librerie xcb del bundle non vengono mai caricate lì |
+| Finestra vera, Wayland | su una sessione Wayland (Bazzite, Steam Deck in modalità desktop) si apre; se no, prova `QT_QPA_PLATFORM=xcb` e indica quale funziona |
+| AppImage | parte con `chmod +x` e doppio clic o da terminale; indica se è servito `--appimage-extract-and-run` |
+| Archivi RAR/7z con l'AppImage | `command -v bsdtar unar 7z` sul sistema dove gira l'AppImage; una mod in RAR e una in 7z si estraggono (su Bazzite: indica come hai installato `unar`) |
 | Download | ogni mod scaricata o, se bloccata, fornita a mano |
 | Gioco chiuso | con il gioco aperto, *Install* rifiuta e dice di chiuderlo |
 | Questionario | compare per le mod che fanno domande; le risposte vengono date da sole durante l'installazione (`-> ... (by question)` nell'output) |
