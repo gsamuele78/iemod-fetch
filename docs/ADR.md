@@ -4533,16 +4533,30 @@ Measured while building one, 2026-11-16:
      tagged 20251108, both downloaded at pinned URLs and refused unless
      their sha256 matches;
    - it starts the result once, offscreen, with `--check`.
-3. **The release checks the AppImage on the oldest system it is for.** It
-   starts it inside debian:trixie with only the excludelist's libraries
-   installed (libgl1, libegl1, libx11-6, libx11-xcb1, libxcb1,
-   libfontconfig1, libfreetype6), extracted, since a container has no FUSE.
+3. **The release checks the AppImage on five distributions.** It starts it
+   in fedora:latest, archlinux:latest, ubuntu:24.04, ubuntu:latest and
+   debian:trixie, every time the release workflow builds, pull requests
+   included. Each container has only the excludelist's libraries installed:
+   GL/EGL, X11, xcb, fontconfig and freetype, under each distribution's
+   names. The AppImage runs extracted (`APPIMAGE_EXTRACT_AND_RUN=1`) because
+   a container has no FUSE; this is also the documented fallback for a
+   player.
+   - The runtime (type2-runtime) is static and does not need libfuse2. To
+     mount, it needs `fusermount3`, which a desktop with FUSE has.
 4. **The AppImage is a release asset** like the zips: in SHA256SUMS,
-   attested, and named in the notes. The zip stays.
-5. **The runtime's licences are stated.** It is MIT, with libfuse
+   attested, and named in the notes. The zip stays. The release's SBOM
+   describes the Python package's environment; neither the zips nor the
+   AppImage are in it, and that is unchanged here. Their folder's own
+   records stay: NOTICE-system-libraries.txt, licenses/system/, and readline
+   left out.
+5. **No integration into the desktop by itself.** The desktop entry and the
+   icon are inside the AppImage, for the player's AppImage manager (Gear
+   Lever, AppImageLauncher) if they use one. Nothing is written into the
+   home folder unasked.
+6. **The runtime's licences are stated.** It is MIT, with libfuse
    (LGPL-2.1), squashfuse and zstd linked in statically.
    NOTICE-AppImage-runtime.txt names them and the tagged source.
-6. **distro_libs.sh puts the bundle's own folder first in `ldd`**, as the
+7. **distro_libs.sh puts the bundle's own folder first in `ldd`**, as the
    bootloader does. It also starts a release's AppImage, when one is
    attached, before and after the offscreen packages ("APPIMAGE before|after").
 
@@ -4557,9 +4571,10 @@ Measured while building one, 2026-11-16:
   every distributor is not argued here; it is how AppImages are
   distributed.
 - **Not measured yet:**
-  - the AppImage on Fedora, Arch and Ubuntu: bundles-distros measures a
-    published release, and none carries an AppImage yet;
-  - a real desktop with FUSE: the guide's to confirm.
+  - a real desktop, mounted with FUSE rather than extracted: the guide's to
+    confirm, Bazzite and Steam Deck first;
+  - bundles-distros' full package measurement of an AppImage: it starts
+    with the first release that carries one.
 - The README's per-distribution package lists come from the old
   measurement. The next release's run replaces them.
 - **Next, in separate PRs:** a Windows per-user installer (Inno Setup),

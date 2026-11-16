@@ -224,7 +224,33 @@ completezza di `ldd` è la misura di riferimento.
 
 ## 5. Scaricare e verificare iemod-fetch 4.1.0
 
-Dalla pagina della release
+**Da quando la release lo contiene, la via principale su Linux è l'AppImage**
+(ADR-0060): un solo file, niente da estrarre, e le librerie di Qt sono già
+dentro. Il sistema deve fornire solo il driver grafico, X11 e i font, che
+ogni desktop ha già. Scarica `iemod-fetch-gui-linux-x86_64.AppImage` e
+`SHA256SUMS`:
+
+```bash
+cd ~/iemod-test
+sha256sum --check --ignore-missing SHA256SUMS      # deve dire OK
+chmod +x iemod-fetch-gui-linux-x86_64.AppImage
+./iemod-fetch-gui-linux-x86_64.AppImage --version
+./iemod-fetch-gui-linux-x86_64.AppImage --check    # apre la finestra e la chiude
+```
+
+- **FUSE.** L'AppImage si monta con FUSE: Bazzite, Steam Deck, CachyOS e
+  Ubuntu desktop ce l'hanno. Se dice `fusermount` / "Cannot mount AppImage",
+  avvialo così (si estrae in una cartella temporanea, è un po' più lento):
+  `./iemod-fetch-gui-linux-x86_64.AppImage --appimage-extract-and-run --check`.
+- **Bazzite (Fedora Atomic).** L'AppImage parte **direttamente sul sistema**,
+  senza Distrobox: è il caso principale da provare. Il contenitore del passo 4
+  serve solo per lo zip, se l'AppImage non dovesse partire.
+- Nessuna voce di menu viene creata da sola. Se la vuoi, usa Gear Lever (da
+  Flathub, se non c'è già) o AppImageLauncher.
+- Copia l'output intero di `--check` se fallisce, e indica se hai usato
+  `--appimage-extract-and-run`.
+
+**Con lo zip** (la 4.1.0 ha solo questo, e resta disponibile): dalla pagina della release
 <https://github.com/gsamuele78/iemod-fetch/releases/tag/v4.1.0> scarica
 `iemod-fetch-gui-linux-x86_64.zip` e `SHA256SUMS`.
 

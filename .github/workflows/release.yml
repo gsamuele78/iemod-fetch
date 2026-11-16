@@ -324,18 +324,46 @@ jobs:
               libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 >/dev/null
             mkdir -p /tmp/project
             QT_QPA_PLATFORM=offscreen /b/iemod-fetch-gui/iemod-fetch-gui --check --project /tmp/project'
-          # The AppImage with only what every AppImage leaves to the system
-          # (its excludelist: the GL driver, X11/xcb, fontconfig, freetype) -
-          # none of Qt's own; no FUSE in a container, so extracted and run
-          if ls gui-dist/*.AppImage > /dev/null 2>&1; then
-            docker run --rm -v "$PWD/gui-dist:/d:ro" "$image" sh -euc '
-              apt-get update -q >/dev/null
-              apt-get install -y -q --no-install-recommends \
-                libgl1 libegl1 libx11-6 libx11-xcb1 libxcb1 libfontconfig1 libfreetype6 >/dev/null
-              mkdir -p /tmp/project && cd /tmp
-              APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen \
-                /d/iemod-fetch-gui-linux-x86_64.AppImage --check --project /tmp/project'
-          fi
+      # The AppImage on the distributions players run (ADR-0060), each with
+      # only what every AppImage leaves to the system - its excludelist: the
+      # GL driver, X11/xcb, fontconfig, freetype - none of Qt's own; no FUSE
+      # in a container, so extracted and run (the documented fallback)
+      - name: The AppImage on Fedora, Arch, Ubuntu and Debian, without FUSE
+        if: runner.os == 'Linux'
+        run: |
+          if ! ls gui-dist/*.AppImage > /dev/null 2>&1; then exit 0; fi
+          fail=0
+          for image in fedora:latest archlinux:latest ubuntu:24.04 ubuntu:latest debian:trixie; do
+            pulled=""
+            for candidate in "$image" "public.ecr.aws/docker/library/$image"; do
+              if docker pull -q "$candidate" > /dev/null; then pulled="$candidate"; break; fi
+            done
+            if [ -z "$pulled" ]; then echo "::error::no registry gave $image"; fail=1; continue; fi
+            if docker run --rm -v "$PWD/gui-dist:/d:ro" "$pulled" sh -euc '
+                . /etc/os-release
+                case " $ID ${ID_LIKE:-} " in
+                  *" debian "*|*" ubuntu "*)
+                    export DEBIAN_FRONTEND=noninteractive
+                    apt-get update -q >/dev/null
+                    apt-get install -y -q --no-install-recommends libgl1 libegl1 libx11-6 \
+                      libx11-xcb1 libxcb1 libfontconfig1 libfreetype6 >/dev/null ;;
+                  *" fedora "*)
+                    dnf -q install -y libglvnd-glx libglvnd-egl libX11 libX11-xcb libxcb \
+                      fontconfig freetype >/dev/null ;;
+                  *" arch "*)
+                    { pacman-key --init && pacman-key --populate archlinux; } >/dev/null 2>&1
+                    pacman -Syu --noconfirm --needed libglvnd libx11 libxcb fontconfig \
+                      freetype2 >/dev/null ;;
+                esac
+                mkdir -p /tmp/project && cd /tmp
+                APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen \
+                  /d/iemod-fetch-gui-linux-x86_64.AppImage --check --project /tmp/project'; then
+              echo "AppImage on $image: ok"
+            else
+              echo "::error::the AppImage does not start on $image"; fail=1
+            fi
+          done
+          exit $fail
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gui-${{ matrix.os }}
