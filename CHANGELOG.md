@@ -12,10 +12,12 @@ Python API, which is internal.
 - **The wizard as a Flatpak bundle on Linux, experimental** (ADR-0064):
   `iemod-fetch-gui-linux-x86_64.flatpak`, the zip's folder on
   org.freedesktop.Platform 26.08 from Flathub, with the network, a window
-  and the GPU and no folder of the player's: game and project folders are
-  chosen through the file portal. A game folder seen through the portal is
+  and the GPU and no folder of the player's: game folders are chosen
+  through the file portal, and the project is kept in the app's own data
+  (~/.var/app/<id>/data/project). A game folder seen through the portal is
   said in the first phase with the `flatpak override` command that gives
-  the folder itself; WeiDU installing through the portal is not tested yet.
+  the folder itself, selectable to copy; WeiDU installing through the
+  portal is not tested yet.
   In SHA256SUMS and attested; built, installed and started in its sandbox by
   every release run. The app ID is provisional; Flathub is the owner's step.
 - **winget manifests for each release** (ADR-0062): `packaging/winget.py`

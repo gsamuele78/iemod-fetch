@@ -15,9 +15,11 @@ mods. flatpak-builder takes the branch's current commit: it is printed, not
 pinned (ADR-0064).
 
 The sandbox gets FINISH_ARGS and no more: the network, a window, the GPU -
-no folder of the player's. Game and project folders are chosen through the
-file portal; a game folder seen that way is said in the first phase, with
-the command that gives the Flatpak the folder itself (gamedir.portal_note).
+no folder of the player's. Game folders are chosen through the file portal;
+a game folder seen that way is said in the first phase, with the command
+that gives the Flatpak the folder itself (gamedir.portal_note). The project
+is kept in the app's own data, ~/.var/app/<id>/data/project
+(app.default_project).
 The running game cannot be seen from the sandbox: the install asks the
 player to confirm it is closed (ADR-0063).
 
@@ -80,6 +82,9 @@ def manifest(source: str) -> dict:
         "modules": [{
             "name": NAME,
             "buildsystem": "simple",
+            # the folder as the zip has it: flatpak-builder strips ELF files by
+            # default, 56 of PyInstaller's (review of #135)
+            "build-options": {"strip": False, "no-debuginfo": True},
             "build-commands": [
                 "mkdir -p /app/lib /app/bin",
                 f"cp -a {NAME} /app/lib/",

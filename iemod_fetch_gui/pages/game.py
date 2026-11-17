@@ -9,7 +9,7 @@ iemod-fetch.ini, which the command line reads too.
 """
 import html
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QRadioButton, QVBoxLayout, QWidget)
@@ -96,6 +96,9 @@ class GamePage(QWidget):
 
         self.findings = QLabel()
         self.findings.setWordWrap(True)
+        # what it says can be copied: a folder's path, the Flatpak's override
+        # command (review of #135)
+        self.findings.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>1. Game and folders</h2>"))

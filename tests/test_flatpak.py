@@ -50,6 +50,8 @@ def test_the_manifest_is_the_pinned_runtime_and_the_zips_folder(tmp_path):
     assert data["finish-args"] == flatpak.FINISH_ARGS
     (module,) = data["modules"]
     assert module["sources"] == [{"type": "dir", "path": str(tmp_path)}]
+    # the zip's folder unchanged: not stripped (review of #135)
+    assert module["build-options"] == {"strip": False, "no-debuginfo": True}
     commands = "\n".join(module["build-commands"])
     assert f"cp -a {NAME} /app/lib/" in commands
     assert f"ln -s ../lib/{NAME}/{NAME} /app/bin/{NAME}" in commands
@@ -62,11 +64,12 @@ def test_the_app_id_is_one_constant_and_every_file_carries_it():
         [f"{APP_ID}.desktop", f"{APP_ID}.metainfo.xml", f"{APP_ID}.svg"])
     with open(os.path.join(FILES, f"{APP_ID}.desktop"), encoding="utf-8") as fh:
         entry = dict(line.strip().split("=", 1) for line in fh if "=" in line)
-    assert entry["Icon"] == APP_ID and entry["Exec"].split()[0] == NAME
+    # no %F: the wizard takes no file to open (argparse would exit 2)
+    assert entry["Icon"] == APP_ID and entry["Exec"] == NAME
     root = ET.parse(os.path.join(FILES, f"{APP_ID}.metainfo.xml")).getroot()
     assert root.findtext("id") == APP_ID
     assert root.findtext("launchable") == f"{APP_ID}.desktop"
-    assert root.findtext("project_license") == "MIT"
+    assert root.findtext("project_license") == "MIT AND LGPL-3.0-only AND GPL-3.0-only"
     # one place in the code: the module's constant
     with open(os.path.join(PACKAGING, "flatpak.py"), encoding="utf-8") as fh:
         assert fh.read().count(APP_ID) == 1

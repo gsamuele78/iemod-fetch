@@ -510,7 +510,9 @@ network, Wayland or X11, IPC and the GPU (no `--filesystem`, no
 is one constant and every file carries it; the source folder is the zip's.
 `tests/test_gamedir.py`: a game folder under `/run/user/<uid>/doc/` gets the
 `flatpak override` note, with the portal's host path when it gives it.
-`tests/conftest.py` keeps the whole suite out of a sandbox
+`tests/gui/test_app.py`: in a Flatpak with no `--project` the project is
+in the app's data (`$XDG_DATA_HOME/project`), not the folder it was started
+from. `tests/conftest.py` keeps the whole suite out of a sandbox
 (`gamelock.FLATPAK_INFO` pointed at a missing file, `FLATPAK_ID` unset),
 so it passes when run from inside a Flatpak too.
 
@@ -622,7 +624,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,195 collected (25 run the real WeiDU, 200 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,197 collected (25 run the real WeiDU, 202 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 75 source files |

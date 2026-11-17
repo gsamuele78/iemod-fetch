@@ -241,8 +241,14 @@ flatpak run io.github.gsamuele78.iemod_fetch
 ```
 
 The sandbox has the network, a window and the GPU, and none of your folders:
-you choose the game and project folders in the file dialog, and the
-Flatpak sees only those. Two things differ from the zip and the AppImage:
+you choose the game folders in the file dialog, and the Flatpak sees only
+those. The project - its file, the plan and the downloaded mods - is kept
+in the app's own data, `~/.var/app/io.github.gsamuele78.iemod_fetch/data/project`;
+`flatpak uninstall --delete-data` removes it with the app. Three things
+differ from the zip and the AppImage:
+- **The project is in the app's data**, as above, unless you give the
+  Flatpak another folder (`flatpak override --user --filesystem=<folder>`)
+  and start it with `--project <folder>`.
 - **It cannot see whether the game is running**, so before installing it
   asks you to confirm the game is closed (ADR-0063).
 - **A folder chosen in the dialog is seen through the document portal**
@@ -741,7 +747,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,195 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,197 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -995,7 +1001,7 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,195, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,197, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
 | mypy | clean, 75 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |

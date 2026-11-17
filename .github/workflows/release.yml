@@ -397,12 +397,19 @@ jobs:
   # started once in its sandbox (--check, offscreen) and removed. A commit
   # made before packaging/flatpak.py existed builds none. Experimental, so a
   # failure here (Flathub unreachable, say) does not hold the release back:
-  # the job is marked and the release goes on without the bundle.
+  # the job is marked and the release goes on without the bundle. A step
+  # that hangs times out as a failure, which continue-on-error lets pass; a
+  # cancelled job would not be, so the steps carry the timeouts, the job
+  # only a backstop above their sum, and provenance and publish-github look
+  # at the other jobs' results, not at this one's (review of #135).
   flatpak:
     name: Wizard Flatpak (experimental)
     needs: [decide, gui]
     runs-on: ubuntu-24.04
     continue-on-error: true
+    timeout-minutes: 45
+    outputs:
+      expected: ${{ steps.build.outputs.expected }}   # this commit builds one
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -413,15 +420,21 @@ jobs:
       # Ubuntu 24.04 lets only programs AppArmor names make user namespaces;
       # flatpak-builder's and flatpak's bubblewrap needs one
       - name: flatpak, flatpak-builder and a user namespace
+        timeout-minutes: 10
+        continue-on-error: true
         run: |
           test -f packaging/flatpak.py || exit 0
           sudo apt-get update -q
           sudo apt-get install -y -q flatpak flatpak-builder appstream desktop-file-utils
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Build, install, start in the sandbox, remove
+        id: build
+        timeout-minutes: 30
+        continue-on-error: true
         run: |
           test -f packaging/flatpak.py || exit 0
-          appstreamcli validate --no-net --explain packaging/flatpak/*.metainfo.xml || true
+          echo "expected=yes" >> "$GITHUB_OUTPUT"
+          appstreamcli validate --no-net --explain packaging/flatpak/*.metainfo.xml
           desktop-file-validate packaging/flatpak/*.desktop
           python3 packaging/flatpak.py gui-dist/iemod-fetch-gui-linux-*.zip --dist flatpak-dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -487,6 +500,8 @@ jobs:
   provenance:
     name: Build provenance
     needs: [build, gui, cli, flatpak]
+    # the Flatpak is waited for, never required (experimental, ADR-0064)
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.gui.result == 'success' && needs.cli.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -518,8 +533,13 @@ jobs:
   publish-github:
     name: Tag and GitHub Release
     needs: [decide, build, gui, cli, flatpak, provenance]
-    # Never from a pull request: that run is a rehearsal.
-    if: needs.decide.outputs.release == 'true' && !inputs.dry_run && github.event_name != 'pull_request'
+    # Never from a pull request: that run is a rehearsal. The Flatpak is
+    # waited for, never required (experimental, ADR-0064).
+    if: >-
+      ${{ !cancelled() && needs.decide.outputs.release == 'true' && !inputs.dry_run
+      && github.event_name != 'pull_request' && needs.build.result == 'success'
+      && needs.gui.result == 'success' && needs.cli.result == 'success'
+      && needs.provenance.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write          # creates the tag together with the release
@@ -543,6 +563,9 @@ jobs:
         # one glob for the wizard's and the command line's zips: a version
         # built before the command line's bundle existed has only the first
         # mod_installer's source too (ADR-0046), when this commit built it
+        env:
+          FLATPAK_EXPECTED: ${{ needs.flatpak.outputs.expected }}
+          FLATPAK_RESULT: ${{ needs.flatpak.result }}
         run: |
           cd dist
           sha256sum iemod-fetch-*.zip >> SHA256SUMS
@@ -554,6 +577,8 @@ jobs:
           fi
           if ls iemod-fetch-*.flatpak > /dev/null 2>&1; then
             sha256sum iemod-fetch-*.flatpak >> SHA256SUMS
+          elif [ "$FLATPAK_EXPECTED" = yes ] || [ "$FLATPAK_RESULT" != success ]; then
+            echo "::warning::no Flatpak bundle in this release: the flatpak job did not build it (experimental, ADR-0064) - see its log"
           fi
           if ls mod_installer-*-source.tar.gz > /dev/null 2>&1; then
             sha256sum mod_installer-*-source.tar.gz >> SHA256SUMS

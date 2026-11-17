@@ -3,7 +3,9 @@
 <component type="desktop-application">
   <id>io.github.gsamuele78.iemod_fetch</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <!-- iemod-fetch is MIT; the bundle also carries Qt (LGPL-3.0-only) and
+       mod_installer (GPL-3.0-only), each with its licence in the folder -->
+  <project_license>MIT AND LGPL-3.0-only AND GPL-3.0-only</project_license>
   <name>iemod-fetch</name>
   <summary>Choose, download and install Infinity Engine mods</summary>
   <description>
