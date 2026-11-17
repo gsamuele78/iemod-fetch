@@ -4607,3 +4607,124 @@ Measured while building one, 2026-11-16:
 - **Next, in separate PRs:** a Windows per-user installer (Inno Setup),
   winget, then Flatpak. Signing (SignPath Foundation) is the owner's
   application to make.
+
+## ADR-0061 — On Windows the wizard is also a per-user installer, built with Inno Setup
+
+**Status:** accepted (2026-11-16)
+
+### Context
+
+The owner asked for a Windows exe that installs itself, as the community
+does it (ADR-0060's context). The zip works, but a player must choose where
+to unpack it, finds no Start-menu entry, and has nothing in "Installed apps"
+to remove it with.
+
+Options weighed:
+- **PyInstaller `--onefile`:** one exe that unpacks itself into %TEMP% on
+  every start. That is slower, antivirus programs flag it more often, and it
+  hides Qt's DLLs, which the LGPL wants replaceable (ADR-0043). Dropped.
+- **MSI (WiX):** what administrators deploy. Per-user MSIs are awkward, and
+  WiX adds a .NET toolchain to the release. Dropped for now.
+- **NSIS:** capable, but its scripting language is harder to review.
+- **Inno Setup:** free for any use, widely used by open-source Windows
+  programs, a declarative script, and per-user installs without UAC
+  (`PrivilegesRequired=lowest`). Chosen.
+
+### Decision
+
+1. **`packaging/windows/iemod-fetch-gui.iss`** installs the zip's folder
+   with two additions: the program, Qt as separate DLLs, mod_installer,
+   LICENSE, NOTICE-*.txt and licenses\, plus Inno Setup's licence
+   (`licenses\inno-setup\license.txt`) and `NOTICE-installer.txt`.
+   - It installs per user, without an administrator: `PrivilegesRequired=lowest`
+     with no override, `{autopf}` = %LOCALAPPDATA%\Programs\iemod-fetch-gui.
+   - It shows LICENSE on the licence page.
+   - It adds a Start-menu entry; a desktop icon only if the player ticks it.
+   - Its AppId is fixed, so a newer version upgrades the installed one.
+   - It is x64 only, like the zip.
+   - It has no [UninstallDelete]. The uninstaller removes what it installed
+     and nothing else: the community-data cache
+     (%LOCALAPPDATA%\iemod-fetch\data), the projects and anything the
+     player made stay.
+   - Its one [InstallDelete] empties `{app}\_internal` before installing.
+     That folder is PyInstaller's, all of it, so nothing a player made is
+     there; without this, a library or plugin a newer version no longer
+     carries would stay beside the new ones after an upgrade (review of
+     #132). The program, mod_installer and the licence files beside it are
+     replaced file by file.
+   - **A downgrade is not refused.** An older installer replaces a newer
+     version, as an upgrade does, with the same emptying of `_internal`.
+     A player going back to an older release on purpose is served by it;
+     refusing would need Pascal code in the script for a case nobody has
+     reported. The README says so.
+2. **`packaging/windows_installer.py`** builds it on Windows:
+   - it downloads Inno Setup 6.7.3 and refuses it unless its sha256
+     matches, before running it. The binary comes from the release assets
+     of jrsoftware/issrc, Inno Setup's own repository, where its authors
+     publish each version: a release asset does not change once published,
+     so its digest is stable. jrsoftware.org serves the same version but
+     refuses this build environment (HTTP 403), so the digest could not be
+     measured there;
+   - it installs it silently, portable, into the build's work folder;
+   - it puts Inno Setup's licence into the folder it installs, from the
+     copy that compiles it: `licenses\inno-setup\license.txt`, with
+     `NOTICE-installer.txt` naming it, the version and its tagged source.
+     The setup program and `unins000.exe` are Inno Setup's code, under its
+     licence (BSD-style: keep the copyright notice, do not misrepresent the
+     origin). Without the text, the build stops;
+   - it compiles the script, with the version read from `iemod_fetch`.
+3. **Every release build tries it as a player would** on windows-latest:
+   - installs a build of the same folder as version 0.0.0, with one file
+     more in `_internal`, then this one over it. "Installed apps" must then
+     list this version, in the same folder, with one uninstaller (no
+     `unins001.exe`), and the extra file must be gone: an upgrade replaces,
+     it does not install a second copy or keep the old one's libraries;
+   - checks the installed folder holds the program, LICENSE, licenses\,
+     Inno Setup's licence and its notice;
+   - starts the installed program once, offscreen, with `--check`;
+   - puts a file in the data cache and in a project;
+   - uninstalls it silently, then waits, up to 3 minutes, for the program
+     and then the "Installed apps" entry to be gone (the uninstaller returns
+     at once and removes the entry last); fails if either stays, or if
+     either file went with it;
+   - prints one line per step, so the release log shows each.
+4. **It is a release asset** like the zips: `iemod-fetch-gui-windows-x86_64-setup.exe`,
+   in SHA256SUMS, attested (its name matches `dist/iemod-fetch-*`), named
+   in the notes. The zip stays.
+
+### Consequences
+
+- A player double-clicks one file, with no administrator and no UAC
+  prompt, gets a Start-menu entry, and removes it from "Installed apps".
+- **It is not signed.** SmartScreen warns about the installer as it does
+  about the zip's exe, perhaps more, since installers are watched closely.
+  Signing (SignPath Foundation) is the owner's application to make; until
+  then the notes say so.
+- **The wizard does not read the installer's folder for data.** It reads
+  mod_installer beside its own exe, as from the zip, and keeps its data in
+  %LOCALAPPDATA%\iemod-fetch; projects stay where the player put them.
+- **What the uninstaller leaves**, and how to remove it by hand (the
+  README says the same):
+  - the projects, in the folders the player chose;
+  - the community-data cache, `%LOCALAPPDATA%\iemod-fetch\data`: delete
+    `%LOCALAPPDATA%\iemod-fetch`;
+  - `%APPDATA%\iemod-fetch.ini`, only if the player wrote one: the program
+    reads it, never creates it;
+  - what was installed into the games, which WeiDU's own uninstall or a
+    clean game copy undoes.
+  The wizard writes nothing else under %APPDATA% or the registry; the only
+  registry entry is Inno Setup's "Installed apps" one, which the
+  uninstaller removes (checked).
+- Inno Setup's licence is permissive (free, including commercially); its
+  text and a notice ship in the installed folder. Nothing of it is linked
+  into the wizard.
+- **Measured in CI, not on a desktop:** the upgrade from a previous
+  version, between two builds of the same folder, one carrying a file the
+  other does not. A real upgrade, from one
+  release to the next, starts with the second release that carries the
+  installer.
+- **Not measured yet:** a real desktop, with a window and SmartScreen; a
+  real upgrade between releases. The real-test guide's checklist has a row
+  for each.
+- **Next, in separate PRs:** winget (its manifest points at this
+  installer), then Flatpak.
