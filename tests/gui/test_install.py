@@ -703,3 +703,31 @@ def test_a_readiness_check_that_fails_says_nothing_and_none_adds_nothing(qtbot, 
     page = page_of(qtbot, world)
     run_to_end(qtbot, page)
     assert "Before installing, check" not in page.confirmed[-1][1] and page.outcome.ok
+
+
+def test_in_a_sandbox_the_confirmation_says_the_game_is_unseen_and_confirms_it(
+        qtbot, world, tmp_path, monkeypatch):
+    """ADR-0063: in a Flatpak the running game cannot be seen; the
+    confirmation says so, and going on is the player's confirmation that it
+    is closed - without it the install's own check refuses."""
+    from iemod_fetch import gamelock
+    info = tmp_path / ".flatpak-info"
+    info.write_text("[Application]\n")
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(info))
+    backed_up(world)
+    passed = []
+    real = world["services"].start
+
+    def start(*args, **kwargs):
+        passed.append(kwargs.get("confirmed_closed"))
+        return real(*args, **kwargs)
+    world["services"].start = start
+    page = page_of(qtbot, world, answers=(False, True))
+    run_to_end(qtbot, page)                               # the player says no
+    title, text = page.confirmed[0]
+    assert "Make sure the game is closed:" in text and "Flatpak" in text
+    assert page.outcome is None and passed == []
+    settled(qtbot, page)
+    run_to_end(qtbot, page)                               # yes: confirmed, installed
+    assert passed == [True] and page.outcome.ok
+

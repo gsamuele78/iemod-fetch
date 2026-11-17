@@ -186,3 +186,48 @@ def test_a_game_under_wine_is_found_by_its_command_line(tmp_path):
     finally:
         process.kill()
         process.wait()
+
+
+# ------------------------------------------ in a sandbox (ADR-0063)
+@pytest.fixture
+def flatpak(tmp_path, monkeypatch):
+    """This program as if it ran in a Flatpak: the file Flatpak writes."""
+    info = tmp_path / ".flatpak-info"
+    info.write_text("[Application]\nname=io.github.gsamuele78.iemod_fetch\n")
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(info))
+    return info
+
+
+def test_outside_a_sandbox_the_processes_are_seen(tmp_path, monkeypatch):
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(tmp_path / "absent"))
+    assert gamelock.sandbox() is None
+    assert not isinstance(gamelock.running_executables(), gamelock.Unverifiable)
+
+
+def test_in_a_flatpak_the_processes_are_unverifiable_not_none_running(flatpak):
+    assert gamelock.sandbox() == "a Flatpak sandbox"
+    running = gamelock.running_executables()
+    assert isinstance(running, gamelock.Unverifiable)
+    assert "Flatpak" in running.reason and "cannot see whether the game is running" in \
+        running.reason
+    assert running != []                     # not "nothing running"
+
+
+def test_unverifiable_refuses_the_install_until_the_player_confirms(flatpak, tmp_path):
+    folders = {"BGEE": str(tmp_path)}
+    refused = gamelock.problems(folders)
+    assert len(refused) == 1 and "confirm it is closed" in refused[0]
+    assert "Flatpak" in refused[0]
+    assert gamelock.problems(folders, confirmed_closed=True) == []
+
+
+def test_a_confirmation_does_not_hide_a_game_that_is_seen(tmp_path):
+    exe = str(tmp_path / "Baldur.exe")
+    found = gamelock.problems({"BGEE": str(tmp_path)}, lambda: [(42, exe)],
+                              confirmed_closed=True)
+    assert found == [f"the game is running: BGEE: {exe} (pid 42) - close it and try again"]
+
+
+def test_unverifiable_is_never_counted_as_seen(tmp_path):
+    unseen = gamelock.Unverifiable("hidden")
+    assert gamelock.running_in({"BGEE": str(tmp_path)}, unseen) == []

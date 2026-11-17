@@ -89,3 +89,13 @@ def test_a_bad_selection_raises_a_config_error_with_its_code(tmp_path):
     with pytest.raises(ConfigError) as caught:
         api.load_selection(str(path))
     assert caught.value.code == "config"
+
+
+def test_games_unseen_says_why_only_in_a_sandbox(tmp_path, monkeypatch):
+    from iemod_fetch import gamelock
+    info = tmp_path / ".flatpak-info"
+    info.write_text("[Application]\n")
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(info))
+    assert "Flatpak" in (api.games_unseen() or "")
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(tmp_path / "absent"))
+    assert api.games_unseen() is None

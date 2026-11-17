@@ -29,6 +29,13 @@ which /proc refuses with EACCES and which is skipped; an elevated one on
 Windows), and on macOS a game whose executable is outside
 the folder given (an .app's Contents/MacOS when the folder is its
 Contents/Resources). A listing that fails says nothing rather than refusing.
+
+In a sandbox the processes are not seen at all (ADR-0063): a Flatpak has its
+own process namespace, so /proc lists the sandbox's processes and never the
+game. That is a state of its own, `Unverifiable`, not an empty list (which
+says "nothing running"): the install is refused until the player confirms
+the game is closed (`problems(..., confirmed_closed=True)`), and the check
+during the run says nothing it cannot see.
 """
 import contextlib
 import os
@@ -37,6 +44,10 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
+# Flatpak writes this file into every sandbox it starts
+FLATPAK_INFO = "/.flatpak-info"
 
 SHARING_VIOLATION, LOCK_VIOLATION = 32, 33
 HELD_TRIES, HELD_WAIT_S = 5, 0.03     # a scanner's moment on dialog.tlk: about 0.12 s
@@ -44,6 +55,21 @@ HELD_TRIES, HELD_WAIT_S = 5, 0.03     # a scanner's moment on dialog.tlk: about 
 # One running program, seen at one path: its executable, or under Wine
 # (Linux) the game's own path from its command line.
 Running = tuple[int, str]             # (pid, path)
+
+
+@dataclass(frozen=True)
+class Unverifiable:
+    """The running programs cannot be seen from here, and why: not "none
+    running"."""
+    reason: str
+
+
+def sandbox() -> str | None:
+    """The sandbox this program runs in, in words, if one hides the system's
+    other processes from it; None otherwise."""
+    if os.path.exists(FLATPAK_INFO):
+        return "a Flatpak sandbox"
+    return None
 _WINE = ("wine", "wine64", "wine-preloader", "wine64-preloader")
 
 
@@ -174,9 +200,14 @@ else:
     _LIST = _linux                    # no /proc: an OSError, so None
 
 
-def running_executables() -> list[Running] | None:
+def running_executables() -> list[Running] | Unverifiable | None:
     """(pid, path) for the running processes this user can see; None when
-    they could not be listed."""
+    they could not be listed; Unverifiable in a sandbox, where the list
+    would hold only the sandbox's own."""
+    where = sandbox()
+    if where:
+        return Unverifiable(f"this program runs in {where}, which hides the system's "
+                            "other programs: it cannot see whether the game is running")
     try:
         return _LIST()
     except (OSError, subprocess.SubprocessError):
@@ -192,12 +223,13 @@ def _under(path: str, folder: str) -> bool:
         return False
 
 
-def running_in(folders: dict[str, str], running: Iterable[Running] | None,
+def running_in(folders: dict[str, str], running: Iterable[Running] | Unverifiable | None,
                ignore: Iterable[str] = ()) -> list[str]:
     """`name: path (pid N)` for each process seen under one of the folders
     ({name: folder}), once per process, but this install's own tools
-    (`ignore`) and this program's own process and executable."""
-    if running is None:
+    (`ignore`) and this program's own process and executable. Only what is
+    seen: Unverifiable gives [] here, and problems() is what refuses it."""
+    if running is None or isinstance(running, Unverifiable):
         return []
     # this program itself is never the game, even unpacked into its folder
     # (the Windows zip or the GUI beside Baldur.exe): it cannot be closed by
@@ -270,15 +302,30 @@ def held_talk_tables(folders: dict[str, str],
     return held
 
 
+# What refuses an install the processes of which cannot be seen, until the
+# player has confirmed the game is closed
+NOT_CONFIRMED = ("{reason} - close the game, then confirm it is closed before "
+                 "installing")
+
+
 def problems(folders: dict[str, str],
-             running: Callable[[], list[Running] | None] = running_executables,
+             running: Callable[[], list[Running] | Unverifiable | None] = running_executables,
              open_alone: Callable[[str], int] | None = None,
-             sleep: Callable[[float], None] = time.sleep) -> list[str]:
+             sleep: Callable[[float], None] = time.sleep,
+             confirmed_closed: bool = False) -> list[str]:
     """What says the game is in use, in words, each with what to do; []
     when nothing. There is no "install anyway": what stops the install is
-    closed by the player (review of #105)."""
-    found = [f"the game is running: {line} - close it and try again"
-             for line in running_in(folders, running())]
+    closed by the player (review of #105). When the processes cannot be
+    seen (a sandbox), that refuses too, unless the player has confirmed the
+    game is closed (`confirmed_closed`)."""
+    seen = running()
+    found = []
+    if isinstance(seen, Unverifiable):
+        if not confirmed_closed:
+            found.append(NOT_CONFIRMED.format(reason=seen.reason))
+    else:
+        found = [f"the game is running: {line} - close it and try again"
+                 for line in running_in(folders, seen)]
     found += [f"{line} - close it and try again"
               for line in held_talk_tables(folders, open_alone, sleep)]
     return found

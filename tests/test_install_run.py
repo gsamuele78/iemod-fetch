@@ -829,3 +829,31 @@ def test_the_players_time_at_a_cancelled_question_is_not_silence(tmp_path):
     outcome = run_.run()
     assert outcome.cancelled
     assert outcome.silences and outcome.silences[0][1] < 1.0
+
+
+# --------------------------------------- the game unseen in a sandbox (ADR-0063)
+def test_in_a_sandbox_the_install_waits_for_the_players_confirmation(setup, tmp_path,
+                                                                      monkeypatch):
+    from iemod_fetch import gamelock
+    info = tmp_path / ".flatpak-info"
+    info.write_text("[Application]\n")
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(info))
+    games, program = setup["games"], setup["program"]
+    problems = preflight(games, setup["mods"], program, program)
+    assert len(problems) == 1 and "confirm it is closed" in problems[0]
+    assert preflight(games, setup["mods"], program, program, confirmed_closed=True) == []
+
+
+def test_a_game_unseen_during_the_install_is_not_said(setup, monkeypatch):
+    import json
+
+    from iemod_fetch import gamelock, install_run
+    monkeypatch.setenv("FAKE_QUESTIONS", json.dumps({}))
+    monkeypatch.setenv("FAKE_TRANSCRIPT", str(setup["transcript"]))
+    events = []
+    install = install_run.start(setup["plan"], setup["games"], setup["mods"],
+                                setup["program"], setup["program"], ask=lambda *_a: None,
+                                on_event=events.append, quiet_s=0.3,
+                                running=lambda: gamelock.Unverifiable("hidden"))
+    assert install.run().ok
+    assert not [e for e in events if e.kind == "line" and e.text.startswith("warning:")]

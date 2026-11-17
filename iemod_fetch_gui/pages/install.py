@@ -67,6 +67,7 @@ class Services:
     restore_plan: Callable[[str, str], dict] = api.plan_restore
     progress: Callable[[str, dict], dict] = api.install_progress
     known_issues: Callable[[dict, str], list] = api.install_known_issues
+    unseen: Callable[[], str | None] = api.games_unseen   # a sandbox (ADR-0063)
     launch: Callable[[str], list] = api.install_launch_advice
     readiness: Callable[..., list] = api.install_readiness
     start: Callable[..., Any] = api.start_install
@@ -531,12 +532,18 @@ class InstallPage(QWidget):
             title = ("Resume" if resuming else "Install") + (" anyway," if broken else "") \
                 + " despite a known issue"
         asking = _questions_text(coverage)
+        try:                              # the processes hidden from here (ADR-0063)
+            unseen = self.services.unseen()
+        except Exception:                 # cannot tell: the install's own check refuses
+            unseen = None
+        closed = ("" if not unseen else
+                  f"Make sure the game is closed: {unseen}. Going on confirms it is.\n\n")
         stopped = ("" if not (resuming and self.cancelled_in) else
                    f"The last run was cancelled while it installed {self.cancelled_in}: "
                    f"if that left files in the game, restoring the backup is the safe "
                    f"way.\n\n")
         if not self.confirm(title, (
-                f"{what}\n{folders}\n\n{stopped}{known}{warning}{asking}"
+                f"{what}\n{folders}\n\n{closed}{stopped}{known}{warning}{asking}"
                 f"mod_installer and WeiDU change these folders. Nothing is undone by "
                 f"itself: to start again, restore the backup -\n{backups}\n\nGo on?")):
             self._say("Not installed: the plan is written in "
@@ -572,6 +579,7 @@ class InstallPage(QWidget):
                                      ask=self._from_install, on_event=on_event,
                                      resume=resuming, answers=self._kept,
                                      questions=coverage or None,
+                                     confirmed_closed=bool(unseen),
                                      **services.timing)
             self._install = install
             if cancel.is_set():                 # Cancel while it was being set up
