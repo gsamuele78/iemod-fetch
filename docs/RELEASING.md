@@ -185,6 +185,39 @@ merges. A fork's pull request is skipped, since it may not sign an
 attestation. The attestation is real: it records that the pull request's
 workflow built those bytes, and nothing is published with it.
 
+## winget (ADR-0062)
+
+The release's publish job writes winget's three manifests for the version,
+from the SHA256SUMS it publishes: the `winget-manifests` artifact of the
+release run, laid out as `manifests/g/gsamuele78/iemod-fetch/<version>/`.
+That step is optional and only warns if it fails. Make them again from the
+published release whenever the artifact is missing, or the release was run
+again for the same tag (the installer is then rebuilt with a new sha256):
+
+```bash
+python packaging/winget.py v4.2.0                     # reads the release's SHA256SUMS
+python packaging/winget.py v4.2.0 --sums dist/SHA256SUMS
+```
+
+Nothing sends them. Publishing is a pull request to microsoft/winget-pkgs,
+made by the owner, and the first one decides things only the owner can:
+- the identifier, `gsamuele78.iemod-fetch` here (Publisher.Package, kept
+  for good once accepted);
+- the optional fields left out because they cannot be checked here: a
+  Moniker (a short name for `winget install <moniker>`, if free), Tags,
+  and MinimumOSVersion;
+- the publisher shown, `iemod-fetch contributors`, which must stay what the
+  installer registers (`AppPublisher`), or winget no longer recognises what
+  it installed.
+
+To send a version: fork microsoft/winget-pkgs, copy the folder into the same
+path there, run `winget validate --manifest <folder>` and
+`winget install --manifest <folder>` on Windows, and open the pull request;
+its pipeline validates, installs and scans the installer. The installer is
+not signed: Microsoft's scan may hold it for a manual review, which can take
+days. Later versions can be sent the same way, or with `wingetcreate update
+gsamuele78.iemod-fetch --version <v> --urls <setup.exe URL> --submit`.
+
 ## Pinned test toolchain
 
 The real-WeiDU job in `ci.yml` installs the mock EET plan with tools pinned

@@ -519,6 +519,27 @@ jobs:
           fi
           cat SHA256SUMS
 
+      # winget's manifests for this release (ADR-0062), from the final
+      # SHA256SUMS: the sha256 of the installer this release publishes, not
+      # of a rebuild. Optional: a failure warns and the release goes on.
+      # A workflow artifact for the owner to send to microsoft/winget-pkgs;
+      # nothing here sends them.
+      - name: The winget manifests
+        continue-on-error: true
+        env:
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          if [ ! -f packaging/winget.py ] || ! grep -q -- '-setup\.exe$' dist/SHA256SUMS; then
+            echo "no installer in this release: no winget manifests"; exit 0
+          fi
+          python packaging/winget.py "$TAG" --sums dist/SHA256SUMS --out winget-manifests \
+            || { echo "::warning::winget manifests not written; make them from the published release (docs/RELEASING.md)"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: winget-manifests
+          path: winget-manifests
+          if-no-files-found: ignore
+
       - name: Release notes from the changelog
         # Values reach the script through the environment, never by template
         # expansion into its source: a tag name is attacker-chosen text.

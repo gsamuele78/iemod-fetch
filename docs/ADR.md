@@ -4728,3 +4728,91 @@ Options weighed:
   for each.
 - **Next, in separate PRs:** winget (its manifest points at this
   installer), then Flatpak.
+
+## ADR-0062 — winget manifests are written for each release; sending them is the owner's
+
+**Status:** accepted (2026-11-17)
+
+### Context
+
+winget is the package manager in Windows 10 and 11. A package there is a
+set of YAML manifests in microsoft/winget-pkgs, added by a pull request to
+that repository and checked by its pipeline (schema, installation, malware
+scan). ADR-0061's installer is what such a manifest points at: per user,
+silent switches known to winget for Inno Setup, and a fixed AppId.
+
+Two things are not this repository's to do:
+- sending the pull request to microsoft/winget-pkgs, which speaks for the
+  owner and fixes the package's identifier for good;
+- running `winget validate` in CI: winget is not guaranteed on GitHub's
+  Windows runners.
+
+### Decision
+
+1. **`packaging/winget.py`** writes the three manifests of schema 1.10.0
+   (version, installer, defaultLocale en-US) for a release tag, in
+   winget-pkgs' layout (`manifests/g/gsamuele78/iemod-fetch/<version>/`):
+   - identifier `gsamuele78.iemod-fetch`;
+   - one x64 installer, `InstallerType: inno`, `Scope: user`, the
+     release's URL, and the sha256 read from the release's SHA256SUMS, not
+     from a new download: the bytes the release published and attested;
+   - `ProductCode` `{AppId}_is1` and an `AppsAndFeaturesEntries` entry with
+     the installer's DisplayName and Publisher, read from the same
+     constants the installer script holds, so winget recognises what it
+     installed;
+   - the publisher, name, licence (MIT, with the URL of LICENSE at the
+     tag), the project's URLs and the release's notes; a short description
+     taken from the README's banner;
+   - nothing that is not confirmed here: no Moniker, no Tags, no
+     MinimumOSVersion. They are optional, and each would be a claim
+     (a moniker free in winget-pkgs, a measured minimum Windows) that this
+     repository cannot check. The owner can add them at submission;
+   - a release without the installer has no manifests; the script stops.
+2. **The installer's "Installed apps" name has no version**
+   (`UninstallDisplayName=iemod-fetch`); the version is DisplayVersion.
+   With the version in the name, the entry's name changes on every
+   upgrade, and winget's matching of installed apps relies on it.
+   ADR-0061's installer is in no release yet, so no player has an entry
+   under the old name; the upgrade check in CI builds both versions from
+   this script and keeps passing.
+3. **The release's publish job writes them** from the final
+   `dist/SHA256SUMS`, the file published with the release, and leaves them
+   as the `winget-manifests` artifact. Not from the installer the Windows
+   job built: a release run again for the same tag builds an installer with
+   new timestamps inside, whose sha256 differs from the asset already
+   published, and winget-pkgs would refuse it (review of #133). The step is
+   optional: a failure warns and the release goes on, and the manifests can
+   be made again from the published release (`python packaging/winget.py
+   vX.Y.Z`). Not a release asset: they are input for winget-pkgs, not
+   something a player downloads. It runs only where the release is
+   published, so a pull request's run does not write them; the unit tests
+   cover the script.
+4. **The tests validate them against winget's own schemas**, copied
+   unchanged from microsoft/winget-cli at tag v1.12.470 (MIT) into
+   `tests/data/winget`, with their commit and sha256. The YAML is written
+   by a small emitter in which every string is double-quoted (JSON's string
+   syntax, which YAML's double-quoted scalars share), so a ':', '#' or
+   quote in a description or URL is read back unchanged. The tests read the
+   files back with a strict reader of that subset and validate what they
+   read against the schemas; that reader shares the emitter's JSON syntax,
+   so the independent check is PyYAML's `safe_load`, added to the `test`
+   extra (review of #133). Nothing is added at runtime. Strings are written
+   as UTF-8, not ASCII escapes: JSON would write a character beyond the BMP
+   (an emoji) as a surrogate pair, which YAML does not join back.
+5. **docs/RELEASING.md** says how the owner sends a version: by hand the
+   first time (fork, copy, `winget validate`, `winget install --manifest`,
+   pull request), then by hand or with `wingetcreate update`.
+
+### Consequences
+
+- Once accepted, `winget install gsamuele78.iemod-fetch` installs the
+  wizard, and `winget upgrade` the next release.
+- **Not measured:** `winget validate` and `winget install --manifest` on a
+  real Windows, and winget-pkgs' pipeline. Only the schema is checked here.
+  The unsigned installer may be held for manual review there.
+- **The identifier is the owner's to confirm** before the first
+  submission: once accepted, it stays.
+- The vendored schemas are a snapshot: a newer manifest version (1.12)
+  means copying its schemas and raising MANIFEST_VERSION together.
+- **Next:** Flatpak (separate PR). Signing (SignPath) is the owner's
+  application to make.

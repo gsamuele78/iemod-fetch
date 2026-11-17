@@ -499,6 +499,24 @@ it inside debian:trixie with only the libraries every AppImage leaves to
 the system (the GL driver, X11/xcb, fontconfig, freetype). Unit tests:
 `tests/test_appimage.py` (the AppDir, AppRun, the pins, the desktop entry).
 
+### The winget manifests (ADR-0062)
+
+`packaging/winget.py` writes the version, installer and default-locale
+manifests for a release tag from its SHA256SUMS. `tests/test_winget.py`
+validates them against winget's own JSON schemas, v1.10.0, vendored in
+`tests/data/winget` with their source commit and sha256; checks the
+installer URL and sha256, the tag-to-version rule, that a release without
+the installer has none, and that the "Installed apps" name, publisher and
+product code match what the Inno Setup script registers; and reads the YAML
+back as the same data - every string double-quoted, emoji included - with
+a strict reader of the subset written, validating what it read against the
+schemas, and with PyYAML (in the `test` extra; the job that runs the suite
+with pytest alone skips those). The release's publish job writes them from
+the SHA256SUMS it publishes; a pull request's run does not reach that job.
+`winget validate` itself is not run: winget
+is not guaranteed on the runner, and microsoft/winget-pkgs' pipeline runs it
+on submission.
+
 ### The Windows installer (ADR-0061)
 
 `packaging/windows_installer.py` turns the checked Windows zip into a
@@ -579,7 +597,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,135 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,169 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |
