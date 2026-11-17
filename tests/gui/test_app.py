@@ -35,5 +35,6 @@ def test_in_a_flatpak_without_xdg_data_home_the_project_is_still_kept(tmp_path, 
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setenv("FLATPAK_ID", "io.github.example.app")
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))     # Windows' expanduser reads this
     assert parse_args([]).project == str(tmp_path / ".var" / "app" / "io.github.example.app"
                                          / "data" / "project")
