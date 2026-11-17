@@ -35,7 +35,9 @@ SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\iemod-fetch-gui.exe
-UninstallDisplayName=iemod-fetch {#AppVersion}
+; no version in the name: winget matches the entry by it (ADR-0062); the
+; version is DisplayVersion, beside it
+UninstallDisplayName=iemod-fetch
 WizardStyle=modern
 CloseApplications=yes
 

@@ -4728,3 +4728,68 @@ Options weighed:
   for each.
 - **Next, in separate PRs:** winget (its manifest points at this
   installer), then Flatpak.
+
+## ADR-0062 — winget manifests are written for each release; sending them is the owner's
+
+**Status:** accepted (2026-11-17)
+
+### Context
+
+winget is the package manager in Windows 10 and 11. A package there is a
+set of YAML manifests in microsoft/winget-pkgs, added by a pull request to
+that repository and checked by its pipeline (schema, installation, malware
+scan). ADR-0061's installer is what such a manifest points at: per user,
+silent switches known to winget for Inno Setup, and a fixed AppId.
+
+Two things are not this repository's to do:
+- sending the pull request to microsoft/winget-pkgs, which speaks for the
+  owner and fixes the package's identifier for good;
+- running `winget validate` in CI: winget is not guaranteed on GitHub's
+  Windows runners.
+
+### Decision
+
+1. **`packaging/winget.py`** writes the three manifests of schema 1.10.0
+   (version, installer, defaultLocale en-US) for a release tag, in
+   winget-pkgs' layout (`manifests/g/gsamuele78/iemod-fetch/<version>/`):
+   - identifier `gsamuele78.iemod-fetch`, moniker `iemod-fetch`;
+   - one x64 installer, `InstallerType: inno`, `Scope: user`, the
+     release's URL, and the sha256 read from the release's SHA256SUMS, not
+     from a new download: the bytes the release published and attested;
+   - `ProductCode` `{AppId}_is1` and an `AppsAndFeaturesEntries` entry with
+     the installer's DisplayName and Publisher, read from the same
+     constants the installer script holds, so winget recognises what it
+     installed;
+   - `MinimumOSVersion` 10.0.17763.0 (Windows 10 1809, Qt 6's minimum);
+   - a release without the installer has no manifests; the script stops.
+2. **The installer's "Installed apps" name has no version**
+   (`UninstallDisplayName=iemod-fetch`); the version is DisplayVersion.
+   With the version in the name, the entry's name changes on every
+   upgrade, and winget's matching of installed apps relies on it.
+3. **The release's Windows job writes them** from the installer it just
+   built, pull requests included, and leaves them as the
+   `winget-manifests` artifact. Not a release asset: they are input for
+   winget-pkgs, not something a player downloads.
+4. **The tests validate them against winget's own schemas**, copied
+   unchanged from microsoft/winget-cli at tag v1.12.470 (MIT) into
+   `tests/data/winget`, with their commit and sha256. The YAML is written
+   by a small emitter (strings quoted when they could be read as anything
+   else) and read back in the tests, without adding a YAML library to the
+   project.
+5. **docs/RELEASING.md** says how the owner sends a version: by hand the
+   first time (fork, copy, `winget validate`, `winget install --manifest`,
+   pull request), then by hand or with `wingetcreate update`.
+
+### Consequences
+
+- Once accepted, `winget install gsamuele78.iemod-fetch` installs the
+  wizard, and `winget upgrade` the next release.
+- **Not measured:** `winget validate` and `winget install --manifest` on a
+  real Windows, and winget-pkgs' pipeline. Only the schema is checked here.
+  The unsigned installer may be held for manual review there.
+- **The identifier is the owner's to confirm** before the first
+  submission: once accepted, it stays.
+- The vendored schemas are a snapshot: a newer manifest version (1.12)
+  means copying its schemas and raising MANIFEST_VERSION together.
+- **Next:** Flatpak (separate PR). Signing (SignPath) is the owner's
+  application to make.

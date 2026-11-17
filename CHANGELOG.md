@@ -9,6 +9,14 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **winget manifests for each release** (ADR-0062): `packaging/winget.py`
+  writes the three manifests (schema 1.10.0) for `gsamuele78.iemod-fetch`,
+  pointing at the release's installer with the sha256 in SHA256SUMS; the
+  release's Windows job leaves them as the `winget-manifests` artifact.
+  Validated against winget's schemas in the tests. Sending them to
+  microsoft/winget-pkgs is the owner's step (docs/RELEASING.md). The
+  installer's "Installed apps" name no longer carries the version, so winget
+  recognises it after an upgrade.
 - **The wizard as a per-user installer on Windows** (ADR-0061):
   `iemod-fetch-gui-windows-x86_64-setup.exe`, built with Inno Setup 6.7.3
   (pinned by sha256), installs the zip's folder, plus Inno Setup's licence
