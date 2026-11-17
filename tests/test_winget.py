@@ -175,17 +175,21 @@ def test_the_yaml_reads_back_with_a_yaml_library():
 
 @pytest.mark.parametrize("text", ["4.2.0", "yes", "a: b", "{x}", "x #y", "true", "Null",
                                   "-x", "it's", "x:", 'say "hi"', "back\\slash", "plain",
-                                  "è"])
+                                  "è", "😀", "tab\there", "new\nline"])
 def test_every_string_is_double_quoted_and_reads_back_the_same(text):
     out = winget.scalar(text)
-    assert out.startswith('"') and out.endswith('"') and out.isascii()
+    assert out.startswith('"') and out.endswith('"')
     assert json.loads(out) == text
 
 
-def test_a_tricky_description_survives_a_yaml_library():
+@pytest.mark.parametrize("description", [
+    "EET: mods #1, 'quoted' and \"double\" - yes",
+    "Mods for Baldur's Gate 😀 - è, ß, 中文",
+])
+def test_a_tricky_description_survives_a_yaml_library(description):
     yaml = pytest.importorskip("yaml")
     data = dict(built()[f"{winget.IDENTIFIER}.locale.en-US.yaml"],
-                ShortDescription="EET: mods #1, 'quoted' and \"double\" - yes")
+                ShortDescription=description)
     assert yaml.safe_load(winget.render(data)) == data
 
 

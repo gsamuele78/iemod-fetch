@@ -508,10 +508,12 @@ validates them against winget's own JSON schemas, v1.10.0, vendored in
 installer URL and sha256, the tag-to-version rule, that a release without
 the installer has none, and that the "Installed apps" name, publisher and
 product code match what the Inno Setup script registers; and reads the YAML
-back as the same data - every string double-quoted - with a strict reader
-of the subset written, validating what it read against the schemas, and
-with PyYAML where installed. The release's Windows job writes them from the installer
-it built, on pull requests too. `winget validate` itself is not run: winget
+back as the same data - every string double-quoted, emoji included - with
+a strict reader of the subset written, validating what it read against the
+schemas, and with PyYAML (in the `test` extra; the job that runs the suite
+with pytest alone skips those). The release's publish job writes them from
+the SHA256SUMS it publishes; a pull request's run does not reach that job.
+`winget validate` itself is not run: winget
 is not guaranteed on the runner, and microsoft/winget-pkgs' pipeline runs it
 on submission.
 
@@ -595,7 +597,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,165 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,169 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

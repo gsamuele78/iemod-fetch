@@ -315,26 +315,6 @@ jobs:
           if [ -f packaging/windows_installer.py ]; then
             python packaging/windows_installer.py gui-dist/iemod-fetch-gui-windows-*.zip --dist gui-dist
           fi
-      # winget's manifests for this release (ADR-0062), from the installer
-      # just built - the bytes the release publishes, so the same sha256 as
-      # SHA256SUMS. A workflow artifact for the owner to send to
-      # microsoft/winget-pkgs; nothing here sends them.
-      - name: The winget manifests (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          TAG: ${{ needs.decide.outputs.tag }}
-        run: |
-          if [ -f packaging/winget.py ] && [ -n "$TAG" ] && ls gui-dist/*-setup.exe > /dev/null 2>&1; then
-            (cd gui-dist && sha256sum -- *-setup.exe) > winget-sums
-            python packaging/winget.py "$TAG" --sums winget-sums --out winget-manifests
-          fi
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: runner.os == 'Windows'
-        with:
-          name: winget-manifests
-          path: winget-manifests
-          if-no-files-found: ignore
       - name: The Linux zip on Debian trixie, the oldest system it is for
         if: runner.os == 'Linux'
         run: |
@@ -538,6 +518,27 @@ jobs:
             sha256sum mod_installer-*-source.tar.gz >> SHA256SUMS
           fi
           cat SHA256SUMS
+
+      # winget's manifests for this release (ADR-0062), from the final
+      # SHA256SUMS: the sha256 of the installer this release publishes, not
+      # of a rebuild. Optional: a failure warns and the release goes on.
+      # A workflow artifact for the owner to send to microsoft/winget-pkgs;
+      # nothing here sends them.
+      - name: The winget manifests
+        continue-on-error: true
+        env:
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          if [ ! -f packaging/winget.py ] || ! grep -q -- '-setup\.exe$' dist/SHA256SUMS; then
+            echo "no installer in this release: no winget manifests"; exit 0
+          fi
+          python packaging/winget.py "$TAG" --sums dist/SHA256SUMS --out winget-manifests \
+            || { echo "::warning::winget manifests not written; make them from the published release (docs/RELEASING.md)"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: winget-manifests
+          path: winget-manifests
+          if-no-files-found: ignore
 
       - name: Release notes from the changelog
         # Values reach the script through the environment, never by template

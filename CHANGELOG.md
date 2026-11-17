@@ -12,7 +12,8 @@ Python API, which is internal.
 - **winget manifests for each release** (ADR-0062): `packaging/winget.py`
   writes the three manifests (schema 1.10.0) for `gsamuele78.iemod-fetch`,
   pointing at the release's installer with the sha256 in SHA256SUMS; the
-  release's Windows job leaves them as the `winget-manifests` artifact.
+  release's publish job writes them from that file, as the
+  `winget-manifests` artifact (optional: a failure only warns).
   Validated against winget's schemas in the tests. Sending them to
   microsoft/winget-pkgs is the owner's step (docs/RELEASING.md). The
   installer's "Installed apps" name no longer carries the version, so winget

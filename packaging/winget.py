@@ -119,8 +119,10 @@ def manifests(tag: str, sha256: str, repo: str = REPO) -> dict[str, dict]:
 def scalar(value: str) -> str:
     """A string as YAML, always double-quoted: JSON's string syntax, which
     YAML's double-quoted scalars share, so a ':', '#' or quote in it, or a
-    value like 4.2.0 or yes, is read back as the same string."""
-    return json.dumps(value, ensure_ascii=True)
+    value like 4.2.0 or yes, is read back as the same string. Not ASCII-only:
+    the file is UTF-8, and JSON would write a character beyond the BMP (an
+    emoji) as a surrogate pair, which YAML does not join back."""
+    return json.dumps(value, ensure_ascii=False)
 
 
 def emit(data: dict, indent: str = "") -> list[str]:

@@ -187,10 +187,12 @@ workflow built those bytes, and nothing is published with it.
 
 ## winget (ADR-0062)
 
-The release's Windows job writes winget's three manifests for the version,
-from the installer it just built: the `winget-manifests` artifact of the
+The release's publish job writes winget's three manifests for the version,
+from the SHA256SUMS it publishes: the `winget-manifests` artifact of the
 release run, laid out as `manifests/g/gsamuele78/iemod-fetch/<version>/`.
-They can be made again from a published release at any time:
+That step is optional and only warns if it fails. Make them again from the
+published release whenever the artifact is missing, or the release was run
+again for the same tag (the installer is then rebuilt with a new sha256):
 
 ```bash
 python packaging/winget.py v4.2.0                     # reads the release's SHA256SUMS

@@ -4775,20 +4775,30 @@ Two things are not this repository's to do:
    ADR-0061's installer is in no release yet, so no player has an entry
    under the old name; the upgrade check in CI builds both versions from
    this script and keeps passing.
-3. **The release's Windows job writes them** from the installer it just
-   built, pull requests included, and leaves them as the
-   `winget-manifests` artifact. Not a release asset: they are input for
-   winget-pkgs, not something a player downloads.
+3. **The release's publish job writes them** from the final
+   `dist/SHA256SUMS`, the file published with the release, and leaves them
+   as the `winget-manifests` artifact. Not from the installer the Windows
+   job built: a release run again for the same tag builds an installer with
+   new timestamps inside, whose sha256 differs from the asset already
+   published, and winget-pkgs would refuse it (review of #133). The step is
+   optional: a failure warns and the release goes on, and the manifests can
+   be made again from the published release (`python packaging/winget.py
+   vX.Y.Z`). Not a release asset: they are input for winget-pkgs, not
+   something a player downloads. It runs only where the release is
+   published, so a pull request's run does not write them; the unit tests
+   cover the script.
 4. **The tests validate them against winget's own schemas**, copied
    unchanged from microsoft/winget-cli at tag v1.12.470 (MIT) into
    `tests/data/winget`, with their commit and sha256. The YAML is written
    by a small emitter in which every string is double-quoted (JSON's string
    syntax, which YAML's double-quoted scalars share), so a ':', '#' or
    quote in a description or URL is read back unchanged. The tests read the
-   files back with a strict reader of that subset, validate what they read
-   against the schemas, and also load them with PyYAML where it is
-   installed. No YAML library is added to the project, at runtime or for
-   tests.
+   files back with a strict reader of that subset and validate what they
+   read against the schemas; that reader shares the emitter's JSON syntax,
+   so the independent check is PyYAML's `safe_load`, added to the `test`
+   extra (review of #133). Nothing is added at runtime. Strings are written
+   as UTF-8, not ASCII escapes: JSON would write a character beyond the BMP
+   (an emoji) as a surrogate pair, which YAML does not join back.
 5. **docs/RELEASING.md** says how the owner sends a version: by hand the
    first time (fork, copy, `winget validate`, `winget install --manifest`,
    pull request), then by hand or with `wingetcreate update`.
