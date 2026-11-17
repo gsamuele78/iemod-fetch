@@ -135,3 +135,17 @@ def _no_community_data_refresh(tmp_path_factory, monkeypatch):
     """
     monkeypatch.setenv("IEMOD_NO_UPDATE_DATA", "1")
     monkeypatch.setenv("IEMOD_DATA_DIR", str(tmp_path_factory.mktemp("data-cache")))
+
+
+@pytest.fixture(autouse=True)
+def _not_in_a_sandbox(tmp_path_factory, monkeypatch):
+    """
+    The suite as if it ran outside a sandbox, wherever it runs: from a
+    Flatpak (an IDE's terminal) /.flatpak-info exists, and every install test
+    would meet "cannot see whether the game is running" (ADR-0063). The
+    sandbox tests point gamelock at a file of their own; FLATPAK_ID likewise.
+    """
+    from iemod_fetch import gamelock
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO",
+                        str(tmp_path_factory.mktemp("no-sandbox") / ".flatpak-info"))
+    monkeypatch.delenv("FLATPAK_ID", raising=False)

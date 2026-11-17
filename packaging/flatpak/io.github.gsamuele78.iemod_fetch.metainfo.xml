@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The wizard's AppStream metadata (ADR-0064). Experimental: not on Flathub. -->
+<component type="desktop-application">
+  <id>io.github.gsamuele78.iemod_fetch</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <!-- iemod-fetch is MIT; the bundle also carries Qt (LGPL-3.0-only) and
+       mod_installer (GPL-3.0-only), each with its licence in the folder -->
+  <project_license>MIT AND LGPL-3.0-only AND GPL-3.0-only</project_license>
+  <name>iemod-fetch</name>
+  <summary>Choose, download and install Infinity Engine mods</summary>
+  <description>
+    <p>
+      A wizard for Baldur's Gate: Enhanced Edition, Baldur's Gate II: Enhanced
+      Edition and EET: it reads the mods you want, downloads and verifies them,
+      orders them by the community's install rules, checks their conflicts and
+      installs them with WeiDU.
+    </p>
+    <p>
+      This Flatpak is experimental: installing into a game folder chosen through
+      the file portal is not tested yet.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.gsamuele78.iemod_fetch.desktop</launchable>
+  <url type="homepage">https://github.com/gsamuele78/iemod-fetch</url>
+  <url type="bugtracker">https://github.com/gsamuele78/iemod-fetch/issues</url>
+  <developer id="io.github.gsamuele78">
+    <name>iemod-fetch contributors</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Game</category>
+  </categories>
+</component>

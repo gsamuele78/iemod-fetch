@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=iemod-fetch
+GenericName=Infinity Engine mod installer
+Comment=Choose, download and install mods for Baldur's Gate EE, BG2:EE and EET
+Exec=iemod-fetch-gui
+Icon=io.github.gsamuele78.iemod_fetch
+Terminal=false
+Categories=Game;
+Keywords=Baldur's Gate;Infinity Engine;WeiDU;mods;EET;

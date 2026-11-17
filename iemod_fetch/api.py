@@ -92,7 +92,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
-           "ignore_order", "unignore_order", "selection_digest", "start_install", "games_unseen", "install_progress", "install_known_issues",
+           "ignore_order", "unignore_order", "selection_digest", "start_install", "games_unseen", "sandbox", "install_progress", "install_known_issues",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
            "selection_plan", "write_install_plan", "load_install_answers", "save_install_answers",
            "write_install_answers", "answer_key", "writable_answer", "INSTALL_ANSWERS_FILE", "install_games", "INSTALL_PLAN_DIR",
@@ -1310,6 +1310,12 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                              allow_existing=allow_existing, resume_install=resume,
                              expected=expected, by_key=by_key, row_keys=row_keys,
                              raw_texts=raw, confirmed_closed=confirmed_closed, **timing)
+
+
+def sandbox() -> str | None:
+    """The sandbox this program runs in, in words (a Flatpak, ADR-0064), or
+    None: what it may see and keep differs there."""
+    return gamelock.sandbox()
 
 
 def games_unseen() -> str | None:

@@ -19,7 +19,10 @@ the user's documents folder, which is not looked at here.
 Not checked, and said so: the patch level (EET asks for v2.6.6.0), and whether
 the game data is intact.
 """
+import contextlib
 import os
+import re
+import shlex
 import struct
 from dataclasses import dataclass, field
 
@@ -262,6 +265,30 @@ def verify_eet(bgee_dir: str, bg2ee_dir: str, plan_mods: set[str]) -> GameReport
     return report
 
 
+# Where a Flatpak sees a folder the player chose through the file portal:
+# the document portal's FUSE mount (ADR-0064)
+PORTAL_PATH = re.compile(r"^/run/user/\d+/doc/")
+HOST_PATH_XATTR = "user.document-portal.host-path"
+
+
+def portal_note(label: str, folder: str | None) -> str | None:
+    """A note for a game folder seen through the document portal, with the
+    command that gives the Flatpak the folder itself; None for any other
+    folder. WeiDU on the portal's FUSE mount is not measured (ADR-0064)."""
+    if not folder or not PORTAL_PATH.match(folder):
+        return None
+    host = None
+    with contextlib.suppress(OSError, AttributeError):   # older portals: no attribute
+        host = os.fsdecode(os.getxattr(folder, HOST_PATH_XATTR)).rstrip("\0") or None
+    app = os.environ.get("FLATPAK_ID") or "<the app's ID>"
+    target = shlex.quote(host) if host else "<the game folder>"
+    return (f"{label} is seen through the Flatpak document portal ({folder}); WeiDU "
+            f"installing there is not tested yet (the Flatpak is experimental). To give "
+            f"the Flatpak the folder itself, close it, run "
+            f"`flatpak override --user --filesystem={target} {app}`, start it again "
+            f"and choose the folder again")
+
+
 def check_folders(game: str, bgee_dir: str | None,
                   bg2ee_dir: str | None) -> GameReport:
     """
@@ -269,7 +296,18 @@ def check_folders(game: str, bgee_dir: str | None,
     phase): EET needs a BG:EE and a clean BG2:EE (verify_eet), BGEE and BG2EE
     one folder of that game. A Siege of Dragonspear still in its DLC archive is
     a note here - DlcMerger is then needed first, which the plan checks later.
+    A folder seen through a Flatpak's document portal is a note too.
     """
+    report = _check_folders(game, bgee_dir, bg2ee_dir)
+    for label, folder in (("BGEE_DIR", bgee_dir), ("BG2EE_DIR", bg2ee_dir)):
+        note = portal_note(label, folder)
+        if note:
+            report.notes.insert(0, note)
+    return report
+
+
+def _check_folders(game: str, bgee_dir: str | None,
+                   bg2ee_dir: str | None) -> GameReport:
     game = game.upper()
     if game == "EET" and not (bgee_dir and bg2ee_dir):
         report = GameReport(bgee_dir or "", bg2ee_dir or "")

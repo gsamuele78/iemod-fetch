@@ -534,8 +534,10 @@ class InstallPage(QWidget):
         asking = _questions_text(coverage)
         try:                              # the processes hidden from here (ADR-0063)
             unseen = self.services.unseen()
-        except Exception:                 # cannot tell: the install's own check refuses
-            unseen = None
+        except Exception:
+            # cannot tell: asked all the same, so that the confirmation the
+            # install's own check may need is given in this dialog
+            unseen = "this program could not tell whether it can see the game running"
         closed = ("" if not unseen else
                   f"Make sure the game is closed: {unseen}. Going on confirms it is.\n\n")
         stopped = ("" if not (resuming and self.cancelled_in) else

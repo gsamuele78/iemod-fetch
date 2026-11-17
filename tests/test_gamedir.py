@@ -11,6 +11,7 @@ import struct
 
 import pytest
 
+from iemod_fetch import gamedir
 from iemod_fetch.gamedir import identify, key_resources, verify_eet
 
 ARE, TWODA = 0x3F2, 0x3F4
@@ -121,3 +122,36 @@ def test_the_report_names_what_was_not_checked(tmp_path):
                         plan_mods=set())
     assert any("patch" in note for note in report.notes)
     assert "GAME FOLDERS" in report.render()
+
+
+# ------------------------------- a folder seen through a Flatpak's portal (ADR-0064)
+def test_a_folder_through_the_document_portal_gets_the_override_command(monkeypatch):
+    monkeypatch.setenv("FLATPAK_ID", "io.github.example.app")
+    folder = "/run/user/1000/doc/ab12cd34/Baldur's Gate II Enhanced Edition"
+    note = gamedir.portal_note("BG2EE_DIR", folder)
+    assert note and "document portal" in note and "experimental" in note
+    assert ("flatpak override --user --filesystem=<the game folder> "
+            "io.github.example.app") in note
+
+
+def test_the_portals_host_path_fills_the_command_when_it_is_given(monkeypatch):
+    monkeypatch.setenv("FLATPAK_ID", "io.github.example.app")
+    host = b"/home/me/.local/share/Steam/steamapps/common/Baldur's Gate II Enhanced Edition"
+    monkeypatch.setattr(gamedir.os, "getxattr", lambda path, name: host + b"\0",
+                        raising=False)
+    note = gamedir.portal_note("BG2EE_DIR", "/run/user/1000/doc/ab12cd34/BG2EE")
+    assert ("--filesystem='/home/me/.local/share/Steam/steamapps/common/Baldur'\"'\"'s "
+            "Gate II Enhanced Edition' io.github.example.app") in note
+
+
+def test_any_other_folder_gets_no_portal_note():
+    for folder in (None, "", "/home/me/BG2EE", "/run/user/1000/BG2EE", "C:\\Games\\BG2EE"):
+        assert gamedir.portal_note("BG2EE_DIR", folder) is None
+
+
+def test_the_first_phase_check_says_it(tmp_path):
+    report = gamedir.check_folders("BG2EE", None, "/run/user/1000/doc/ab12cd34/BG2EE")
+    assert any("document portal" in note for note in report.notes)
+    assert report.problems                     # the folder itself is still checked
+    plain = gamedir.check_folders("BG2EE", None, str(tmp_path))
+    assert not any("document portal" in note for note in plain.notes)

@@ -4824,7 +4824,7 @@ Two things are not this repository's to do:
 ### Context
 
 ADR-0051 refuses an install while a program runs from a game folder. On
-Linux it lists /proc. In a Flatpak sandbox (ADR-0064, next) the process
+Linux it lists /proc. In a Flatpak sandbox (ADR-0064) the process
 namespace is the sandbox's own: /proc holds this program and its children,
 never the game. The list came back without the game, which reads as
 "nothing running", and the install went on with the game open: the case
@@ -4885,5 +4885,147 @@ host and undo the sandbox. They are not used.
   it was before ADR-0051.
 - Outside a sandbox: one more parameter, nothing else.
 - **Not covered:** other sandboxes that hide processes (Snap with strict
-  confinement, a container) are not detected; only Flatpak is targeted.
-  `sandbox()` is the one place to add them.
+  confinement, bubblewrap started by hand, a container) are not detected;
+  only Flatpak is targeted. `sandbox()` is the one place to add them, and
+  must before any Snap package. Cheap signals, from the review of #134:
+  `/proc/1/comm` is `bwrap`; `$SNAP` is set; `/.dockerenv` exists; more
+  generally, every process /proc lets this program read is itself or one
+  of its children. Not `/run/.containerenv`: toolbox and distrobox set it
+  while sharing the host's processes, so the game is seen there.
+
+## ADR-0064 — On Linux the wizard is also a Flatpak bundle, experimental, with no folder of the player's
+
+**Status:** accepted (2026-11-17), experimental
+
+### Context
+
+The owner chose AppImage now and Flatpak later for Linux (ADR-0060). A
+Flatpak is sandboxed: what it may reach is declared (finish-args), and
+folders outside it are given one at a time through the file portal.
+
+Two ways to build it were weighed:
+- **From source on the KDE runtime with io.qt.PySide.BaseApp:** the project
+  needs Python 3.14 (requires-python); the freedesktop runtimes 25.08 and
+  26.08 carry an older one, so Python itself would be built as a module.
+  Dropped for now.
+- **The checked PyInstaller folder, unchanged, on org.freedesktop.Platform:**
+  what the zip and the AppImage already carry and test, Python 3.14 and Qt
+  included. The runtime gives the graphics driver, X11 and Wayland, fonts,
+  and libarchive 3.8.9 (bsdtar, for RAR and 7z mods; freedesktop-sdk
+  release/26.08, elements/platform.bst). Chosen.
+
+Measured from the code, before writing it:
+- the wizard never looks for game folders by itself: the player chooses
+  each in a dialog, so the portal can give exactly those;
+- PySide6's wheel carries Qt's xdgdesktopportal platform theme, so the
+  file dialog goes through the portal in a sandbox;
+- the running game cannot be seen from the sandbox: ADR-0063.
+
+### Decision
+
+1. **`packaging/flatpak.py`** builds the bundle from the checked Linux zip:
+   - the zip's folder, unpacked as the player would (links kept), goes to
+     `/app/lib/iemod-fetch-gui`, with `/app/bin/iemod-fetch-gui` linking to
+     it, the desktop entry, the AppStream metainfo (this version's release
+     added) and the icon;
+   - runtime `org.freedesktop.Platform`, branch 26.08, SDK the same;
+   - `flatpak-builder` builds it, `flatpak build-bundle` makes one file
+     whose runtime comes from Flathub (`--runtime-repo`);
+   - the bundle is built in the work folder, installed for the user,
+     started once in its sandbox (`/.flatpak-info` there, bsdtar found,
+     `--check` offscreen with no `--project`, then the project found in the
+     app's own data), its permissions printed, and removed with its data;
+     only then is it moved into the output folder, and the workflow uploads
+     it only when that step succeeded - a bundle that failed its check, or
+     was left half-written, is never released (review of #135).
+2. **finish-args, all of them:** `--share=network` (mods, community data,
+   the tools' downloads), `--socket=wayland` and `--socket=fallback-x11`
+   with `--share=ipc` (the window), `--device=dri` (OpenGL for Qt). **No
+   `--filesystem`:** no home, no game library. Game folders come through the
+   FileChooser portal; the data cache lives in the sandbox's own
+   `~/.var/app/<id>/cache`. No `--talk-name=org.freedesktop.Flatpak`, no
+   `flatpak-spawn --host`: either would undo the sandbox (ADR-0063).
+   - **The project folder** (its file, the plan, `mods/` with the downloads)
+     is not chosen in a dialog: the wizard takes `--project`, by default the
+     folder it was started from. In the sandbox that folder, and the home,
+     are not kept, and gigabytes of downloads would vanish with it (review
+     of #135). So in a Flatpak the default is
+     `$XDG_DATA_HOME/project` = `~/.var/app/<id>/data/project`, which the
+     sandbox keeps (`app.default_project`; without `$XDG_DATA_HOME`,
+     `~/.var/app/$FLATPAK_ID/data/project`). It goes when the app is
+     uninstalled with `--delete-data`. A project elsewhere takes the same
+     `flatpak override --filesystem=<folder>` and `--project <folder>`.
+3. **A game folder seen through the document portal is said in the first
+   phase** (`gamedir.portal_note`): a path under `/run/user/<uid>/doc/` gets
+   a note that WeiDU there is not tested, with
+   `flatpak override --user --filesystem=<folder> <app id>` ready to copy -
+   the folder from the portal's `user.document-portal.host-path` attribute
+   when the portal gives it (newer xdg-desktop-portal), else a placeholder;
+   the app ID from `$FLATPAK_ID`, which Flatpak sets. The first phase's text
+   can be selected and copied.
+4. **The app ID is provisional:** `io.github.gsamuele78.iemod_fetch`, one
+   constant (`flatpak.APP_ID`) and the names of the three files carrying
+   it. Flathub keeps an ID for good: the owner confirms it before any
+   submission (docs/RELEASING.md).
+5. **The release builds it in a job of its own** (`flatpak`, ubuntu-24.04,
+   after the wizard's Linux zip), pull requests included. It installs
+   flatpak and flatpak-builder and lets unprivileged user namespaces be
+   made (Ubuntu 24.04's AppArmor restricts them; bubblewrap needs one). The
+   module is not stripped (`strip: false`, `no-debuginfo: true`):
+   flatpak-builder strips ELF files by default, 56 of PyInstaller's, and the
+   folder would no longer be the zip's. The metainfo is validated
+   (appstreamcli) and so is the desktop entry, both enforced.
+   - **Experimental, so it never holds a release back** (review of #135):
+     the job and its two steps are `continue-on-error`; the steps carry the
+     timeouts (10 and 30 minutes), so a hang ends as a failure that is let
+     through, with a 45-minute backstop on the job; `provenance` and
+     `publish-github` still wait for it but run when it was cancelled,
+     looking at the other jobs' results (`!cancelled()` and each
+     `needs.<job>.result`). The release then goes out without the bundle,
+     and the publish step warns when a commit that builds one has none.
+6. **It is a release asset** like the others: in SHA256SUMS, attested
+   (`dist/iemod-fetch-*`), named in the notes as experimental, with the
+   flathub remote needed for the runtime.
+7. **Flathub is the owner's.** Publishing there is a pull request to
+   flathub/flathub with a manifest whose source is the release zip by URL
+   and sha256; nothing here sends it.
+
+### Consequences
+
+- A player on a Flatpak-first system (Bazzite, Steam Deck, Fedora Silverblue)
+  installs one file, sandboxed, with nothing of theirs open to it but the
+  folders they choose.
+- **Experimental, and said so** in the README, the metainfo, the release
+  notes and the first phase, until a real test measures WeiDU and
+  mod_installer writing thousands of files through the portal's FUSE mount
+  (renames, modes, speed). Until then the `flatpak override` above is the
+  documented way round.
+- **It may not be slow but broken:** xdg-desktop-portal issue #1812 reports
+  getcwd() failing with ENOENT inside a document-portal mount, and WeiDU and
+  mod_installer run with the game folder as their working folder. If so, an
+  install through the portal fails at once; the real-test guide's row looks
+  for exactly that error.
+- **Measured in this PR's CI** (run 43993140693): flatpak-builder built the
+  bundle (54.3 MB) on runtime org.freedesktop.Platform//26.08 at commit
+  df26daaf9d07610b4a72cc4585566194051275ac68396597b06474396f66427c,
+  appstreamcli compose accepted the metainfo, the bundle installed, started
+  with `--check` in its sandbox (`/.flatpak-info` there, bsdtar found), and
+  its permissions were exactly the finish-args (`shared=network;ipc;`,
+  `sockets=x11;wayland;fallback-x11;` - Flatpak lists fallback-x11's x11 -
+  `devices=dri;`).
+- **The runtime is pinned by branch, not by commit.** flatpak-builder takes
+  the branch's current commit; the build prints it ("runtime
+  org.freedesktop.Platform//26.08 at commit ...") in the job's log - the
+  first one above. A manifest property to pin it was not found to be
+  supported, so it is not claimed.
+- **In the sandbox, not measured in CI:** the portal itself (CI has no
+  desktop session), a real window, the backup's mount detection through
+  the portal (ADR-0063), a folder given with `--filesystem`.
+- The bundle repeats the AppImage's folder: about the same size, the same
+  libraries and licence files; the runtime's own licences are Flathub's.
+  The metainfo's `project_license` names the main licences (MIT, Qt's
+  LGPL-3.0-only, mod_installer's GPL-3.0-only); Python's and the system
+  libraries' are in the folder's `licenses/` and NOTICE files.
+- **Not done:** a Flathub manifest building from the release zip by URL
+  (its zip source would be unpacked by flatpak-builder, whose handling of
+  the zip's links is not measured), Flatpak for arm64.

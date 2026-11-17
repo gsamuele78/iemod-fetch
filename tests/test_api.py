@@ -99,3 +99,22 @@ def test_games_unseen_says_why_only_in_a_sandbox(tmp_path, monkeypatch):
     assert "Flatpak" in (api.games_unseen() or "")
     monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(tmp_path / "absent"))
     assert api.games_unseen() is None
+
+
+def test_start_install_refuses_an_unseen_game_without_the_flag(tmp_path, monkeypatch):
+    from iemod_fetch import gamelock, install_run
+    from iemod_fetch.errors import ConfigError
+    info = tmp_path / ".flatpak-info"
+    info.write_text("[Application]\n")
+    monkeypatch.setattr(gamelock, "FLATPAK_INFO", str(info))
+    seen = []
+
+    def preflight(*args, **kwargs):
+        seen.append(kwargs.get("confirmed_closed"))
+        return gamelock.problems({"BG2EE": str(tmp_path)},
+                                 confirmed_closed=kwargs.get("confirmed_closed", False))
+    monkeypatch.setattr(install_run, "preflight", preflight)
+    with pytest.raises(ConfigError, match="confirm it is closed"):
+        api.start_install(str(tmp_path), {"BG2EE": str(tmp_path)}, str(tmp_path), "mi",
+                          "weidu", ask=lambda *_a: None, questions={"components": []})
+    assert seen == [False]
