@@ -200,7 +200,10 @@ python packaging/winget.py v4.2.0 --sums dist/SHA256SUMS
 Nothing sends them. Publishing is a pull request to microsoft/winget-pkgs,
 made by the owner, and the first one decides things only the owner can:
 - the identifier, `gsamuele78.iemod-fetch` here (Publisher.Package, kept
-  for good once accepted) and the moniker `iemod-fetch`;
+  for good once accepted);
+- the optional fields left out because they cannot be checked here: a
+  Moniker (a short name for `winget install <moniker>`, if free), Tags,
+  and MinimumOSVersion;
 - the publisher shown, `iemod-fetch contributors`, which must stay what the
   installer registers (`AppPublisher`), or winget no longer recognises what
   it installed.

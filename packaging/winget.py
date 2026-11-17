@@ -37,13 +37,9 @@ SETUP = f"{installer.NAME}-windows-x86_64-setup.exe"
 PUBLISHER = "iemod-fetch contributors"
 DISPLAY_NAME = "iemod-fetch"
 PRODUCT_CODE = installer.APP_ID + "_is1"
-# Qt 6's own minimum on Windows: Windows 10 1809
-MINIMUM_OS = "10.0.17763.0"
 # the README's banner, in winget's 256 characters
 SHORT = ("Infinity Engine mods for EET, BGEE and BG2EE: fetched, verified, ordered, "
          "conflict-checked and installed from a WeiDU log.")
-TAGS = ["baldurs-gate", "bg2ee", "eet", "infinity-engine", "modding", "mod-manager",
-        "weidu"]
 
 
 def schema_line(kind: str) -> str:
@@ -87,7 +83,6 @@ def manifests(tag: str, sha256: str, repo: str = REPO) -> dict[str, dict]:
             **common,
             "InstallerType": "inno",
             "Scope": "user",
-            "MinimumOSVersion": MINIMUM_OS,
             "UpgradeBehavior": "install",
             "ProductCode": PRODUCT_CODE,
             "AppsAndFeaturesEntries": [{
@@ -114,8 +109,6 @@ def manifests(tag: str, sha256: str, repo: str = REPO) -> dict[str, dict]:
             "License": "MIT",
             "LicenseUrl": f"{base}/blob/{tag}/LICENSE",
             "ShortDescription": SHORT,
-            "Moniker": "iemod-fetch",
-            "Tags": TAGS,
             "ReleaseNotesUrl": f"{base}/releases/tag/{tag}",
             "ManifestType": "defaultLocale",
             "ManifestVersion": MANIFEST_VERSION,
@@ -124,12 +117,9 @@ def manifests(tag: str, sha256: str, repo: str = REPO) -> dict[str, dict]:
 
 
 def scalar(value: str) -> str:
-    """A string as YAML: plain when it cannot be read as anything else,
-    double-quoted (JSON's escapes, which YAML shares) otherwise."""
-    if re.fullmatch(r"[A-Za-z][A-Za-z0-9 ._/:+()'-]*", value) and not (
-            ": " in value or value.endswith(":") or " #" in value
-            or value.lower() in ("yes", "no", "true", "false", "null", "on", "off")):
-        return value
+    """A string as YAML, always double-quoted: JSON's string syntax, which
+    YAML's double-quoted scalars share, so a ':', '#' or quote in it, or a
+    value like 4.2.0 or yes, is read back as the same string."""
     return json.dumps(value, ensure_ascii=True)
 
 

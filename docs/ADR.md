@@ -4752,7 +4752,7 @@ Two things are not this repository's to do:
 1. **`packaging/winget.py`** writes the three manifests of schema 1.10.0
    (version, installer, defaultLocale en-US) for a release tag, in
    winget-pkgs' layout (`manifests/g/gsamuele78/iemod-fetch/<version>/`):
-   - identifier `gsamuele78.iemod-fetch`, moniker `iemod-fetch`;
+   - identifier `gsamuele78.iemod-fetch`;
    - one x64 installer, `InstallerType: inno`, `Scope: user`, the
      release's URL, and the sha256 read from the release's SHA256SUMS, not
      from a new download: the bytes the release published and attested;
@@ -4760,12 +4760,21 @@ Two things are not this repository's to do:
      the installer's DisplayName and Publisher, read from the same
      constants the installer script holds, so winget recognises what it
      installed;
-   - `MinimumOSVersion` 10.0.17763.0 (Windows 10 1809, Qt 6's minimum);
+   - the publisher, name, licence (MIT, with the URL of LICENSE at the
+     tag), the project's URLs and the release's notes; a short description
+     taken from the README's banner;
+   - nothing that is not confirmed here: no Moniker, no Tags, no
+     MinimumOSVersion. They are optional, and each would be a claim
+     (a moniker free in winget-pkgs, a measured minimum Windows) that this
+     repository cannot check. The owner can add them at submission;
    - a release without the installer has no manifests; the script stops.
 2. **The installer's "Installed apps" name has no version**
    (`UninstallDisplayName=iemod-fetch`); the version is DisplayVersion.
    With the version in the name, the entry's name changes on every
    upgrade, and winget's matching of installed apps relies on it.
+   ADR-0061's installer is in no release yet, so no player has an entry
+   under the old name; the upgrade check in CI builds both versions from
+   this script and keeps passing.
 3. **The release's Windows job writes them** from the installer it just
    built, pull requests included, and leaves them as the
    `winget-manifests` artifact. Not a release asset: they are input for
@@ -4773,9 +4782,13 @@ Two things are not this repository's to do:
 4. **The tests validate them against winget's own schemas**, copied
    unchanged from microsoft/winget-cli at tag v1.12.470 (MIT) into
    `tests/data/winget`, with their commit and sha256. The YAML is written
-   by a small emitter (strings quoted when they could be read as anything
-   else) and read back in the tests, without adding a YAML library to the
-   project.
+   by a small emitter in which every string is double-quoted (JSON's string
+   syntax, which YAML's double-quoted scalars share), so a ':', '#' or
+   quote in a description or URL is read back unchanged. The tests read the
+   files back with a strict reader of that subset, validate what they read
+   against the schemas, and also load them with PyYAML where it is
+   installed. No YAML library is added to the project, at runtime or for
+   tests.
 5. **docs/RELEASING.md** says how the owner sends a version: by hand the
    first time (fork, copy, `winget validate`, `winget install --manifest`,
    pull request), then by hand or with `wingetcreate update`.

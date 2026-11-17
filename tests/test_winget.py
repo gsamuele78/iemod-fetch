@@ -125,7 +125,9 @@ def read_back(text: str) -> dict:
     lines = [line for line in text.splitlines() if line and not line.startswith("#")]
 
     def value(raw: str) -> str:
-        return json.loads(raw) if raw.startswith('"') else raw
+        # every string is written double-quoted: a bare one is an error here
+        assert raw.startswith('"') and raw.endswith('"'), raw
+        return json.loads(raw)
 
     data: dict = {}
     i = 0
@@ -154,11 +156,15 @@ def read_back(text: str) -> dict:
     return data
 
 
-def test_the_yaml_reads_back_as_the_same_data():
+def test_the_yaml_reads_back_as_the_same_valid_data():
+    jsonschema = pytest.importorskip("jsonschema")
     for data in built().values():
         text = winget.render(data)
         assert text.startswith(winget.schema_line(data["ManifestType"]) + "\n")
-        assert read_back(text) == data
+        loaded = read_back(text)
+        assert loaded == data
+        # what is read from the file, not only what was meant, is valid
+        jsonschema.Draft7Validator(schema(loaded["ManifestType"])).validate(loaded)
 
 
 def test_the_yaml_reads_back_with_a_yaml_library():
@@ -168,13 +174,19 @@ def test_the_yaml_reads_back_with_a_yaml_library():
 
 
 @pytest.mark.parametrize("text", ["4.2.0", "yes", "a: b", "{x}", "x #y", "true", "Null",
-                                  "-x", "it's", "x:"])
-def test_a_scalar_that_could_be_read_as_something_else_is_quoted(text):
+                                  "-x", "it's", "x:", 'say "hi"', "back\\slash", "plain",
+                                  "è"])
+def test_every_string_is_double_quoted_and_reads_back_the_same(text):
     out = winget.scalar(text)
-    if out != text:
-        assert json.loads(out) == text
-    else:
-        assert text == "it's"
+    assert out.startswith('"') and out.endswith('"') and out.isascii()
+    assert json.loads(out) == text
+
+
+def test_a_tricky_description_survives_a_yaml_library():
+    yaml = pytest.importorskip("yaml")
+    data = dict(built()[f"{winget.IDENTIFIER}.locale.en-US.yaml"],
+                ShortDescription="EET: mods #1, 'quoted' and \"double\" - yes")
+    assert yaml.safe_load(winget.render(data)) == data
 
 
 def test_main_writes_from_a_sums_file(tmp_path, capsys):
