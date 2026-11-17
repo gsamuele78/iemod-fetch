@@ -321,7 +321,7 @@ def problems(folders: dict[str, str],
     seen = running()
     found = []
     if isinstance(seen, Unverifiable):
-        if not confirmed_closed:
+        if folders and not confirmed_closed:      # no folder: nothing to confirm
             found.append(NOT_CONFIRMED.format(reason=seen.reason))
     else:
         found = [f"the game is running: {line} - close it and try again"

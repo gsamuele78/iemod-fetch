@@ -218,6 +218,24 @@ not signed: Microsoft's scan may hold it for a manual review, which can take
 days. Later versions can be sent the same way, or with `wingetcreate update
 gsamuele78.iemod-fetch --version <v> --urls <setup.exe URL> --submit`.
 
+## Flatpak (ADR-0064)
+
+The release's `flatpak` job builds `iemod-fetch-gui-linux-x86_64.flatpak`
+from the wizard's Linux zip, starts it once in its sandbox, and the
+publish job attaches it, in SHA256SUMS and attested. The job is
+experimental (`continue-on-error`): if it fails, the release goes out
+without the bundle - its log says why, and the runtime commit it used.
+
+Publishing on Flathub is the owner's decision and pull request
+(flathub/flathub), and it fixes things for good:
+- the app ID, `io.github.gsamuele78.iemod_fetch` here - provisional, one
+  constant in `packaging/flatpak.py` and the names of the files in
+  `packaging/flatpak/`; Flathub verifies an `io.github.<user>` ID against
+  that GitHub account;
+- a manifest whose source is the release zip by URL and sha256, not the
+  folder this repository builds from (not written yet);
+- screenshots and the rest of the metainfo Flathub's linter asks for.
+
 ## Pinned test toolchain
 
 The real-WeiDU job in `ci.yml` installs the mock EET plan with tools pinned

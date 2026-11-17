@@ -499,6 +499,21 @@ it inside debian:trixie with only the libraries every AppImage leaves to
 the system (the GL driver, X11/xcb, fontconfig, freetype). Unit tests:
 `tests/test_appimage.py` (the AppDir, AppRun, the pins, the desktop entry).
 
+### The Flatpak (ADR-0064)
+
+`packaging/flatpak.py` builds the bundle with flatpak-builder on
+org.freedesktop.Platform 26.08 and starts it once in its sandbox: release.yml's
+`flatpak` job, on pull requests too, which also validates the desktop entry
+and the metainfo. `tests/test_flatpak.py`: the finish-args are exactly the
+network, Wayland or X11, IPC and the GPU (no `--filesystem`, no
+`--talk-name`); the manifest's runtime branch and build commands; the app ID
+is one constant and every file carries it; the source folder is the zip's.
+`tests/test_gamedir.py`: a game folder under `/run/user/<uid>/doc/` gets the
+`flatpak override` note, with the portal's host path when it gives it.
+`tests/conftest.py` keeps the whole suite out of a sandbox
+(`gamelock.FLATPAK_INFO` pointed at a missing file, `FLATPAK_ID` unset),
+so it passes when run from inside a Flatpak too.
+
 ### The game unseen in a sandbox (ADR-0063)
 
 `tests/test_gamelock.py` writes a `.flatpak-info` and points
@@ -607,10 +622,10 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,178 collected (25 run the real WeiDU, 199 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,195 collected (25 run the real WeiDU, 200 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
-| mypy | clean, 64 modules |
+| mypy | clean, 75 source files |
 | ruff | clean |
 | bandit | 0 high, 0 medium |
 | Runtime dependencies | 0 |

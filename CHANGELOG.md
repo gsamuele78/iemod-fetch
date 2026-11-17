@@ -9,6 +9,15 @@ Python API, which is internal.
 ## [Unreleased]
 
 ### Added
+- **The wizard as a Flatpak bundle on Linux, experimental** (ADR-0064):
+  `iemod-fetch-gui-linux-x86_64.flatpak`, the zip's folder on
+  org.freedesktop.Platform 26.08 from Flathub, with the network, a window
+  and the GPU and no folder of the player's: game and project folders are
+  chosen through the file portal. A game folder seen through the portal is
+  said in the first phase with the `flatpak override` command that gives
+  the folder itself; WeiDU installing through the portal is not tested yet.
+  In SHA256SUMS and attested; built, installed and started in its sandbox by
+  every release run. The app ID is provisional; Flathub is the owner's step.
 - **winget manifests for each release** (ADR-0062): `packaging/winget.py`
   writes the three manifests (schema 1.10.0) for `gsamuele78.iemod-fetch`,
   pointing at the release's installer with the sha256 in SHA256SUMS; the
@@ -57,13 +66,15 @@ Python API, which is internal.
   package that ships each. On 4.0.1 the command line started on all five;
   the wizard started on all five once those packages were in.
 
-### Fixed
-- **A game the wizard cannot see running is no longer taken as closed**
+### Changed
+- **A game the wizard cannot see running is not taken as closed**
   (ADR-0063): in a sandbox (Flatpak, which hides the system's processes)
-  the "game running" check (ADR-0051) found nothing and let the install go
-  on. Now that is its own state, "cannot be verified": the install is
+  the "game running" check (ADR-0051) would find nothing and let the install
+  go on; no Flatpak had shipped yet. Now that is its own state, "cannot be verified": the install is
   refused until the player confirms the game is closed, which the install
   page's confirmation asks in words. Outside a sandbox nothing changes.
+
+### Fixed
 - **Qt's X11 libraries travel in the Linux bundles**: PyInstaller copies the
   libraries it finds on the build machine and skipped `libxcb-cursor`,
   `-icccm`, `-image`, `-keysyms`, `-render-util`, `-util`, `-xkb` and

@@ -231,3 +231,7 @@ def test_a_confirmation_does_not_hide_a_game_that_is_seen(tmp_path):
 def test_unverifiable_is_never_counted_as_seen(tmp_path):
     unseen = gamelock.Unverifiable("hidden")
     assert gamelock.running_in({"BGEE": str(tmp_path)}, unseen) == []
+
+
+def test_with_no_folder_there_is_nothing_to_confirm(flatpak):
+    assert gamelock.problems({}) == []

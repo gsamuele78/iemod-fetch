@@ -229,6 +229,31 @@ winget install gsamuele78.iemod-fetch
 It installs the same installer, for you only, checked against the sha256 the
 release published; `winget upgrade` takes the next one.
 
+**On Linux, a Flatpak - experimental** (ADR-0064):
+`iemod-fetch-gui-linux-x86_64.flatpak` holds the same folder, sandboxed, on
+the Flathub runtime. The bundle does not carry the runtime: Flathub must be
+a remote, then the bundle installs for you only:
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user iemod-fetch-gui-linux-x86_64.flatpak
+flatpak run io.github.gsamuele78.iemod_fetch
+```
+
+The sandbox has the network, a window and the GPU, and none of your folders:
+you choose the game and project folders in the file dialog, and the
+Flatpak sees only those. Two things differ from the zip and the AppImage:
+- **It cannot see whether the game is running**, so before installing it
+  asks you to confirm the game is closed (ADR-0063).
+- **A folder chosen in the dialog is seen through the document portal**
+  (`/run/user/<uid>/doc/...`), and WeiDU installing there is not tested
+  yet. The first phase says so, with the command that gives the Flatpak the
+  folder itself, for example:
+  `flatpak override --user --filesystem="$HOME/.local/share/Steam/steamapps/common/Baldur's Gate II Enhanced Edition" io.github.gsamuele78.iemod_fetch`.
+
+The app ID `io.github.gsamuele78.iemod_fetch` is provisional until it is on
+Flathub (not yet).
+
 On Linux the zip uses the system's graphics driver and, for the window,
 Qt's X11 libraries (ADR-0056). A desktop install usually has them; a
 minimal one may not, and the wizard then stops with `libGL.so.1: cannot
@@ -716,7 +741,7 @@ Windows, on the one Python of `.python-version` (3.14). macOS runs the same suit
 informational workflow: it is reported, never blocking.
 
 ```bash
-python3 -m pytest -q      # 2,178 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
+python3 -m pytest -q      # 2,195 collected; a few skip (platform/opt-in; the GUI tests need .[guitest]), no network
 ```
 
 Some measurements need the network and run as their own workflows: which
@@ -970,9 +995,9 @@ make audit      # bandit · pip-audit
 
 | Gate | State |
 |---|---|
-| Tests | 2,178, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
+| Tests | 2,195, offline, ~30 s; the mock EET install and the engine-limit measurement also run against the **real WeiDU and mod_installer**, and the wizard under pytest-qt, in CI |
 | Branch coverage | 92% (floor 85%) |
-| mypy | clean, 74 source files |
+| mypy | clean, 75 source files |
 | ruff | clean, with pyupgrade (`UP`) on the Python of `.python-version` |
 | bandit | 0 high, 0 medium |
 | Architecture contracts | 7, all kept |

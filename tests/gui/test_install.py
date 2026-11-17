@@ -731,3 +731,18 @@ def test_in_a_sandbox_the_confirmation_says_the_game_is_unseen_and_confirms_it(
     run_to_end(qtbot, page)                               # yes: confirmed, installed
     assert passed == [True] and page.outcome.ok
 
+
+
+def test_outside_a_sandbox_the_confirmation_is_not_passed(qtbot, world):
+    backed_up(world)
+    passed = []
+    real = world["services"].start
+
+    def start(*args, **kwargs):
+        passed.append(kwargs.get("confirmed_closed"))
+        return real(*args, **kwargs)
+    world["services"].start = start
+    page = page_of(qtbot, world)
+    run_to_end(qtbot, page)
+    assert "Make sure the game is closed" not in page.confirmed[0][1]
+    assert passed == [False] and page.outcome.ok
