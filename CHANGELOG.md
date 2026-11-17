@@ -75,6 +75,12 @@ Python API, which is internal.
   page's confirmation asks in words. Outside a sandbox nothing changes.
 
 ### Fixed
+- **A game the wizard cannot see running is no longer taken as closed**
+  (ADR-0063): in a sandbox (Flatpak, which hides the system's processes)
+  the "game running" check (ADR-0051) found nothing and let the install go
+  on. Now that is its own state, "cannot be verified": the install is
+  refused until the player confirms the game is closed, which the install
+  page's confirmation asks in words. Outside a sandbox nothing changes.
 - **Qt's X11 libraries travel in the Linux bundles**: PyInstaller copies the
   libraries it finds on the build machine and skipped `libxcb-cursor`,
   `-icccm`, `-image`, `-keysyms`, `-render-util`, `-util`, `-xkb` and
