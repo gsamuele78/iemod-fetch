@@ -150,9 +150,13 @@ def build(source: str, work: str, out: str) -> str:
 
 
 # Run inside the sandbox: the program starts offscreen, the sandbox is the
-# one the finish-args make, and the runtime has bsdtar for RAR and 7z mods
-CHECK = (f"test -f /.flatpak-info && command -v bsdtar >/dev/null && mkdir -p /tmp/project "
-         f"&& QT_QPA_PLATFORM=offscreen {NAME} --check --project /tmp/project")
+# one the finish-args make, the runtime has bsdtar for RAR and 7z mods, and
+# with no --project the project is in the app's own data, which the sandbox
+# keeps (app.default_project; review of #135)
+CHECK = (f"test -f /.flatpak-info && command -v bsdtar >/dev/null "
+         f"&& QT_QPA_PLATFORM=offscreen {NAME} --check "
+         f'&& test "$XDG_DATA_HOME" = "$HOME/.var/app/$FLATPAK_ID/data" '
+         f'&& test -d "$XDG_DATA_HOME/project"')
 
 
 def check(bundle: str) -> None:
@@ -168,9 +172,9 @@ def check(bundle: str) -> None:
         shown = subprocess.run(["flatpak", "info", "--user", "--show-permissions", APP_ID],
                                capture_output=True, text=True, check=False).stdout
         sys.stdout.write(f"the Flatpak started in its sandbox; its permissions:\n{shown}")
-    finally:
-        subprocess.run(["flatpak", "uninstall", "--user", "--noninteractive", "-y", APP_ID],
-                       check=False)
+    finally:                              # its data too: the check's project
+        subprocess.run(["flatpak", "uninstall", "--user", "--noninteractive", "-y",
+                        "--delete-data", APP_ID], check=False)
 
 
 def main(argv=None) -> int:
@@ -188,8 +192,12 @@ def main(argv=None) -> int:
                                                     or time.time())))
     with tempfile.TemporaryDirectory(prefix="iemod-flatpak-") as work:
         source = prepare(os.path.abspath(args.zip), work, version(), day)
-        build(source, work, out)
-    check(out)
+        # built and checked in the work folder; only a bundle that started in
+        # its sandbox reaches --dist (review of #135: a failed or partial one
+        # must never be uploaded)
+        built = build(source, work, os.path.join(work, os.path.basename(out)))
+        check(built)
+        shutil.move(built, out)
     sys.stdout.write(f"{out} ({os.path.getsize(out):,} bytes)\n")
     return 0
 

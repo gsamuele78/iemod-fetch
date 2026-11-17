@@ -117,9 +117,36 @@ def test_a_zip_without_the_program_stops_the_build(tmp_path):
                         "2026-11-17")
 
 
-def test_the_check_runs_inside_the_sandbox_with_bsdtar():
+def test_the_check_runs_inside_the_sandbox_with_bsdtar_and_the_default_project():
     assert "/.flatpak-info" in flatpak.CHECK and "bsdtar" in flatpak.CHECK
     assert "QT_QPA_PLATFORM=offscreen" in flatpak.CHECK and "--check" in flatpak.CHECK
+    # no --project: the default one, in the app's own data (review of #135)
+    assert "--project" not in flatpak.CHECK
+    assert '"$XDG_DATA_HOME" = "$HOME/.var/app/$FLATPAK_ID/data"' in flatpak.CHECK
+    assert 'test -d "$XDG_DATA_HOME/project"' in flatpak.CHECK
+
+
+def test_only_a_bundle_that_passed_its_check_reaches_dist(tmp_path, monkeypatch):
+    monkeypatch.setattr(flatpak.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(flatpak, "prepare", lambda *a: str(tmp_path / "source"))
+
+    def build(source, work, out):
+        assert os.path.dirname(out) == work               # not in --dist
+        with open(out, "wb") as fh:
+            fh.write(b"bundle")
+        return out
+    monkeypatch.setattr(flatpak, "build", build)
+    dist = tmp_path / "dist"
+
+    def fails(bundle):
+        raise SystemExit("the Flatpak does not start")
+    monkeypatch.setattr(flatpak, "check", fails)
+    with pytest.raises(SystemExit, match="does not start"):
+        flatpak.main([linux_zip(tmp_path), "--dist", str(dist)])
+    assert not list(dist.iterdir())                       # nothing to upload
+    monkeypatch.setattr(flatpak, "check", lambda bundle: None)
+    flatpak.main([linux_zip(tmp_path), "--dist", str(dist)])
+    assert [p.name for p in dist.iterdir()] == [f"{NAME}-{flatpak.shared.tag()}.flatpak"]
 
 
 @pytest.mark.skipif(not shutil.which("desktop-file-validate"), reason="desktop-file-utils")

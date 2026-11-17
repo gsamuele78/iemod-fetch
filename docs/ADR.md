@@ -4931,9 +4931,13 @@ Measured from the code, before writing it:
    - runtime `org.freedesktop.Platform`, branch 26.08, SDK the same;
    - `flatpak-builder` builds it, `flatpak build-bundle` makes one file
      whose runtime comes from Flathub (`--runtime-repo`);
-   - the bundle is installed for the user, started once in its sandbox
-     (`/.flatpak-info` there, bsdtar found, `--check` offscreen), its
-     permissions printed, and removed.
+   - the bundle is built in the work folder, installed for the user,
+     started once in its sandbox (`/.flatpak-info` there, bsdtar found,
+     `--check` offscreen with no `--project`, then the project found in the
+     app's own data), its permissions printed, and removed with its data;
+     only then is it moved into the output folder, and the workflow uploads
+     it only when that step succeeded - a bundle that failed its check, or
+     was left half-written, is never released (review of #135).
 2. **finish-args, all of them:** `--share=network` (mods, community data,
    the tools' downloads), `--socket=wayland` and `--socket=fallback-x11`
    with `--share=ipc` (the window), `--device=dri` (OpenGL for Qt). **No
@@ -4947,7 +4951,8 @@ Measured from the code, before writing it:
      are not kept, and gigabytes of downloads would vanish with it (review
      of #135). So in a Flatpak the default is
      `$XDG_DATA_HOME/project` = `~/.var/app/<id>/data/project`, which the
-     sandbox keeps (`app.default_project`). It goes when the app is
+     sandbox keeps (`app.default_project`; without `$XDG_DATA_HOME`,
+     `~/.var/app/$FLATPAK_ID/data/project`). It goes when the app is
      uninstalled with `--delete-data`. A project elsewhere takes the same
      `flatpak override --filesystem=<folder>` and `--project <folder>`.
 3. **A game folder seen through the document portal is said in the first
@@ -5018,6 +5023,9 @@ Measured from the code, before writing it:
   the portal (ADR-0063), a folder given with `--filesystem`.
 - The bundle repeats the AppImage's folder: about the same size, the same
   libraries and licence files; the runtime's own licences are Flathub's.
+  The metainfo's `project_license` names the main licences (MIT, Qt's
+  LGPL-3.0-only, mod_installer's GPL-3.0-only); Python's and the system
+  libraries' are in the folder's `licenses/` and NOTICE files.
 - **Not done:** a Flathub manifest building from the release zip by URL
   (its zip source would be unpacked by flatpak-builder, whose handling of
   the zip's links is not measured), Flatpak for arm64.

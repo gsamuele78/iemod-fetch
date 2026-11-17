@@ -12,9 +12,15 @@ def default_project() -> str:
     the folder it was started from are not kept, and the mods downloaded
     into a project would vanish with the sandbox (review of #135)."""
     if api.sandbox():
-        data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser(
+            os.path.join("~", ".var", "app", os.environ.get("FLATPAK_ID", ""), "data")
+            if os.environ.get("FLATPAK_ID") else "~/.local/share")
         folder = os.path.join(data, "project")
-        os.makedirs(folder, exist_ok=True)
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as error:
+            raise SystemExit(f"iemod-fetch-gui: no project folder {folder}: {error}; "
+                             f"give one with --project") from error
         return folder
     return os.getcwd()
 

@@ -437,7 +437,10 @@ jobs:
           appstreamcli validate --no-net --explain packaging/flatpak/*.metainfo.xml
           desktop-file-validate packaging/flatpak/*.desktop
           python3 packaging/flatpak.py gui-dist/iemod-fetch-gui-linux-*.zip --dist flatpak-dist
+      # only a bundle whose build and check passed (the step is let through
+      # when it fails); flatpak.py also moves it into flatpak-dist only then
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.build.outcome == 'success'
         with:
           name: gui-flatpak
           path: flatpak-dist/*.flatpak
