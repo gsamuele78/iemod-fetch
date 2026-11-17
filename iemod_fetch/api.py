@@ -37,6 +37,7 @@ from .catalogues import CatalogueSet
 # around a program the wizard itself starts (a browser): ADR-0058
 from .childenv import spawning as starting_program  # noqa: F401
 from . import datasync
+from . import gamelock
 from .conflicts import ConflictReport, build_conflict_report, render_conflict_report
 from .constraints import ModConstraints, load_constraints, tp2_rules
 from .errors import ConfigError
@@ -91,7 +92,7 @@ __all__ = ["Settings", "Outcome", "run", "list_mods", "load_selection", "prepare
            "load_project", "save_project", "PROJECT_FILE", "mod_choices",
            "save_selection", "SELECTION_FILE", "selection_conflicts",
            "load_decisions", "save_decisions", "DECISIONS_FILE",
-           "ignore_order", "unignore_order", "selection_digest", "start_install", "install_progress", "install_known_issues",
+           "ignore_order", "unignore_order", "selection_digest", "start_install", "games_unseen", "install_progress", "install_known_issues",
            "default_tools_dir", "find_tools", "tool_download", "download_tool",
            "selection_plan", "write_install_plan", "load_install_answers", "save_install_answers",
            "write_install_answers", "answer_key", "writable_answer", "INSTALL_ANSWERS_FILE", "install_games", "INSTALL_PLAN_DIR",
@@ -1250,6 +1251,7 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                   language: str = "en_US", allow_existing: bool = False,
                   resume: bool = False, answers: dict[str, dict[str, str | None]] | None = None,
                   questions: dict | None = None,
+                  confirmed_closed: bool = False,
                   **timing: float) -> install_run.InstallRun:
     """
     An install of a planned order ready to run (GUI-AUDIT M4 item 22,
@@ -1271,6 +1273,10 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
     mod_installer shows is recognised by its expected text and answered by
     its key (ADR-0049) - also one under a condition, which the log's order
     cannot answer; one not recognised takes the log's next answer, as before.
+
+    `confirmed_closed`: the player confirmed the games are closed. Where
+    the running programs cannot be seen (games_unseen() says why, ADR-0063)
+    the install is refused without it; elsewhere it changes nothing.
     """
     if questions is None:
         try:
@@ -1303,7 +1309,15 @@ def start_install(plan_dir: str, games: dict[str, str], mods_dir: str,
                              on_event or (lambda _event: None), language=language,
                              allow_existing=allow_existing, resume_install=resume,
                              expected=expected, by_key=by_key, row_keys=row_keys,
-                             raw_texts=raw, **timing)
+                             raw_texts=raw, confirmed_closed=confirmed_closed, **timing)
+
+
+def games_unseen() -> str | None:
+    """Why this program cannot see whether a game is running, in words (it
+    runs in a sandbox that hides the system's programs, ADR-0063); None when
+    it can. start_install then needs the player's confirmation."""
+    running = gamelock.running_executables()
+    return running.reason if isinstance(running, gamelock.Unverifiable) else None
 
 
 def install_known_issues(games: dict[str, str], mods_dir: str) -> list[str]:

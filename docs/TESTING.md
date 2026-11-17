@@ -499,6 +499,16 @@ it inside debian:trixie with only the libraries every AppImage leaves to
 the system (the GL driver, X11/xcb, fontconfig, freetype). Unit tests:
 `tests/test_appimage.py` (the AppDir, AppRun, the pins, the desktop entry).
 
+### The game unseen in a sandbox (ADR-0063)
+
+`tests/test_gamelock.py` writes a `.flatpak-info` and points
+`gamelock.FLATPAK_INFO` at it: the processes are then `Unverifiable`, not an
+empty list; the install is refused until `confirmed_closed`; a confirmation
+never hides a game that is seen. `tests/test_install_run.py` checks the same
+through `preflight` and that the check during the run says nothing in a
+sandbox; `tests/gui/test_install.py` that the confirmation names it and
+that going on passes the confirmation, and saying no does not.
+
 ### The winget manifests (ADR-0062)
 
 `packaging/winget.py` writes the version, installer and default-locale
@@ -597,7 +607,7 @@ python3 -m pytest -k "security" -q                # the boundary tests
 
 | | |
 |---|---|
-| Tests | 2,169 collected (25 run the real WeiDU, 198 drive the GUI with pytest-qt; both opt-in) |
+| Tests | 2,178 collected (25 run the real WeiDU, 199 drive the GUI with pytest-qt; both opt-in) |
 | Branch coverage | 92% (floor: 85%) |
 | Architecture contracts | 7, all kept |
 | mypy | clean, 64 modules |

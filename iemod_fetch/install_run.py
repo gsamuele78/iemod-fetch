@@ -230,9 +230,15 @@ def _program(path: str) -> bool:
 
 def preflight(games: dict[str, str], mods_dir: str, mod_installer: str, weidu: str,
               allow_existing: bool = False,
-              in_use: Callable[[dict[str, str]], list[str]] = gamelock.problems) -> list[str]:
+              in_use: Callable[[dict[str, str]], list[str]] | None = None,
+              confirmed_closed: bool = False) -> list[str]:
     """What stops the install before it starts, in words; [] when nothing.
-    `in_use`: what says a game is running (gamelock, item 67)."""
+    `in_use`: what says a game is running (gamelock, item 67).
+    `confirmed_closed`: the player confirmed the games are closed, for where
+    the running programs cannot be seen (a sandbox, ADR-0063)."""
+    if in_use is None:
+        def in_use(folders: dict[str, str]) -> list[str]:
+            return gamelock.problems(folders, confirmed_closed=confirmed_closed)
     problems = []
     for name, folder in games.items():
         if not os.path.isdir(folder):
@@ -302,7 +308,8 @@ class InstallRun:
                  grace_s: float = GRACE_S, drain_s: float = DRAIN_S,
                  silent_s: float = SILENT_S,
                  games: dict[str, str] | None = None, tools: tuple[str, ...] = (),
-                 running: Callable[[], list[gamelock.Running] | None] = gamelock.running_executables,
+                 running: Callable[[], list[gamelock.Running] | gamelock.Unverifiable | None] =
+                 gamelock.running_executables,
                  asked_file: str | None = None,
                  phases: list[tuple[str, str]] | None = None,
                  results_file: str | None = None,
@@ -938,12 +945,14 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
           expected: dict[Key, list[tuple[str, str]]] | None = None,
           by_key: dict[Key, dict[str, str]] | None = None,
           row_keys: dict[Key, list[str]] | None = None,
-          raw_texts: dict[tuple[Key, str], str] | None = None, **timing) -> InstallRun:
+          raw_texts: dict[tuple[Key, str], str] | None = None,
+          confirmed_closed: bool = False, **timing) -> InstallRun:
     """
     An install ready to run, after the checks; ConfigError says what stops
     it. `resume_install`: go on where the games' WeiDU.logs say it stopped
     (resume.py) - only the rest is installed; a game whose log is not the
-    plan's beginning is refused.
+    plan's beginning is refused. `confirmed_closed`: the player confirmed
+    the games are closed (needed where that cannot be seen, ADR-0063).
     """
     asked_file = os.path.join(plan_dir, ASKED_FILE)   # beside the plan, not its rest
     results_dir = plan_dir
@@ -960,7 +969,8 @@ def start(plan_dir: str, games: dict[str, str], mods_dir: str, mod_installer: st
         if state.state == "partial":
             plan_dir, games = _write_rest(plan_dir, games, state)
             allow_existing = True
-    problems = preflight(games, mods_dir, mod_installer, weidu, allow_existing)
+    problems = preflight(games, mods_dir, mod_installer, weidu, allow_existing,
+                         confirmed_closed=confirmed_closed)
     if problems:
         raise ConfigError("; ".join(problems))
     argv = command(plan_dir, games, mods_dir, mod_installer, weidu, language)

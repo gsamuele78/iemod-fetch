@@ -4816,3 +4816,74 @@ Two things are not this repository's to do:
   means copying its schemas and raising MANIFEST_VERSION together.
 - **Next:** Flatpak (separate PR). Signing (SignPath) is the owner's
   application to make.
+
+## ADR-0063 — In a sandbox the running game cannot be seen; the player confirms it is closed
+
+**Status:** accepted (2026-11-17)
+
+### Context
+
+ADR-0051 refuses an install while a program runs from a game folder. On
+Linux it lists /proc. In a Flatpak sandbox (ADR-0064, next) the process
+namespace is the sandbox's own: /proc holds this program and its children,
+never the game. The list came back without the game, which reads as
+"nothing running", and the install went on with the game open: the case
+ADR-0051 exists to stop, made silent by the sandbox.
+
+Ways to see the host's processes from a Flatpak (`flatpak-spawn --host`,
+`--talk-name=org.freedesktop.Flatpak`) give the program the run of the
+host and undo the sandbox. They are not used.
+
+### Decision
+
+1. **"Cannot be verified" is a state of its own.** `gamelock.running_executables()`
+   returns `Unverifiable(reason)` when the program runs in a sandbox
+   (`/.flatpak-info` exists), not a list. An empty list keeps meaning
+   "nothing running"; None keeps meaning "could not be listed", which
+   ADR-0051 already lets pass.
+2. **It refuses the install until the player confirms.** `gamelock.problems()`
+   gives one problem for it - the reason, then "close the game, then
+   confirm it is closed before installing" - unless `confirmed_closed`.
+   `install_run.preflight()`, `install_run.start()` and
+   `api.start_install()` carry `confirmed_closed` (default False), so a
+   caller that does not ask is refused, never let through.
+   `api.games_unseen()` says why, or None.
+3. **The install page asks in words.** Its confirmation, already shown
+   before every install, gets "Make sure the game is closed: <reason>.
+   Going on confirms it is." when `games_unseen()` gives a reason; going
+   on passes `confirmed_closed=True`. No second dialog.
+4. **A game that is seen is never hidden by a confirmation.** Outside a
+   sandbox `confirmed_closed` changes nothing: a game found running still
+   refuses.
+5. **During the run** the check at each batch says nothing it cannot see:
+   no warning in a sandbox. The confirmation was asked before.
+6. **The command line has no install command.** It writes scripts that
+   run mod_installer directly (`--emit-installer`); those never went
+   through this check, in a sandbox or not, so there is nothing to confirm
+   there.
+
+### The program's other reads of /proc in a sandbox
+
+- **gamelock** (this ADR): /proc/<pid>/exe, cmdline and environ - only the
+  sandbox's processes; handled above.
+- **backup.py, `/proc/self/mountinfo`**: the backup skips what lies on
+  another mount inside a game folder. In a sandbox the table is the
+  sandbox's: a folder chosen through the document portal is one FUSE mount
+  (/run/user/<uid>/doc/...), and a mount inside it on the host is not seen
+  as one, so the backup would walk into it as plain folders. A game folder
+  with a mount inside it is rare; with `flatpak override --filesystem=...`
+  the folder is bind-mounted with what is mounted inside it, and the table
+  lists those. Not changed here; written down for ADR-0064.
+- **childenv**: does not read /proc. It restores the environment the
+  bundle's bootloader changed (LD_LIBRARY_PATH) for the programs it starts;
+  unchanged in a sandbox.
+
+### Consequences
+
+- In a Flatpak the player cannot install without saying the game is
+  closed; a game left open is the player's word against WeiDU's error, as
+  it was before ADR-0051.
+- Outside a sandbox: one more parameter, nothing else.
+- **Not covered:** other sandboxes that hide processes (Snap with strict
+  confinement, a container) are not detected; only Flatpak is targeted.
+  `sandbox()` is the one place to add them.
