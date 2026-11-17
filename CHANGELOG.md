@@ -70,9 +70,10 @@ Python API, which is internal.
 - **A game the wizard cannot see running is not taken as closed**
   (ADR-0063): in a sandbox (Flatpak, which hides the system's processes)
   the "game running" check (ADR-0051) would find nothing and let the install
-  go on; no Flatpak had shipped yet. Now that is its own state, "cannot be verified": the install is
-  refused until the player confirms the game is closed, which the install
-  page's confirmation asks in words. Outside a sandbox nothing changes.
+  go on; no Flatpak had shipped yet. Now that is its own state, "cannot be
+  verified": the install is refused until the player confirms the game is
+  closed, which the install page's confirmation asks in words. Outside a
+  sandbox nothing changes.
 
 ### Fixed
 - **Qt's X11 libraries travel in the Linux bundles**: PyInstaller copies the
