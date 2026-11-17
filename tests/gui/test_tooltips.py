@@ -208,3 +208,22 @@ def test_the_game_pages_findings_show_paths_as_written(qtbot, tmp_path, monkeypa
     doc.setHtml(page.findings.text())
     rendered = doc.toPlainText()
     assert f"no chitin.key in {HOSTILE}" in rendered and f"Note: {HOSTILE}" in rendered
+
+
+def test_the_question_dialog_is_released_after_it_is_answered(qtbot, monkeypatch):
+    """Review of #124: a dialog with a parent lives as long as the parent,
+    so one per question would pile up for the whole install."""
+    from PySide6.QtWidgets import QInputDialog, QWidget
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    released = []
+
+    def run(dialog):
+        dialog.destroyed.connect(lambda *_a: released.append(True))
+        dialog.setTextValue("7")
+        return int(QInputDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QInputDialog, "exec", run)
+    assert qtext.get_text(parent, "Question", "Enter a number:") == ("7", True)
+    qtbot.waitUntil(lambda: released == [True], timeout=5000)
+    assert not parent.findChildren(QInputDialog)

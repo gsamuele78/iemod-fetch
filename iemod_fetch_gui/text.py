@@ -37,8 +37,13 @@ def get_text(parent: QWidget | None, title: str, label: str) -> tuple[str, bool]
     dialog.setLabelText(str(label))
     for child in dialog.findChildren(QLabel):
         child.setTextFormat(Qt.TextFormat.PlainText)
-    ok = dialog.exec() == QDialog.DialogCode.Accepted
-    return dialog.textValue(), ok
+    try:
+        ok = dialog.exec() == QDialog.DialogCode.Accepted
+        return dialog.textValue(), ok
+    finally:
+        # a parented dialog lives as long as its parent: one per question
+        # would pile up for the whole install (review of #124)
+        dialog.deleteLater()
 
 
 def _box(parent: QWidget | None, icon: QMessageBox.Icon, title: str, text: str,

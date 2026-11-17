@@ -5006,13 +5006,15 @@ Measured from the code, before writing it:
   install through the portal fails at once; the real-test guide's row looks
   for exactly that error.
 - **Measured in this PR's CI** (run 43993140693): flatpak-builder built the
-  bundle (54.3 MB) on runtime org.freedesktop.Platform//26.08 at commit
+  bundle on runtime org.freedesktop.Platform//26.08 at commit
   df26daaf9d07610b4a72cc4585566194051275ac68396597b06474396f66427c,
   appstreamcli compose accepted the metainfo, the bundle installed, started
   with `--check` in its sandbox (`/.flatpak-info` there, bsdtar found), and
   its permissions were exactly the finish-args (`shared=network;ipc;`,
   `sockets=x11;wayland;fallback-x11;` - Flatpak lists fallback-x11's x11 -
-  `devices=dri;`).
+  `devices=dri;`). The bundle was 54.3 MB there, with flatpak-builder
+  stripping the folder's ELF files; unstripped, as merged (`strip: false`),
+  it is 66.0 MB (66,036,088 bytes, run of 7756892).
 - **The runtime is pinned by branch, not by commit.** flatpak-builder takes
   the branch's current commit; the build prints it ("runtime
   org.freedesktop.Platform//26.08 at commit ...") in the job's log - the

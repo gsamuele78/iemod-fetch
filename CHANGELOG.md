@@ -78,6 +78,9 @@ Python API, which is internal.
   sandbox nothing changes.
 
 ### Fixed
+- **A question's dialog during an install is released once answered**
+  (review of #124): each one stayed alive, parented to the install page,
+  until the page closed.
 - **Qt's X11 libraries travel in the Linux bundles**: PyInstaller copies the
   libraries it finds on the build machine and skipped `libxcb-cursor`,
   `-icccm`, `-image`, `-keysyms`, `-render-util`, `-util`, `-xkb` and
