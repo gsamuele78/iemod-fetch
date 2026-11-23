@@ -10,7 +10,9 @@
 # filelock (MIT): a lock around the community-data folder, which the wizard and
 # the CLI both refresh (datasync.py). 4.2.1 or later: CVE-2026-112940 is in
 # 3.20.4-4.2.0 (ReadWriteLock, which iemod-fetch does not use; ADR-0043).
-filelock==4.2.4 \
-    --hash=sha256:301241438c57936ef93f4243a94f2559022268bfcf9b375a9a72eb0f8db8358e
-publicsuffixlist==1.1.2.20261023 \
-    --hash=sha256:c792aa3fd37076c15f1c9d9897e59e9d58e8bacdf4315eb9cc10141a26d8995c
+filelock==4.2.12 \
+    --hash=sha256:21decfec02f116ed4c954433cdb31f28c3b346b784543177b6d7059da2702ee9 \
+    --hash=sha256:7e7da24d3ac39268b0f156e56870001de44886318f092f9d851e692f7114d6dd
+publicsuffixlist==1.1.2.20261120 \
+    --hash=sha256:6ec943fdc2379467eb3c86b9dccc0d6dfa8393dbe0f37b7d3fa47675831124d4 \
+    --hash=sha256:b8c6f3ee9108d47ecad75b48ef2a42cdb3588b685dfa39ae1501430d50e67eca
